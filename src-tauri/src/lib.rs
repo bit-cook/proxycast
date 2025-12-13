@@ -48,6 +48,30 @@ async fn save_config(state: tauri::State<'_, AppState>, config: config::Config) 
 }
 
 #[tauri::command]
+async fn get_default_provider(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let s = state.read().await;
+    Ok(s.config.default_provider.clone())
+}
+
+#[tauri::command]
+async fn set_default_provider(
+    state: tauri::State<'_, AppState>,
+    logs: tauri::State<'_, LogState>,
+    provider: String,
+) -> Result<String, String> {
+    let valid_providers = ["kiro", "gemini", "qwen", "openai", "claude"];
+    if !valid_providers.contains(&provider.as_str()) {
+        return Err(format!("Invalid provider: {}", provider));
+    }
+    
+    let mut s = state.write().await;
+    s.config.default_provider = provider.clone();
+    config::save_config(&s.config).map_err(|e| e.to_string())?;
+    logs.write().await.add("info", &format!("默认 Provider 已切换为: {}", provider));
+    Ok(provider)
+}
+
+#[tauri::command]
 async fn refresh_kiro_token(state: tauri::State<'_, AppState>, logs: tauri::State<'_, LogState>) -> Result<String, String> {
     let mut s = state.write().await;
     logs.write().await.add("info", "Refreshing Kiro token...");
@@ -689,6 +713,8 @@ pub fn run() {
             get_server_status,
             get_config,
             save_config,
+            get_default_provider,
+            set_default_provider,
             // Kiro commands
             refresh_kiro_token,
             reload_credentials,

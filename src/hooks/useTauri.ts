@@ -68,6 +68,14 @@ export async function saveConfig(config: Config): Promise<void> {
   return invoke("save_config", { config });
 }
 
+export async function getDefaultProvider(): Promise<string> {
+  return invoke("get_default_provider");
+}
+
+export async function setDefaultProvider(provider: string): Promise<string> {
+  return invoke("set_default_provider", { provider });
+}
+
 export async function refreshKiroToken(): Promise<string> {
   return invoke("refresh_kiro_token");
 }
