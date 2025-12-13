@@ -181,3 +181,39 @@ export async function getGeminiTokenFileHash(): Promise<string> {
 export async function checkAndReloadGeminiCredentials(lastHash: string): Promise<CheckResult> {
   return invoke("check_and_reload_gemini_credentials", { last_hash: lastHash });
 }
+
+
+// ============ Qwen Provider ============
+
+export interface QwenCredentialStatus {
+  loaded: boolean;
+  has_access_token: boolean;
+  has_refresh_token: boolean;
+  expiry_date: number | null;
+  is_valid: boolean;
+  creds_path: string;
+}
+
+export async function getQwenCredentials(): Promise<QwenCredentialStatus> {
+  return invoke("get_qwen_credentials");
+}
+
+export async function reloadQwenCredentials(): Promise<string> {
+  return invoke("reload_qwen_credentials");
+}
+
+export async function refreshQwenToken(): Promise<string> {
+  return invoke("refresh_qwen_token");
+}
+
+export async function getQwenEnvVariables(): Promise<EnvVariable[]> {
+  return invoke("get_qwen_env_variables");
+}
+
+export async function getQwenTokenFileHash(): Promise<string> {
+  return invoke("get_qwen_token_file_hash");
+}
+
+export async function checkAndReloadQwenCredentials(lastHash: string): Promise<CheckResult> {
+  return invoke("check_and_reload_qwen_credentials", { last_hash: lastHash });
+}

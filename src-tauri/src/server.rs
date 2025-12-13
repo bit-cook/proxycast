@@ -5,6 +5,7 @@ use crate::models::anthropic::*;
 use crate::converter::anthropic_to_openai::convert_anthropic_to_openai;
 use crate::providers::kiro::KiroProvider;
 use crate::providers::gemini::GeminiProvider;
+use crate::providers::qwen::QwenProvider;
 use crate::logger::LogStore;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -33,6 +34,7 @@ pub struct ServerState {
     pub start_time: Option<std::time::Instant>,
     pub kiro_provider: KiroProvider,
     pub gemini_provider: GeminiProvider,
+    pub qwen_provider: QwenProvider,
     shutdown_tx: Option<oneshot::Sender<()>>,
 }
 
@@ -44,6 +46,9 @@ impl ServerState {
         let mut gemini = GeminiProvider::new();
         let _ = gemini.load_credentials();
         
+        let mut qwen = QwenProvider::new();
+        let _ = qwen.load_credentials();
+        
         Self {
             config,
             running: false,
@@ -51,6 +56,7 @@ impl ServerState {
             start_time: None,
             kiro_provider: kiro,
             gemini_provider: gemini,
+            qwen_provider: qwen,
             shutdown_tx: None,
         }
     }
@@ -174,7 +180,10 @@ async fn models() -> impl IntoResponse {
             {"id": "gemini-2.5-flash-lite", "object": "model", "owned_by": "google"},
             {"id": "gemini-2.5-pro", "object": "model", "owned_by": "google"},
             {"id": "gemini-2.5-pro-preview-06-05", "object": "model", "owned_by": "google"},
-            {"id": "gemini-3-pro-preview", "object": "model", "owned_by": "google"}
+            {"id": "gemini-3-pro-preview", "object": "model", "owned_by": "google"},
+            // Qwen models
+            {"id": "qwen3-coder-plus", "object": "model", "owned_by": "alibaba"},
+            {"id": "qwen3-coder-flash", "object": "model", "owned_by": "alibaba"}
         ]
     }))
 }
