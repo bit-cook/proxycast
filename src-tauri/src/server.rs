@@ -5,6 +5,7 @@ use crate::converter::openai_to_antigravity::{
     convert_antigravity_to_openai_response, convert_openai_to_antigravity,
 };
 use crate::database::DbConnection;
+use crate::injection::Injector;
 use crate::logger::LogStore;
 use crate::models::anthropic::*;
 use crate::models::openai::*;
@@ -120,6 +121,17 @@ impl ServerState {
         let _ = self.kiro_provider.load_credentials().await;
         let kiro = self.kiro_provider.clone();
 
+        // 创建参数注入器
+        let injection_enabled = self.config.injection.enabled;
+        let injector = Injector::with_rules(
+            self.config
+                .injection
+                .rules
+                .iter()
+                .map(|r| r.clone().into())
+                .collect(),
+        );
+
         tokio::spawn(async move {
             if let Err(e) = run_server(
                 &host,
@@ -132,6 +144,8 @@ impl ServerState {
                 pool_service,
                 token_cache,
                 db,
+                injector,
+                injection_enabled,
             )
             .await
             {
@@ -177,6 +191,10 @@ struct AppState {
     pool_service: Arc<ProviderPoolService>,
     token_cache: Arc<TokenCacheService>,
     db: Option<DbConnection>,
+    /// 参数注入器
+    injector: Arc<RwLock<Injector>>,
+    /// 是否启用参数注入
+    injection_enabled: Arc<RwLock<bool>>,
 }
 
 async fn run_server(
@@ -190,6 +208,8 @@ async fn run_server(
     pool_service: Arc<ProviderPoolService>,
     token_cache: Arc<TokenCacheService>,
     db: Option<DbConnection>,
+    injector: Injector,
+    injection_enabled: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let base_url = format!("http://{}:{}", host, port);
     let state = AppState {
@@ -204,6 +224,8 @@ async fn run_server(
         pool_service,
         token_cache,
         db,
+        injector: Arc::new(RwLock::new(injector)),
+        injection_enabled: Arc::new(RwLock::new(injection_enabled)),
     };
 
     let app = Router::new()
@@ -241,7 +263,7 @@ async fn run_server(
 async fn health() -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "healthy",
-        "version": "0.1.0"
+        "version": "0.8.0"
     }))
 }
 
@@ -300,7 +322,7 @@ async fn verify_api_key(
 async fn chat_completions(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<ChatCompletionRequest>,
+    Json(mut request): Json<ChatCompletionRequest>,
 ) -> Response {
     if let Err(e) = verify_api_key(&headers, &state.api_key).await {
         state
@@ -318,6 +340,27 @@ async fn chat_completions(
             request.model, request.stream
         ),
     );
+
+    // 应用参数注入
+    let injection_enabled = *state.injection_enabled.read().await;
+    if injection_enabled {
+        let injector = state.injector.read().await;
+        let mut payload = serde_json::to_value(&request).unwrap_or_default();
+        let result = injector.inject(&request.model, &mut payload);
+        if result.has_injections() {
+            state.logs.write().await.add(
+                "info",
+                &format!(
+                    "[INJECT] Applied rules: {:?}, injected params: {:?}",
+                    result.applied_rules, result.injected_params
+                ),
+            );
+            // 更新请求
+            if let Ok(updated) = serde_json::from_value(payload) {
+                request = updated;
+            }
+        }
+    }
 
     // 获取当前默认 provider
     let default_provider = state.default_provider.read().await.clone();
@@ -590,7 +633,7 @@ async fn chat_completions(
 async fn anthropic_messages(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<AnthropicMessagesRequest>,
+    Json(mut request): Json<AnthropicMessagesRequest>,
 ) -> Response {
     if let Err(e) = verify_api_key(&headers, &state.api_key).await {
         state
@@ -637,6 +680,27 @@ async fn anthropic_messages(
                 last_msg.role, content_preview
             ),
         );
+    }
+
+    // 应用参数注入
+    let injection_enabled = *state.injection_enabled.read().await;
+    if injection_enabled {
+        let injector = state.injector.read().await;
+        let mut payload = serde_json::to_value(&request).unwrap_or_default();
+        let result = injector.inject(&request.model, &mut payload);
+        if result.has_injections() {
+            state.logs.write().await.add(
+                "info",
+                &format!(
+                    "[INJECT] Applied rules: {:?}, injected params: {:?}",
+                    result.applied_rules, result.injected_params
+                ),
+            );
+            // 更新请求
+            if let Ok(updated) = serde_json::from_value(payload) {
+                request = updated;
+            }
+        }
     }
 
     // 获取当前默认 provider

@@ -1,3 +1,4 @@
+use crate::config::{Config, ConfigManager};
 use crate::models::AppType;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -193,4 +194,165 @@ pub async fn set_auto_launch(app: AppHandle, enabled: bool) -> Result<bool, Stri
     }
 
     Ok(enabled)
+}
+
+// ============ Config Import/Export Commands ============
+
+/// 配置导出选项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportOptions {
+    /// 是否脱敏敏感信息（API 密钥等）
+    pub redact_secrets: bool,
+}
+
+/// 配置导出结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportResult {
+    /// YAML 配置内容
+    pub content: String,
+    /// 建议的文件名
+    pub suggested_filename: String,
+}
+
+/// 导出配置为 YAML 字符串
+///
+/// # Arguments
+/// * `config` - 当前配置
+/// * `redact_secrets` - 是否脱敏敏感信息
+#[tauri::command]
+pub fn export_config(config: Config, redact_secrets: bool) -> Result<ExportResult, String> {
+    let manager = ConfigManager::new(PathBuf::from("temp.yaml"));
+    let mut manager_with_config = manager;
+    manager_with_config.set_config(config);
+
+    let content = manager_with_config
+        .export(redact_secrets)
+        .map_err(|e| e.to_string())?;
+
+    // 生成带时间戳的文件名
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let suffix = if redact_secrets { "_redacted" } else { "" };
+    let suggested_filename = format!("proxycast_config_{}{}.yaml", timestamp, suffix);
+
+    Ok(ExportResult {
+        content,
+        suggested_filename,
+    })
+}
+
+/// 配置导入选项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportOptions {
+    /// 是否合并到现有配置（true）或替换（false）
+    pub merge: bool,
+}
+
+/// 配置导入结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportResult {
+    /// 是否成功
+    pub success: bool,
+    /// 导入后的配置
+    pub config: Config,
+    /// 警告信息（如果有）
+    pub warnings: Vec<String>,
+}
+
+/// 验证配置 YAML 格式
+///
+/// # Arguments
+/// * `yaml_content` - YAML 配置字符串
+#[tauri::command]
+pub fn validate_config_yaml(yaml_content: String) -> Result<Config, String> {
+    ConfigManager::parse_yaml(&yaml_content).map_err(|e| e.to_string())
+}
+
+/// 导入配置
+///
+/// # Arguments
+/// * `current_config` - 当前配置
+/// * `yaml_content` - 要导入的 YAML 配置字符串
+/// * `merge` - 是否合并到现有配置（true）或替换（false）
+#[tauri::command]
+pub fn import_config(
+    current_config: Config,
+    yaml_content: String,
+    merge: bool,
+) -> Result<ImportResult, String> {
+    let mut manager = ConfigManager::new(PathBuf::from("temp.yaml"));
+    manager.set_config(current_config);
+
+    let mut warnings = Vec::new();
+
+    // 先验证 YAML 格式
+    let imported_config = ConfigManager::parse_yaml(&yaml_content).map_err(|e| e.to_string())?;
+
+    // 检查是否包含脱敏的密钥
+    if imported_config.server.api_key == "***REDACTED***" {
+        warnings.push("导入的配置包含脱敏的 API 密钥，将保留原有值".to_string());
+    }
+    if imported_config
+        .providers
+        .openai
+        .api_key
+        .as_ref()
+        .map(|k| k == "***REDACTED***")
+        .unwrap_or(false)
+    {
+        warnings.push("导入的配置包含脱敏的 OpenAI API 密钥，将保留原有值".to_string());
+    }
+    if imported_config
+        .providers
+        .claude
+        .api_key
+        .as_ref()
+        .map(|k| k == "***REDACTED***")
+        .unwrap_or(false)
+    {
+        warnings.push("导入的配置包含脱敏的 Claude API 密钥，将保留原有值".to_string());
+    }
+
+    // 执行导入
+    manager
+        .import(&yaml_content, merge)
+        .map_err(|e| e.to_string())?;
+
+    // 如果导入的配置包含脱敏的密钥，恢复原有值
+    let final_config = manager.config().clone();
+
+    Ok(ImportResult {
+        success: true,
+        config: final_config,
+        warnings,
+    })
+}
+
+/// 获取配置文件路径信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigPathInfo {
+    /// YAML 配置文件路径
+    pub yaml_path: String,
+    /// JSON 配置文件路径（旧版）
+    pub json_path: String,
+    /// YAML 配置是否存在
+    pub yaml_exists: bool,
+    /// JSON 配置是否存在
+    pub json_exists: bool,
+}
+
+/// 获取配置文件路径信息
+#[tauri::command]
+pub fn get_config_paths() -> Result<ConfigPathInfo, String> {
+    let yaml_path = ConfigManager::default_config_path();
+    let json_path = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("proxycast")
+        .join("config.json");
+
+    Ok(ConfigPathInfo {
+        yaml_path: yaml_path.to_string_lossy().to_string(),
+        json_path: json_path.to_string_lossy().to_string(),
+        yaml_exists: yaml_path.exists(),
+        json_exists: json_path.exists(),
+    })
 }

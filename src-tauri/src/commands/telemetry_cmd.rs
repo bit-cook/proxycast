@@ -1,0 +1,296 @@
+//! 遥测命令模块
+//!
+//! 提供请求日志、统计数据和 Token 追踪的 Tauri 命令
+
+use crate::telemetry::{
+    ModelStats, ModelTokenStats, ProviderStats, ProviderTokenStats, RequestLog, RequestLogger,
+    RequestStatus, StatsAggregator, StatsSummary, TimeRange, TokenStatsSummary, TokenTracker,
+};
+use crate::ProviderType;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+/// 遥测服务状态
+pub struct TelemetryState {
+    pub logger: Arc<RequestLogger>,
+    pub stats: Arc<StatsAggregator>,
+    pub tokens: Arc<TokenTracker>,
+}
+
+impl TelemetryState {
+    pub fn new() -> Result<Self, String> {
+        let logger = RequestLogger::with_defaults()
+            .map_err(|e| format!("Failed to create logger: {}", e))?;
+
+        Ok(Self {
+            logger: Arc::new(logger),
+            stats: Arc::new(StatsAggregator::with_defaults()),
+            tokens: Arc::new(TokenTracker::with_defaults()),
+        })
+    }
+}
+
+impl Default for TelemetryState {
+    fn default() -> Self {
+        Self::new().expect("Failed to create TelemetryState")
+    }
+}
+
+// ========== 请求日志命令 ==========
+
+/// 获取请求日志列表
+#[tauri::command]
+pub async fn get_request_logs(
+    state: tauri::State<'_, TelemetryState>,
+    provider: Option<String>,
+    model: Option<String>,
+    status: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<RequestLog>, String> {
+    let mut logs = state.logger.get_all();
+
+    // 按 Provider 过滤
+    if let Some(p) = provider {
+        let provider_type: ProviderType = p.parse().map_err(|e: String| e)?;
+        logs.retain(|l| l.provider == provider_type);
+    }
+
+    // 按模型过滤
+    if let Some(m) = model {
+        logs.retain(|l| l.model == m);
+    }
+
+    // 按状态过滤
+    if let Some(s) = status {
+        let req_status = match s.as_str() {
+            "success" => RequestStatus::Success,
+            "failed" => RequestStatus::Failed,
+            "timeout" => RequestStatus::Timeout,
+            "retrying" => RequestStatus::Retrying,
+            "cancelled" => RequestStatus::Cancelled,
+            _ => return Err(format!("Invalid status: {}", s)),
+        };
+        logs.retain(|l| l.status == req_status);
+    }
+
+    // 按时间倒序排列
+    logs.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    // 限制数量
+    if let Some(l) = limit {
+        logs.truncate(l);
+    }
+
+    Ok(logs)
+}
+
+/// 获取单个请求日志详情
+#[tauri::command]
+pub async fn get_request_log_detail(
+    state: tauri::State<'_, TelemetryState>,
+    id: String,
+) -> Result<Option<RequestLog>, String> {
+    Ok(state.logger.get_by_id(&id))
+}
+
+/// 清空请求日志
+#[tauri::command]
+pub async fn clear_request_logs(state: tauri::State<'_, TelemetryState>) -> Result<(), String> {
+    state.logger.clear();
+    Ok(())
+}
+
+// ========== 统计命令 ==========
+
+/// 时间范围参数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeRangeParam {
+    /// 开始时间 (ISO 8601 格式)
+    pub start: Option<String>,
+    /// 结束时间 (ISO 8601 格式)
+    pub end: Option<String>,
+    /// 或者使用预设范围: "1h", "24h", "7d", "30d"
+    pub preset: Option<String>,
+}
+
+impl TimeRangeParam {
+    fn to_time_range(&self) -> Result<Option<TimeRange>, String> {
+        if let Some(preset) = &self.preset {
+            let range = match preset.as_str() {
+                "1h" => TimeRange::last_hours(1),
+                "24h" => TimeRange::last_hours(24),
+                "7d" => TimeRange::last_days(7),
+                "30d" => TimeRange::last_days(30),
+                _ => return Err(format!("Invalid preset: {}", preset)),
+            };
+            return Ok(Some(range));
+        }
+
+        match (&self.start, &self.end) {
+            (Some(s), Some(e)) => {
+                let start = DateTime::parse_from_rfc3339(s)
+                    .map_err(|e| format!("Invalid start time: {}", e))?
+                    .with_timezone(&Utc);
+                let end = DateTime::parse_from_rfc3339(e)
+                    .map_err(|e| format!("Invalid end time: {}", e))?
+                    .with_timezone(&Utc);
+                Ok(Some(TimeRange::new(start, end)))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+/// 获取统计摘要
+#[tauri::command]
+pub async fn get_stats_summary(
+    state: tauri::State<'_, TelemetryState>,
+    time_range: Option<TimeRangeParam>,
+) -> Result<StatsSummary, String> {
+    let range = time_range.map(|r| r.to_time_range()).transpose()?.flatten();
+    Ok(state.stats.summary(range))
+}
+
+/// 按 Provider 分组统计
+#[tauri::command]
+pub async fn get_stats_by_provider(
+    state: tauri::State<'_, TelemetryState>,
+    time_range: Option<TimeRangeParam>,
+) -> Result<HashMap<String, ProviderStats>, String> {
+    let range = time_range.map(|r| r.to_time_range()).transpose()?.flatten();
+    let stats = state.stats.by_provider(range);
+
+    // 转换 key 为 String
+    Ok(stats.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+}
+
+/// 按模型分组统计
+#[tauri::command]
+pub async fn get_stats_by_model(
+    state: tauri::State<'_, TelemetryState>,
+    time_range: Option<TimeRangeParam>,
+) -> Result<HashMap<String, ModelStats>, String> {
+    let range = time_range.map(|r| r.to_time_range()).transpose()?.flatten();
+    Ok(state.stats.by_model(range))
+}
+
+// ========== Token 统计命令 ==========
+
+/// 获取 Token 统计摘要
+#[tauri::command]
+pub async fn get_token_summary(
+    state: tauri::State<'_, TelemetryState>,
+    time_range: Option<TimeRangeParam>,
+) -> Result<TokenStatsSummary, String> {
+    let (start, end) = match time_range {
+        Some(r) => {
+            let range = r.to_time_range()?;
+            match range {
+                Some(tr) => (Some(tr.start), Some(tr.end)),
+                None => (None, None),
+            }
+        }
+        None => (None, None),
+    };
+    Ok(state.tokens.summary(start, end))
+}
+
+/// 按 Provider 分组 Token 统计
+#[tauri::command]
+pub async fn get_token_stats_by_provider(
+    state: tauri::State<'_, TelemetryState>,
+    time_range: Option<TimeRangeParam>,
+) -> Result<HashMap<String, ProviderTokenStats>, String> {
+    let (start, end) = match time_range {
+        Some(r) => {
+            let range = r.to_time_range()?;
+            match range {
+                Some(tr) => (Some(tr.start), Some(tr.end)),
+                None => (None, None),
+            }
+        }
+        None => (None, None),
+    };
+    let stats = state.tokens.by_provider(start, end);
+
+    Ok(stats.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+}
+
+/// 按模型分组 Token 统计
+#[tauri::command]
+pub async fn get_token_stats_by_model(
+    state: tauri::State<'_, TelemetryState>,
+    time_range: Option<TimeRangeParam>,
+) -> Result<HashMap<String, ModelTokenStats>, String> {
+    let (start, end) = match time_range {
+        Some(r) => {
+            let range = r.to_time_range()?;
+            match range {
+                Some(tr) => (Some(tr.start), Some(tr.end)),
+                None => (None, None),
+            }
+        }
+        None => (None, None),
+    };
+    Ok(state.tokens.by_model(start, end))
+}
+
+/// 按天汇总 Token 统计
+#[tauri::command]
+pub async fn get_token_stats_by_day(
+    state: tauri::State<'_, TelemetryState>,
+    days: Option<i64>,
+) -> Result<Vec<crate::telemetry::PeriodTokenStats>, String> {
+    Ok(state.tokens.by_day(days.unwrap_or(7)))
+}
+
+// ========== 仪表盘数据命令 ==========
+
+/// 仪表盘数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardData {
+    /// 统计摘要
+    pub stats: StatsSummary,
+    /// Token 摘要
+    pub tokens: TokenStatsSummary,
+    /// 按 Provider 统计
+    pub by_provider: HashMap<String, ProviderStats>,
+    /// 最近请求
+    pub recent_logs: Vec<RequestLog>,
+}
+
+/// 获取仪表盘数据
+#[tauri::command]
+pub async fn get_dashboard_data(
+    state: tauri::State<'_, TelemetryState>,
+) -> Result<DashboardData, String> {
+    // 获取最近 24 小时的统计
+    let range = Some(TimeRange::last_hours(24));
+
+    let stats = state.stats.summary(range);
+    let tokens = state.tokens.summary(
+        Some(Utc::now() - chrono::Duration::hours(24)),
+        Some(Utc::now()),
+    );
+
+    let by_provider: HashMap<String, ProviderStats> = state
+        .stats
+        .by_provider(range)
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+
+    // 获取最近 20 条日志
+    let mut recent_logs = state.logger.get_all();
+    recent_logs.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    recent_logs.truncate(20);
+
+    Ok(DashboardData {
+        stats,
+        tokens,
+        by_provider,
+        recent_logs,
+    })
+}

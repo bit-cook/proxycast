@@ -7,6 +7,10 @@ import {
   Globe,
   Boxes,
   Database,
+  Route,
+  Shield,
+  FileCode,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +24,11 @@ type Page =
   | "mcp"
   | "prompts"
   | "skills"
-  | "provider-pool";
+  | "provider-pool"
+  | "routing"
+  | "resilience"
+  | "config"
+  | "monitoring";
 
 interface SidebarProps {
   currentPage: Page;
@@ -29,7 +37,11 @@ interface SidebarProps {
 
 const navItems = [
   { id: "dashboard" as Page, label: "仪表盘", icon: LayoutDashboard },
+  { id: "monitoring" as Page, label: "监控中心", icon: Activity },
   { id: "provider-pool" as Page, label: "凭证池", icon: Database },
+  { id: "routing" as Page, label: "智能路由", icon: Route },
+  { id: "resilience" as Page, label: "容错配置", icon: Shield },
+  { id: "config" as Page, label: "配置管理", icon: FileCode },
   { id: "clients" as Page, label: "配置切换", icon: Monitor },
   { id: "api-server" as Page, label: "API Server", icon: Globe },
   { id: "mcp" as Page, label: "MCP", icon: Plug },

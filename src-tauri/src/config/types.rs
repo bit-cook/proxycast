@@ -1,0 +1,433 @@
+//! 配置类型定义
+//!
+//! 定义 ProxyCast 的配置结构，支持 YAML 和 JSON 序列化/反序列化
+//! 保持与旧版 JSON 配置的向后兼容性
+
+use crate::injection::{InjectionMode, InjectionRule};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// 主配置结构
+///
+/// 支持两种格式：
+/// - 旧版 JSON 格式：`default_provider` 在顶层
+/// - 新版 YAML 格式：`default_provider` 在 `routing` 中
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Config {
+    /// 服务器配置
+    #[serde(default)]
+    pub server: ServerConfig,
+    /// Provider 配置
+    #[serde(default)]
+    pub providers: ProvidersConfig,
+    /// 默认 Provider（向后兼容旧版 JSON 配置）
+    #[serde(default = "default_provider")]
+    pub default_provider: String,
+    /// 路由配置（新版 YAML 配置）
+    #[serde(default)]
+    pub routing: RoutingConfig,
+    /// 重试配置
+    #[serde(default)]
+    pub retry: RetrySettings,
+    /// 日志配置
+    #[serde(default)]
+    pub logging: LoggingConfig,
+    /// 参数注入配置
+    #[serde(default)]
+    pub injection: InjectionSettings,
+}
+
+/// 服务器配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ServerConfig {
+    /// 监听地址
+    #[serde(default = "default_host")]
+    pub host: String,
+    /// 监听端口
+    #[serde(default = "default_port")]
+    pub port: u16,
+    /// API 密钥
+    #[serde(default = "default_api_key")]
+    pub api_key: String,
+}
+
+fn default_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_port() -> u16 {
+    8999
+}
+
+fn default_api_key() -> String {
+    "proxy_cast".to_string()
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            host: default_host(),
+            port: default_port(),
+            api_key: default_api_key(),
+        }
+    }
+}
+
+/// Provider 配置集合
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProvidersConfig {
+    /// Kiro Provider 配置
+    #[serde(default)]
+    pub kiro: ProviderConfig,
+    /// Gemini Provider 配置
+    #[serde(default)]
+    pub gemini: ProviderConfig,
+    /// Qwen Provider 配置
+    #[serde(default)]
+    pub qwen: ProviderConfig,
+    /// OpenAI 自定义 Provider 配置
+    #[serde(default)]
+    pub openai: CustomProviderConfig,
+    /// Claude 自定义 Provider 配置
+    #[serde(default)]
+    pub claude: CustomProviderConfig,
+}
+
+impl Default for ProvidersConfig {
+    fn default() -> Self {
+        Self {
+            kiro: ProviderConfig {
+                enabled: true,
+                credentials_path: Some("~/.aws/sso/cache/kiro-auth-token.json".to_string()),
+                region: Some("us-east-1".to_string()),
+                project_id: None,
+            },
+            gemini: ProviderConfig {
+                enabled: false,
+                credentials_path: Some("~/.gemini/oauth_creds.json".to_string()),
+                region: None,
+                project_id: None,
+            },
+            qwen: ProviderConfig {
+                enabled: false,
+                credentials_path: Some("~/.qwen/oauth_creds.json".to_string()),
+                region: None,
+                project_id: None,
+            },
+            openai: CustomProviderConfig {
+                enabled: false,
+                api_key: None,
+                base_url: Some("https://api.openai.com/v1".to_string()),
+            },
+            claude: CustomProviderConfig {
+                enabled: false,
+                api_key: None,
+                base_url: Some("https://api.anthropic.com".to_string()),
+            },
+        }
+    }
+}
+
+/// OAuth Provider 配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ProviderConfig {
+    /// 是否启用
+    #[serde(default)]
+    pub enabled: bool,
+    /// 凭证文件路径
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credentials_path: Option<String>,
+    /// 区域
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    /// 项目 ID
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+}
+
+/// 自定义 Provider 配置（API Key 方式）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct CustomProviderConfig {
+    /// 是否启用
+    #[serde(default)]
+    pub enabled: bool,
+    /// API 密钥
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    /// 基础 URL
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+}
+
+/// 路由配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RoutingConfig {
+    /// 默认 Provider
+    #[serde(default = "default_provider")]
+    pub default_provider: String,
+    /// 路由规则
+    #[serde(default)]
+    pub rules: Vec<RoutingRuleConfig>,
+    /// 模型别名映射
+    #[serde(default)]
+    pub model_aliases: HashMap<String, String>,
+    /// 排除列表（按 Provider）
+    #[serde(default)]
+    pub exclusions: HashMap<String, Vec<String>>,
+}
+
+fn default_provider() -> String {
+    "kiro".to_string()
+}
+
+impl Default for RoutingConfig {
+    fn default() -> Self {
+        Self {
+            default_provider: default_provider(),
+            rules: Vec::new(),
+            model_aliases: HashMap::new(),
+            exclusions: HashMap::new(),
+        }
+    }
+}
+
+/// 路由规则配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RoutingRuleConfig {
+    /// 模型模式（支持通配符）
+    pub pattern: String,
+    /// 目标 Provider
+    pub provider: String,
+    /// 优先级（数字越小优先级越高）
+    #[serde(default = "default_priority")]
+    pub priority: i32,
+}
+
+fn default_priority() -> i32 {
+    100
+}
+
+/// 重试配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RetrySettings {
+    /// 最大重试次数
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    /// 基础延迟（毫秒）
+    #[serde(default = "default_base_delay_ms")]
+    pub base_delay_ms: u64,
+    /// 最大延迟（毫秒）
+    #[serde(default = "default_max_delay_ms")]
+    pub max_delay_ms: u64,
+    /// 是否自动切换 Provider
+    #[serde(default = "default_auto_switch")]
+    pub auto_switch_provider: bool,
+}
+
+fn default_max_retries() -> u32 {
+    3
+}
+
+fn default_base_delay_ms() -> u64 {
+    1000
+}
+
+fn default_max_delay_ms() -> u64 {
+    30000
+}
+
+fn default_auto_switch() -> bool {
+    true
+}
+
+impl Default for RetrySettings {
+    fn default() -> Self {
+        Self {
+            max_retries: default_max_retries(),
+            base_delay_ms: default_base_delay_ms(),
+            max_delay_ms: default_max_delay_ms(),
+            auto_switch_provider: default_auto_switch(),
+        }
+    }
+}
+
+/// 日志配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LoggingConfig {
+    /// 是否启用日志
+    #[serde(default = "default_logging_enabled")]
+    pub enabled: bool,
+    /// 日志级别
+    #[serde(default = "default_log_level")]
+    pub level: String,
+    /// 日志保留天数
+    #[serde(default = "default_retention_days")]
+    pub retention_days: u32,
+    /// 是否包含请求体
+    #[serde(default)]
+    pub include_request_body: bool,
+}
+
+fn default_logging_enabled() -> bool {
+    true
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+fn default_retention_days() -> u32 {
+    7
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_logging_enabled(),
+            level: default_log_level(),
+            retention_days: default_retention_days(),
+            include_request_body: false,
+        }
+    }
+}
+
+/// 参数注入配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InjectionSettings {
+    /// 是否启用参数注入
+    #[serde(default = "default_injection_enabled")]
+    pub enabled: bool,
+    /// 注入规则列表
+    #[serde(default)]
+    pub rules: Vec<InjectionRuleConfig>,
+}
+
+fn default_injection_enabled() -> bool {
+    false
+}
+
+impl Default for InjectionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_injection_enabled(),
+            rules: Vec::new(),
+        }
+    }
+}
+
+/// 注入规则配置（用于 YAML/JSON 序列化）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InjectionRuleConfig {
+    /// 规则 ID
+    pub id: String,
+    /// 模型匹配模式（支持通配符）
+    pub pattern: String,
+    /// 要注入的参数
+    pub parameters: serde_json::Value,
+    /// 注入模式
+    #[serde(default)]
+    pub mode: InjectionMode,
+    /// 优先级（数字越小优先级越高）
+    #[serde(default = "default_priority")]
+    pub priority: i32,
+    /// 是否启用
+    #[serde(default = "default_rule_enabled")]
+    pub enabled: bool,
+}
+
+fn default_rule_enabled() -> bool {
+    true
+}
+
+impl From<InjectionRuleConfig> for InjectionRule {
+    fn from(config: InjectionRuleConfig) -> Self {
+        let mut rule = InjectionRule::new(&config.id, &config.pattern, config.parameters);
+        rule.mode = config.mode;
+        rule.priority = config.priority;
+        rule.enabled = config.enabled;
+        rule
+    }
+}
+
+impl From<&InjectionRule> for InjectionRuleConfig {
+    fn from(rule: &InjectionRule) -> Self {
+        Self {
+            id: rule.id.clone(),
+            pattern: rule.pattern.clone(),
+            parameters: rule.parameters.clone(),
+            mode: rule.mode,
+            priority: rule.priority,
+            enabled: rule.enabled,
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            server: ServerConfig::default(),
+            providers: ProvidersConfig::default(),
+            default_provider: default_provider(),
+            routing: RoutingConfig::default(),
+            retry: RetrySettings::default(),
+            logging: LoggingConfig::default(),
+            injection: InjectionSettings::default(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+        assert_eq!(config.server.host, "127.0.0.1");
+        assert_eq!(config.server.port, 8999);
+        assert_eq!(config.server.api_key, "proxy_cast");
+        assert!(config.providers.kiro.enabled);
+        assert!(!config.providers.gemini.enabled);
+        assert_eq!(config.default_provider, "kiro");
+        assert_eq!(config.routing.default_provider, "kiro");
+        assert_eq!(config.retry.max_retries, 3);
+        assert!(config.logging.enabled);
+        assert!(!config.injection.enabled);
+        assert!(config.injection.rules.is_empty());
+    }
+
+    #[test]
+    fn test_server_config_default() {
+        let config = ServerConfig::default();
+        assert_eq!(config.host, "127.0.0.1");
+        assert_eq!(config.port, 8999);
+        assert_eq!(config.api_key, "proxy_cast");
+    }
+
+    #[test]
+    fn test_retry_settings_default() {
+        let config = RetrySettings::default();
+        assert_eq!(config.max_retries, 3);
+        assert_eq!(config.base_delay_ms, 1000);
+        assert_eq!(config.max_delay_ms, 30000);
+        assert!(config.auto_switch_provider);
+    }
+
+    #[test]
+    fn test_logging_config_default() {
+        let config = LoggingConfig::default();
+        assert!(config.enabled);
+        assert_eq!(config.level, "info");
+        assert_eq!(config.retention_days, 7);
+        assert!(!config.include_request_body);
+    }
+
+    #[test]
+    fn test_routing_config_default() {
+        let config = RoutingConfig::default();
+        assert_eq!(config.default_provider, "kiro");
+        assert!(config.rules.is_empty());
+        assert!(config.model_aliases.is_empty());
+        assert!(config.exclusions.is_empty());
+    }
+}

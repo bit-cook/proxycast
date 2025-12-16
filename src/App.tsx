@@ -10,6 +10,10 @@ import { PromptsPage } from "./components/prompts";
 import { ApiServerPage } from "./components/api-server/ApiServerPage";
 import { SkillsPage } from "./components/skills";
 import { ProviderPoolPage } from "./components/provider-pool";
+import { RoutingPage } from "./components/routing";
+import { ResiliencePage } from "./components/resilience";
+import { ConfigPage } from "./components/config";
+import { MonitoringPage } from "./components/monitoring";
 
 type Page =
   | "dashboard"
@@ -21,7 +25,11 @@ type Page =
   | "mcp"
   | "prompts"
   | "skills"
-  | "provider-pool";
+  | "provider-pool"
+  | "routing"
+  | "resilience"
+  | "config"
+  | "monitoring";
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
@@ -48,6 +56,14 @@ function App() {
         return <PromptsPage />;
       case "skills":
         return <SkillsPage />;
+      case "routing":
+        return <RoutingPage />;
+      case "resilience":
+        return <ResiliencePage />;
+      case "config":
+        return <ConfigPage />;
+      case "monitoring":
+        return <MonitoringPage />;
       default:
         return <Dashboard />;
     }

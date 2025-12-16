@@ -1,19 +1,26 @@
 mod commands;
 mod config;
 mod converter;
+pub mod credential;
 mod database;
+pub mod injection;
 mod logger;
 mod models;
 mod providers;
+pub mod resilience;
 mod router;
 mod server;
 mod services;
+pub mod telemetry;
+pub mod websocket;
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use commands::provider_pool_cmd::ProviderPoolServiceState;
+use commands::resilience_cmd::ResilienceConfigState;
+use commands::router_cmd::RouterConfigState;
 use commands::skill_cmd::SkillServiceState;
 use services::provider_pool_service::ProviderPoolService;
 use services::skill_service::SkillService;
@@ -22,7 +29,7 @@ use services::token_cache_service::TokenCacheService;
 /// TokenCacheService 状态封装
 pub struct TokenCacheServiceState(pub Arc<TokenCacheService>);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProviderType {
     Kiro,
@@ -1306,6 +1313,15 @@ pub fn run() {
     let token_cache_service = TokenCacheService::new();
     let token_cache_service_state = TokenCacheServiceState(Arc::new(token_cache_service));
 
+    // Initialize RouterConfigState
+    let router_config_state = RouterConfigState::default();
+
+    // Initialize ResilienceConfigState
+    let resilience_config_state = ResilienceConfigState::default();
+
+    // Initialize TelemetryState
+    let telemetry_state = commands::telemetry_cmd::TelemetryState::default();
+
     // Initialize default skill repos
     {
         let conn = db.lock().expect("Failed to lock database");
@@ -1333,6 +1349,9 @@ pub fn run() {
         .manage(skill_service_state)
         .manage(provider_pool_service_state)
         .manage(token_cache_service_state)
+        .manage(router_config_state)
+        .manage(resilience_config_state)
+        .manage(telemetry_state)
         .setup(move |_app| {
             // 自动启动服务器
             let state = state_clone.clone();
@@ -1445,6 +1464,11 @@ pub fn run() {
             commands::config_cmd::get_tool_versions,
             commands::config_cmd::get_auto_launch_status,
             commands::config_cmd::set_auto_launch,
+            // Config import/export commands
+            commands::config_cmd::export_config,
+            commands::config_cmd::validate_config_yaml,
+            commands::config_cmd::import_config,
+            commands::config_cmd::get_config_paths,
             // MCP commands
             commands::mcp_cmd::get_mcp_servers,
             commands::mcp_cmd::add_mcp_server,
@@ -1498,6 +1522,44 @@ pub fn run() {
             // Route commands
             commands::route_cmd::get_available_routes,
             commands::route_cmd::get_route_curl_examples,
+            // Router config commands
+            commands::router_cmd::get_model_aliases,
+            commands::router_cmd::add_model_alias,
+            commands::router_cmd::remove_model_alias,
+            commands::router_cmd::get_routing_rules,
+            commands::router_cmd::add_routing_rule,
+            commands::router_cmd::remove_routing_rule,
+            commands::router_cmd::update_routing_rule,
+            commands::router_cmd::get_exclusions,
+            commands::router_cmd::add_exclusion,
+            commands::router_cmd::remove_exclusion,
+            commands::router_cmd::set_router_default_provider,
+            // Resilience config commands
+            commands::resilience_cmd::get_retry_config,
+            commands::resilience_cmd::update_retry_config,
+            commands::resilience_cmd::get_failover_config,
+            commands::resilience_cmd::update_failover_config,
+            commands::resilience_cmd::get_switch_log,
+            commands::resilience_cmd::clear_switch_log,
+            // Telemetry commands
+            commands::telemetry_cmd::get_request_logs,
+            commands::telemetry_cmd::get_request_log_detail,
+            commands::telemetry_cmd::clear_request_logs,
+            commands::telemetry_cmd::get_stats_summary,
+            commands::telemetry_cmd::get_stats_by_provider,
+            commands::telemetry_cmd::get_stats_by_model,
+            commands::telemetry_cmd::get_token_summary,
+            commands::telemetry_cmd::get_token_stats_by_provider,
+            commands::telemetry_cmd::get_token_stats_by_model,
+            commands::telemetry_cmd::get_token_stats_by_day,
+            commands::telemetry_cmd::get_dashboard_data,
+            // Injection commands
+            commands::injection_cmd::get_injection_config,
+            commands::injection_cmd::set_injection_enabled,
+            commands::injection_cmd::get_injection_rules,
+            commands::injection_cmd::add_injection_rule,
+            commands::injection_cmd::remove_injection_rule,
+            commands::injection_cmd::update_injection_rule,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
