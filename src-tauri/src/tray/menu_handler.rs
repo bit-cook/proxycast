@@ -1,0 +1,348 @@
+//! 托盘菜单事件处理模块
+//!
+//! 处理托盘菜单项的点击事件
+//!
+//! # Requirements
+//! - 3.1, 3.2, 3.3, 3.4: 服务器控制事件处理
+//! - 4.1, 4.2, 4.3, 4.4: 快捷工具事件处理
+//! - 5.1, 5.2: 设置切换事件处理
+
+use super::menu::menu_ids;
+use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri_plugin_autostart::ManagerExt;
+use tracing::{debug, error, info, warn};
+
+/// 菜单事件类型
+///
+/// 用于前端监听的事件名称
+pub mod menu_events {
+    /// 启动服务器事件
+    pub const START_SERVER: &str = "tray-start-server";
+    /// 停止服务器事件
+    pub const STOP_SERVER: &str = "tray-stop-server";
+    /// 刷新所有 Token 事件
+    pub const REFRESH_TOKENS: &str = "tray-refresh-tokens";
+    /// 健康检查事件
+    pub const HEALTH_CHECK: &str = "tray-health-check";
+    /// 自启动状态变更事件
+    pub const AUTO_START_CHANGED: &str = "tray-auto-start-changed";
+}
+
+/// 处理菜单事件
+///
+/// 根据菜单项 ID 执行相应的操作
+///
+/// # Requirements
+/// - 3.1, 3.2, 3.3, 3.4: 服务器控制
+/// - 4.1, 4.2, 4.3, 4.4: 快捷工具
+/// - 5.1, 5.2: 设置切换
+pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, menu_id: &str) {
+    debug!("处理托盘菜单事件: {}", menu_id);
+
+    match menu_id {
+        // === 服务器控制 ===
+        menu_ids::START_SERVER => handle_start_server(app),
+        menu_ids::STOP_SERVER => handle_stop_server(app),
+        menu_ids::REFRESH_TOKENS => handle_refresh_tokens(app),
+        menu_ids::HEALTH_CHECK => handle_health_check(app),
+
+        // === 快捷工具 ===
+        menu_ids::OPEN_WINDOW => handle_open_window(app),
+        menu_ids::COPY_API_ADDRESS => handle_copy_api_address(app),
+        menu_ids::OPEN_LOG_DIR => handle_open_log_dir(app),
+        menu_ids::QUIT => handle_quit(app),
+
+        // === 设置 ===
+        menu_ids::AUTO_START => handle_auto_start_toggle(app),
+
+        // 忽略信息类菜单项和分隔符
+        menu_ids::STATUS_INFO | menu_ids::CREDENTIAL_INFO | menu_ids::REQUEST_INFO => {
+            debug!("忽略信息类菜单项: {}", menu_id);
+        }
+
+        _ => {
+            warn!("未知的菜单项 ID: {}", menu_id);
+        }
+    }
+}
+
+/// 处理启动服务器事件
+///
+/// # Requirements
+/// - 3.1: WHEN API 服务器已停止且用户点击托盘菜单中的"启动服务器"
+///        THEN 系统托盘 SHALL 启动 API 服务器并更新托盘图标以反映运行状态
+fn handle_start_server<R: Runtime>(app: &AppHandle<R>) {
+    info!("[托盘] 用户请求启动服务器");
+
+    // 发送事件到前端，由前端调用 start_server 命令
+    if let Err(e) = app.emit(menu_events::START_SERVER, ()) {
+        error!("[托盘] 发送启动服务器事件失败: {}", e);
+    }
+}
+
+/// 处理停止服务器事件
+///
+/// # Requirements
+/// - 3.2: WHEN API 服务器正在运行且用户点击托盘菜单中的"停止服务器"
+///        THEN 系统托盘 SHALL 停止 API 服务器并更新托盘图标以反映停止状态
+fn handle_stop_server<R: Runtime>(app: &AppHandle<R>) {
+    info!("[托盘] 用户请求停止服务器");
+
+    // 发送事件到前端，由前端调用 stop_server 命令
+    if let Err(e) = app.emit(menu_events::STOP_SERVER, ()) {
+        error!("[托盘] 发送停止服务器事件失败: {}", e);
+    }
+}
+
+/// 处理刷新所有 Token 事件
+///
+/// # Requirements
+/// - 3.3: WHEN 用户点击托盘菜单中的"刷新所有 Token"
+///        THEN 系统托盘 SHALL 触发凭证池中所有凭证的 Token 刷新
+fn handle_refresh_tokens<R: Runtime>(app: &AppHandle<R>) {
+    info!("[托盘] 用户请求刷新所有 Token");
+
+    // 发送事件到前端，由前端调用凭证池服务刷新 Token
+    if let Err(e) = app.emit(menu_events::REFRESH_TOKENS, ()) {
+        error!("[托盘] 发送刷新 Token 事件失败: {}", e);
+    }
+}
+
+/// 处理健康检查事件
+///
+/// # Requirements
+/// - 3.4: WHEN 用户点击托盘菜单中的"健康检查"
+///        THEN 系统托盘 SHALL 对所有凭证执行健康检查并更新健康状态
+fn handle_health_check<R: Runtime>(app: &AppHandle<R>) {
+    info!("[托盘] 用户请求执行健康检查");
+
+    // 发送事件到前端，由前端调用凭证池服务执行健康检查
+    if let Err(e) = app.emit(menu_events::HEALTH_CHECK, ()) {
+        error!("[托盘] 发送健康检查事件失败: {}", e);
+    }
+}
+
+/// 处理打开主窗口事件
+///
+/// # Requirements
+/// - 4.1: WHEN 用户点击托盘菜单中的"打开主窗口"
+///        THEN 系统托盘 SHALL 显示并聚焦主应用程序窗口
+fn handle_open_window<R: Runtime>(app: &AppHandle<R>) {
+    info!("[托盘] 用户请求打开主窗口");
+
+    if let Some(window) = app.get_webview_window("main") {
+        // 取消最小化
+        if let Err(e) = window.unminimize() {
+            error!("[托盘] 取消最小化窗口失败: {}", e);
+        }
+
+        // 显示窗口
+        if let Err(e) = window.show() {
+            error!("[托盘] 显示主窗口失败: {}", e);
+        }
+
+        // 聚焦窗口
+        if let Err(e) = window.set_focus() {
+            error!("[托盘] 聚焦主窗口失败: {}", e);
+        }
+
+        info!("[托盘] 主窗口已显示并聚焦");
+    } else {
+        warn!("[托盘] 未找到主窗口");
+    }
+}
+
+/// 处理复制 API 地址事件
+///
+/// # Requirements
+/// - 4.2: WHEN 用户点击托盘菜单中的"复制 API 地址"
+///        THEN 系统托盘 SHALL 将当前 API 服务器地址复制到系统剪贴板
+fn handle_copy_api_address<R: Runtime>(app: &AppHandle<R>) {
+    info!("[托盘] 用户请求复制 API 地址");
+
+    // 获取托盘状态以获取服务器地址
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Some(tray_state) = app_clone.try_state::<crate::TrayManagerState<R>>() {
+            let tray_guard = tray_state.0.read().await;
+            if let Some(tray_manager) = tray_guard.as_ref() {
+                let state = tray_manager.get_state().await;
+
+                if state.server_running && !state.server_address.is_empty() {
+                    let api_address = format!("http://{}", state.server_address);
+
+                    // 使用剪贴板 API 复制地址
+                    #[cfg(target_os = "macos")]
+                    {
+                        let _ = std::process::Command::new("pbcopy")
+                            .stdin(std::process::Stdio::piped())
+                            .spawn()
+                            .and_then(|mut child| {
+                                use std::io::Write;
+                                if let Some(stdin) = child.stdin.as_mut() {
+                                    stdin.write_all(api_address.as_bytes())?;
+                                }
+                                child.wait()
+                            });
+                        info!("[托盘] API 地址已复制到剪贴板: {}", api_address);
+                    }
+
+                    #[cfg(target_os = "windows")]
+                    {
+                        let _ = std::process::Command::new("cmd")
+                            .args(["/C", &format!("echo {} | clip", api_address)])
+                            .spawn();
+                        info!("[托盘] API 地址已复制到剪贴板: {}", api_address);
+                    }
+
+                    #[cfg(target_os = "linux")]
+                    {
+                        let _ = std::process::Command::new("xclip")
+                            .args(["-selection", "clipboard"])
+                            .stdin(std::process::Stdio::piped())
+                            .spawn()
+                            .and_then(|mut child| {
+                                use std::io::Write;
+                                if let Some(stdin) = child.stdin.as_mut() {
+                                    stdin.write_all(api_address.as_bytes())?;
+                                }
+                                child.wait()
+                            });
+                        info!("[托盘] API 地址已复制到剪贴板: {}", api_address);
+                    }
+                } else {
+                    warn!("[托盘] 服务器未运行，无法复制 API 地址");
+                }
+            }
+        }
+    });
+}
+
+/// 处理打开日志目录事件
+///
+/// # Requirements
+/// - 4.3: WHEN 用户点击托盘菜单中的"打开日志目录"
+///        THEN 系统托盘 SHALL 在系统文件管理器中打开应用程序日志目录
+fn handle_open_log_dir<R: Runtime>(app: &AppHandle<R>) {
+    info!("[托盘] 用户请求打开日志目录");
+
+    // 获取日志目录路径
+    let log_dir = if let Ok(data_dir) = app.path().app_data_dir() {
+        data_dir.join("logs")
+    } else if let Some(home) = dirs::home_dir() {
+        home.join(".proxycast").join("logs")
+    } else {
+        error!("[托盘] 无法确定日志目录路径");
+        return;
+    };
+
+    // 确保目录存在
+    if !log_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&log_dir) {
+            error!("[托盘] 创建日志目录失败: {}", e);
+            return;
+        }
+    }
+
+    // 使用 open crate 打开目录
+    if let Err(e) = open::that(&log_dir) {
+        error!("[托盘] 打开日志目录失败: {}", e);
+    } else {
+        info!("[托盘] 已打开日志目录: {}", log_dir.display());
+    }
+}
+
+/// 处理退出事件
+///
+/// # Requirements
+/// - 4.4: WHEN 用户点击托盘菜单中的"退出"
+///        THEN 系统托盘 SHALL 优雅地停止 API 服务器并终止应用程序
+fn handle_quit<R: Runtime>(app: &AppHandle<R>) {
+    info!("[托盘] 用户请求退出应用");
+
+    // 先发送停止服务器事件
+    if let Err(e) = app.emit(menu_events::STOP_SERVER, ()) {
+        warn!("[托盘] 发送停止服务器事件失败: {}", e);
+    }
+
+    // 退出应用
+    app.exit(0);
+}
+
+/// 处理自启动切换事件
+///
+/// # Requirements
+/// - 5.1: WHEN 用户在托盘菜单中切换"开机自启"
+///        THEN 系统托盘 SHALL 启用或禁用应用程序的登录时启动设置
+/// - 5.2: WHEN 托盘菜单显示时
+///        THEN 系统托盘 SHALL 使用勾选标记显示"开机自启"切换的当前状态
+fn handle_auto_start_toggle<R: Runtime>(app: &AppHandle<R>) {
+    info!("[托盘] 用户请求切换开机自启状态");
+
+    let autostart_manager = app.autolaunch();
+
+    // 获取当前状态并切换
+    match autostart_manager.is_enabled() {
+        Ok(is_enabled) => {
+            let new_state = !is_enabled;
+            let result = if new_state {
+                autostart_manager.enable()
+            } else {
+                autostart_manager.disable()
+            };
+
+            match result {
+                Ok(_) => {
+                    info!(
+                        "[托盘] 开机自启已{}",
+                        if new_state { "启用" } else { "禁用" }
+                    );
+
+                    // 发送状态变更事件到前端
+                    if let Err(e) = app.emit(menu_events::AUTO_START_CHANGED, new_state) {
+                        error!("[托盘] 发送自启动状态变更事件失败: {}", e);
+                    }
+                }
+                Err(e) => {
+                    error!("[托盘] 切换开机自启失败: {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            error!("[托盘] 获取开机自启状态失败: {}", e);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_menu_events_constants() {
+        // 验证事件常量不为空
+        assert!(!menu_events::START_SERVER.is_empty());
+        assert!(!menu_events::STOP_SERVER.is_empty());
+        assert!(!menu_events::REFRESH_TOKENS.is_empty());
+        assert!(!menu_events::HEALTH_CHECK.is_empty());
+        assert!(!menu_events::AUTO_START_CHANGED.is_empty());
+    }
+
+    #[test]
+    fn test_menu_events_unique() {
+        // 验证事件常量唯一
+        let events = vec![
+            menu_events::START_SERVER,
+            menu_events::STOP_SERVER,
+            menu_events::REFRESH_TOKENS,
+            menu_events::HEALTH_CHECK,
+            menu_events::AUTO_START_CHANGED,
+        ];
+
+        let mut unique_events = events.clone();
+        unique_events.sort();
+        unique_events.dedup();
+
+        assert_eq!(events.len(), unique_events.len(), "事件常量应该唯一");
+    }
+}

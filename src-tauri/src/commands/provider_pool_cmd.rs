@@ -87,8 +87,9 @@ fn copy_and_rename_credential_file(
         let mut creds: serde_json::Value =
             serde_json::from_str(&content).map_err(|e| format!("解析凭证文件失败: {}", e))?;
 
-        // 检测 refreshToken 是否被截断
+        // 检测 refreshToken 是否被截断（仅记录警告，不阻止添加）
         // 正常的 refreshToken 长度应该在 500+ 字符，如果小于 100 字符则可能被截断
+        // 注意：即使 refreshToken 被截断，也允许添加凭证，在刷新时才会提示错误
         if let Some(refresh_token) = creds.get("refreshToken").and_then(|v| v.as_str()) {
             let token_len = refresh_token.len();
 
@@ -97,19 +98,16 @@ fn copy_and_rename_credential_file(
                 token_len < 100 || refresh_token.ends_with("...") || refresh_token.contains("...");
 
             if is_truncated {
-                tracing::error!(
-                    "[KIRO] 检测到 refreshToken 被截断！长度: {}, 内容: {}",
+                tracing::warn!(
+                    "[KIRO] 检测到 refreshToken 可能被截断！长度: {}, 内容: {}... (仍允许添加，刷新时会提示)",
                     token_len,
                     &refresh_token[..std::cmp::min(50, token_len)]
                 );
-                return Err(format!(
-                    "凭证文件中的 refreshToken 已被截断（长度: {} 字符）。\n\n⚠️ 这通常是 Kiro IDE 为了防止凭证被第三方工具使用而故意截断的。\n\n💡 解决方案：\n1. 使用 Kir-Manager 工具获取完整的凭证\n2. 或者使用其他方式获取未截断的凭证文件\n3. 正常的 refreshToken 长度应该在 500+ 字符\n\n当前 refreshToken: {}...",
-                    token_len,
-                    &refresh_token[..std::cmp::min(30, token_len)]
-                ));
+                // 不再阻止添加，只记录警告
+                // 在刷新 Token 时会检测并提示用户
+            } else {
+                tracing::info!("[KIRO] refreshToken 长度检查通过: {} 字符", token_len);
             }
-
-            tracing::info!("[KIRO] refreshToken 长度检查通过: {} 字符", token_len);
         } else {
             tracing::warn!("[KIRO] 凭证文件中没有 refreshToken 字段");
         }

@@ -16,10 +16,12 @@ pub mod router;
 mod server;
 mod services;
 pub mod telemetry;
+pub mod tray;
 pub mod websocket;
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tauri::{Manager, Runtime};
 use tokio::sync::RwLock;
 
 use commands::provider_pool_cmd::{CredentialSyncServiceState, ProviderPoolServiceState};
@@ -29,9 +31,17 @@ use commands::skill_cmd::SkillServiceState;
 use services::provider_pool_service::ProviderPoolService;
 use services::skill_service::SkillService;
 use services::token_cache_service::TokenCacheService;
+use tray::{
+    calculate_icon_status, CredentialHealth, TrayIconStatus, TrayManager, TrayStateSnapshot,
+};
 
 /// TokenCacheService 状态封装
 pub struct TokenCacheServiceState(pub Arc<TokenCacheService>);
+
+/// TrayManager 状态封装
+///
+/// 用于在 Tauri 状态管理中存储托盘管理器
+pub struct TrayManagerState<R: Runtime>(pub Arc<tokio::sync::RwLock<Option<TrayManager<R>>>>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -1417,7 +1427,25 @@ pub fn run() {
         .manage(router_config_state)
         .manage(resilience_config_state)
         .manage(telemetry_state)
-        .setup(move |_app| {
+        .setup(move |app| {
+            // 初始化托盘管理器
+            // Requirements 1.4: 应用启动时显示停止状态图标
+            match TrayManager::new(app.handle()) {
+                Ok(tray_manager) => {
+                    tracing::info!("[启动] 托盘管理器初始化成功");
+                    // 将托盘管理器存储到应用状态中
+                    let tray_state: TrayManagerState<tauri::Wry> =
+                        TrayManagerState(Arc::new(tokio::sync::RwLock::new(Some(tray_manager))));
+                    app.manage(tray_state);
+                }
+                Err(e) => {
+                    tracing::error!("[启动] 托盘管理器初始化失败: {}", e);
+                    // 即使托盘初始化失败，应用仍然可以运行
+                    let tray_state: TrayManagerState<tauri::Wry> =
+                        TrayManagerState(Arc::new(tokio::sync::RwLock::new(None)));
+                    app.manage(tray_state);
+                }
+            }
             // 自动启动服务器
             let state = state_clone.clone();
             let logs = logs_clone.clone();
@@ -1427,6 +1455,7 @@ pub fn run() {
             let shared_stats = shared_stats_clone.clone();
             let shared_tokens = shared_tokens_clone.clone();
             let shared_logger = shared_logger_clone.clone();
+            let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 // 先加载凭证
                 {
@@ -1440,6 +1469,8 @@ pub fn run() {
                     }
                 }
                 // 启动服务器（使用共享的遥测实例）
+                let server_started;
+                let server_address;
                 {
                     let mut s = state.write().await;
                     logs.write()
@@ -1463,11 +1494,46 @@ pub fn run() {
                             logs.write()
                                 .await
                                 .add("info", &format!("[启动] 服务器已启动: {host}:{port}"));
+                            server_started = true;
+                            server_address = format!("{}:{}", host, port);
                         }
                         Err(e) => {
                             logs.write()
                                 .await
                                 .add("error", &format!("[启动] 服务器启动失败: {e}"));
+                            server_started = false;
+                            server_address = String::new();
+                        }
+                    }
+                }
+
+                // 更新托盘状态
+                // Requirements 7.1: API 服务器状态变化时更新托盘图标
+                if let Some(tray_state) = app_handle.try_state::<TrayManagerState<tauri::Wry>>() {
+                    let tray_guard = tray_state.0.read().await;
+                    if let Some(tray_manager) = tray_guard.as_ref() {
+                        // 计算初始图标状态
+                        // 服务器刚启动时，假设凭证健康（后续会通过状态同步更新）
+                        let icon_status = if server_started {
+                            TrayIconStatus::Running
+                        } else {
+                            TrayIconStatus::Stopped
+                        };
+
+                        let snapshot = TrayStateSnapshot {
+                            icon_status,
+                            server_running: server_started,
+                            server_address,
+                            available_credentials: 0, // 初始值，后续通过状态同步更新
+                            total_credentials: 0,
+                            today_requests: 0,
+                            auto_start_enabled: false, // 后续通过状态同步更新
+                        };
+
+                        if let Err(e) = tray_manager.update_state(snapshot).await {
+                            tracing::error!("[启动] 更新托盘状态失败: {}", e);
+                        } else {
+                            tracing::info!("[启动] 托盘状态已更新");
                         }
                     }
                 }
@@ -1650,6 +1716,13 @@ pub fn run() {
             commands::injection_cmd::update_injection_rule,
             // Usage commands
             commands::usage_cmd::get_kiro_usage,
+            // Tray commands
+            commands::tray_cmd::sync_tray_state,
+            commands::tray_cmd::update_tray_server_status,
+            commands::tray_cmd::update_tray_credential_status,
+            commands::tray_cmd::get_tray_state,
+            commands::tray_cmd::refresh_tray_menu,
+            commands::tray_cmd::refresh_tray_with_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
