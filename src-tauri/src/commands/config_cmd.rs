@@ -38,7 +38,7 @@ pub fn get_config_status(app_type: String) -> Result<ConfigStatus, String> {
         AppType::Claude => config_dir.join("settings.json"),
         AppType::Codex => config_dir.join("auth.json"),
         AppType::Gemini => config_dir.join(".env"),
-        AppType::ProxyCast => config_dir.join("config.json"),
+        AppType::ProxyCast => config_dir.join("config.yaml"),
     };
 
     let has_env = match app {
@@ -50,11 +50,20 @@ pub fn get_config_status(app_type: String) -> Result<ConfigStatus, String> {
         }
         AppType::Codex => config_dir.join("auth.json").exists(),
         AppType::Gemini => config_dir.join(".env").exists(),
-        AppType::ProxyCast => config_dir.join("config.json").exists(),
+        AppType::ProxyCast => {
+            config_dir.join("config.yaml").exists() || config_dir.join("config.json").exists()
+        }
+    };
+
+    let exists = match app {
+        AppType::ProxyCast => {
+            config_dir.join("config.yaml").exists() || config_dir.join("config.json").exists()
+        }
+        _ => main_config.exists(),
     };
 
     Ok(ConfigStatus {
-        exists: main_config.exists(),
+        exists,
         path: config_dir.to_string_lossy().to_string(),
         has_env,
     })

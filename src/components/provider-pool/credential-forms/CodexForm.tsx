@@ -14,6 +14,8 @@ interface CodexFormProps {
   name: string;
   credsFilePath: string;
   setCredsFilePath: (path: string) => void;
+  apiBaseUrl: string;
+  setApiBaseUrl: (url: string) => void;
   onSelectFile: () => void;
   loading: boolean;
   setLoading: (loading: boolean) => void;
@@ -25,6 +27,8 @@ export function CodexForm({
   name,
   credsFilePath,
   setCredsFilePath,
+  apiBaseUrl,
+  setApiBaseUrl,
   onSelectFile,
   loading: _loading,
   setLoading,
@@ -87,7 +91,12 @@ export function CodexForm({
 
     try {
       const trimmedName = name.trim() || undefined;
-      await providerPoolApi.addCodexOAuth(credsFilePath, trimmedName);
+      const trimmedUrl = apiBaseUrl.trim() || undefined;
+      await providerPoolApi.addCodexOAuth(
+        credsFilePath,
+        trimmedUrl,
+        trimmedName,
+      );
       onSuccess();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -130,13 +139,33 @@ export function CodexForm({
             />
           </div>
         ) : (
-          <FileImportForm
-            credsFilePath={credsFilePath}
-            setCredsFilePath={setCredsFilePath}
-            onSelectFile={onSelectFile}
-            placeholder="选择 auth.json 或 oauth.json..."
-            hint="默认路径: ~/.codex/auth.json 或 Codex CLI 的凭证文件"
-          />
+          <div className="space-y-4">
+            <FileImportForm
+              credsFilePath={credsFilePath}
+              setCredsFilePath={setCredsFilePath}
+              onSelectFile={onSelectFile}
+              placeholder="选择 auth.json 或 oauth.json..."
+              hint="默认路径: ~/.codex/auth.json 或 Codex CLI 的凭证文件"
+            />
+
+            {/* API Base URL 输入框 */}
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                API Base URL
+              </label>
+              <input
+                type="text"
+                value={apiBaseUrl}
+                onChange={(e) => setApiBaseUrl(e.target.value)}
+                placeholder="https://yunyi.cfd/codex"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                云驿代理默认:
+                https://yunyi.cfd/codex（留空则使用凭证文件中的配置）
+              </p>
+            </div>
+          </div>
         )}
       </>
     ),

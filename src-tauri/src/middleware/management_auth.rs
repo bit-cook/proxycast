@@ -20,9 +20,38 @@ use futures::future::BoxFuture;
 use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
+    sync::Mutex,
     task::{Context, Poll},
+    time::{Duration, Instant},
 };
+use subtle::ConstantTimeEq;
 use tower::{Layer, Service};
+
+const MAX_AUTH_FAILURES: u32 = 5;
+const FAILURE_WINDOW_SECS: u64 = 60;
+const BLOCK_SECS: u64 = 300;
+// 安全修复：限制 failure_map 最大条目数，防止内存 DoS
+const MAX_FAILURE_ENTRIES: usize = 10000;
+const ENTRY_EXPIRE_SECS: u64 = 3600;
+
+struct FailureState {
+    count: u32,
+    window_start: Instant,
+    blocked_until: Option<Instant>,
+    last_access: Instant,
+}
+
+fn failure_map() -> &'static Mutex<std::collections::HashMap<String, FailureState>> {
+    static FAILURES: std::sync::OnceLock<Mutex<std::collections::HashMap<String, FailureState>>> =
+        std::sync::OnceLock::new();
+    FAILURES.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+#[cfg(test)]
+pub(crate) fn clear_auth_failure_state() {
+    let mut map = failure_map().lock().unwrap();
+    map.clear();
+}
 
 /// Management API 认证层
 ///
@@ -98,6 +127,76 @@ impl<S> ManagementAuthService<S> {
             .get::<axum::extract::ConnectInfo<SocketAddr>>()
             .map(|ci| ci.0)
     }
+
+    fn get_client_id(req: &Request<Body>) -> String {
+        // 安全修复：只使用真实的连接地址，不信任 X-Forwarded-For
+        // X-Forwarded-For 可被伪造，用于绕过限速或导致 failure_map 无界增长
+        if let Some(addr) = Self::get_client_addr(req) {
+            return addr.ip().to_string();
+        }
+        "unknown".to_string()
+    }
+
+    fn check_rate_limit(client_id: &str) -> bool {
+        let now = Instant::now();
+        let mut map = failure_map().lock().unwrap();
+        if let Some(state) = map.get_mut(client_id) {
+            state.last_access = now;
+            if let Some(blocked_until) = state.blocked_until {
+                if blocked_until > now {
+                    return false;
+                }
+                state.blocked_until = None;
+                state.count = 0;
+                state.window_start = now;
+            }
+            if now.duration_since(state.window_start).as_secs() > FAILURE_WINDOW_SECS {
+                state.count = 0;
+                state.window_start = now;
+            }
+        }
+        true
+    }
+
+    fn record_failure(client_id: &str) {
+        let now = Instant::now();
+        let mut map = failure_map().lock().unwrap();
+
+        // 安全修复：容量保护，超过上限时清理长时间未访问的条目
+        if map.len() > MAX_FAILURE_ENTRIES {
+            map.retain(|_, state| {
+                now.duration_since(state.last_access).as_secs() <= ENTRY_EXPIRE_SECS
+            });
+        }
+
+        let entry = map.entry(client_id.to_string()).or_insert(FailureState {
+            count: 0,
+            window_start: now,
+            blocked_until: None,
+            last_access: now,
+        });
+        entry.last_access = now;
+
+        if now.duration_since(entry.window_start).as_secs() > FAILURE_WINDOW_SECS {
+            entry.count = 0;
+            entry.window_start = now;
+            entry.blocked_until = None;
+        }
+
+        entry.count += 1;
+        if entry.count >= MAX_AUTH_FAILURES {
+            entry.blocked_until = Some(now + Duration::from_secs(BLOCK_SECS));
+        }
+    }
+
+    fn record_success(client_id: &str) {
+        let mut map = failure_map().lock().unwrap();
+        map.remove(client_id);
+    }
+
+    fn secret_key_matches(provided: &str, expected: &str) -> bool {
+        provided.as_bytes().ct_eq(expected.as_bytes()).into()
+    }
 }
 
 impl<S> Service<Request<Body>> for ManagementAuthService<S>
@@ -118,6 +217,14 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
+            let client_id = Self::get_client_id(&req);
+            if !Self::check_rate_limit(&client_id) {
+                return Ok(create_error_response(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "Too many failed authentication attempts",
+                ));
+            }
+
             // 1. 检查 secret_key 是否为空（禁用管理 API）
             let secret_key = match &config.secret_key {
                 Some(key) if !key.is_empty() => key.clone(),
@@ -148,9 +255,10 @@ where
             // 3. 验证 secret_key
             let provided_key = Self::extract_secret_key(&req);
             match provided_key {
-                Some(key) if key == secret_key => {
+                Some(key) if Self::secret_key_matches(&key, &secret_key) => {
                     // 认证成功，继续处理请求
                     tracing::debug!("[MANAGEMENT_AUTH] Auth successful from {:?}", client_addr);
+                    Self::record_success(&client_id);
                     inner.call(req).await
                 }
                 Some(_) => {
@@ -158,6 +266,7 @@ where
                         "[MANAGEMENT_AUTH] Invalid secret_key from {:?}",
                         client_addr
                     );
+                    Self::record_failure(&client_id);
                     Ok(create_error_response(
                         StatusCode::UNAUTHORIZED,
                         "Invalid secret key",
@@ -168,6 +277,7 @@ where
                         "[MANAGEMENT_AUTH] Missing secret_key from {:?}",
                         client_addr
                     );
+                    Self::record_failure(&client_id);
                     Ok(create_error_response(
                         StatusCode::UNAUTHORIZED,
                         "Missing secret key",

@@ -74,7 +74,7 @@
 - **Per-Key 代理** - 为每个凭证单独配置代理
 
 ### 🔐 安全与管理
-- **TLS/HTTPS 支持** - 可选启用 HTTPS 加密通信
+- **HTTPS 部署** - 当前版本不内置 TLS，请使用反向代理进行 HTTPS 终止
 - **远程管理 API** - 通过 API 远程管理配置和凭证
 - **访问控制** - 支持 localhost 限制和密钥认证
 
@@ -88,8 +88,12 @@
 - `/v1/models` - 模型列表
 - `/v1/messages` - Anthropic Messages API
 - `/v1/messages/count_tokens` - Token 计数
+- `/health` - 健康检查
+- `/ready` - 就绪检查
 - `/api/provider/{provider}/v1/*` - Provider 路由
 - `/v0/management/*` - 远程管理 API
+  - `/v0/management/backup` - 触发数据库备份
+  - `/v0/management/restore` - 从备份恢复
 
 ---
 
@@ -135,9 +139,18 @@
 3. **启动服务** - 在 Dashboard 点击"启动服务器"
 4. **配置客户端** - 在 Cherry-Studio、Cline 等工具中配置：
    ```
-   API Base URL: http://localhost:3001/v1
-   API Key: proxycast-key
+   API Base URL: http://localhost:8999/v1
+   API Key: 启动时自动生成的密钥（可在设置页查看/修改）
    ```
+
+---
+
+## 🧰 运维提示
+
+- **自动备份**：数据库默认每天自动备份到 `~/.proxycast/backups/`，保留 7 天。
+- **配置备份**：每次写入配置会生成 `config.yaml.backup` 以便回滚。
+- **日志归档**：7 天游离线日志自动压缩，30 天前压缩日志自动清理。
+- **生产 HTTPS**：当前版本不内置 TLS，生产环境需反向代理终止 HTTPS。
 
 ---
 
@@ -146,9 +159,9 @@
 ### OpenAI Chat Completions
 
 ```bash
-curl http://localhost:3001/v1/chat/completions \
+curl http://localhost:8999/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer proxycast-key" \
+  -H "Authorization: Bearer your-api-key" \
   -d '{
     "model": "claude-sonnet-4-5-20250514",
     "messages": [
@@ -161,9 +174,9 @@ curl http://localhost:3001/v1/chat/completions \
 ### Anthropic Messages API
 
 ```bash
-curl http://localhost:3001/v1/messages \
+curl http://localhost:8999/v1/messages \
   -H "Content-Type: application/json" \
-  -H "x-api-key: proxycast-key" \
+  -H "x-api-key: your-api-key" \
   -H "anthropic-version: 2023-06-01" \
   -d '{
     "model": "claude-sonnet-4-5-20250514",

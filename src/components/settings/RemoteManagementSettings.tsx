@@ -70,12 +70,14 @@ export function RemoteManagementSettings() {
   };
 
   const generateSecretKey = () => {
-    const chars =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let key = "";
-    for (let i = 0; i < 32; i++) {
-      key += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    // 安全修复：使用 WebCrypto API 生成安全随机密钥
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    // 转换为 base64url 格式（URL 安全的 base64）
+    const key = btoa(String.fromCharCode(...array))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
     updateRemoteManagement({ secret_key: key });
   };
 
@@ -88,7 +90,13 @@ export function RemoteManagementSettings() {
   }
 
   const rm = config.remote_management;
-  const isEnabled = rm.secret_key && rm.secret_key.length > 0;
+  const isEnabled = Boolean(rm.secret_key && rm.secret_key.length > 0);
+  const remoteAccessSupported = false;
+  const allowRemoteToggleEnabled = remoteAccessSupported && isEnabled;
+  const allowRemoteToggleDisabled =
+    !allowRemoteToggleEnabled && !rm.allow_remote;
+  const remoteAccessUnsupportedEnabled =
+    rm.allow_remote && !remoteAccessSupported;
 
   return (
     <div className="space-y-4">
@@ -121,6 +129,13 @@ export function RemoteManagementSettings() {
       )}
 
       <div className="p-4 rounded-lg border space-y-4">
+        {!remoteAccessSupported && (
+          <div className="flex items-start gap-2 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 p-3 text-sm text-yellow-700 dark:text-yellow-400">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>当前版本未启用 TLS，暂不支持远程管理访问，请保持关闭。</span>
+          </div>
+        )}
+
         {/* 管理密钥 */}
         <div>
           <label className="block text-sm font-medium mb-1.5">管理密钥</label>
@@ -179,7 +194,7 @@ export function RemoteManagementSettings() {
 
         {/* 允许远程访问 */}
         <label
-          className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer hover:bg-muted/50 ${!isEnabled ? "opacity-50 pointer-events-none" : ""}`}
+          className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer hover:bg-muted/50 ${allowRemoteToggleDisabled ? "opacity-50 pointer-events-none" : ""}`}
         >
           <div>
             <span className="text-sm font-medium">允许远程访问</span>
@@ -190,11 +205,14 @@ export function RemoteManagementSettings() {
           <input
             type="checkbox"
             checked={rm.allow_remote}
-            onChange={(e) =>
-              updateRemoteManagement({ allow_remote: e.target.checked })
-            }
+            onChange={(e) => {
+              if (e.target.checked && !allowRemoteToggleEnabled) {
+                return;
+              }
+              updateRemoteManagement({ allow_remote: e.target.checked });
+            }}
             className="w-4 h-4 rounded border-gray-300"
-            disabled={!isEnabled}
+            disabled={allowRemoteToggleDisabled}
           />
         </label>
 
@@ -222,7 +240,7 @@ export function RemoteManagementSettings() {
         </label>
 
         {/* 警告提示 */}
-        {isEnabled && rm.allow_remote && (
+        {remoteAccessSupported && isEnabled && rm.allow_remote && (
           <div className="flex items-start gap-2 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 p-3 text-sm text-yellow-700 dark:text-yellow-400">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
             <span>
@@ -233,7 +251,7 @@ export function RemoteManagementSettings() {
 
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || remoteAccessUnsupportedEnabled}
           className="w-full px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
         >
           {saving ? "保存中..." : "保存远程管理设置"}

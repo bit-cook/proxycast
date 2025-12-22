@@ -35,6 +35,7 @@ export function AddCredentialModal({
     defaultCredsPath[providerType] || "",
   );
   const [projectId, setProjectId] = useState("");
+  const [apiBaseUrl, setApiBaseUrl] = useState("");
 
   // API Key 字段
   const [apiKey, setApiKey] = useState("");
@@ -77,6 +78,8 @@ export function AddCredentialModal({
     name,
     credsFilePath,
     setCredsFilePath,
+    apiBaseUrl,
+    setApiBaseUrl,
     onSelectFile: handleSelectFile,
     loading,
     setLoading,

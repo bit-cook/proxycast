@@ -1,24 +1,27 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run format:*)",
-      "Bash(npm run lint)",
-      "Bash(npx tsc:*)",
-      "Bash(cargo test:*)",
-      "Bash(cargo build:*)",
-      "Bash(npm run check:*)",
-      "Bash(npm run:*)",
-      "Bash(tree:*)",
-      "Bash(find:*)",
-      "Bash(cargo check:*)",
-      "Bash(rm:*)",
-      "Bash(cargo clippy:*)",
-      "Bash(cargo fmt:*)",
-      "Bash(lsof:*)",
-      "Bash(xargs kill:*)",
-      "Bash(cargo run:*)"
+      "Bash",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "MultiEdit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "Task(*)",
+      "TaskOutput(*)",
+      "LSP(*)",
+      "NotebookEdit(*)",
+      "TodoWrite(*)",
+      "AskUserQuestion(*)",
+      "EnterPlanMode(*)",
+      "ExitPlanMode(*)",
+      "KillShell(*)",
+      "WebFetch(domain:*)",
+      "Skill(*)",
+      "SlashCommand(*)"
     ],
     "deny": [],
-    "ask": []
+    "defaultMode": "bypassPermissions"
   }
 }

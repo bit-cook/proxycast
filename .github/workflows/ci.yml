@@ -47,3 +47,17 @@ jobs:
       - name: Check Rust build
         working-directory: src-tauri
         run: cargo check --all-targets
+
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Test frontend
+        run: npm test
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets
+
+      - name: Test Rust
+        working-directory: src-tauri
+        run: cargo test

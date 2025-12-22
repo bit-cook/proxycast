@@ -487,8 +487,12 @@ impl ProviderPoolService {
                 self.check_gemini_api_key_health(api_key, base_url.as_deref(), model)
                     .await
             }
-            CredentialData::CodexOAuth { creds_file_path } => {
-                self.check_codex_health(creds_file_path, model).await
+            CredentialData::CodexOAuth {
+                creds_file_path,
+                api_base_url,
+            } => {
+                self.check_codex_health(creds_file_path, api_base_url.as_deref(), model)
+                    .await
             }
             CredentialData::ClaudeOAuth { creds_file_path } => {
                 self.check_claude_oauth_health(creds_file_path, model).await
@@ -924,7 +928,13 @@ impl ProviderPoolService {
     }
 
     // Codex 健康检查
-    async fn check_codex_health(&self, creds_path: &str, model: &str) -> Result<(), String> {
+    // 支持 Yunyi 等代理使用 responses API 格式
+    async fn check_codex_health(
+        &self,
+        creds_path: &str,
+        override_base_url: Option<&str>,
+        model: &str,
+    ) -> Result<(), String> {
         use crate::providers::codex::CodexProvider;
 
         let mut provider = CodexProvider::new();
@@ -933,33 +943,85 @@ impl ProviderPoolService {
             .await
             .map_err(|e| format!("加载 Codex 凭证失败: {}", e))?;
 
-        let token = provider
-            .ensure_valid_token()
-            .await
-            .map_err(|e| format!("获取 Codex Token 失败: {}", e))?;
+        let token = provider.ensure_valid_token().await.map_err(|e| {
+            format!(
+                "获取 Codex Token 失败: 配置错误，请检查凭证设置。详情：{}",
+                e
+            )
+        })?;
 
-        // 使用 OpenAI 兼容 API 进行健康检查
-        let url = "https://api.openai.com/v1/chat/completions";
-        let request_body = serde_json::json!({
-            "model": model,
-            "messages": [{"role": "user", "content": "Say OK"}],
-            "max_tokens": 10
-        });
+        // 优先使用 override_base_url（来自 CredentialData），其次使用凭证文件中的配置
+        let base_url = override_base_url
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                provider
+                    .credentials
+                    .api_base_url
+                    .as_deref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+            });
 
-        let response = self
-            .client
-            .post(url)
-            .header("Authorization", format!("Bearer {}", token))
-            .json(&request_body)
-            .timeout(self.health_check_timeout)
-            .send()
-            .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+        match base_url {
+            Some(base) => {
+                // 使用自定义 base_url (如 Yunyi)，与 CodexProvider 的 URL/headers 行为保持一致
+                let url = CodexProvider::build_responses_url(base);
 
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(format!("HTTP {}", response.status()))
+                // Codex/Yunyi 使用 responses API 格式；云驿等代理要求 stream 必须为 true
+                let request_body = serde_json::json!({
+                    "model": model,
+                    "input": [{
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": "Say OK"}]
+                    }],
+                    "max_output_tokens": 10,
+                    "stream": true
+                });
+
+                tracing::debug!(
+                    "[HEALTH_CHECK] Codex responses API URL: {}, model: {}",
+                    url,
+                    model
+                );
+
+                let response = self
+                    .client
+                    .post(&url)
+                    .bearer_auth(&token)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "text/event-stream")
+                    .header("Openai-Beta", "responses=experimental")
+                    .header("Originator", "codex_cli_rs")
+                    .header("Session_id", uuid::Uuid::new_v4().to_string())
+                    .header("Conversation_id", uuid::Uuid::new_v4().to_string())
+                    .header(
+                        "User-Agent",
+                        "codex_cli_rs/0.77.0 (ProxyCast health check; Mac OS; arm64)",
+                    )
+                    .json(&request_body)
+                    .timeout(self.health_check_timeout)
+                    .send()
+                    .await
+                    .map_err(|e| format!("请求失败: {}", e))?;
+
+                if response.status().is_success() {
+                    Ok(())
+                } else {
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    Err(format!(
+                        "HTTP {} - {}",
+                        status,
+                        body.chars().take(200).collect::<String>()
+                    ))
+                }
+            }
+            None => {
+                // 没有自定义 base_url，使用 OpenAI 官方 chat/completions API
+                self.check_openai_health(&token, None, model).await
+            }
         }
     }
 
@@ -1165,11 +1227,19 @@ impl ProviderPoolService {
         let creds: serde_json::Value =
             serde_json::from_str(&content).map_err(|e| format!("解析凭证文件失败: {}", e))?;
 
-        let has_access_token = creds
+        let has_api_key = creds
+            .get("apiKey")
+            .or_else(|| creds.get("api_key"))
+            .map(|v| v.as_str().is_some())
+            .unwrap_or(false);
+
+        let has_oauth_access_token = creds
             .get("accessToken")
             .or_else(|| creds.get("access_token"))
             .map(|v| v.as_str().is_some())
             .unwrap_or(false);
+
+        let has_access_token = has_oauth_access_token || has_api_key;
 
         let has_refresh_token = creds
             .get("refreshToken")
@@ -1199,6 +1269,20 @@ impl ProviderPoolService {
                     (is_valid, Some(expiry_str))
                 } else {
                     (has_access_token, None)
+                }
+            }
+            "codex" => {
+                // Codex: 兼容 OAuth token 或 Codex CLI 的 API Key 登录
+                if has_api_key {
+                    (true, None)
+                } else {
+                    let expires_at = creds
+                        .get("expiresAt")
+                        .or_else(|| creds.get("expires_at"))
+                        .or_else(|| creds.get("expired"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    (has_oauth_access_token, expires_at)
                 }
             }
             _ => (has_access_token, None),

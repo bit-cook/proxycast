@@ -322,27 +322,8 @@ impl KiroProvider {
             tracing::info!("[KIRO] 没有 clientIdHash 字段");
         }
 
-        // 读取目录中其他 JSON 文件
-        if tokio::fs::try_exists(dir).await.unwrap_or(false) {
-            let mut entries = tokio::fs::read_dir(dir).await?;
-            while let Some(entry) = entries.next_entry().await? {
-                let file_path = entry.path();
-                if file_path.extension().map(|e| e == "json").unwrap_or(false) && file_path != path
-                {
-                    if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
-                        if let Ok(creds) = serde_json::from_str::<KiroCredentials>(&content) {
-                            tracing::info!(
-                                "[KIRO] Extra file {:?}: has_client_id={}, has_client_secret={}",
-                                file_path.file_name(),
-                                creds.client_id.is_some(),
-                                creds.client_secret.is_some()
-                            );
-                            merge_credentials(&mut merged, &creds);
-                        }
-                    }
-                }
-            }
-        }
+        // 安全修复：不再遍历目录中其他 JSON 文件，避免串凭证/串账号风险
+        // 只信任主凭证文件和 clientIdHash 指向的文件
 
         tracing::info!(
             "[KIRO] Final merged: has_access={}, has_refresh={}, has_client_id={}, has_client_secret={}, auth_method={:?}",
@@ -625,11 +606,8 @@ impl KiroProvider {
             token_len < 100 || refresh_token.ends_with("...") || refresh_token.contains("...");
 
         if is_truncated {
-            tracing::error!(
-                "[KIRO] 检测到 refreshToken 被截断！长度: {}, 内容: {}...",
-                token_len,
-                &refresh_token[..std::cmp::min(30, token_len)]
-            );
+            // 安全修复：不打印 token 内容，只打印长度
+            tracing::error!("[KIRO] 检测到 refreshToken 被截断！长度: {}", token_len);
             return Err(format!(
                 "refreshToken 已被截断（长度: {} 字符）。\n\n⚠️ 这通常是 Kiro IDE 为了防止凭证被第三方工具使用而故意截断的。\n\n💡 解决方案：\n1. 使用 Kir-Manager 工具获取完整的凭证\n2. 或者使用其他方式获取未截断的凭证文件\n3. 正常的 refreshToken 长度应该在 500+ 字符",
                 token_len
@@ -957,44 +935,48 @@ impl KiroProvider {
         let cw_request = convert_openai_to_codewhisperer(request, profile_arn.clone());
         let url = self.get_base_url();
 
-        // Debug: 记录转换后的请求
-        if let Ok(json_str) = serde_json::to_string_pretty(&cw_request) {
-            // 保存到文件用于调试
-            let uuid_prefix = uuid::Uuid::new_v4()
-                .to_string()
-                .split('-')
-                .next()
-                .unwrap_or("unknown")
-                .to_string();
-            let debug_path = dirs::home_dir()
-                .unwrap_or_default()
-                .join(".proxycast")
-                .join("logs")
-                .join(format!("cw_request_{uuid_prefix}.json"));
-            let _ = tokio::fs::write(&debug_path, &json_str).await;
-            tracing::debug!("[CW_REQ] Request saved to {:?}", debug_path);
-
-            // 记录历史消息数量和 tool_results 情况
-            let history_len = cw_request
-                .conversation_state
-                .history
-                .as_ref()
-                .map(|h| h.len())
-                .unwrap_or(0);
-            let current_has_tools = cw_request
-                .conversation_state
-                .current_message
-                .user_input_message
-                .user_input_message_context
-                .as_ref()
-                .map(|ctx| ctx.tool_results.as_ref().map(|tr| tr.len()).unwrap_or(0))
-                .unwrap_or(0);
-            tracing::info!(
-                "[CW_REQ] history={} current_tool_results={}",
-                history_len,
-                current_has_tools
-            );
+        // 安全修复：仅在 PROXYCAST_DEBUG=1 时写入请求调试文件，避免泄露敏感信息
+        let debug_enabled = std::env::var("PROXYCAST_DEBUG")
+            .map(|v| v == "1")
+            .unwrap_or(false);
+        if debug_enabled {
+            if let Ok(json_str) = serde_json::to_string_pretty(&cw_request) {
+                let uuid_prefix = uuid::Uuid::new_v4()
+                    .to_string()
+                    .split('-')
+                    .next()
+                    .unwrap_or("unknown")
+                    .to_string();
+                let debug_path = dirs::home_dir()
+                    .unwrap_or_default()
+                    .join(".proxycast")
+                    .join("logs")
+                    .join(format!("cw_request_{uuid_prefix}.json"));
+                let _ = tokio::fs::write(&debug_path, &json_str).await;
+                tracing::debug!("[CW_REQ] Request saved to {:?}", debug_path);
+            }
         }
+
+        // 记录历史消息数量和 tool_results 情况（不落盘）
+        let history_len = cw_request
+            .conversation_state
+            .history
+            .as_ref()
+            .map(|h| h.len())
+            .unwrap_or(0);
+        let current_has_tools = cw_request
+            .conversation_state
+            .current_message
+            .user_input_message
+            .user_input_message_context
+            .as_ref()
+            .map(|ctx| ctx.tool_results.as_ref().map(|tr| tr.len()).unwrap_or(0))
+            .unwrap_or(0);
+        tracing::info!(
+            "[CW_REQ] history={} current_tool_results={}",
+            history_len,
+            current_has_tools
+        );
 
         // 生成基于凭证的唯一 Machine ID（关键改进：每个账号独立指纹）
         let machine_id = generate_machine_id_from_credentials(

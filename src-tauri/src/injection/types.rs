@@ -4,6 +4,30 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 允许注入的参数白名单
+/// 这些参数是安全的，不会影响请求的核心行为
+const ALLOWED_INJECTION_PARAMS: &[&str] = &[
+    "temperature",
+    "max_tokens",
+    "top_p",
+    "top_k",
+    "frequency_penalty",
+    "presence_penalty",
+    "stop",
+    "seed",
+    "n",
+];
+
+/// 禁止注入的参数黑名单（即使在白名单中也不允许 Override 模式）
+const BLOCKED_OVERRIDE_PARAMS: &[&str] = &[
+    "model",
+    "messages",
+    "tools",
+    "tool_choice",
+    "stream",
+    "response_format",
+];
+
 /// 注入模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -213,6 +237,20 @@ impl Injector {
             let mut rule_applied = false;
 
             for (key, value) in params {
+                // 安全修复：检查参数是否在白名单中
+                if !ALLOWED_INJECTION_PARAMS.contains(&key.as_str()) {
+                    tracing::warn!("[INJECTION] 参数 {} 不在白名单中，跳过注入", key);
+                    continue;
+                }
+
+                // 安全修复：Override 模式下检查黑名单
+                if rule.mode == InjectionMode::Override
+                    && BLOCKED_OVERRIDE_PARAMS.contains(&key.as_str())
+                {
+                    tracing::warn!("[INJECTION] 参数 {} 禁止使用 Override 模式", key);
+                    continue;
+                }
+
                 let should_inject = match rule.mode {
                     InjectionMode::Merge => !obj.contains_key(key),
                     InjectionMode::Override => true,

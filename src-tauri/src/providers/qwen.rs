@@ -138,8 +138,10 @@ impl QwenProvider {
         if let Some(expire_str) = &self.credentials.expire {
             if let Ok(expires) = chrono::DateTime::parse_from_rfc3339(expire_str) {
                 let now = chrono::Utc::now();
+                // 安全修复：显式转换为 Utc 时区再比较
+                let expires_utc = expires.with_timezone(&chrono::Utc);
                 // Token 有效期需要超过 30 秒
-                return expires > now + chrono::Duration::seconds(30);
+                return expires_utc > now + chrono::Duration::seconds(30);
             }
         }
 
@@ -149,7 +151,8 @@ impl QwenProvider {
             return expiry > now + 30_000;
         }
 
-        true
+        // 安全修复：没有过期时间时采用保守策略，认为 token 无效
+        false
     }
 
     pub fn get_base_url(&self) -> String {

@@ -333,9 +333,14 @@ export const providerPoolApi = {
 
   async addCodexOAuth(
     credsFilePath: string,
+    apiBaseUrl?: string,
     name?: string,
   ): Promise<ProviderCredential> {
-    return invoke("add_codex_oauth_credential", { credsFilePath, name });
+    return invoke("add_codex_oauth_credential", {
+      credsFilePath,
+      apiBaseUrl,
+      name,
+    });
   },
 
   async addClaudeOAuth(

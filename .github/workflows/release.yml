@@ -97,8 +97,8 @@ jobs:
             ```
             
             ### 默认配置
-            - **端口**: 3001
-            - **API Key**: proxycast-key
+            - **端口**: 8999
+            - **API Key**: 首次启动自动生成，可在设置页查看/修改
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
