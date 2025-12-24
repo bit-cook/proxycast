@@ -246,9 +246,17 @@ async fn stop_server(
 #[tauri::command]
 async fn get_server_status(
     state: tauri::State<'_, AppState>,
+    telemetry_state: tauri::State<'_, commands::telemetry_cmd::TelemetryState>,
 ) -> Result<server::ServerStatus, String> {
     let s = state.read().await;
-    Ok(s.status())
+    let mut status = s.status();
+
+    // 从遥测系统获取真实的请求计数
+    let stats = telemetry_state.stats.read();
+    let summary = stats.summary(None);
+    status.requests = summary.total_requests;
+
+    Ok(status)
 }
 
 #[tauri::command]
@@ -1743,15 +1751,61 @@ pub fn run() {
             let shared_flow_monitor = flow_monitor_clone.clone();
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                // 先加载凭证
+                // 先加载凭证池中的凭证
                 {
+                    logs.write().await.add("info", "[启动] 正在加载凭证池...");
+
+                    // 获取凭证池概览信息
+                    match pool_service.get_overview(&db) {
+                        Ok(overview) => {
+                            let mut loaded_types = Vec::new();
+                            let mut total_credentials = 0;
+
+                            for provider_overview in overview {
+                                let count = provider_overview.stats.total_count;
+                                if count > 0 {
+                                    total_credentials += count;
+                                    let provider_name =
+                                        match provider_overview.provider_type.as_str() {
+                                            "kiro" => "Kiro",
+                                            "gemini" => "Gemini",
+                                            "qwen" => "通义千问",
+                                            "antigravity" => "Antigravity",
+                                            "openai" => "OpenAI",
+                                            "claude" => "Claude",
+                                            "codex" => "Codex",
+                                            "claude_oauth" => "Claude OAuth",
+                                            "iflow" => "iFlow",
+                                            _ => &provider_overview.provider_type,
+                                        };
+                                    loaded_types.push(format!("{} ({} 个)", provider_name, count));
+                                }
+                            }
+
+                            if loaded_types.is_empty() {
+                                logs.write().await.add("warn", "[启动] 未找到任何可用凭证");
+                            } else {
+                                let message = format!(
+                                    "[启动] 凭证已加载: {} (共 {} 个)",
+                                    loaded_types.join(", "),
+                                    total_credentials
+                                );
+                                logs.write().await.add("info", &message);
+                            }
+                        }
+                        Err(e) => {
+                            logs.write()
+                                .await
+                                .add("warn", &format!("[启动] 获取凭证池信息失败: {}", e));
+                        }
+                    }
+
+                    // 兼容性：仍然尝试加载旧的 Kiro 凭证（如果存在）
                     let mut s = state.write().await;
                     if let Err(e) = s.kiro_provider.load_credentials().await {
                         logs.write()
                             .await
-                            .add("warn", &format!("[启动] 加载 Kiro 凭证失败: {e}"));
-                    } else {
-                        logs.write().await.add("info", "[启动] Kiro 凭证已加载");
+                            .add("debug", &format!("[启动] 旧版 Kiro 凭证加载失败: {e}"));
                     }
                 }
                 // 启动服务器（使用共享的遥测实例和 Flow Monitor）
@@ -1889,6 +1943,8 @@ pub fn run() {
             commands::switch_cmd::switch_provider,
             commands::switch_cmd::import_default_config,
             commands::switch_cmd::read_live_provider_settings,
+            commands::switch_cmd::check_config_sync_status,
+            commands::switch_cmd::sync_from_external_config,
             // Config commands
             commands::config_cmd::get_config_status,
             commands::config_cmd::get_config_dir_path,
@@ -1973,6 +2029,8 @@ pub fn run() {
             commands::provider_pool_cmd::start_codex_oauth_login,
             commands::provider_pool_cmd::get_claude_oauth_auth_url_and_wait,
             commands::provider_pool_cmd::start_claude_oauth_login,
+            commands::provider_pool_cmd::exchange_claude_oauth_code,
+            commands::provider_pool_cmd::claude_oauth_with_cookie,
             commands::provider_pool_cmd::get_qwen_device_code_and_wait,
             commands::provider_pool_cmd::start_qwen_device_code_login,
             commands::provider_pool_cmd::get_iflow_auth_url_and_wait,
@@ -2032,7 +2090,6 @@ pub fn run() {
             commands::telemetry_cmd::get_token_stats_by_provider,
             commands::telemetry_cmd::get_token_stats_by_model,
             commands::telemetry_cmd::get_token_stats_by_day,
-            commands::telemetry_cmd::get_dashboard_data,
             // Injection commands
             commands::injection_cmd::get_injection_config,
             commands::injection_cmd::set_injection_enabled,
@@ -2181,6 +2238,8 @@ pub fn run() {
             commands::window_cmd::set_window_size_by_option,
             commands::window_cmd::toggle_fullscreen,
             commands::window_cmd::is_fullscreen,
+            // Auto fix commands
+            commands::auto_fix_cmd::auto_fix_configuration,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

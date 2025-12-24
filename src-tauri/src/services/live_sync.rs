@@ -267,3 +267,169 @@ pub fn read_live_settings(
         AppType::ProxyCast => Ok(json!({})),
     }
 }
+
+/// 同步状态枚举
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum SyncStatus {
+    InSync,    // 完全同步
+    OutOfSync, // 有差异但无冲突
+    Conflict,  // 有冲突需要用户选择
+}
+
+/// 配置冲突信息
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConfigConflict {
+    pub field: String,
+    pub local_value: String,
+    pub external_value: String,
+}
+
+/// 同步检查结果
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SyncCheckResult {
+    pub status: SyncStatus,
+    pub current_provider: String,
+    pub external_provider: String,
+    pub last_modified: Option<String>,
+    pub conflicts: Vec<ConfigConflict>,
+}
+
+/// 从外部配置文件解析当前生效的 provider
+pub fn parse_current_provider_from_live(
+    app_type: &AppType,
+    live_settings: &Value,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    match app_type {
+        AppType::Claude => {
+            // 检查 Claude 配置中的认证信息来判断当前 provider
+            if let Some(env) = live_settings.get("env").and_then(|v| v.as_object()) {
+                // 优先检查 ANTHROPIC_AUTH_TOKEN (OAuth)
+                if let Some(token) = env.get("ANTHROPIC_AUTH_TOKEN").and_then(|v| v.as_str()) {
+                    if !token.is_empty() {
+                        return Ok("claude_oauth".to_string());
+                    }
+                }
+
+                // 检查 ANTHROPIC_API_KEY (API Key)
+                if let Some(api_key) = env.get("ANTHROPIC_API_KEY").and_then(|v| v.as_str()) {
+                    if !api_key.is_empty() {
+                        return Ok("claude".to_string());
+                    }
+                }
+            }
+
+            Ok("unknown".to_string())
+        }
+        AppType::Codex => {
+            // 检查 Codex 认证信息
+            if let Some(auth) = live_settings.get("auth").and_then(|v| v.as_object()) {
+                if auth
+                    .get("access_token")
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false)
+                {
+                    return Ok("codex".to_string());
+                }
+            }
+
+            Ok("unknown".to_string())
+        }
+        AppType::Gemini => {
+            // 检查 Gemini 环境变量
+            if let Some(env) = live_settings.get("env").and_then(|v| v.as_object()) {
+                if let Some(api_key) = env.get("GOOGLE_API_KEY").and_then(|v| v.as_str()) {
+                    if !api_key.is_empty() {
+                        return Ok("gemini".to_string());
+                    }
+                }
+            }
+
+            Ok("unknown".to_string())
+        }
+        AppType::ProxyCast => Ok("proxycast".to_string()),
+    }
+}
+
+/// 检查配置同步状态
+pub fn check_config_sync(
+    app_type: &AppType,
+    current_provider: &str,
+) -> Result<SyncCheckResult, Box<dyn std::error::Error + Send + Sync>> {
+    // 读取外部配置文件
+    let live_settings = read_live_settings(app_type)?;
+
+    // 解析外部配置中的当前 provider
+    let external_provider = parse_current_provider_from_live(app_type, &live_settings)?;
+
+    // 获取配置文件的修改时间
+    let last_modified = get_config_last_modified(app_type);
+
+    // 比较配置
+    let status = if current_provider == external_provider {
+        SyncStatus::InSync
+    } else if external_provider == "unknown" {
+        SyncStatus::OutOfSync
+    } else {
+        SyncStatus::Conflict
+    };
+
+    // 检测具体的冲突字段
+    let conflicts = if matches!(status, SyncStatus::Conflict) {
+        vec![ConfigConflict {
+            field: "provider".to_string(),
+            local_value: current_provider.to_string(),
+            external_value: external_provider.clone(),
+        }]
+    } else {
+        vec![]
+    };
+
+    Ok(SyncCheckResult {
+        status,
+        current_provider: current_provider.to_string(),
+        external_provider,
+        last_modified,
+        conflicts,
+    })
+}
+
+/// 获取配置文件的最后修改时间
+fn get_config_last_modified(app_type: &AppType) -> Option<String> {
+    let home = dirs::home_dir()?;
+    let path = match app_type {
+        AppType::Claude => home.join(".claude").join("settings.json"),
+        AppType::Codex => home.join(".codex").join("auth.json"),
+        AppType::Gemini => home.join(".gemini").join(".env"),
+        AppType::ProxyCast => return None,
+    };
+
+    if let Ok(metadata) = std::fs::metadata(&path) {
+        if let Ok(modified) = metadata.modified() {
+            if let Ok(datetime) = modified.duration_since(std::time::UNIX_EPOCH) {
+                return Some(datetime.as_secs().to_string());
+            }
+        }
+    }
+
+    None
+}
+
+/// 从外部配置同步到 ProxyCast 数据库
+/// 这个函数需要与 switch service 集成来更新数据库中的 provider 记录
+pub fn sync_from_external(
+    app_type: &AppType,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // 读取外部配置
+    let live_settings = read_live_settings(app_type)?;
+
+    // 解析当前生效的 provider
+    let external_provider = parse_current_provider_from_live(app_type, &live_settings)?;
+
+    if external_provider == "unknown" {
+        return Err("无法识别外部配置中的 provider".into());
+    }
+
+    // 返回检测到的 provider，由调用方负责更新数据库
+    Ok(external_provider)
+}

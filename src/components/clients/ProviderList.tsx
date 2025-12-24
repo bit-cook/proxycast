@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Plus, RefreshCw, Eye } from "lucide-react";
-import { AppType } from "@/lib/api/switch";
+import { Plus, RefreshCw, Eye, GitCompare } from "lucide-react";
+import { AppType, SyncCheckResult } from "@/lib/api/switch";
 import { useSwitch } from "@/hooks/useSwitch";
 import { ProviderCard } from "./ProviderCard";
 import { ProviderForm } from "./ProviderForm";
 import { LiveConfigModal } from "./LiveConfigModal";
+import { ConfigSyncDialog } from "./ConfigSyncDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface ProviderListProps {
@@ -22,6 +23,8 @@ export function ProviderList({ appType }: ProviderListProps) {
     deleteProvider,
     switchToProvider,
     refresh,
+    checkConfigSync,
+    syncFromExternal,
   } = useSwitch(appType);
 
   const [showForm, setShowForm] = useState(false);
@@ -30,6 +33,9 @@ export function ProviderList({ appType }: ProviderListProps) {
   >(null);
   const [showLiveConfig, setShowLiveConfig] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [showSyncDialog, setShowSyncDialog] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncCheckResult | null>(null);
+  const [checkingSync, setCheckingSync] = useState(false);
 
   const handleAdd = () => {
     setEditingProvider(null);
@@ -71,6 +77,31 @@ export function ProviderList({ appType }: ProviderListProps) {
     }
   };
 
+  const handleCheckSync = async () => {
+    setCheckingSync(true);
+    try {
+      const result = await checkConfigSync();
+      setSyncResult(result);
+      setShowSyncDialog(true);
+    } catch (_e) {
+      // Error is handled in the hook
+    } finally {
+      setCheckingSync(false);
+    }
+  };
+
+  const handleSyncFromExternal = async () => {
+    await syncFromExternal();
+    // 重新检查同步状态
+    const result = await checkConfigSync();
+    setSyncResult(result);
+  };
+
+  const handleRefreshSyncCheck = async () => {
+    const result = await checkConfigSync();
+    setSyncResult(result);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -109,6 +140,16 @@ export function ProviderList({ appType }: ProviderListProps) {
           </button>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleCheckSync}
+            disabled={checkingSync}
+            className="p-2 rounded-lg hover:bg-muted"
+            title="检查外部配置同步状态"
+          >
+            <GitCompare
+              className={`h-4 w-4 ${checkingSync ? "animate-pulse" : ""}`}
+            />
+          </button>
           <button
             onClick={refresh}
             className="p-2 rounded-lg hover:bg-muted"
@@ -171,6 +212,14 @@ export function ProviderList({ appType }: ProviderListProps) {
         message="确定要删除这个 Provider 吗？"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteConfirm(null)}
+      />
+
+      <ConfigSyncDialog
+        isOpen={showSyncDialog}
+        syncResult={syncResult}
+        onClose={() => setShowSyncDialog(false)}
+        onSyncFromExternal={handleSyncFromExternal}
+        onRefreshCheck={handleRefreshSyncCheck}
       />
     </div>
   );

@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { switchApi, Provider, AppType } from "@/lib/api/switch";
+import {
+  switchApi,
+  Provider,
+  AppType,
+  SyncCheckResult,
+} from "@/lib/api/switch";
 
 export function useSwitch(appType: AppType) {
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -62,6 +67,29 @@ export function useSwitch(appType: AppType) {
     toast.success("切换成功");
   };
 
+  const checkConfigSync = async (): Promise<SyncCheckResult> => {
+    try {
+      const result = await switchApi.checkConfigSync(appType);
+      return result;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error("检查同步状态失败: " + message);
+      throw e;
+    }
+  };
+
+  const syncFromExternal = async (): Promise<void> => {
+    try {
+      const message = await switchApi.syncFromExternal(appType);
+      await fetchProviders(); // 刷新数据
+      toast.success(message);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error("同步失败: " + message);
+      throw e;
+    }
+  };
+
   return {
     providers,
     currentProvider,
@@ -72,5 +100,7 @@ export function useSwitch(appType: AppType) {
     deleteProvider,
     switchToProvider,
     refresh: fetchProviders,
+    checkConfigSync,
+    syncFromExternal,
   };
 }

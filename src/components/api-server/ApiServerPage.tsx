@@ -532,7 +532,7 @@ export function ApiServerPage() {
         {[
           { id: "server" as TabId, name: "服务器控制" },
           { id: "routes" as TabId, name: "路由端点" },
-          { id: "logs" as TabId, name: "日志" },
+          { id: "logs" as TabId, name: "系统日志" },
         ].map((tab) => (
           <button
             key={tab.id}
