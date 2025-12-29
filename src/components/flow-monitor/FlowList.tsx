@@ -40,6 +40,7 @@ import {
 import { useFlowEvents } from "@/hooks/useFlowEvents";
 import { useFlowNotifications } from "@/hooks/useFlowNotifications";
 import { NotificationSettings } from "./NotificationSettings";
+import { FlowRecordContextMenu } from "./FlowRecordContextMenu";
 import { cn } from "@/lib/utils";
 
 interface FlowListProps {
@@ -605,23 +606,30 @@ export function FlowList({
         ) : (
           <div className="divide-y max-h-[600px] overflow-y-auto">
             {flows.map((flow) => (
-              <FlowListItem
+              <FlowRecordContextMenu
                 key={flow.id}
                 flow={flow}
-                expanded={expandedId === flow.id}
-                selected={selectedFlowId === flow.id}
-                thresholdWarning={thresholdWarnings.get(flow.id)}
-                onToggleExpand={() =>
-                  setExpandedId(expandedId === flow.id ? null : flow.id)
-                }
-                onSelect={() => onFlowSelect?.(flow)}
-                onToggleStar={(e) => handleToggleStar(e, flow.id)}
-                onCopyId={(e) => handleCopyId(e, flow.id)}
-                getStateIcon={getStateIcon}
-                getProviderColor={getProviderColor}
-                getDisplayProvider={getDisplayProvider}
-                formatTime={formatTime}
-              />
+                onViewDetail={() => onFlowSelect?.(flow)}
+              >
+                <div>
+                  <FlowListItem
+                    flow={flow}
+                    expanded={expandedId === flow.id}
+                    selected={selectedFlowId === flow.id}
+                    thresholdWarning={thresholdWarnings.get(flow.id)}
+                    onToggleExpand={() =>
+                      setExpandedId(expandedId === flow.id ? null : flow.id)
+                    }
+                    onSelect={() => onFlowSelect?.(flow)}
+                    onToggleStar={(e) => handleToggleStar(e, flow.id)}
+                    onCopyId={(e) => handleCopyId(e, flow.id)}
+                    getStateIcon={getStateIcon}
+                    getProviderColor={getProviderColor}
+                    getDisplayProvider={getDisplayProvider}
+                    formatTime={formatTime}
+                  />
+                </div>
+              </FlowRecordContextMenu>
             ))}
           </div>
         )}

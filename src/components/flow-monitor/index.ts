@@ -17,6 +17,7 @@ export { QuickFilterPanel } from "./QuickFilterPanel";
 export { RelatedFlows } from "./RelatedFlows";
 export { BookmarkPanel } from "./BookmarkPanel";
 export { StatsExport, StatsExportDropdown } from "./StatsExport";
+export { FlowRecordContextMenu } from "./FlowRecordContextMenu";
 export { useFlowEvents } from "@/hooks/useFlowEvents";
 export { useFlowActions } from "@/hooks/useFlowActions";
 

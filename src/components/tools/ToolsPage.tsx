@@ -11,6 +11,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Package, Loader2, Download, type LucideIcon } from "lucide-react";
 import * as LucideIcons from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -22,6 +23,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { getPluginsForSurface, type PluginUIInfo } from "@/lib/api/pluginUI";
 import { PluginInstallDialog } from "@/components/plugins/PluginInstallDialog";
+import { ToolCardContextMenu } from "./ToolCardContextMenu";
+import { toast } from "sonner";
 
 /**
  * 页面类型定义
@@ -41,6 +44,7 @@ type Page =
   | "tools"
   | "browser-interceptor"
   | "settings"
+  | "plugins"
   | `plugin:${string}`;
 
 interface ToolsPageProps {
@@ -288,6 +292,41 @@ export function ToolsPage({ onNavigate }: ToolsPageProps) {
     setShowInstallDialog(true);
   }, []);
 
+  // 处理插件启用/禁用
+  const handleTogglePluginEnabled = useCallback(
+    async (pluginId: string, enabled: boolean) => {
+      try {
+        if (enabled) {
+          await invoke("enable_plugin", { name: pluginId });
+          toast.success("插件已启用");
+        } else {
+          await invoke("disable_plugin", { name: pluginId });
+          toast.success("插件已禁用");
+        }
+        loadPluginTools();
+      } catch (error) {
+        console.error("切换插件状态失败:", error);
+        toast.error("操作失败");
+      }
+    },
+    [loadPluginTools],
+  );
+
+  // 处理插件卸载
+  const handleUninstallPlugin = useCallback(
+    async (pluginId: string) => {
+      try {
+        await invoke("uninstall_plugin", { pluginId });
+        toast.success("插件已卸载");
+        loadPluginTools();
+      } catch (error) {
+        console.error("卸载插件失败:", error);
+        toast.error("卸载失败");
+      }
+    },
+    [loadPluginTools],
+  );
+
   // 合并内置工具和插件工具
   const allTools = [...builtinTools, ...pluginTools, ...placeholderTools];
   const activeToolsCount = builtinTools.length + pluginTools.length;
@@ -341,16 +380,26 @@ export function ToolsPage({ onNavigate }: ToolsPageProps) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {allTools.map((tool) => (
-          <ToolCard
+          <ToolCardContextMenu
             key={tool.id}
-            title={tool.title}
-            description={tool.description}
-            icon={renderIcon(tool.icon, tool.disabled)}
-            status={tool.status}
-            disabled={tool.disabled}
-            source={tool.source}
-            onClick={() => handleToolClick(tool)}
-          />
+            tool={tool}
+            onNavigate={onNavigate}
+            onToggleEnabled={handleTogglePluginEnabled}
+            onUninstall={handleUninstallPlugin}
+            isEnabled={true}
+          >
+            <div>
+              <ToolCard
+                title={tool.title}
+                description={tool.description}
+                icon={renderIcon(tool.icon, tool.disabled)}
+                status={tool.status}
+                disabled={tool.disabled}
+                source={tool.source}
+                onClick={() => handleToolClick(tool)}
+              />
+            </div>
+          </ToolCardContextMenu>
         ))}
       </div>
 

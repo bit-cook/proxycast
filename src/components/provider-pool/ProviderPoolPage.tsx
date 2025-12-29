@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useProviderPool } from "@/hooks/useProviderPool";
 import { CredentialCard } from "./CredentialCard";
+import { CredentialCardContextMenu } from "./CredentialCardContextMenu";
 import { AddCredentialModal } from "./AddCredentialModal";
 import { EditCredentialModal } from "./EditCredentialModal";
 import { ErrorDisplay, useErrorDisplay } from "./ErrorDisplay";
@@ -656,28 +657,44 @@ export const ProviderPoolPage = forwardRef<ProviderPoolPageRef>(
                   }
 
                   return (
-                    <CredentialCard
+                    <CredentialCardContextMenu
                       key={credential.uuid}
                       credential={credential}
-                      onToggle={() => handleToggle(credential)}
-                      onDelete={() => handleDeleteClick(credential.uuid)}
-                      onReset={() => handleReset(credential.uuid)}
-                      onCheckHealth={() => handleCheckHealth(credential.uuid)}
                       onRefreshToken={
                         isOAuthType
                           ? () => handleRefreshToken(credential.uuid)
                           : undefined
                       }
-                      onEdit={() => handleEdit(credential)}
-                      deleting={deletingCredentials.has(credential.uuid)}
-                      checkingHealth={checkingHealth === credential.uuid}
-                      refreshingToken={refreshingToken === credential.uuid}
-                      isKiroCredential={isKiroCredential}
-                      isLocalActive={isLocalActive}
-                      onSwitchToLocal={
-                        isKiroCredential ? fetchLocalActiveUuid : undefined
-                      }
-                    />
+                      onToggle={() => handleToggle(credential)}
+                      onDelete={() => handleDeleteClick(credential.uuid)}
+                      isOAuth={isOAuthType}
+                    >
+                      <div>
+                        <CredentialCard
+                          credential={credential}
+                          onToggle={() => handleToggle(credential)}
+                          onDelete={() => handleDeleteClick(credential.uuid)}
+                          onReset={() => handleReset(credential.uuid)}
+                          onCheckHealth={() =>
+                            handleCheckHealth(credential.uuid)
+                          }
+                          onRefreshToken={
+                            isOAuthType
+                              ? () => handleRefreshToken(credential.uuid)
+                              : undefined
+                          }
+                          onEdit={() => handleEdit(credential)}
+                          deleting={deletingCredentials.has(credential.uuid)}
+                          checkingHealth={checkingHealth === credential.uuid}
+                          refreshingToken={refreshingToken === credential.uuid}
+                          isKiroCredential={isKiroCredential}
+                          isLocalActive={isLocalActive}
+                          onSwitchToLocal={
+                            isKiroCredential ? fetchLocalActiveUuid : undefined
+                          }
+                        />
+                      </div>
+                    </CredentialCardContextMenu>
                   );
                 })}
               </div>

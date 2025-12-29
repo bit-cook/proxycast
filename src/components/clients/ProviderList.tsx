@@ -18,6 +18,7 @@ import { ProviderCard } from "./ProviderCard";
 import { ProviderForm } from "./ProviderForm";
 import { LiveConfigModal } from "./LiveConfigModal";
 import { ConfigSyncDialog } from "./ConfigSyncDialog";
+import { ConfigItemContextMenu } from "./ConfigItemContextMenu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 // 敏感字段关键词
@@ -529,16 +530,18 @@ export function ProviderList({ appType }: ProviderListProps) {
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">
           {providers.map((provider) => (
-            <ProviderCard
+            <ConfigItemContextMenu
               key={provider.id}
-              provider={provider}
-              isCurrent={provider.id === currentProvider?.id}
-              switching={switchingId === provider.id}
-              onSwitch={async () => {
+              config={{
+                id: provider.id,
+                name: provider.name,
+                provider: provider.category,
+              }}
+              isActive={provider.id === currentProvider?.id}
+              onApply={async () => {
                 try {
                   setSwitchingId(provider.id);
                   await switchToProvider(provider.id);
-                  // 切换后重新读取实际配置
                   const config = await switchApi.readLiveSettings(appType);
                   setLiveConfig(config);
                 } catch (e) {
@@ -549,7 +552,30 @@ export function ProviderList({ appType }: ProviderListProps) {
               }}
               onEdit={() => handleEdit(provider)}
               onDelete={() => handleDeleteClick(provider.id)}
-            />
+            >
+              <div>
+                <ProviderCard
+                  provider={provider}
+                  isCurrent={provider.id === currentProvider?.id}
+                  switching={switchingId === provider.id}
+                  onSwitch={async () => {
+                    try {
+                      setSwitchingId(provider.id);
+                      await switchToProvider(provider.id);
+                      // 切换后重新读取实际配置
+                      const config = await switchApi.readLiveSettings(appType);
+                      setLiveConfig(config);
+                    } catch (e) {
+                      console.error("切换失败:", e);
+                    } finally {
+                      setSwitchingId(null);
+                    }
+                  }}
+                  onEdit={() => handleEdit(provider)}
+                  onDelete={() => handleDeleteClick(provider.id)}
+                />
+              </div>
+            </ConfigItemContextMenu>
           ))}
         </div>
       )}

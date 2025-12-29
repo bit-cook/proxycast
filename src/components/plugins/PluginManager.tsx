@@ -20,8 +20,10 @@ import {
 import { BinaryComponents } from "@/components/extensions/BinaryComponents";
 import { PluginInstallDialog } from "./PluginInstallDialog";
 import { PluginUninstallDialog } from "./PluginUninstallDialog";
+import { PluginItemContextMenu } from "./PluginItemContextMenu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 
 interface PluginState {
   name: string;
@@ -359,11 +361,32 @@ export function PluginManager() {
           </div>
           <div className="divide-y">
             {installedPlugins.map((plugin) => (
-              <InstalledPluginItem
+              <PluginItemContextMenu
                 key={plugin.id}
                 plugin={plugin}
+                onToggleEnabled={async () => {
+                  try {
+                    if (plugin.enabled) {
+                      await invoke("disable_plugin", { name: plugin.id });
+                      toast.success("插件已禁用");
+                    } else {
+                      await invoke("enable_plugin", { name: plugin.id });
+                      toast.success("插件已启用");
+                    }
+                    fetchData();
+                  } catch (_err) {
+                    toast.error("操作失败");
+                  }
+                }}
                 onUninstall={() => setPluginToUninstall(plugin)}
-              />
+              >
+                <div>
+                  <InstalledPluginItem
+                    plugin={plugin}
+                    onUninstall={() => setPluginToUninstall(plugin)}
+                  />
+                </div>
+              </PluginItemContextMenu>
             ))}
           </div>
         </div>
