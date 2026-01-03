@@ -32,6 +32,7 @@ pub struct OpenAiSseGenerator {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ToolCallState {
     /// 工具调用在 tool_calls 数组中的索引
     index: usize,

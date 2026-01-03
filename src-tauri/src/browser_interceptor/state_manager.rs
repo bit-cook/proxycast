@@ -265,7 +265,7 @@ impl StateManager {
 
             if result.is_ok() {
                 let mut buffer = vec![0u16; 1024];
-                let mut buffer_size = buffer.len() * 2;
+                let buffer_size = buffer.len() * 2;
 
                 let mut buffer_size_u32 = buffer_size as u32;
                 let result = RegQueryValueExW(
@@ -292,7 +292,8 @@ impl StateManager {
 
     /// 备份注册表项（Windows 特定）
     async fn backup_registry_keys(&self) -> Result<std::collections::HashMap<String, String>> {
-        let backup = std::collections::HashMap::new();
+        #[allow(unused_mut)]
+        let mut backup = std::collections::HashMap::new();
 
         #[cfg(target_os = "windows")]
         {
@@ -329,7 +330,7 @@ impl StateManager {
 
             if result.is_ok() {
                 let mut buffer = vec![0u16; 1024];
-                let mut buffer_size = buffer.len() * 2;
+                let buffer_size = buffer.len() * 2;
 
                 let mut buffer_size_u32 = buffer_size as u32;
                 let result = RegQueryValueExW(

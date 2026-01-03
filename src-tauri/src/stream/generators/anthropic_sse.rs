@@ -31,6 +31,7 @@ use uuid::Uuid;
 
 /// 工具调用状态
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 struct ToolCallState {
     /// 工具调用 ID
     id: String,

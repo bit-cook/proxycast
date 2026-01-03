@@ -6,7 +6,7 @@
 //! **Validates: Requirements 9.1**
 
 use crate::database::dao::api_key_provider::{
-    ApiKeyEntry, ApiKeyProvider, ApiProviderType, ProviderGroup, ProviderWithKeys,
+    ApiKeyEntry, ApiKeyProvider, ApiProviderType, ProviderWithKeys,
 };
 use crate::database::DbConnection;
 use crate::services::api_key_provider_service::{ApiKeyProviderService, ImportResult};

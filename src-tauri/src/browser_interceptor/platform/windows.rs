@@ -106,7 +106,7 @@ impl WindowsInterceptor {
 
             if result.is_ok() {
                 let mut buffer = vec![0u16; 1024];
-                let mut buffer_size = buffer.len() * 2;
+                let buffer_size = buffer.len() * 2;
 
                 let mut buffer_size_u32 = buffer_size as u32;
                 let result = RegQueryValueExW(
@@ -139,7 +139,7 @@ impl WindowsInterceptor {
     async fn create_interceptor_executable(&mut self) -> Result<()> {
         // 创建一个简单的拦截器程序，用于接收 URL 参数
         let temp_dir = std::env::temp_dir();
-        let exe_path = temp_dir.join("proxycast_browser_interceptor.exe");
+        let _exe_path = temp_dir.join("proxycast_browser_interceptor.exe");
 
         // 创建拦截器脚本内容（批处理脚本）
         let bat_content = format!(
