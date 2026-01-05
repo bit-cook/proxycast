@@ -144,7 +144,10 @@ pub async fn credentials_select(
     // 没有找到可用凭证
     Err(CredentialApiError {
         error: "no_available_credentials".to_string(),
-        message: format!("没有可用的 {} 凭证。您可以在 API Key Provider 中配置 API Key 作为降级选项。", request.provider_type),
+        message: format!(
+            "没有可用的 {} 凭证。您可以在 API Key Provider 中配置 API Key 作为降级选项。",
+            request.provider_type
+        ),
         status_code: 503,
     })
 }

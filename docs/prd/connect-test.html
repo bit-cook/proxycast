@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProxyCast Connect 测试页面</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { color: white; text-align: center; margin-bottom: 10px; font-size: 2rem; }
+    .subtitle { color: rgba(255,255,255,0.8); text-align: center; margin-bottom: 40px; }
+    .tabs {
+      display: flex; gap: 8px; margin-bottom: 24px;
+      background: rgba(255,255,255,0.1); padding: 8px; border-radius: 12px;
+    }
+    .tab {
+      flex: 1; padding: 12px 20px; border: none; border-radius: 8px;
+      font-size: 0.95rem; font-weight: 600; cursor: pointer;
+      background: transparent; color: rgba(255,255,255,0.7); transition: all 0.2s;
+    }
+    .tab.active { background: white; color: #667eea; }
+    .tab:hover:not(.active) { background: rgba(255,255,255,0.1); color: white; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .card {
+      background: white; border-radius: 16px; padding: 30px;
+      margin-bottom: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    .card-title {
+      font-size: 1.25rem; font-weight: 600; margin-bottom: 20px; color: #1a1a2e;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .card-title::before {
+      content: ''; width: 4px; height: 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 2px;
+    }
+    .form-group { margin-bottom: 20px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+    label { display: block; font-weight: 500; margin-bottom: 8px; color: #374151; }
+    .label-hint { font-weight: normal; color: #9ca3af; font-size: 0.85rem; }
+    input, select {
+      width: 100%; padding: 12px 16px; border: 2px solid #e5e7eb;
+      border-radius: 10px; font-size: 1rem; transition: border-color 0.2s;
+    }
+    input:focus, select:focus { outline: none; border-color: #667eea; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 14px 28px; border: none; border-radius: 10px;
+      font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4); }
+    .btn-secondary { background: #f3f4f6; color: #374151; }
+    .btn-secondary:hover { background: #e5e7eb; }
+    .btn-group { display: flex; gap: 12px; flex-wrap: wrap; }
+
+    .result-box {
+      background: #f8fafc; border: 2px dashed #e2e8f0;
+      border-radius: 10px; padding: 20px; margin-top: 20px;
+    }
+    .result-box.success { background: #ecfdf5; border-color: #10b981; border-style: solid; }
+    .result-label { font-size: 0.875rem; color: #64748b; margin-bottom: 8px; }
+    .result-url {
+      font-family: 'Monaco', 'Menlo', monospace; font-size: 0.875rem;
+      word-break: break-all; color: #1e293b; background: white;
+      padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;
+    }
+    .quick-test {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px; margin-top: 20px;
+    }
+    .quick-test-btn {
+      padding: 16px; background: #f8fafc; border: 2px solid #e2e8f0;
+      border-radius: 12px; cursor: pointer; transition: all 0.2s; text-align: left;
+    }
+    .quick-test-btn:hover { border-color: #667eea; background: #f0f4ff; }
+    .quick-test-btn .name { font-weight: 600; color: #1a1a2e; margin-bottom: 4px; }
+    .quick-test-btn .desc { font-size: 0.875rem; color: #64748b; }
+    .tips {
+      background: #fffbeb; border: 1px solid #fcd34d;
+      border-radius: 10px; padding: 16px; margin-top: 20px;
+    }
+    .tips.info { background: #eff6ff; border-color: #3b82f6; }
+    .tips-title { font-weight: 600; color: #92400e; margin-bottom: 8px; }
+    .tips.info .tips-title { color: #1d4ed8; }
+    .tips-content { font-size: 0.875rem; color: #a16207; line-height: 1.6; }
+    .tips.info .tips-content { color: #1e40af; }
+    .log-container {
+      max-height: 300px; overflow-y: auto; background: #1a1a2e;
+      border-radius: 10px; padding: 16px; margin-top: 16px;
+    }
+    .log-entry {
+      font-family: 'Monaco', 'Menlo', monospace; font-size: 0.8rem;
+      color: #a0aec0; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #2d3748;
+    }
+    .log-entry:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .log-entry .time { color: #718096; }
+    .log-entry .type { padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin: 0 8px; }
+    .log-entry .type.info { background: #3182ce; color: white; }
+    .log-entry .type.success { background: #38a169; color: white; }
+    .log-entry .type.error { background: #e53e3e; color: white; }
+    .log-entry .message { color: #e2e8f0; }
+    .toast {
+      position: fixed; bottom: 20px; right: 20px; background: #1a1a2e;
+      color: white; padding: 12px 20px; border-radius: 8px;
+      opacity: 0; transform: translateY(20px); transition: all 0.3s; z-index: 1000;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.success { background: #10b981; }
+    .toast.error { background: #ef4444; }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 500;
+    }
+    .status-badge.success { background: #dcfce7; color: #166534; }
+    .status-badge.cancelled { background: #fef3c7; color: #92400e; }
+    .status-badge.error { background: #fee2e2; color: #991b1b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔗 ProxyCast Connect 测试</h1>
+    <p class="subtitle">模拟中转商后台的一键配置功能 & Webhook 回调测试</p>
+    
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('deeplink')">🚀 Deep Link 测试</button>
+      <button class="tab" onclick="switchTab('webhook')">📤 Webhook 回调</button>
+      <button class="tab" onclick="switchTab('docs')">📖 使用说明</button>
+    </div>
+
+    <!-- Deep Link 测试标签页 -->
+    <div id="tab-deeplink" class="tab-content active">
+      <div class="card">
+        <h2 class="card-title">自定义测试</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="relay">中转商 ID (relay) <span class="label-hint">必填</span></label>
+            <input type="text" id="relay" placeholder="例如: openrouter" value="openrouter">
+          </div>
+          <div class="form-group">
+            <label for="key">API Key <span class="label-hint">必填</span></label>
+            <input type="text" id="key" placeholder="例如: sk-or-v1-xxxx" value="sk-test-1234567890">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="name">Key 名称 <span class="label-hint">可选</span></label>
+            <input type="text" id="name" placeholder="例如: 我的主账号" value="测试Key">
+          </div>
+          <div class="form-group">
+            <label for="ref">推广码 <span class="label-hint">可选，用于统计</span></label>
+            <input type="text" id="ref" placeholder="例如: promo2024">
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="openDeepLink()">🚀 一键配置 ProxyCast</button>
+          <button class="btn btn-secondary" onclick="generateLink()">📋 生成链接</button>
+        </div>
+        <div class="result-box" id="resultBox" style="display: none;">
+          <div class="result-label">生成的 Deep Link:</div>
+          <div class="result-url" id="resultUrl"></div>
+          <button class="btn btn-secondary" style="margin-top: 12px; padding: 8px 16px; font-size: 0.875rem;" onclick="copyLink()">复制链接</button>
+        </div>
+      </div>
+      
+      <div class="card">
+        <h2 class="card-title">快速测试场景</h2>
+        <div class="quick-test">
+          <button class="quick-test-btn" onclick="quickTest('openrouter', 'sk-or-v1-test123', 'OpenRouter测试', '')">
+            <div class="name">✅ OpenRouter</div>
+            <div class="desc">正常配置流程</div>
+          </button>
+          <button class="quick-test-btn" onclick="quickTest('siliconflow', 'sk-sf-test456', '硅基流动测试', 'promo2024')">
+            <div class="name">✅ 硅基流动 + 推广码</div>
+            <div class="desc">带推广码的配置</div>
+          </button>
+          <button class="quick-test-btn" onclick="quickTest('unknown-relay', 'sk-unknown', '未知中转', '')">
+            <div class="name">❌ 未注册中转商</div>
+            <div class="desc">测试错误处理</div>
+          </button>
+          <button class="quick-test-btn" onclick="quickTest('openrouter', '', '', '')">
+            <div class="name">❌ 缺少 Key</div>
+            <div class="desc">测试参数校验</div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Webhook 回调测试标签页 -->
+    <div id="tab-webhook" class="tab-content">
+      <div class="card">
+        <h2 class="card-title">Webhook 回调测试</h2>
+        <p style="color: #64748b; margin-bottom: 20px;">模拟 ProxyCast 发送的统计回调请求</p>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="callbackUrl">回调地址 (Callback URL) <span class="label-hint">必填</span></label>
+            <input type="text" id="callbackUrl" placeholder="https://api.myrelay.com/proxycast/callback">
+          </div>
+          <div class="form-group">
+            <label for="callbackRelay">中转商 ID</label>
+            <input type="text" id="callbackRelay" placeholder="openrouter" value="openrouter">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="callbackStatus">回调状态</label>
+            <select id="callbackStatus">
+              <option value="success">✅ success - 配置成功</option>
+              <option value="cancelled">⚠️ cancelled - 用户取消</option>
+              <option value="error">❌ error - 配置失败</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="callbackRef">推广码 (ref) <span class="label-hint">可选</span></label>
+            <input type="text" id="callbackRef" placeholder="promo2024" value="promo2024">
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="callbackKeyPrefix">Key 前缀 <span class="label-hint">脱敏后的 Key（前 7 位）</span></label>
+          <input type="text" id="callbackKeyPrefix" placeholder="sk-or-v" value="sk-or-v" maxlength="7">
+        </div>
+        
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="sendCallback()">📤 发送回调</button>
+          <button class="btn btn-secondary" onclick="generateCallbackPayload()">📋 生成 Payload</button>
+          <button class="btn btn-secondary" onclick="clearLogs()">🗑️ 清空日志</button>
+        </div>
+        
+        <div class="result-box" id="callbackResultBox" style="display: none;">
+          <div class="result-label">回调 Payload:</div>
+          <pre class="result-url" id="callbackPayload" style="white-space: pre-wrap; font-size: 0.8rem;"></pre>
+        </div>
+        
+        <div style="margin-top: 24px;">
+          <div class="result-label">请求日志:</div>
+          <div class="log-container" id="logContainer">
+            <div class="log-entry">
+              <span class="time">[--:--:--]</span>
+              <span class="type info">INFO</span>
+              <span class="message">等待发送回调请求...</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="tips info" style="margin-top: 20px;">
+          <div class="tips-title">💡 验证说明</div>
+          <div class="tips-content">
+            由于 ProxyCast 是开源软件，不使用签名验证。<br>
+            中转商应通过检查 <code>key_prefix</code> 是否为自己下发的 Key 来验证请求。
+          </div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <h2 class="card-title">回调字段说明</h2>
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 2px solid #e5e7eb;">
+              <th style="padding: 12px 0; text-align: left; color: #374151;">字段</th>
+              <th style="padding: 12px 0; text-align: left; color: #374151;">说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+              <td style="padding: 10px 0; font-family: monospace;">status</td>
+              <td style="padding: 10px 0;">
+                <span class="status-badge success">success</span>
+                <span class="status-badge cancelled">cancelled</span>
+                <span class="status-badge error">error</span>
+              </td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+              <td style="padding: 10px 0; font-family: monospace;">relay_id</td>
+              <td style="padding: 10px 0; color: #64748b;">中转商 ID</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+              <td style="padding: 10px 0; font-family: monospace;">key_prefix</td>
+              <td style="padding: 10px 0; color: #64748b;">Key 前缀（脱敏，仅前 7 位）- 用于验证</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+              <td style="padding: 10px 0; font-family: monospace;">ref</td>
+              <td style="padding: 10px 0; color: #64748b;">推广码（可选）</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px 0; font-family: monospace;">client</td>
+              <td style="padding: 10px 0; color: #64748b;">客户端信息 {version, platform}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 使用说明标签页 -->
+    <div id="tab-docs" class="tab-content">
+      <div class="card">
+        <h2 class="card-title">Deep Link 协议</h2>
+        <div style="margin-bottom: 20px;">
+          <h3 style="font-size: 1rem; margin-bottom: 12px; color: #374151;">协议格式</h3>
+          <div class="result-url">proxycast://connect?relay={relay_id}&key={api_key}&name={key_name}&ref={ref_code}</div>
+        </div>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 10px 0; font-weight: 500; font-family: monospace;">relay</td>
+            <td style="padding: 10px 0; color: #ef4444; font-weight: 500;">必填</td>
+            <td style="padding: 10px 0; color: #64748b;">中转商 ID</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 10px 0; font-weight: 500; font-family: monospace;">key</td>
+            <td style="padding: 10px 0; color: #ef4444; font-weight: 500;">必填</td>
+            <td style="padding: 10px 0; color: #64748b;">API Key</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 10px 0; font-weight: 500; font-family: monospace;">name</td>
+            <td style="padding: 10px 0; color: #64748b;">可选</td>
+            <td style="padding: 10px 0; color: #64748b;">Key 显示名称</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 0; font-weight: 500; font-family: monospace;">ref</td>
+            <td style="padding: 10px 0; color: #64748b;">可选</td>
+            <td style="padding: 10px 0; color: #64748b;">推广码</td>
+          </tr>
+        </table>
+        <div class="tips">
+          <div class="tips-title">💡 测试前提</div>
+          <div class="tips-content">
+            1. 确保 ProxyCast 应用已安装并运行<br>
+            2. 确保 Deep Link 协议已正确注册<br>
+            3. 如果点击无反应，检查浏览器是否阻止了协议跳转
+          </div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <h2 class="card-title">相关链接</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+          <a href="https://github.com/aiclientproxy/connect" target="_blank" class="quick-test-btn" style="text-decoration: none;">
+            <div class="name">📦 中转商注册仓库</div>
+            <div class="desc">提交 PR 注册中转商</div>
+          </a>
+          <a href="https://proxycast.dev/docs/open-platform/connect" target="_blank" class="quick-test-btn" style="text-decoration: none;">
+            <div class="name">📖 Connect 文档</div>
+            <div class="desc">详细的接入指南</div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="toast" id="toast"></div>
+
+
+  <script>
+    // Tab 切换
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelector(`[onclick="switchTab('${tabId}')"]`).classList.add('active');
+      document.getElementById(`tab-${tabId}`).classList.add('active');
+    }
+
+    // 生成 Deep Link
+    function generateDeepLink() {
+      const relay = document.getElementById('relay').value.trim();
+      const key = document.getElementById('key').value.trim();
+      const name = document.getElementById('name').value.trim();
+      const ref = document.getElementById('ref').value.trim();
+
+      if (!relay) { showToast('请输入中转商 ID', 'error'); return null; }
+      if (!key) { showToast('请输入 API Key', 'error'); return null; }
+
+      let url = `proxycast://connect?relay=${encodeURIComponent(relay)}&key=${encodeURIComponent(key)}`;
+      if (name) url += `&name=${encodeURIComponent(name)}`;
+      if (ref) url += `&ref=${encodeURIComponent(ref)}`;
+      return url;
+    }
+
+    // 打开 Deep Link
+    function openDeepLink() {
+      const url = generateDeepLink();
+      if (url) {
+        window.location.href = url;
+        showToast('正在打开 ProxyCast...', 'success');
+      }
+    }
+
+    // 生成并显示链接
+    function generateLink() {
+      const url = generateDeepLink();
+      if (url) {
+        document.getElementById('resultUrl').textContent = url;
+        document.getElementById('resultBox').style.display = 'block';
+        document.getElementById('resultBox').classList.add('success');
+      }
+    }
+
+    // 复制链接
+    function copyLink() {
+      const url = document.getElementById('resultUrl').textContent;
+      navigator.clipboard.writeText(url).then(() => {
+        showToast('链接已复制', 'success');
+      });
+    }
+
+    // 快速测试
+    function quickTest(relay, key, name, ref) {
+      document.getElementById('relay').value = relay;
+      document.getElementById('key').value = key;
+      document.getElementById('name').value = name;
+      document.getElementById('ref').value = ref;
+      openDeepLink();
+    }
+
+    // Toast 提示
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = `toast show ${type}`;
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // 添加日志
+    function addLog(type, message) {
+      const container = document.getElementById('logContainer');
+      const time = new Date().toLocaleTimeString();
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `
+        <span class="time">[${time}]</span>
+        <span class="type ${type}">${type.toUpperCase()}</span>
+        <span class="message">${message}</span>
+      `;
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // 清空日志
+    function clearLogs() {
+      const container = document.getElementById('logContainer');
+      container.innerHTML = `
+        <div class="log-entry">
+          <span class="time">[--:--:--]</span>
+          <span class="type info">INFO</span>
+          <span class="message">日志已清空</span>
+        </div>
+      `;
+    }
+
+    // 生成回调 Payload
+    function generateCallbackPayload() {
+      const payload = buildCallbackPayload();
+      if (payload) {
+        document.getElementById('callbackPayload').textContent = JSON.stringify(payload, null, 2);
+        document.getElementById('callbackResultBox').style.display = 'block';
+      }
+    }
+
+    // 构建回调 Payload
+    function buildCallbackPayload() {
+      const relay = document.getElementById('callbackRelay').value.trim();
+      const status = document.getElementById('callbackStatus').value;
+      const ref = document.getElementById('callbackRef').value.trim();
+      const keyPrefix = document.getElementById('callbackKeyPrefix').value.trim();
+
+      if (!relay) { showToast('请输入中转商 ID', 'error'); return null; }
+      if (!keyPrefix) { showToast('请输入 Key 前缀', 'error'); return null; }
+
+      const payload = {
+        event: 'connect',
+        status: status,
+        relay_id: relay,
+        key_prefix: keyPrefix.substring(0, 7),
+        timestamp: new Date().toISOString(),
+        client: {
+          version: '0.29.0',
+          platform: 'web-test'
+        }
+      };
+
+      if (ref) payload.ref_code = ref;
+      if (status === 'error') {
+        payload.error_code = 'TEST_ERROR';
+        payload.error_message = '测试错误消息';
+      }
+
+      return payload;
+    }
+
+    // 发送回调
+    async function sendCallback() {
+      const url = document.getElementById('callbackUrl').value.trim();
+      if (!url) { showToast('请输入回调地址', 'error'); return; }
+      if (!url.startsWith('https://')) { showToast('回调地址必须使用 HTTPS', 'error'); return; }
+
+      const payload = buildCallbackPayload();
+      if (!payload) return;
+
+      addLog('info', `发送回调到: ${url}`);
+      addLog('info', `Payload: ${JSON.stringify(payload)}`);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'ProxyCast/0.29.0 (Test)'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          addLog('success', `回调成功! HTTP ${response.status}`);
+          showToast('回调发送成功', 'success');
+        } else {
+          addLog('error', `回调失败: HTTP ${response.status}`);
+          showToast(`回调失败: HTTP ${response.status}`, 'error');
+        }
+      } catch (error) {
+        addLog('error', `网络错误: ${error.message}`);
+        showToast('网络错误，请检查回调地址', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

@@ -259,7 +259,8 @@ pub async fn select_credential(
             })?
             .ok_or_else(|| ApiError {
                 error: "no_available_credentials".to_string(),
-                message: "没有可用的 Kiro 凭证。Kiro 仅支持 OAuth 认证，无法降级到 API Key。".to_string(),
+                message: "没有可用的 Kiro 凭证。Kiro 仅支持 OAuth 认证，无法降级到 API Key。"
+                    .to_string(),
                 status_code: 503,
             })?
     };

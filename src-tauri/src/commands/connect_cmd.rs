@@ -66,9 +66,10 @@ impl From<DeepLinkError> for ConnectError {
     fn from(err: DeepLinkError) -> Self {
         let (code, message) = match &err {
             DeepLinkError::InvalidUrl(msg) => ("INVALID_URL".to_string(), msg.clone()),
-            DeepLinkError::MissingRelay => {
-                ("MISSING_RELAY".to_string(), "缺少必填参数: relay".to_string())
-            }
+            DeepLinkError::MissingRelay => (
+                "MISSING_RELAY".to_string(),
+                "缺少必填参数: relay".to_string(),
+            ),
             DeepLinkError::MissingKey => {
                 ("MISSING_KEY".to_string(), "缺少必填参数: key".to_string())
             }
@@ -203,10 +204,13 @@ pub async fn save_relay_api_key(
     })?;
 
     // 获取中转商信息以确定协议类型和 base_url
-    let relay_info = connect_state.registry.get(&relay_id).ok_or_else(|| ConnectError {
-        code: "RELAY_NOT_FOUND".to_string(),
-        message: format!("中转商 {} 不在注册表中", relay_id),
-    })?;
+    let relay_info = connect_state
+        .registry
+        .get(&relay_id)
+        .ok_or_else(|| ConnectError {
+            code: "RELAY_NOT_FOUND".to_string(),
+            message: format!("中转商 {} 不在注册表中", relay_id),
+        })?;
 
     let protocol = relay_info.api.protocol.to_lowercase();
     let base_url = relay_info.api.base_url.clone();
@@ -235,7 +239,9 @@ pub async fn save_relay_api_key(
         (provider_id, false)
     } else {
         // 创建新的自定义 Provider
-        let provider_name = name.clone().unwrap_or_else(|| format!("[Connect] {}", relay_info.name));
+        let provider_name = name
+            .clone()
+            .unwrap_or_else(|| format!("[Connect] {}", relay_info.name));
         let new_provider = api_key_service
             .0
             .add_custom_provider(
@@ -390,10 +396,7 @@ pub async fn send_connect_callback(
     let callback_url = match webhook.callback_url {
         Some(url) => url,
         None => {
-            tracing::debug!(
-                "[Connect] 中转商 {} webhook 配置不完整，跳过回调",
-                relay_id
-            );
+            tracing::debug!("[Connect] 中转商 {} webhook 配置不完整，跳过回调", relay_id);
             return Ok(false);
         }
     };

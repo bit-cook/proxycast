@@ -698,11 +698,7 @@ impl ApiKeyProviderService {
     ) -> Result<Option<ProviderCredential>, String> {
         // 策略 1: 通过类型映射查找
         if let Some(api_type) = self.map_pool_type_to_api_type(pool_type) {
-            tracing::debug!(
-                "[智能降级] 尝试类型映射: {:?} -> {:?}",
-                pool_type,
-                api_type
-            );
+            tracing::debug!("[智能降级] 尝试类型映射: {:?} -> {:?}", pool_type, api_type);
             if let Some(cred) = self.find_by_api_type(db, pool_type, &api_type)? {
                 return Ok(Some(cred));
             }
@@ -710,10 +706,7 @@ impl ApiKeyProviderService {
 
         // 策略 2: 通过 provider_id 直接查找 (支持 60+ Provider)
         if let Some(provider_id) = provider_id_hint {
-            tracing::debug!(
-                "[智能降级] 尝试 provider_id 查找: {}",
-                provider_id
-            );
+            tracing::debug!("[智能降级] 尝试 provider_id 查找: {}", provider_id);
             if let Some(cred) = self.find_by_provider_id(db, provider_id)? {
                 return Ok(Some(cred));
             }
@@ -730,10 +723,7 @@ impl ApiKeyProviderService {
     /// PoolProviderType → ApiProviderType 映射
     ///
     /// 仅映射有明确对应关系的类型
-    fn map_pool_type_to_api_type(
-        &self,
-        pool_type: &PoolProviderType,
-    ) -> Option<ApiProviderType> {
+    fn map_pool_type_to_api_type(&self, pool_type: &PoolProviderType) -> Option<ApiProviderType> {
         match pool_type {
             // API Key 类型 - 直接映射
             PoolProviderType::Claude => Some(ApiProviderType::Anthropic),
@@ -743,7 +733,7 @@ impl ApiKeyProviderService {
 
             // OAuth 类型 - 可降级到 API Key
             PoolProviderType::Gemini => Some(ApiProviderType::Gemini), // Gemini OAuth → Gemini API Key
-            PoolProviderType::Qwen => Some(ApiProviderType::Openai),   // Qwen OAuth → Dashscope (OpenAI 兼容)
+            PoolProviderType::Qwen => Some(ApiProviderType::Openai), // Qwen OAuth → Dashscope (OpenAI 兼容)
 
             // API Key Provider 类型 - 直接映射
             PoolProviderType::Anthropic => Some(ApiProviderType::Anthropic),
@@ -770,8 +760,7 @@ impl ApiKeyProviderService {
         let conn = db.lock().map_err(|e| e.to_string())?;
 
         // 查找该类型的启用的 Provider（按 sort_order 排序）
-        let providers =
-            ApiKeyProviderDao::get_all_providers(&conn).map_err(|e| e.to_string())?;
+        let providers = ApiKeyProviderDao::get_all_providers(&conn).map_err(|e| e.to_string())?;
 
         let matching_providers: Vec<_> = providers
             .into_iter()
@@ -838,8 +827,8 @@ impl ApiKeyProviderService {
         let conn = db.lock().map_err(|e| e.to_string())?;
 
         // 直接按 provider_id 查找
-        let provider = ApiKeyProviderDao::get_provider_by_id(&conn, provider_id)
-            .map_err(|e| e.to_string())?;
+        let provider =
+            ApiKeyProviderDao::get_provider_by_id(&conn, provider_id).map_err(|e| e.to_string())?;
 
         let provider = match provider {
             Some(p) if p.enabled => p,
@@ -870,11 +859,8 @@ impl ApiKeyProviderService {
 
         // 转换为 OpenAI 兼容的 ProviderCredential
         // 大多数 60+ Provider 都使用 OpenAI 兼容协议
-        let credential = self.convert_to_openai_compatible_credential(
-            &provider,
-            &selected_key.id,
-            &api_key,
-        )?;
+        let credential =
+            self.convert_to_openai_compatible_credential(&provider, &selected_key.id, &api_key)?;
 
         tracing::info!(
             "[智能降级] 成功通过 provider_id 找到凭证: {} (key: {})",

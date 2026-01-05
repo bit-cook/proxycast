@@ -6,7 +6,6 @@
 
 use crate::database::dao::provider_pool::ProviderPoolDao;
 use crate::database::DbConnection;
-use crate::services::api_key_provider_service::ApiKeyProviderService;
 use crate::models::provider_pool_model::{
     get_default_check_model, get_oauth_creds_path, CredentialData, CredentialDisplay,
     HealthCheckResult, OAuthStatus, PoolProviderType, PoolStats, ProviderCredential,
@@ -15,6 +14,7 @@ use crate::models::provider_pool_model::{
 use crate::models::route_model::RouteInfo;
 use crate::providers::antigravity::TokenRefreshError;
 use crate::providers::kiro::KiroProvider;
+use crate::services::api_key_provider_service::ApiKeyProviderService;
 use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -351,9 +351,7 @@ impl ProviderPoolService {
         }
 
         // Step 2: 智能降级到 API Key Provider
-        let pt: PoolProviderType = provider_type
-            .parse()
-            .unwrap_or(PoolProviderType::OpenAI);
+        let pt: PoolProviderType = provider_type.parse().unwrap_or(PoolProviderType::OpenAI);
 
         // 传入 provider_id_hint 支持 60+ Provider
         if let Some(cred) = api_key_service.get_fallback_credential(db, &pt, provider_id_hint)? {

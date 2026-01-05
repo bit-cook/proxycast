@@ -1302,17 +1302,13 @@ async fn anthropic_messages_with_selector(
                 Some(cred)
             }
             // 最后尝试按 provider 类型轮询（带智能降级）
-            else if let Ok(Some(cred)) =
-                state
-                    .pool_service
-                    .select_credential_with_fallback(
-                        db,
-                        &state.api_key_service,
-                        &selector,
-                        Some(&request.model),
-                        None, // provider_id_hint
-                    )
-            {
+            else if let Ok(Some(cred)) = state.pool_service.select_credential_with_fallback(
+                db,
+                &state.api_key_service,
+                &selector,
+                Some(&request.model),
+                None, // provider_id_hint
+            ) {
                 Some(cred)
             } else {
                 None
@@ -1382,17 +1378,13 @@ async fn chat_completions_with_selector(
                 Some(cred)
             } else if let Ok(Some(cred)) = state.pool_service.get_by_uuid(db, &selector) {
                 Some(cred)
-            } else if let Ok(Some(cred)) =
-                state
-                    .pool_service
-                    .select_credential_with_fallback(
-                        db,
-                        &state.api_key_service,
-                        &selector,
-                        Some(&request.model),
-                        None, // provider_id_hint
-                    )
-            {
+            } else if let Ok(Some(cred)) = state.pool_service.select_credential_with_fallback(
+                db,
+                &state.api_key_service,
+                &selector,
+                Some(&request.model),
+                None, // provider_id_hint
+            ) {
                 Some(cred)
             } else {
                 None
@@ -1478,17 +1470,13 @@ async fn amp_chat_completions(
     let credential = match &state.db {
         Some(db) => {
             // 首先尝试按 provider 类型选择（带智能降级）
-            if let Ok(Some(cred)) =
-                state
-                    .pool_service
-                    .select_credential_with_fallback(
-                        db,
-                        &state.api_key_service,
-                        &provider,
-                        Some(&request.model),
-                        Some(&provider), // provider_id_hint 使用路由中的 provider 名称
-                    )
-            {
+            if let Ok(Some(cred)) = state.pool_service.select_credential_with_fallback(
+                db,
+                &state.api_key_service,
+                &provider,
+                Some(&request.model),
+                Some(&provider), // provider_id_hint 使用路由中的 provider 名称
+            ) {
                 Some(cred)
             }
             // 然后尝试按名称查找
@@ -1580,17 +1568,13 @@ async fn amp_messages(
     let credential = match &state.db {
         Some(db) => {
             // 首先尝试按 provider 类型选择（带智能降级）
-            if let Ok(Some(cred)) =
-                state
-                    .pool_service
-                    .select_credential_with_fallback(
-                        db,
-                        &state.api_key_service,
-                        &provider,
-                        Some(&request.model),
-                        Some(&provider), // provider_id_hint 使用路由中的 provider 名称
-                    )
-            {
+            if let Ok(Some(cred)) = state.pool_service.select_credential_with_fallback(
+                db,
+                &state.api_key_service,
+                &provider,
+                Some(&request.model),
+                Some(&provider), // provider_id_hint 使用路由中的 provider 名称
+            ) {
                 Some(cred)
             }
             // 然后尝试按名称查找
