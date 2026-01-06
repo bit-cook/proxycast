@@ -19,7 +19,6 @@ import { ToolsPage } from "./components/tools/ToolsPage";
 import { AgentChatPage } from "./components/agent";
 import { PluginUIRenderer } from "./components/plugins/PluginUIRenderer";
 import { PluginsPage } from "./components/plugins/PluginsPage";
-import { Toaster } from "./components/ui/sonner";
 import { flowEventManager } from "./lib/flowEventManager";
 import { OnboardingWizard, useOnboardingState } from "./components/onboarding";
 import { ConnectConfirmDialog } from "./components/connect";
@@ -209,7 +208,6 @@ function App() {
     <AppContainer>
       <AppSidebar currentPage={currentPage} onNavigate={setCurrentPage} />
       <MainContent>{renderPage()}</MainContent>
-      <Toaster />
       {/* ProxyCast Connect 确认弹窗 */}
       {/* _Requirements: 5.2_ */}
       <ConnectConfirmDialog
