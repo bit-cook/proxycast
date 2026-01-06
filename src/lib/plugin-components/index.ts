@@ -98,6 +98,9 @@ export { AntigravityFormStandalone } from "@/components/provider-pool/credential
 // Gemini 凭证表单（自包含版本，适合插件使用）
 export { GeminiFormStandalone } from "@/components/provider-pool/credential-forms/GeminiFormStandalone";
 
+// Claude 凭证表单（自包含版本，适合插件使用）
+export { ClaudeFormStandalone } from "@/components/provider-pool/credential-forms/ClaudeFormStandalone";
+
 // 浏览器模式选择器
 export {
   BrowserModeSelector,
@@ -199,6 +202,8 @@ export {
   Server,
   Mail,
   Sparkles,
+  Cookie,
+  FileJson,
 } from "lucide-react";
 
 // ============================================================================

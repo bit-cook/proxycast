@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Bot, ChevronDown, Check, Box, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useProviderPool } from "@/hooks/useProviderPool";
 import { useApiKeyProvider } from "@/hooks/useApiKeyProvider";
 import { useModelRegistry } from "@/hooks/useModelRegistry";
+import { getDefaultProvider } from "@/hooks/useTauri";
 
 // OAuth 凭证类型到显示名称和 registry ID 的映射
 const CREDENTIAL_TYPE_CONFIG: Record<
@@ -72,10 +73,30 @@ export const ChatNavbar: React.FC<ChatNavbarProps> = ({
   onToggleSettings,
 }) => {
   const [open, setOpen] = useState(false);
+  const [serverDefaultProvider, setServerDefaultProvider] = useState<
+    string | null
+  >(null);
+
+  // 用于防止无限循环
+  const hasInitialized = useRef(false);
+  const prevProviderType = useRef(providerType);
 
   // 获取凭证池数据
   const { overview: oauthCredentials } = useProviderPool();
   const { providers: apiKeyProviders } = useApiKeyProvider();
+
+  // 获取服务器默认 Provider
+  useEffect(() => {
+    const loadDefaultProvider = async () => {
+      try {
+        const dp = await getDefaultProvider();
+        setServerDefaultProvider(dp);
+      } catch (e) {
+        console.error("Failed to get default provider:", e);
+      }
+    };
+    loadDefaultProvider();
+  }, []);
 
   // 获取模型注册表数据
   const { models: registryModels } = useModelRegistry({ autoLoad: true });
@@ -130,20 +151,48 @@ export const ChatNavbar: React.FC<ChatNavbarProps> = ({
       .map((m) => m.id);
   }, [selectedProvider, registryModels]);
 
-  // 如果当前选中的 Provider 不在已配置列表中，自动切换到第一个已配置的
+  // 初始化：优先选择服务器默认 Provider，否则选择第一个已配置的
   useEffect(() => {
-    if (configuredProviders.length > 0 && !selectedProvider) {
-      const firstProvider = configuredProviders[0];
-      setProviderType(firstProvider.key);
+    if (hasInitialized.current) return;
+    if (configuredProviders.length === 0) return;
+    if (serverDefaultProvider === null) return; // 等待服务器默认 Provider 加载完成
+
+    // 检查服务器默认 Provider 是否在已配置列表中
+    const serverDefaultInList = configuredProviders.find(
+      (p) => p.key === serverDefaultProvider,
+    );
+
+    if (serverDefaultInList) {
+      // 服务器默认 Provider 在列表中，使用它
+      hasInitialized.current = true;
+      if (providerType !== serverDefaultProvider) {
+        setProviderType(serverDefaultProvider);
+      }
+    } else if (!selectedProvider) {
+      // 服务器默认 Provider 不在列表中，使用第一个已配置的
+      hasInitialized.current = true;
+      setProviderType(configuredProviders[0].key);
+    } else {
+      hasInitialized.current = true;
     }
-  }, [configuredProviders, selectedProvider, setProviderType]);
+  }, [
+    configuredProviders,
+    selectedProvider,
+    setProviderType,
+    serverDefaultProvider,
+    providerType,
+  ]);
 
   // 当 Provider 切换时，自动选择第一个模型
   useEffect(() => {
+    // 只在 Provider 真正变化时触发
+    if (providerType === prevProviderType.current) return;
+    prevProviderType.current = providerType;
+
     if (currentModels.length > 0 && !currentModels.includes(model)) {
       setModel(currentModels[0]);
     }
-  }, [currentModels, model, setModel]);
+  }, [providerType, currentModels, model, setModel]);
 
   const selectedProviderLabel = selectedProvider?.label || providerType;
 
@@ -194,25 +243,34 @@ export const ChatNavbar: React.FC<ChatNavbarProps> = ({
                     暂无已配置的 Provider
                   </div>
                 ) : (
-                  configuredProviders.map((provider) => (
-                    <button
-                      key={provider.key}
-                      onClick={() => {
-                        setProviderType(provider.key);
-                      }}
-                      className={cn(
-                        "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-md transition-colors text-left",
-                        providerType === provider.key
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "hover:bg-muted text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {provider.label}
-                      {providerType === provider.key && (
-                        <div className="w-1 h-1 rounded-full bg-primary" />
-                      )}
-                    </button>
-                  ))
+                  configuredProviders.map((provider) => {
+                    // 判断是否是服务器默认 Provider
+                    const isServerDefault =
+                      serverDefaultProvider === provider.key;
+                    const isSelected = providerType === provider.key;
+
+                    return (
+                      <button
+                        key={provider.key}
+                        onClick={() => {
+                          setProviderType(provider.key);
+                        }}
+                        className={cn(
+                          "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-md transition-colors text-left",
+                          isSelected
+                            ? "bg-primary/10 text-primary font-medium"
+                            : isServerDefault
+                              ? "hover:bg-muted text-foreground hover:text-foreground"
+                              : "hover:bg-muted text-muted-foreground/50 hover:text-muted-foreground",
+                        )}
+                      >
+                        {provider.label}
+                        {isSelected && (
+                          <div className="w-1 h-1 rounded-full bg-primary" />
+                        )}
+                      </button>
+                    );
+                  })
                 )}
               </div>
 
