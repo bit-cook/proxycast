@@ -173,6 +173,24 @@ const recommendedOAuthPlugins: RecommendedOAuthPlugin[] = [
     recommended: false,
     available: true,
   },
+  {
+    id: "codex-provider",
+    name: "Codex Provider",
+    description: "Codex OAuth Provider - 支持 OpenAI 模型 (GPT-*, O1-*, O3-*)",
+    icon: Bot,
+    targetProtocol: "openai",
+    source: {
+      type: "git_hub",
+      owner: "aiclientproxy",
+      repo: "codex-provider",
+      version: "v0.1.0",
+    },
+    downloadUrl:
+      "https://github.com/aiclientproxy/codex-provider/releases/download/v0.1.0/codex-provider-plugin.zip",
+    tags: ["openai", "免费"],
+    recommended: false,
+    available: true,
+  },
 ];
 
 // ============================================================================

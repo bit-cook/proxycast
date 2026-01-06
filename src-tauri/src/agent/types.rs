@@ -36,10 +36,10 @@ impl ProviderType {
     /// 从字符串解析 provider 类型
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "claude" => Self::Claude,
+            "claude" | "anthropic" => Self::Claude,
             "claude_oauth" => Self::ClaudeOauth,
             "kiro" => Self::Kiro,
-            "gemini" => Self::Gemini,
+            "gemini" | "gemini_api_key" => Self::Gemini,
             "openai" => Self::OpenAI,
             "qwen" => Self::Qwen,
             "codex" => Self::Codex,

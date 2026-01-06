@@ -41,6 +41,7 @@ const PLUGIN_GLOBAL_NAMES: Record<string, string> = {
   "claude-provider": "ClaudeProviderPlugin",
   "gemini-provider": "GeminiProviderPlugin",
   "antigravity-provider": "AntigravityProviderPlugin",
+  "codex-provider": "CodexProviderPlugin",
 };
 
 /**
