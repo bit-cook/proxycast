@@ -74,31 +74,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Download models data
-        run: |
-          mkdir -p src-tauri/resources/models/providers
-          mkdir -p src-tauri/resources/models/aliases
-
-          # 下载 index.json
-          curl -sL https://raw.githubusercontent.com/aiclientproxy/models/main/index.json \
-            -o src-tauri/resources/models/index.json
-
-          # 解析 providers 列表并下载每个 provider 的数据
-          for provider in $(cat src-tauri/resources/models/index.json | jq -r '.providers[]'); do
-            curl -sL "https://raw.githubusercontent.com/aiclientproxy/models/main/providers/${provider}.json" \
-              -o "src-tauri/resources/models/providers/${provider}.json"
-          done
-
-          # 下载别名配置
-          for alias in kiro antigravity; do
-            curl -sL "https://raw.githubusercontent.com/aiclientproxy/models/main/aliases/${alias}.json" \
-              -o "src-tauri/resources/models/aliases/${alias}.json" || true
-          done
-
-          # 输出统计
-          echo "Downloaded providers: $(ls -1 src-tauri/resources/models/providers | wc -l)"
-          echo "Downloaded aliases: $(ls -1 src-tauri/resources/models/aliases | wc -l)"
-
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
