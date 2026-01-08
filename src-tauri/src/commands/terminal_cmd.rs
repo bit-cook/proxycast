@@ -34,19 +34,26 @@ pub struct CreateSessionResponse {
 ///
 /// PTY 使用默认大小 (24x80) 预创建，前端连接后通过 resize 同步实际大小。
 ///
+/// # 参数
+/// - `cwd`: 工作目录（可选）
+///
 /// # 返回
 /// - `Ok(CreateSessionResponse)`: 包含会话 ID
 /// - `Err(String)`: 错误信息
 #[tauri::command]
 pub async fn terminal_create_session(
     state: State<'_, TerminalManagerState>,
+    cwd: Option<String>,
 ) -> Result<CreateSessionResponse, String> {
     let guard = state.inner().0.read().await;
     let manager = guard
         .as_ref()
         .ok_or_else(|| "终端管理器未初始化".to_string())?;
 
-    let session_id = manager.create_session().await.map_err(|e| e.to_string())?;
+    let session_id = manager
+        .create_session_with_options(24, 80, cwd)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(CreateSessionResponse { session_id })
 }

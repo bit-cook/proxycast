@@ -27,16 +27,7 @@ import {
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { getPluginsForSurface, PluginUIInfo } from "@/lib/api/pluginUI";
-
-type Page =
-  | "provider-pool"
-  | "api-server"
-  | "agent"
-  | "tools"
-  | "plugins"
-  | "settings"
-  | "terminal"
-  | `plugin:${string}`;
+import { Page } from "@/types/page";
 
 interface AppSidebarProps {
   currentPage: Page;

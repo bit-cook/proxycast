@@ -14,6 +14,14 @@ export { ConnectionStatusIndicator } from "./ConnectionStatusIndicator";
 export { MultiInputIndicator } from "./MultiInputIndicator";
 export { TermWrap } from "./termwrap";
 
+// 分块布局组件
+export { TerminalWorkspace } from "./TerminalWorkspace";
+export type { SidePanelType, SidePanel } from "./TerminalWorkspace";
+export { TerminalPanel } from "./TerminalPanel";
+
+// 小部件系统（供外部使用，如独立页面）
+export { SysinfoView, FileBrowserView, WebView } from "./widgets";
+
 // VDOM 组件
 // _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5_
 export { VDomModeSwitch, VDomModeToggle } from "./VDomModeSwitch";

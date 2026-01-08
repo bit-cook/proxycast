@@ -93,11 +93,13 @@ export const TERMINAL_STATUS_EVENT = "terminal:status";
  *
  * PTY 使用默认大小 (24x80) 预创建，前端连接后通过 resizeTerminal 同步实际大小。
  *
+ * @param cwd - 工作目录（可选）
  * @returns 会话 ID
  */
-export async function createTerminalSession(): Promise<string> {
+export async function createTerminalSession(cwd?: string): Promise<string> {
   const response = await invoke<CreateSessionResponse>(
     "terminal_create_session",
+    { cwd },
   );
   return response.session_id;
 }

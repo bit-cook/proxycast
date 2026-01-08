@@ -204,19 +204,51 @@ impl TerminalSessionManager {
         rows: u16,
         cols: u16,
     ) -> Result<String, TerminalError> {
+        self.create_session_with_options(rows, cols, None).await
+    }
+
+    /// 创建新的终端会话（指定大小和工作目录）
+    ///
+    /// # 参数
+    /// - `rows`: 终端行数
+    /// - `cols`: 终端列数
+    /// - `cwd`: 工作目录（可选）
+    ///
+    /// # 返回
+    /// - `Ok(String)`: 会话 ID
+    /// - `Err(TerminalError)`: 创建失败
+    ///
+    /// _Requirements: 3.1_
+    pub async fn create_session_with_options(
+        &self,
+        rows: u16,
+        cols: u16,
+        cwd: Option<String>,
+    ) -> Result<String, TerminalError> {
         let session_id = Uuid::new_v4().to_string();
         let block_id = session_id.clone();
         let tab_id = "default".to_string(); // TODO: 支持多标签页
 
-        tracing::info!("[终端] 创建会话 {}, 大小: {}x{}", session_id, cols, rows);
+        tracing::info!(
+            "[终端] 创建会话 {}, 大小: {}x{}, cwd: {:?}",
+            session_id,
+            cols,
+            rows,
+            cwd
+        );
 
         // 创建块文件
         let block_file = BlockFile::with_default_size(&block_id, &self.block_file_base_dir)?;
         let block_file = Arc::new(block_file);
 
         // 创建旧版 PTY 会话（兼容模式）
-        let pty_session =
-            PtySession::with_size(session_id.clone(), rows, cols, self.app_handle.clone())?;
+        let pty_session = PtySession::with_size_and_cwd(
+            session_id.clone(),
+            rows,
+            cols,
+            cwd,
+            self.app_handle.clone(),
+        )?;
 
         // 创建会话元数据
         let metadata = SessionMetadata {

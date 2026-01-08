@@ -8,11 +8,20 @@ import { QuotaSettings } from "./QuotaSettings";
 import { RemoteManagementSettings } from "./RemoteManagementSettings";
 import { ExtensionsSettings } from "./ExtensionsSettings";
 import { DeveloperSettings } from "./DeveloperSettings";
+import { ConnectionsSettings } from "./ConnectionsSettings";
 
-type SettingsTab = "general" | "security" | "advanced" | "extensions" | "developer" | "about";
+type SettingsTab =
+  | "general"
+  | "connections"
+  | "security"
+  | "advanced"
+  | "extensions"
+  | "developer"
+  | "about";
 
 const tabs: { id: SettingsTab; label: string; experimental?: boolean }[] = [
   { id: "general", label: "通用" },
+  { id: "connections", label: "连接" },
   { id: "security", label: "安全" },
   { id: "advanced", label: "高级" },
   { id: "extensions", label: "扩展", experimental: true },
@@ -57,6 +66,7 @@ export function SettingsPage() {
       {/* 内容区域 */}
       <div className="flex-1 overflow-auto">
         {activeTab === "general" && <GeneralSettings />}
+        {activeTab === "connections" && <ConnectionsSettings />}
         {activeTab === "security" && (
           <div className="space-y-6 max-w-2xl">
             <TlsSettings />

@@ -5,6 +5,12 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:webview:default",
+    "core:webview:allow-webview-close",
+    "core:webview:allow-webview-position",
+    "core:webview:allow-webview-size",
+    "core:webview:allow-set-webview-position",
+    "core:webview:allow-set-webview-size",
     "shell:allow-open",
     "shell:allow-spawn",
     "shell:allow-execute",

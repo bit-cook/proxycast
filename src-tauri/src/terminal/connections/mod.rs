@@ -8,6 +8,7 @@
 //! - `ssh_shell_proc` - SSH 远程 Shell 进程
 //! - `wsl_connection` - WSL 连接（仅 Windows）
 //! - `connection_router` - 连接类型路由
+//! - `connection_config` - 连接配置持久化
 //!
 //! ## 功能
 //! - 本地 PTY 进程管理
@@ -15,13 +16,19 @@
 //! - SSH 远程 PTY 创建和数据转发
 //! - WSL 发行版连接
 //! - 连接类型自动路由
+//! - 连接配置存储和管理
 
+pub mod connection_config;
 pub mod connection_router;
 pub mod local_pty;
 pub mod ssh_connection;
 pub mod ssh_shell_proc;
 pub mod wsl_connection;
 
+pub use connection_config::{
+    ConnectionConfig, ConnectionConfigManager, ConnectionConfigType, ConnectionListEntry,
+    ConnectionSource, ConnectionsFile, SSHHostEntry,
+};
 pub use connection_router::{ConnectionInfo, ConnectionRouter, ConnectionType};
 pub use local_pty::ShellProc;
 pub use ssh_connection::{

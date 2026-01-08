@@ -2,7 +2,13 @@
  * @file ComponentDebugContext.tsx
  * @description 组件视图调试上下文 - 提供全局组件轮廓显示和信息查看功能
  */
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  ReactNode,
+} from "react";
 
 export interface ComponentInfo {
   name: string;
@@ -15,7 +21,6 @@ export interface ComponentInfo {
   /** 当前 DOM 元素引用，用于查找父组件 */
   element?: HTMLElement;
   /** 当前 Fiber 节点，用于向上遍历 */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fiber?: any;
 }
 
@@ -32,7 +37,9 @@ interface ComponentDebugContextType {
   hideComponentInfo: () => void;
 }
 
-const ComponentDebugContext = createContext<ComponentDebugContextType | null>(null);
+const ComponentDebugContext = createContext<ComponentDebugContextType | null>(
+  null,
+);
 
 const STORAGE_KEY = "component-debug-enabled";
 
@@ -41,7 +48,9 @@ export function ComponentDebugProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored === "true";
   });
-  const [componentInfo, setComponentInfo] = useState<ComponentInfo | null>(null);
+  const [componentInfo, setComponentInfo] = useState<ComponentInfo | null>(
+    null,
+  );
 
   const setEnabled = useCallback((value: boolean) => {
     setEnabledState(value);
@@ -71,10 +80,13 @@ export function ComponentDebugProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useComponentDebug() {
   const context = useContext(ComponentDebugContext);
   if (!context) {
-    throw new Error("useComponentDebug must be used within ComponentDebugProvider");
+    throw new Error(
+      "useComponentDebug must be used within ComponentDebugProvider",
+    );
   }
   return context;
 }

@@ -47,11 +47,15 @@
 - **Jotai 状态管理**: 使用 TermViewModel 管理终端状态
 - **VDOM 模式**: 支持在终端内嵌入 React 组件
 - **贴纸系统**: 支持在终端上显示可定位的贴纸标注
+- **分块布局**: 支持在主终端旁添加附加面板（对齐 Waveterm TileLayout）
+- **右侧小部件栏**: 快速添加 Terminal/Files/Web/Sysinfo 面板
 
 ## 文件索引
 
 - `index.ts` - 模块导出
 - `TerminalPage.tsx` - 终端页面组件（多标签页管理）
+- `TerminalWorkspace.tsx` - 终端工作区组件（分块布局 + 小部件栏）
+- `TerminalPanel.tsx` - 独立终端面板组件（用于分块布局）
 - `TerminalView.tsx` - 终端视图组件（使用 Jotai 原子状态）
 - `TerminalSearch.tsx` - 终端搜索组件
 - `TerminalContextMenu.tsx` - 终端上下文菜单组件
@@ -65,6 +69,23 @@
 - `termwrap.ts` - 终端封装类（连接模式，WebGL/Unicode11 支持）
 - `fitaddon.ts` - 自定义 FitAddon
 - `terminal.css` - 终端样式（Tokyo Night 主题）
+- `widgets/` - 小部件系统子目录
+
+## widgets 子目录
+
+小部件系统，包含右侧工具栏和各种面板视图：
+
+- `types.ts` - 类型定义
+- `constants.ts` - 常量配置
+- `context.ts` - React Context 定义
+- `WidgetContext.tsx` - Provider 组件和状态持久化
+- `useWidgets.ts` - 小部件相关 Hooks
+- `Widget.tsx` - 单个小部件按钮组件
+- `WidgetsSidebar.tsx` - 右侧小部件栏组件
+- `SettingsFloatingMenu.tsx` - 设置浮动菜单
+- `SysinfoView.tsx` - 系统信息监控视图（CPU/内存图表）
+- `FileBrowserView.tsx` - 文件浏览器视图
+- `WebView.tsx` - 内嵌浏览器视图
 
 ## 依赖
 
@@ -75,6 +96,10 @@
 - `@xterm/addon-webgl` - WebGL 渲染加速
 - `@xterm/addon-unicode11` - Unicode 11 宽字符支持
 - `@tauri-apps/plugin-shell` - Tauri Shell 插件（URL 打开）
+- `@floating-ui/react` - 浮动菜单定位
+- `@observablehq/plot` - 系统信息图表
+- `lucide-react` - 图标
+- `styled-components` - 样式
 - `jotai` - 原子化状态管理
 - `@/lib/terminal-api` - Tauri 终端 API
 - `@/lib/terminal/themes` - 终端主题配置
@@ -84,44 +109,14 @@
 
 ## 使用方式
 
-作为内置插件在 `PluginUIRenderer` 中注册：
-
-```typescript
-const builtinPluginComponents = {
-  "terminal-plugin": TerminalPage,
-};
-```
-
-### VDOM 模式使用
-
 ```tsx
-import { TerminalView } from "@/components/terminal";
+import { TerminalWorkspace } from "@/components/terminal";
 
-// 启用 VDOM 模式切换
-<TerminalView
-  blockId="session-1"
-  tabId="tab-1"
-  showModeSwitch={true}
-  initialTermMode="term"
-  onModeChange={(mode) => console.log("模式切换:", mode)}
-/>
-```
-
-### 贴纸系统使用
-
-```tsx
-import { useSetAtom } from "jotai";
-import { addStickerAtom } from "@/lib/terminal/stickers";
-
-// 添加贴纸
-const addSticker = useSetAtom(addStickerAtom);
-addSticker({
-  blockId: "session-1",
-  position: { row: 5, col: 10 },
-  contentType: "text",
-  text: "重要标记",
-  draggable: true,
-});
+function App() {
+  return (
+    <TerminalWorkspace onNavigate={(page) => setCurrentPage(page)} />
+  );
+}
 ```
 
 ## 更新提醒

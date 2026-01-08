@@ -1,6 +1,6 @@
 [package]
 name = "proxycast"
-version = "0.35.0"
+version = "0.36.0"
 description = "AI API Proxy Desktop App"
 authors = ["you"]
 edition = "2021"
@@ -15,7 +15,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri = { version = "2", features = ["tray-icon", "image-png", "unstable"] }
 tauri-plugin-shell = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
@@ -69,6 +69,9 @@ hex = "0.4.3"
 portable-pty = "0.8"
 scopeguard = "1"
 ssh2 = "0.9"
+openssl = { version = "0.10", features = ["vendored"] }
+sysinfo = "0.32"
+whoami = "1"
 
 # Platform specific dependencies for browser interceptor
 

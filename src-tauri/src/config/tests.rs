@@ -187,6 +187,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
             minimize_to_tray: true,
             models: crate::config::ModelsConfig::default(),
             agent: crate::config::NativeAgentConfig::default(),
+            language: "zh".to_string(),
         })
 }
 
@@ -423,6 +424,7 @@ fn arb_valid_config() -> impl Strategy<Value = Config> {
             minimize_to_tray: true,
             models: crate::config::ModelsConfig::default(),
             agent: crate::config::NativeAgentConfig::default(),
+            language: "zh".to_string(),
         })
 }
 
@@ -470,6 +472,7 @@ fn arb_invalid_config() -> impl Strategy<Value = Config> {
                     minimize_to_tray: true,
                     models: crate::config::ModelsConfig::default(),
                     agent: crate::config::NativeAgentConfig::default(),
+                    language: "zh".to_string(),
                 };
                 // 根据类型使配置无效
                 match invalid_type {

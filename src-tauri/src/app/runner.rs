@@ -74,6 +74,7 @@ pub fn run() {
         model_registry: model_registry_state,
         global_config_manager: global_config_manager_state,
         terminal_manager: terminal_manager_state,
+        webview_manager: webview_manager_state,
         shared_stats,
         shared_tokens,
         shared_logger,
@@ -151,6 +152,7 @@ pub fn run() {
         .manage(model_registry_state)
         .manage(global_config_manager_state)
         .manage(terminal_manager_state)
+        .manage(webview_manager_state)
         .on_window_event(move |window, event| {
             // 处理窗口关闭事件
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -1051,6 +1053,39 @@ pub fn run() {
             commands::terminal_cmd::terminal_close,
             commands::terminal_cmd::terminal_list_sessions,
             commands::terminal_cmd::terminal_get_session,
+            // Connection commands
+            commands::connection_cmd::connection_list,
+            commands::connection_cmd::connection_add,
+            commands::connection_cmd::connection_update,
+            commands::connection_cmd::connection_delete,
+            commands::connection_cmd::connection_get,
+            commands::connection_cmd::connection_get_config_path,
+            commands::connection_cmd::connection_get_raw_config,
+            commands::connection_cmd::connection_save_raw_config,
+            commands::connection_cmd::connection_test,
+            commands::connection_cmd::connection_import_ssh_host,
+            // Sysinfo commands
+            crate::services::sysinfo_service::get_sysinfo,
+            crate::services::sysinfo_service::subscribe_sysinfo,
+            crate::services::sysinfo_service::unsubscribe_sysinfo,
+            // File browser commands
+            crate::services::file_browser_service::list_dir,
+            crate::services::file_browser_service::read_file_preview_cmd,
+            crate::services::file_browser_service::get_home_dir,
+            crate::services::file_browser_service::create_file,
+            crate::services::file_browser_service::create_directory,
+            crate::services::file_browser_service::delete_file,
+            crate::services::file_browser_service::rename_file,
+            crate::services::file_browser_service::get_file_name,
+            crate::services::file_browser_service::reveal_in_finder,
+            crate::services::file_browser_service::open_with_default_app,
+            // Webview commands
+            commands::webview_cmd::create_webview_panel,
+            commands::webview_cmd::close_webview_panel,
+            commands::webview_cmd::navigate_webview_panel,
+            commands::webview_cmd::resize_webview_panel,
+            commands::webview_cmd::get_webview_panels,
+            commands::webview_cmd::focus_webview_panel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

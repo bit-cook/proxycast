@@ -1,0 +1,201 @@
+//! 系统信息服务
+//!
+//! 提供 CPU、内存等系统信息的获取和订阅功能
+//! 用于系统监控视图的数据源
+//!
+//! # 功能
+//! - 获取当前系统信息快照
+//! - 订阅系统信息更新（每秒推送）
+//!
+//! # 依赖
+//! - sysinfo crate
+
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+use tauri::{AppHandle, Emitter};
+use tokio::sync::Mutex;
+use tokio::time::{interval, Duration};
+use tracing::{debug, error, info};
+
+/// 系统信息数据点
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SysinfoData {
+    /// 时间戳（毫秒）
+    pub ts: u64,
+    /// 总 CPU 使用率（0-100）
+    pub cpu: f32,
+    /// 已用内存（GB）
+    #[serde(rename = "mem:used")]
+    pub mem_used: f64,
+    /// 总内存（GB）
+    #[serde(rename = "mem:total")]
+    pub mem_total: f64,
+    /// 各核心 CPU 使用率
+    #[serde(flatten)]
+    pub cpu_cores: std::collections::HashMap<String, f32>,
+}
+
+/// 系统信息服务状态
+pub struct SysinfoService {
+    /// 是否正在运行订阅
+    running: AtomicBool,
+    /// 系统信息实例
+    system: Mutex<System>,
+}
+
+impl SysinfoService {
+    /// 创建新的系统信息服务
+    pub fn new() -> Self {
+        let system = System::new_with_specifics(
+            RefreshKind::new()
+                .with_cpu(CpuRefreshKind::everything())
+                .with_memory(MemoryRefreshKind::everything()),
+        );
+        Self {
+            running: AtomicBool::new(false),
+            system: Mutex::new(system),
+        }
+    }
+
+    /// 获取当前系统信息快照
+    pub async fn get_sysinfo(&self) -> SysinfoData {
+        let mut system = self.system.lock().await;
+
+        // 刷新 CPU 和内存信息
+        system.refresh_cpu_usage();
+        system.refresh_memory();
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        // 计算总 CPU 使用率
+        let cpu = system.global_cpu_usage();
+
+        // 内存信息（转换为 GB）
+        let mem_total = system.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+        let mem_used = system.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+
+        // 各核心 CPU 使用率
+        let mut cpu_cores = std::collections::HashMap::new();
+        for (i, cpu) in system.cpus().iter().enumerate() {
+            cpu_cores.insert(format!("cpu:{}", i), cpu.cpu_usage());
+        }
+
+        SysinfoData {
+            ts,
+            cpu,
+            mem_used,
+            mem_total,
+            cpu_cores,
+        }
+    }
+
+    /// 检查是否正在运行
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
+
+    /// 停止订阅
+    pub fn stop(&self) {
+        self.running.store(false, Ordering::SeqCst);
+        info!("系统信息订阅已停止");
+    }
+}
+
+impl Default for SysinfoService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 全局系统信息服务实例
+static SYSINFO_SERVICE: once_cell::sync::Lazy<Arc<SysinfoService>> =
+    once_cell::sync::Lazy::new(|| Arc::new(SysinfoService::new()));
+
+/// 获取全局系统信息服务
+pub fn get_sysinfo_service() -> Arc<SysinfoService> {
+    SYSINFO_SERVICE.clone()
+}
+
+/// Tauri 命令：获取当前系统信息
+#[tauri::command]
+pub async fn get_sysinfo() -> Result<SysinfoData, String> {
+    let service = get_sysinfo_service();
+    Ok(service.get_sysinfo().await)
+}
+
+/// Tauri 命令：开始订阅系统信息
+/// 每秒向前端发送 sysinfo 事件
+#[tauri::command]
+pub async fn subscribe_sysinfo(app: AppHandle) -> Result<(), String> {
+    let service = get_sysinfo_service();
+
+    // 如果已经在运行，直接返回
+    if service.is_running() {
+        debug!("系统信息订阅已在运行");
+        return Ok(());
+    }
+
+    service.running.store(true, Ordering::SeqCst);
+    info!("开始系统信息订阅");
+
+    // 启动后台任务
+    let service_clone = service.clone();
+    tokio::spawn(async move {
+        let mut ticker = interval(Duration::from_secs(1));
+
+        // 首次需要等待一下让 CPU 使用率计算准确
+        ticker.tick().await;
+
+        while service_clone.is_running() {
+            ticker.tick().await;
+
+            if !service_clone.is_running() {
+                break;
+            }
+
+            let data = service_clone.get_sysinfo().await;
+
+            if let Err(e) = app.emit("sysinfo", &data) {
+                error!("发送系统信息事件失败: {}", e);
+            }
+        }
+
+        info!("系统信息订阅任务结束");
+    });
+
+    Ok(())
+}
+
+/// Tauri 命令：停止订阅系统信息
+#[tauri::command]
+pub async fn unsubscribe_sysinfo() -> Result<(), String> {
+    let service = get_sysinfo_service();
+    service.stop();
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_sysinfo() {
+        let service = SysinfoService::new();
+
+        // 等待一下让 CPU 数据准确
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let data = service.get_sysinfo().await;
+
+        assert!(data.ts > 0);
+        assert!(data.cpu >= 0.0 && data.cpu <= 100.0);
+        assert!(data.mem_total > 0.0);
+        assert!(data.mem_used >= 0.0);
+        assert!(data.mem_used <= data.mem_total);
+    }
+}

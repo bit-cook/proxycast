@@ -611,6 +611,19 @@ export class TermWrap {
   }
 
   /**
+   * 发送数据到后端 PTY（用于粘贴等外部输入）
+   *
+   * @param data - 要发送的文本数据
+   */
+  sendData(data: string): void {
+    if (!this.loaded) {
+      return;
+    }
+    const base64 = encodeBase64(data);
+    writeToTerminalRaw(this.sessionId, base64).catch(console.error);
+  }
+
+  /**
    * 清空终端
    */
   clear(): void {

@@ -120,7 +120,35 @@ impl PtySession {
         cols: u16,
         app_handle: tauri::AppHandle,
     ) -> Result<Self, TerminalError> {
-        tracing::info!("[终端] 创建 PTY 会话 {}, 大小: {}x{}", id, cols, rows);
+        Self::with_size_and_cwd(id, rows, cols, None, app_handle)
+    }
+
+    /// 创建新的 PTY 会话（指定大小和工作目录）
+    ///
+    /// # 参数
+    /// - `id`: 会话 ID
+    /// - `rows`: 终端行数
+    /// - `cols`: 终端列数
+    /// - `cwd`: 工作目录（可选，默认为用户主目录）
+    /// - `app_handle`: Tauri 应用句柄
+    ///
+    /// # 返回
+    /// - `Ok(PtySession)`: 创建成功
+    /// - `Err(TerminalError)`: 创建失败
+    pub fn with_size_and_cwd(
+        id: String,
+        rows: u16,
+        cols: u16,
+        cwd: Option<String>,
+        app_handle: tauri::AppHandle,
+    ) -> Result<Self, TerminalError> {
+        tracing::info!(
+            "[终端] 创建 PTY 会话 {}, 大小: {}x{}, cwd: {:?}",
+            id,
+            cols,
+            rows,
+            cwd
+        );
 
         let pty_system = native_pty_system();
 
@@ -142,8 +170,34 @@ impl PtySession {
         let mut cmd = CommandBuilder::new(&shell);
         cmd.env("TERM", "xterm-256color");
 
-        // 设置工作目录为用户主目录
-        if let Some(home) = dirs::home_dir() {
+        // 设置工作目录
+        if let Some(dir) = cwd {
+            // 展开 ~ 为用户主目录
+            let expanded_dir = if dir.starts_with("~/") {
+                if let Some(home) = dirs::home_dir() {
+                    home.join(&dir[2..])
+                } else {
+                    std::path::PathBuf::from(&dir)
+                }
+            } else if dir == "~" {
+                dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(&dir))
+            } else {
+                std::path::PathBuf::from(&dir)
+            };
+
+            if expanded_dir.exists() && expanded_dir.is_dir() {
+                tracing::info!("[终端] 设置工作目录: {:?}", expanded_dir);
+                cmd.cwd(expanded_dir);
+            } else {
+                tracing::warn!(
+                    "[终端] 工作目录不存在或不是目录: {:?}, 使用主目录",
+                    expanded_dir
+                );
+                if let Some(home) = dirs::home_dir() {
+                    cmd.cwd(home);
+                }
+            }
+        } else if let Some(home) = dirs::home_dir() {
             cmd.cwd(home);
         }
 

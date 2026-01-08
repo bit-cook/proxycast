@@ -22,6 +22,7 @@ use crate::commands::provider_pool_cmd::{CredentialSyncServiceState, ProviderPoo
 use crate::commands::resilience_cmd::ResilienceConfigState;
 use crate::commands::skill_cmd::SkillServiceState;
 use crate::commands::terminal_cmd::TerminalManagerState;
+use crate::commands::webview_cmd::{WebviewManagerState, WebviewManagerWrapper};
 use crate::config::{self, Config, ConfigManager, GlobalConfigManager, GlobalConfigManagerState};
 use crate::database::{self, DbConnection};
 use crate::flow_monitor::{
@@ -136,6 +137,7 @@ pub struct AppStates {
     pub model_registry: ModelRegistryState,
     pub global_config_manager: GlobalConfigManagerState,
     pub terminal_manager: TerminalManagerState,
+    pub webview_manager: WebviewManagerWrapper,
     // 用于 setup hook 的共享实例
     pub shared_stats: Arc<parking_lot::RwLock<telemetry::StatsAggregator>>,
     pub shared_tokens: Arc<parking_lot::RwLock<telemetry::TokenTracker>>,
@@ -219,6 +221,10 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
     // 初始化终端管理器状态（延迟初始化，在 setup hook 中完成）
     let terminal_manager_state = TerminalManagerState(Arc::new(RwLock::new(None)));
 
+    // 初始化 Webview 管理器状态
+    let webview_manager_state =
+        WebviewManagerWrapper(Arc::new(RwLock::new(WebviewManagerState::new())));
+
     // 初始化全局配置管理器
     let config_path = ConfigManager::default_config_path();
     let global_config_manager = GlobalConfigManager::new(config.clone(), config_path);
@@ -262,6 +268,7 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
         model_registry: model_registry_state,
         global_config_manager: global_config_manager_state,
         terminal_manager: terminal_manager_state,
+        webview_manager: webview_manager_state,
         shared_stats,
         shared_tokens,
         shared_logger,

@@ -1,7 +1,7 @@
 {
   "name": "proxycast",
   "private": true,
-  "version": "0.35.0",
+  "version": "0.36.0",
   "type": "module",
   "repository": {
     "type": "git",
@@ -24,6 +24,8 @@
   },
   "dependencies": {
     "@fabianlars/tauri-plugin-oauth": "^2",
+    "@floating-ui/react": "^0.27.16",
+    "@observablehq/plot": "^0.6.17",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-context-menu": "^2.2.16",
     "@radix-ui/react-dialog": "^1.1.2",
@@ -52,6 +54,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "dayjs": "^1.11.19",
     "i18next": "^25.7.3",
     "jotai": "^2.16.1",
     "lodash-es": "^4.17.22",

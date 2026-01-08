@@ -34,6 +34,7 @@
 - `flowEventManager.ts` - 流量事件管理器
 - `notificationService.ts` - 通知服务
 - `terminal-api.ts` - 终端核心能力 API 封装（Terminal Core）
+- `webview-api.ts` - Webview 管理 API（Tauri 2.x multiwebview）
 - `utils.ts` - 通用工具函数
 
 ## 更新提醒

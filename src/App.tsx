@@ -20,7 +20,12 @@ import { ToolsPage } from "./components/tools/ToolsPage";
 import { AgentChatPage } from "./components/agent";
 import { PluginUIRenderer } from "./components/plugins/PluginUIRenderer";
 import { PluginsPage } from "./components/plugins/PluginsPage";
-import { TerminalPage } from "./components/terminal/TerminalPage";
+import {
+  TerminalWorkspace,
+  SysinfoView,
+  FileBrowserView,
+  WebView,
+} from "./components/terminal";
 import { flowEventManager } from "./lib/flowEventManager";
 import { OnboardingWizard, useOnboardingState } from "./components/onboarding";
 import { ConnectConfirmDialog } from "./components/connect";
@@ -29,25 +34,7 @@ import { useDeepLink } from "./hooks/useDeepLink";
 import { useRelayRegistry } from "./hooks/useRelayRegistry";
 import { ComponentDebugProvider } from "./contexts/ComponentDebugContext";
 import { ComponentDebugOverlay } from "./components/dev";
-
-/**
- * 页面类型定义
- *
- * 支持静态页面和动态插件页面
- * - 静态页面: 预定义的页面标识符
- * - 动态插件页面: `plugin:${string}` 格式，如 "plugin:machine-id-tool"
- *
- * _需求: 2.2, 3.2_
- */
-type Page =
-  | "provider-pool"
-  | "api-server"
-  | "agent"
-  | "tools"
-  | "plugins"
-  | "settings"
-  | "terminal"
-  | `plugin:${string}`;
+import { Page } from "./types/page";
 
 const AppContainer = styled.div`
   display: flex;
@@ -189,10 +176,27 @@ function AppContent() {
           <AgentChatPage onNavigate={(page) => setCurrentPage(page as Page)} />
         );
       case "terminal":
-        // 终端页面需要全屏显示
+        // 终端工作区 - 分块布局（对齐 Waveterm TileLayout）
+        return <TerminalWorkspace onNavigate={setCurrentPage} />;
+      case "sysinfo":
+        // 系统监控页面
         return (
           <FullscreenWrapper>
-            <TerminalPage />
+            <SysinfoView />
+          </FullscreenWrapper>
+        );
+      case "files":
+        // 文件浏览器页面
+        return (
+          <FullscreenWrapper>
+            <FileBrowserView />
+          </FullscreenWrapper>
+        );
+      case "web":
+        // 内嵌浏览器页面
+        return (
+          <FullscreenWrapper>
+            <WebView />
           </FullscreenWrapper>
         );
       case "tools":
