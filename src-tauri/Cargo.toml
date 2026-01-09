@@ -75,6 +75,7 @@ sysinfo = "0.32"
 whoami = "1"
 mouse_position = "0.1.4"
 window-vibrancy = "0.7.1"
+if-addrs = "0.13"
 
 # Platform specific dependencies for browser interceptor
 

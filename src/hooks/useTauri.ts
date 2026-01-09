@@ -524,6 +524,7 @@ export async function setEndpointProvider(
 export interface NetworkInfo {
   localhost: string;
   lan_ip: string | null;
+  all_ips: string[];
 }
 
 /**
