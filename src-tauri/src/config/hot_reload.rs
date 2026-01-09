@@ -489,18 +489,47 @@ fn is_localhost_host(host: &str) -> bool {
 }
 
 /// 检查是否为有效的绑定地址
-/// 允许回环地址和 0.0.0.0（监听所有接口）
+/// 允许回环地址、0.0.0.0 和私有网络地址
 fn is_valid_bind_host(host: &str) -> bool {
     if is_localhost_host(host) {
         return true;
     }
     // 允许 0.0.0.0 和 :: （监听所有接口）
-    host == "0.0.0.0" || host == "::"
+    if host == "0.0.0.0" || host == "::" {
+        return true;
+    }
+
+    // 允许私有网络地址
+    if let Ok(addr) = host.parse::<std::net::IpAddr>() {
+        if let std::net::IpAddr::V4(ipv4) = addr {
+            // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+            let octets = ipv4.octets();
+            return octets[0] == 10
+                || (octets[0] == 172 && (octets[1] >= 16 && octets[1] <= 31))
+                || (octets[0] == 192 && octets[1] == 168);
+        }
+    }
+
+    false
 }
 
 /// 检查是否为非本地绑定地址（需要强 API Key）
 fn is_non_local_bind(host: &str) -> bool {
-    host == "0.0.0.0" || host == "::"
+    if host == "0.0.0.0" || host == "::" {
+        return true;
+    }
+
+    // 私有网络地址也算非本地绑定
+    if let Ok(addr) = host.parse::<std::net::IpAddr>() {
+        if let std::net::IpAddr::V4(ipv4) = addr {
+            let octets = ipv4.octets();
+            return octets[0] == 10
+                || (octets[0] == 172 && (octets[1] >= 16 && octets[1] <= 31))
+                || (octets[0] == 192 && octets[1] == 168);
+        }
+    }
+
+    false
 }
 
 /// 热重载状态
