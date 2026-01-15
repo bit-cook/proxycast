@@ -1169,6 +1169,249 @@ impl ApiKeyProviderService {
             proxy_url: None,
         })
     }
+
+    // ==================== 连接测试 ====================
+
+    /// 测试 Provider 连接
+    ///
+    /// 方案 C 实现：
+    /// 1. 默认使用 /v1/models 端点测试
+    /// 2. 如果 Provider 配置了自定义模型列表，用第一个模型发送简单请求
+    ///
+    /// # 参数
+    /// - `db`: 数据库连接
+    /// - `provider_id`: Provider ID
+    /// - `model_name`: 可选的模型名称，用于发送测试请求
+    ///
+    /// # 返回
+    /// - `ConnectionTestResult`: 测试结果
+    pub async fn test_connection(
+        &self,
+        db: &DbConnection,
+        provider_id: &str,
+        model_name: Option<String>,
+    ) -> Result<ConnectionTestResult, String> {
+        use std::time::Instant;
+
+        // 获取 Provider 信息
+        let provider_with_keys = self
+            .get_provider(db, provider_id)?
+            .ok_or_else(|| format!("Provider not found: {}", provider_id))?;
+
+        let provider = &provider_with_keys.provider;
+
+        // 获取一个可用的 API Key
+        let api_key = self
+            .get_next_api_key(db, provider_id)?
+            .ok_or_else(|| "没有可用的 API Key".to_string())?;
+
+        let start_time = Instant::now();
+
+        // 根据 Provider 类型选择测试方式
+        let result = match provider.provider_type {
+            ApiProviderType::Anthropic => {
+                // Anthropic 不支持 /models 端点，需要发送测试请求
+                let test_model = model_name
+                    .or_else(|| provider.custom_models.first().cloned())
+                    .unwrap_or_else(|| "claude-3-haiku-20240307".to_string());
+                self.test_anthropic_connection(&api_key, &provider.api_host, &test_model)
+                    .await
+            }
+            ApiProviderType::Gemini => {
+                // Gemini 使用 /models 端点
+                self.test_gemini_connection(&api_key, &provider.api_host)
+                    .await
+            }
+            _ => {
+                // OpenAI 兼容类型，优先使用 /models 端点
+                let models_result = self
+                    .test_openai_models_endpoint(&api_key, &provider.api_host)
+                    .await;
+
+                // 如果 /models 端点失败且有模型名称，尝试发送测试请求
+                if models_result.is_err() && model_name.is_some() {
+                    let test_model = model_name.unwrap();
+                    self.test_openai_chat_completion(&api_key, &provider.api_host, &test_model)
+                        .await
+                } else {
+                    models_result
+                }
+            }
+        };
+
+        let latency_ms = start_time.elapsed().as_millis() as u64;
+
+        match result {
+            Ok(models) => Ok(ConnectionTestResult {
+                success: true,
+                latency_ms: Some(latency_ms),
+                error: None,
+                models: Some(models),
+            }),
+            Err(e) => Ok(ConnectionTestResult {
+                success: false,
+                latency_ms: Some(latency_ms),
+                error: Some(e),
+                models: None,
+            }),
+        }
+    }
+
+    /// 测试 OpenAI 兼容的 /models 端点
+    async fn test_openai_models_endpoint(
+        &self,
+        api_key: &str,
+        api_host: &str,
+    ) -> Result<Vec<String>, String> {
+        use crate::providers::openai_custom::OpenAICustomProvider;
+
+        let provider = OpenAICustomProvider::with_config(api_key.to_string(), Some(api_host.to_string()));
+
+        let response = provider
+            .list_models()
+            .await
+            .map_err(|e| format!("获取模型列表失败: {}", e))?;
+
+        // 解析模型列表
+        let models = response["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if models.is_empty() {
+            Err("未获取到任何模型".to_string())
+        } else {
+            Ok(models)
+        }
+    }
+
+    /// 测试 OpenAI 兼容的 chat/completions 端点
+    async fn test_openai_chat_completion(
+        &self,
+        api_key: &str,
+        api_host: &str,
+        model: &str,
+    ) -> Result<Vec<String>, String> {
+        use crate::models::openai::{ChatCompletionRequest, Message, MessageContent};
+        use crate::providers::openai_custom::OpenAICustomProvider;
+
+        let provider = OpenAICustomProvider::with_config(api_key.to_string(), Some(api_host.to_string()));
+
+        let request = ChatCompletionRequest {
+            model: model.to_string(),
+            messages: vec![Message {
+                role: "user".to_string(),
+                content: Some(MessageContent::Text("hi".to_string())),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            max_tokens: Some(1),
+            stream: false,
+            ..Default::default()
+        };
+
+        let response = provider
+            .call_api(&request)
+            .await
+            .map_err(|e| format!("API 调用失败: {}", e))?;
+
+        if response.status().is_success() {
+            Ok(vec![model.to_string()])
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(format!("API 返回错误: {} - {}", status, body))
+        }
+    }
+
+    /// 测试 Anthropic 连接
+    async fn test_anthropic_connection(
+        &self,
+        api_key: &str,
+        api_host: &str,
+        model: &str,
+    ) -> Result<Vec<String>, String> {
+        use crate::providers::claude_custom::ClaudeCustomProvider;
+
+        let provider = ClaudeCustomProvider::with_config(api_key.to_string(), Some(api_host.to_string()));
+
+        // 发送一个简单的测试请求
+        let request = serde_json::json!({
+            "model": model,
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "hi"}]
+        });
+
+        let response = provider
+            .messages(&request)
+            .await
+            .map_err(|e| format!("API 调用失败: {}", e))?;
+
+        if response.status().is_success() {
+            Ok(vec![model.to_string()])
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(format!("API 返回错误: {} - {}", status, body))
+        }
+    }
+
+    /// 测试 Gemini 连接
+    async fn test_gemini_connection(
+        &self,
+        api_key: &str,
+        api_host: &str,
+    ) -> Result<Vec<String>, String> {
+        use reqwest::Client;
+        use std::time::Duration;
+
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+        // Gemini API 的模型列表端点
+        let base = api_host.trim_end_matches('/');
+        let url = format!("{}/v1beta/models?key={}", base, api_key);
+
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("请求失败: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("API 返回错误: {} - {}", status, body));
+        }
+
+        let data: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| format!("解析响应失败: {}", e))?;
+
+        let models = data["models"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["name"].as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if models.is_empty() {
+            Err("未获取到任何模型".to_string())
+        } else {
+            Ok(models)
+        }
+    }
 }
 
 /// 导入结果
@@ -1180,9 +1423,3 @@ pub struct ImportResult {
     pub skipped_providers: usize,
     pub errors: Vec<String>,
 }
-
-use serde::{Deserialize, Serialize};
-
-use crate::models::provider_pool_model::{
-    CredentialData, CredentialSource, PoolProviderType, ProviderCredential,
-};

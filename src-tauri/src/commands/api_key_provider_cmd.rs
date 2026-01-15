@@ -9,7 +9,7 @@ use crate::database::dao::api_key_provider::{
     ApiKeyEntry, ApiKeyProvider, ApiProviderType, ProviderWithKeys,
 };
 use crate::database::DbConnection;
-use crate::services::api_key_provider_service::{ApiKeyProviderService, ImportResult};
+use crate::services::api_key_provider_service::{ApiKeyProviderService, ConnectionTestResult, ImportResult};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -583,4 +583,27 @@ pub fn delete_legacy_api_key_credential(
     uuid: String,
 ) -> Result<bool, String> {
     pool_service.0.delete_credential(&db, &uuid)
+}
+
+// ============================================================================
+// 连接测试命令
+// ============================================================================
+
+/// 测试 API Key Provider 连接
+///
+/// 方案 C 实现：
+/// 1. 默认使用 /v1/models 端点测试
+/// 2. 如果提供了 model_name，用该模型发送简单请求
+///
+/// # 参数
+/// - `provider_id`: Provider ID
+/// - `model_name`: 可选的模型名称，用于发送测试请求
+#[tauri::command]
+pub async fn test_api_key_provider_connection(
+    db: State<'_, DbConnection>,
+    service: State<'_, ApiKeyProviderServiceState>,
+    provider_id: String,
+    model_name: Option<String>,
+) -> Result<ConnectionTestResult, String> {
+    service.0.test_connection(&db, &provider_id, model_name).await
 }

@@ -181,7 +181,6 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "aster"
 version = "0.3.0"
-source = "git+https://github.com/astercloud/aster-rust?branch=main#2487b9349d12c86fbe6ee61d5a9396769978df68"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6060,7 +6059,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast"
-version = "0.47.1"
+version = "0.47.2"
 dependencies = [
  "anyhow",
  "arboard",
