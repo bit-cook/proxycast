@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.47.4"
+version = "0.48.0"
 edition = "2021"
 authors = ["you"]
 repository = "https://github.com/aiclientproxy/proxycast"
@@ -38,8 +38,8 @@ tracing-subscriber = "0.3"
 # HTTP 服务器
 axum = { version = "0.7", features = ["ws"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
-tower = "0.4"
-tower-http = { version = "0.5", features = ["limit", "cors"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["limit", "cors"] }
 
 # HTTP 客户端
 reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "deflate"] }
@@ -96,7 +96,12 @@ window-vibrancy = "0.7.1"
 if-addrs = "0.13"
 
 # Aster Agent Framework
-aster = { git = "https://github.com/astercloud/aster-rust", tag = "v0.3.0" }
+# 开发时使用本地 aster-rust，CI/CD 使用远程 GitHub 仓库
+# 本地开发: path = "../../../astercloud/aster-rust/crates/aster" (相对 src-tauri/)
+# CI/CD: git = "https://github.com/astercloud/aster-rust", tag = "v0.4.3"
+# aster = { version = "0.4.3", path = "../../../astercloud/aster-rust/crates/aster" }
+aster = { git = "https://github.com/astercloud/aster-rust", tag = "v0.4.3" }
+
 
 # Tauri
 tauri = { version = "2.5", features = ["tray-icon", "image-png", "unstable", "macos-private-api"] }
@@ -154,7 +159,7 @@ version = "2.4"
 
 [package]
 name = "proxycast"
-version = "0.47.4"
+version = "0.48.0"
 description = "AI API Proxy Desktop App"
 authors = ["you"]
 edition = "2021"

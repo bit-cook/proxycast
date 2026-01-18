@@ -14,8 +14,9 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
 use serde::Serialize;
+use std::collections::HashMap;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// Anthropic Messages API 请求
 #[derive(Debug, Serialize)]
@@ -109,6 +110,8 @@ impl AnthropicProtocol {
                             "content": text
                         }])
                     } else {
+                        // 如果没有 tool_call_id，这可能是一个错误的工具结果消息
+                        warn!("[AnthropicProtocol] 工具结果消息缺少 tool_call_id");
                         serde_json::json!(text)
                     }
                 } else if msg.role == "assistant" {
@@ -215,8 +218,11 @@ impl AnthropicProtocol {
             .as_ref()
             .map(|s| self.build_system_field(s));
 
+        // 验证和修复消息序列中的 tool_use/tool_result 配对
+        let validated_history = self.validate_tool_message_pairs(history);
+
         // 添加历史消息（跳过 system 消息）
-        for msg in history {
+        for msg in &validated_history {
             if msg.role == "system" {
                 continue;
             }
@@ -267,8 +273,11 @@ impl AnthropicProtocol {
             .as_ref()
             .map(|s| self.build_system_field(s));
 
+        // 验证和修复消息序列中的 tool_use/tool_result 配对
+        let validated_history = self.validate_tool_message_pairs(history);
+
         // 添加所有历史消息（跳过 system）
-        for msg in history {
+        for msg in &validated_history {
             if msg.role == "system" {
                 continue;
             }
@@ -276,6 +285,72 @@ impl AnthropicProtocol {
         }
 
         (messages, system_prompt)
+    }
+
+    /// 验证并修复消息序列中的 tool_use/tool_result 配对
+    ///
+    /// Claude API 要求每个 tool_use 都必须紧跟一个对应的 tool_result
+    fn validate_tool_message_pairs(&self, history: &[AgentMessage]) -> Vec<AgentMessage> {
+        let mut validated_messages = Vec::new();
+        let mut pending_tool_calls: std::collections::HashMap<String, bool> =
+            std::collections::HashMap::new();
+
+        for msg in history {
+            match msg.role.as_str() {
+                "assistant" => {
+                    // 检查是否有工具调用
+                    if let Some(tool_calls) = &msg.tool_calls {
+                        for tc in tool_calls {
+                            pending_tool_calls.insert(tc.id.clone(), false);
+                        }
+                    }
+                    validated_messages.push(msg.clone());
+                }
+                "tool" => {
+                    // 检查工具结果是否有对应的工具调用
+                    if let Some(tool_call_id) = &msg.tool_call_id {
+                        if pending_tool_calls.contains_key(tool_call_id) {
+                            pending_tool_calls.insert(tool_call_id.clone(), true);
+                            validated_messages.push(msg.clone());
+                        } else {
+                            warn!(
+                                "[AnthropicProtocol] 发现孤立的工具结果消息，tool_call_id: {}",
+                                tool_call_id
+                            );
+                            // 跳过孤立的工具结果消息
+                        }
+                    } else {
+                        warn!("[AnthropicProtocol] 工具结果消息缺少 tool_call_id");
+                        // 跳过无效的工具结果消息
+                    }
+                }
+                _ => {
+                    validated_messages.push(msg.clone());
+                }
+            }
+        }
+
+        // 检查是否有未配对的工具调用
+        for (tool_call_id, has_result) in &pending_tool_calls {
+            if !has_result {
+                warn!(
+                    "[AnthropicProtocol] 发现未配对的工具调用，tool_call_id: {}，添加默认工具结果",
+                    tool_call_id
+                );
+                // 为未配对的工具调用添加默认结果
+                let default_result = AgentMessage {
+                    role: "tool".to_string(),
+                    content: MessageContent::Text("工具执行超时或失败".to_string()),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    tool_calls: None,
+                    tool_call_id: Some(tool_call_id.clone()),
+                    reasoning_content: None,
+                };
+                validated_messages.push(default_result);
+            }
+        }
+
+        validated_messages
     }
 
     /// 处理 SSE 流
@@ -443,6 +518,14 @@ impl Protocol for AnthropicProtocol {
 
         let url = format!("{}{}", base_url, self.endpoint());
 
+        info!(
+            "[AnthropicProtocol] 请求详情: url={}, model={}, messages_count={}, has_tools={}",
+            url,
+            model,
+            request.messages.len(),
+            request.tools.is_some()
+        );
+
         let mut req_builder = client
             .post(&url)
             .header("Authorization", format!("Bearer {}", api_key))
@@ -510,6 +593,52 @@ impl Protocol for AnthropicProtocol {
         };
 
         let url = format!("{}{}", base_url, self.endpoint());
+
+        info!(
+            "[AnthropicProtocol] 继续请求详情: url={}, model={}, messages_count={}, has_tools={}",
+            url,
+            model,
+            request.messages.len(),
+            request.tools.is_some()
+        );
+
+        // 调试：打印消息序列
+        for (i, msg) in request.messages.iter().enumerate() {
+            debug!(
+                "[AnthropicProtocol] Message {}: role={}, content_type={}",
+                i,
+                msg.role,
+                if msg.content.is_string() {
+                    "string"
+                } else {
+                    "array"
+                }
+            );
+            if let Some(content_array) = msg.content.as_array() {
+                for (j, block) in content_array.iter().enumerate() {
+                    if let Some(block_type) = block.get("type").and_then(|t| t.as_str()) {
+                        debug!(
+                            "[AnthropicProtocol] Message {} Block {}: type={}",
+                            i, j, block_type
+                        );
+                        if block_type == "tool_result" {
+                            if let Some(tool_use_id) =
+                                block.get("tool_use_id").and_then(|id| id.as_str())
+                            {
+                                debug!(
+                                    "[AnthropicProtocol] tool_result for tool_use_id: {}",
+                                    tool_use_id
+                                );
+                            }
+                        } else if block_type == "tool_use" {
+                            if let Some(tool_id) = block.get("id").and_then(|id| id.as_str()) {
+                                debug!("[AnthropicProtocol] tool_use with id: {}", tool_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         let mut req_builder = client
             .post(&url)

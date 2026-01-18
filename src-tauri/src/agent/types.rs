@@ -375,6 +375,11 @@ pub enum StreamEvent {
     #[serde(rename = "text_delta")]
     TextDelta { text: String },
 
+    /// 推理内容增量（DeepSeek reasoner 等模型的思考过程）
+    /// Requirements: 1.1 - THE Streaming_Handler SHALL emit reasoning deltas to the frontend in real-time
+    #[serde(rename = "reasoning_delta")]
+    ReasoningDelta { text: String },
+
     /// 工具调用开始
     /// Requirements: 7.6 - WHILE the Tool_Loop is executing, THE Frontend SHALL display the current tool being executed
     #[serde(rename = "tool_start")]
@@ -396,6 +401,31 @@ pub enum StreamEvent {
         tool_id: String,
         /// 工具执行结果
         result: ToolExecutionResult,
+    },
+
+    /// 权限确认请求
+    /// 当 Agent 需要用户确认某个操作时发送
+    #[serde(rename = "action_required")]
+    ActionRequired {
+        /// 请求 ID
+        request_id: String,
+        /// 操作类型
+        action_type: String,
+        /// 工具名称（tool_confirmation 类型）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tool_name: Option<String>,
+        /// 工具参数（tool_confirmation 类型）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        arguments: Option<serde_json::Value>,
+        /// 提示信息
+        #[serde(skip_serializing_if = "Option::is_none")]
+        prompt: Option<String>,
+        /// 问题列表（ask_user 类型）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        questions: Option<serde_json::Value>,
+        /// 请求的数据结构（elicitation 类型）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        requested_schema: Option<serde_json::Value>,
     },
 
     /// 完成（单次 API 响应完成，工具循环可能继续）

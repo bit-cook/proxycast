@@ -976,11 +976,11 @@ async fn run_server(
             post(handlers::select_credential),
         )
         .route(
-            "/api/kiro/credentials/:uuid/refresh",
+            "/api/kiro/credentials/{uuid}/refresh",
             axum::routing::put(handlers::refresh_credential),
         )
         .route(
-            "/api/kiro/credentials/:uuid/status",
+            "/api/kiro/credentials/{uuid}/status",
             get(handlers::get_credential_status),
         );
 
@@ -988,7 +988,7 @@ async fn run_server(
     let credentials_api_routes = Router::new()
         .route("/v1/credentials/select", post(handlers::credentials_select))
         .route(
-            "/v1/credentials/:uuid/token",
+            "/v1/credentials/{uuid}/token",
             get(handlers::credentials_get_token),
         );
 
@@ -996,8 +996,20 @@ async fn run_server(
         .route("/health", get(health))
         .route("/v1/models", get(models))
         .route("/v1/routes", get(list_routes))
-        .route("/v1/chat/completions", post(handlers::chat_completions))
-        .route("/v1/messages", post(handlers::anthropic_messages))
+        .route("/v1/chat/completions", post(
+            |State(state): State<AppState>,
+             headers: HeaderMap,
+             Json(mut request): Json<crate::models::openai::ChatCompletionRequest>| async {
+                handlers::chat_completions(State(state), headers, Json(request)).await
+            }
+        ))
+        .route("/v1/messages", post(
+            |State(state): State<AppState>,
+             headers: HeaderMap,
+             Json(mut request): Json<AnthropicMessagesRequest>| async {
+                handlers::anthropic_messages(State(state), headers, Json(request)).await
+            }
+        ))
         .route("/v1/messages/count_tokens", post(count_tokens))
         // 图像生成 API 路由
         .route(
@@ -1005,32 +1017,39 @@ async fn run_server(
             post(handlers::handle_image_generation),
         )
         // Gemini 原生协议路由
-        .route("/v1/gemini/*path", post(gemini_generate_content))
+        .route("/v1/gemini/{*path}", post(gemini_generate_content))
         // WebSocket 路由
         .route("/v1/ws", get(handlers::ws_upgrade_handler))
         .route("/ws", get(handlers::ws_upgrade_handler))
         // 多供应商路由
         .route(
-            "/:selector/v1/messages",
+            "/{selector}/v1/messages",
             post(anthropic_messages_with_selector),
         )
         .route(
-            "/:selector/v1/chat/completions",
+            "/{selector}/v1/chat/completions",
             post(chat_completions_with_selector),
         )
         // Amp CLI 路由
         .route(
-            "/api/provider/:provider/v1/chat/completions",
-            post(amp_chat_completions),
+            "/api/provider/{provider}/v1/chat/completions",
+            post(
+                |State(state): State<AppState>,
+                 Path(provider): Path<String>,
+                 headers: HeaderMap,
+                 Json(mut request): Json<crate::models::openai::ChatCompletionRequest>| async {
+                    amp_chat_completions(State(state), Path(provider), headers, Json(request)).await
+                }
+            ),
         )
         // TODO: amp_messages 和 amp_management_proxy 路由暂时禁用
-        // .route("/api/provider/:provider/v1/messages", post(amp_messages))
+        // .route("/api/provider/{provider}/v1/messages", post(amp_messages))
         // .route(
-        //     "/api/auth/*path",
+        //     "/api/auth/{*path}",
         //     axum::routing::any(amp_management_proxy_auth),
         // )
         // .route(
-        //     "/api/user/*path",
+        //     "/api/user/{*path}",
         //     axum::routing::any(amp_management_proxy_user),
         // )
         // 管理 API 路由
@@ -1815,7 +1834,8 @@ async fn amp_chat_completions(
                     db,
                     &crate::models::provider_pool_model::PoolProviderType::OpenAI,
                     Some(&provider),
-                ) {
+                    None, // 没有客户端类型检测
+                ).await {
                     Ok(Some(cred)) => {
                         eprintln!(
                             "[AMP] 通过 provider_id '{}' 找到 API Key Provider 凭证: name={:?}",
@@ -1854,7 +1874,7 @@ async fn amp_chat_completions(
                 ),
             );
             // 注意：这里没有 Flow 捕获，因为是通过 AMP CLI 路由的请求
-            handlers::call_provider_openai(&state, &cred, &request, None).await
+            handlers::call_provider_openai(&state, &cred, &request, None).await.into_response()
         }
         None => {
             // 不再回退到默认 provider，直接返回错误

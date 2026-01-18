@@ -23,7 +23,7 @@ pub struct OpenAIProtocol;
 
 impl OpenAIProtocol {
     /// 将 AgentMessage 转换为 OpenAI ChatMessage
-    fn convert_to_chat_message(msg: &AgentMessage) -> ChatMessage {
+    fn convert_to_chat_message(msg: &AgentMessage, is_deepseek_reasoner: bool) -> ChatMessage {
         let content = match &msg.content {
             MessageContent::Text(text) => Some(OpenAIMessageContent::Text(text.clone())),
             MessageContent::Parts(parts) => {
@@ -45,6 +45,15 @@ impl OpenAIProtocol {
             }
         };
 
+        // DeepSeek reasoner 模型要求 assistant 消息必须包含 reasoning_content 字段
+        // 参考: https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
+        let reasoning_content = if is_deepseek_reasoner && msg.role == "assistant" {
+            // 对于 DeepSeek reasoner，确保 reasoning_content 始终有值（即使为空字符串）
+            Some(msg.reasoning_content.clone().unwrap_or_default())
+        } else {
+            msg.reasoning_content.clone()
+        };
+
         ChatMessage {
             role: msg.role.clone(),
             content,
@@ -62,8 +71,13 @@ impl OpenAIProtocol {
                     .collect()
             }),
             tool_call_id: msg.tool_call_id.clone(),
-            reasoning_content: msg.reasoning_content.clone(),
+            reasoning_content,
         }
+    }
+
+    /// 检查模型是否是 DeepSeek reasoner 模型
+    fn is_deepseek_reasoner(model: &str) -> bool {
+        model.contains("deepseek-reasoner") || model.contains("deepseek-r1")
     }
 
     /// 构建消息列表
@@ -72,8 +86,10 @@ impl OpenAIProtocol {
         user_message: &str,
         images: Option<&[ImageData]>,
         config: &AgentConfig,
+        model: &str,
     ) -> Vec<ChatMessage> {
         let mut messages = Vec::new();
+        let is_deepseek_reasoner = Self::is_deepseek_reasoner(model);
 
         // 添加系统提示词
         if let Some(prompt) = &config.system_prompt {
@@ -88,7 +104,7 @@ impl OpenAIProtocol {
 
         // 添加历史消息
         for msg in history {
-            messages.push(Self::convert_to_chat_message(msg));
+            messages.push(Self::convert_to_chat_message(msg, is_deepseek_reasoner));
         }
 
         // 添加当前用户消息
@@ -131,8 +147,10 @@ impl OpenAIProtocol {
     fn build_messages_from_history(
         history: &[AgentMessage],
         config: &AgentConfig,
+        model: &str,
     ) -> Vec<ChatMessage> {
         let mut messages = Vec::new();
+        let is_deepseek_reasoner = Self::is_deepseek_reasoner(model);
 
         // 添加系统提示词
         if let Some(prompt) = &config.system_prompt {
@@ -147,7 +165,7 @@ impl OpenAIProtocol {
 
         // 添加所有历史消息
         for msg in history {
-            messages.push(Self::convert_to_chat_message(msg));
+            messages.push(Self::convert_to_chat_message(msg, is_deepseek_reasoner));
         }
 
         messages
@@ -246,22 +264,39 @@ impl OpenAIProtocol {
                         for line in event.lines() {
                             if let Some(data) = line.strip_prefix("data: ") {
                                 debug!("[OpenAIProtocol] SSE data: {}", data);
-                                let (text_delta, is_done, usage) = parser.parse_data(data);
+                                let (text_delta, reasoning_delta, is_done, usage) =
+                                    parser.parse_data(data);
 
                                 if usage.is_some() {
                                     final_usage = usage;
                                 }
 
+                                // 发送推理内容增量（DeepSeek reasoner 等模型）
+                                if let Some(reasoning) = reasoning_delta {
+                                    let _ = tx
+                                        .send(StreamEvent::ReasoningDelta { text: reasoning })
+                                        .await;
+                                }
+
+                                // 发送普通文本内容增量
                                 if let Some(text) = text_delta {
                                     let _ = tx.send(StreamEvent::TextDelta { text }).await;
                                 }
 
                                 if is_done {
                                     let full_content = parser.get_full_content();
+                                    let reasoning_content = parser.get_reasoning_content();
                                     let tool_calls = if parser.has_tool_calls() {
                                         Some(parser.finalize_tool_calls())
                                     } else {
                                         None
+                                    };
+
+                                    // 如果没有普通内容但有推理内容，使用推理内容作为最终内容
+                                    let final_content = if full_content.is_empty() {
+                                        reasoning_content.clone().unwrap_or_default()
+                                    } else {
+                                        full_content
                                     };
 
                                     if send_done {
@@ -273,10 +308,10 @@ impl OpenAIProtocol {
                                     }
 
                                     return Ok(StreamResult {
-                                        content: full_content,
+                                        content: final_content,
                                         tool_calls,
                                         usage: final_usage,
-                                        reasoning_content: None,
+                                        reasoning_content,
                                     });
                                 }
                             }
@@ -347,6 +382,13 @@ impl OpenAIProtocol {
             None
         };
 
+        // 如果没有普通内容但有推理内容，使用推理内容作为最终内容
+        let final_content = if full_content.is_empty() {
+            reasoning_content.clone().unwrap_or_default()
+        } else {
+            full_content
+        };
+
         if send_done {
             let _ = tx
                 .send(StreamEvent::Done {
@@ -356,7 +398,7 @@ impl OpenAIProtocol {
         }
 
         Ok(StreamResult {
-            content: full_content,
+            content: final_content,
             tool_calls,
             usage: final_usage,
             reasoning_content,
@@ -388,7 +430,7 @@ impl Protocol for OpenAIProtocol {
             provider_id
         );
 
-        let chat_messages = Self::build_messages(messages, user_message, images, config);
+        let chat_messages = Self::build_messages(messages, user_message, images, config, model);
 
         let request = ChatCompletionRequest {
             model: model.to_string(),
@@ -464,7 +506,7 @@ impl Protocol for OpenAIProtocol {
             provider_id
         );
 
-        let chat_messages = Self::build_messages_from_history(messages, config);
+        let chat_messages = Self::build_messages_from_history(messages, config, model);
 
         let request = ChatCompletionRequest {
             model: model.to_string(),

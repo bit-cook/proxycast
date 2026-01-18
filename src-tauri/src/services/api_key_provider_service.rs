@@ -836,16 +836,18 @@ impl ApiKeyProviderService {
     /// - `db`: 数据库连接
     /// - `pool_type`: Provider Pool 中的 Provider 类型
     /// - `provider_id_hint`: 可选的 provider_id 提示，如 "deepseek", "dashscope"
+    /// - `client_type`: 客户端类型，用于兼容性检查
     ///
     /// # 返回
     /// - `Ok(Some(credential))`: 找到可用的降级凭证
     /// - `Ok(None)`: 没有找到可用的降级凭证
     /// - `Err(e)`: 查询过程中发生错误
-    pub fn get_fallback_credential(
+    pub async fn get_fallback_credential(
         &self,
         db: &DbConnection,
         pool_type: &PoolProviderType,
         provider_id_hint: Option<&str>,
+        client_type: Option<&crate::server::client_detector::ClientType>,
     ) -> Result<Option<ProviderCredential>, String> {
         eprintln!(
             "[get_fallback_credential] 开始查找: pool_type={:?}, provider_id_hint={:?}",
@@ -859,7 +861,7 @@ impl ApiKeyProviderService {
                 "[get_fallback_credential] 尝试按 provider_id '{}' 查找",
                 provider_id
             );
-            if let Some(cred) = self.find_by_provider_id(db, provider_id)? {
+            if let Some(cred) = self.find_by_provider_id(db, provider_id, client_type).await? {
                 eprintln!(
                     "[get_fallback_credential] 通过 provider_id '{}' 找到凭证: {:?}",
                     provider_id, cred.name
@@ -991,66 +993,120 @@ impl ApiKeyProviderService {
     /// 通过 provider_id 直接查找凭证 (支持 60+ Provider)
     ///
     /// 例如: "deepseek", "dashscope", "openrouter"
-    fn find_by_provider_id(
+    async fn find_by_provider_id(
         &self,
         db: &DbConnection,
         provider_id: &str,
+        client_type: Option<&crate::server::client_detector::ClientType>,
     ) -> Result<Option<ProviderCredential>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        // First, get all data we need while holding the lock
+        let (provider, keys) = {
+            let conn = db.lock().map_err(|e| e.to_string())?;
 
-        // 直接按 provider_id 查找
-        let provider =
-            ApiKeyProviderDao::get_provider_by_id(&conn, provider_id).map_err(|e| e.to_string())?;
+            // 直接按 provider_id 查找
+            let provider =
+                ApiKeyProviderDao::get_provider_by_id(&conn, provider_id).map_err(|e| e.to_string())?;
 
-        let provider = match provider {
-            Some(p) if p.enabled => {
+            let provider = match provider {
+                Some(p) if p.enabled => {
+                    eprintln!(
+                        "[find_by_provider_id] 找到已启用的 provider: id={}, name={}, api_host={}, type={:?}",
+                        p.id, p.name, p.api_host, p.provider_type
+                    );
+                    p
+                }
+                Some(_p) => {
+                    eprintln!(
+                        "[find_by_provider_id] provider '{}' 存在但未启用",
+                        provider_id
+                    );
+                    return Ok(None);
+                }
+                None => {
+                    eprintln!("[find_by_provider_id] provider '{}' 不存在", provider_id);
+                    return Ok(None);
+                }
+            };
+
+            // 获取启用的 API Key
+            let keys = ApiKeyProviderDao::get_enabled_api_keys_by_provider(&conn, &provider.id)
+                .map_err(|e| e.to_string())?;
+
+            if keys.is_empty() {
                 eprintln!(
-                    "[find_by_provider_id] 找到已启用的 provider: id={}, name={}, api_host={}, type={:?}",
-                    p.id, p.name, p.api_host, p.provider_type
-                );
-                p
-            }
-            Some(_p) => {
-                eprintln!(
-                    "[find_by_provider_id] provider '{}' 存在但未启用",
+                    "[find_by_provider_id] provider '{}' 没有启用的 API Key",
                     provider_id
                 );
                 return Ok(None);
             }
+
+            eprintln!(
+                "[find_by_provider_id] provider '{}' 有 {} 个启用的 API Key",
+                provider_id,
+                keys.len()
+            );
+
+            (provider, keys)
+        }; // conn is released here
+
+        // 轮询选择 API Key，但需要检查客户端兼容性
+        let mut selected_key = None;
+        let mut attempts = 0;
+        let max_attempts = keys.len();
+
+        while attempts < max_attempts {
+            let index = {
+                let mut indices = self.round_robin_index.write().map_err(|e| e.to_string())?;
+                indices
+                    .entry(provider.id.clone())
+                    .or_insert_with(|| AtomicUsize::new(0))
+                    .fetch_add(1, Ordering::SeqCst)
+            };
+
+            let candidate_key = &keys[index % keys.len()];
+
+            // 解密 API Key 进行测试
+            let api_key = self.encryption.decrypt(&candidate_key.api_key_encrypted)?;
+
+            // 检查客户端兼容性（仅对 Anthropic 类型进行检查）
+            if provider.provider_type == ApiProviderType::Anthropic {
+                if let Some(client) = client_type {
+                    // 对于 Claude Code 客户端，可以使用任何 Claude 凭证
+                    if matches!(client, crate::server::client_detector::ClientType::ClaudeCode) {
+                        selected_key = Some(candidate_key);
+                        break;
+                    }
+
+                    // 对于其他客户端，需要检查凭证是否是 Claude Code 专用
+                    // 通过发送测试请求来检查
+                    if let Err(e) = self.test_claude_key_compatibility(&api_key, &provider.api_host).await {
+                        if e.contains("CLAUDE_CODE_ONLY") {
+                            eprintln!(
+                                "[find_by_provider_id] API Key {} 是 Claude Code 专用，跳过 (客户端: {:?})",
+                                candidate_key.alias.as_deref().unwrap_or(&candidate_key.id),
+                                client
+                            );
+                            attempts += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            selected_key = Some(candidate_key);
+            break;
+        }
+
+        let selected_key = match selected_key {
+            Some(key) => key,
             None => {
-                eprintln!("[find_by_provider_id] provider '{}' 不存在", provider_id);
+                eprintln!(
+                    "[find_by_provider_id] provider '{}' 的所有 API Key 都不兼容当前客户端 ({:?})",
+                    provider_id, client_type
+                );
                 return Ok(None);
             }
         };
-
-        // 获取启用的 API Key
-        let keys = ApiKeyProviderDao::get_enabled_api_keys_by_provider(&conn, &provider.id)
-            .map_err(|e| e.to_string())?;
-
-        if keys.is_empty() {
-            eprintln!(
-                "[find_by_provider_id] provider '{}' 没有启用的 API Key",
-                provider_id
-            );
-            return Ok(None);
-        }
-
-        eprintln!(
-            "[find_by_provider_id] provider '{}' 有 {} 个启用的 API Key",
-            provider_id,
-            keys.len()
-        );
-
-        // 轮询选择 API Key
-        let index = {
-            let mut indices = self.round_robin_index.write().map_err(|e| e.to_string())?;
-            indices
-                .entry(provider.id.clone())
-                .or_insert_with(|| AtomicUsize::new(0))
-                .fetch_add(1, Ordering::SeqCst)
-        };
-
-        let selected_key = &keys[index % keys.len()];
 
         // 解密 API Key
         let api_key = self.encryption.decrypt(&selected_key.api_key_encrypted)?;
@@ -1233,8 +1289,15 @@ impl ApiKeyProviderService {
                 let test_model = model_name
                     .or_else(|| provider.custom_models.first().cloned())
                     .unwrap_or_else(|| "claude-3-haiku-20240307".to_string());
-                self.test_anthropic_connection(&api_key, &provider.api_host, &test_model)
-                    .await
+                
+                match self.test_anthropic_connection(&api_key, &provider.api_host, &test_model).await {
+                    Ok(models) => Ok(models),
+                    Err(e) if e == "CLAUDE_CODE_ONLY" => {
+                        // Claude Code 专用凭证限制错误，返回特殊错误信息
+                        Err("凭证限制: 当前 Claude 凭证只能用于 Claude Code，不能用于通用 API 调用".to_string())
+                    }
+                    Err(e) => Err(e),
+                }
             }
             ApiProviderType::Gemini => {
                 // Gemini 使用 /models 端点
@@ -1354,6 +1417,44 @@ impl ApiKeyProviderService {
         }
     }
 
+    /// 测试 Claude Key 的客户端兼容性
+    async fn test_claude_key_compatibility(
+        &self,
+        api_key: &str,
+        api_host: &str,
+    ) -> Result<(), String> {
+        use crate::providers::claude_custom::ClaudeCustomProvider;
+
+        let provider =
+            ClaudeCustomProvider::with_config(api_key.to_string(), Some(api_host.to_string()));
+
+        // 发送一个最小的测试请求
+        let request = serde_json::json!({
+            "model": "claude-3-haiku-20240307",
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "hi"}]
+        });
+
+        let response = provider
+            .messages(&request)
+            .await
+            .map_err(|e| format!("API 调用失败: {}", e))?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let body = response.text().await.unwrap_or_default();
+            
+            // 检查是否是 Claude Code 专用凭证限制错误
+            if body.contains("only authorized for use with Claude Code") {
+                return Err("CLAUDE_CODE_ONLY".to_string());
+            }
+            
+            // 其他错误不影响兼容性判断
+            Ok(())
+        }
+    }
+
     /// 测试 Anthropic 连接
     async fn test_anthropic_connection(
         &self,
@@ -1383,6 +1484,12 @@ impl ApiKeyProviderService {
         } else {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
+            
+            // 检查是否是 Claude Code 专用凭证限制错误
+            if body.contains("only authorized for use with Claude Code") {
+                return Err("CLAUDE_CODE_ONLY".to_string());
+            }
+            
             Err(format!("API 返回错误: {} - {}", status, body))
         }
     }

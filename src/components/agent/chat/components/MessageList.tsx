@@ -19,6 +19,7 @@ import { StreamingRenderer } from "./StreamingRenderer";
 import { TokenUsageDisplay } from "./TokenUsageDisplay";
 import { Message } from "../types";
 import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
+import type { ConfirmResponse } from "../types";
 import logoImg from "/logo.png";
 
 interface MessageListProps {
@@ -31,6 +32,8 @@ interface MessageListProps {
   onWriteFile?: (content: string, fileName: string) => void;
   /** 文件点击回调 */
   onFileClick?: (fileName: string, content: string) => void;
+  /** 权限确认响应回调 */
+  onPermissionResponse?: (response: ConfirmResponse) => void;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
@@ -40,17 +43,53 @@ export const MessageList: React.FC<MessageListProps> = ({
   onA2UISubmit,
   onWriteFile,
   onFileClick,
+  onPermissionResponse,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
 
+  // 检测用户是否在手动滚动
   useEffect(() => {
-    if (scrollRef.current) {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let scrollTimeout: ReturnType<typeof setTimeout>;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50; // 50px 容差
+      
+      setIsUserScrolling(true);
+      setShouldAutoScroll(isAtBottom);
+      
+      // 清除之前的定时器
+      clearTimeout(scrollTimeout);
+      
+      // 500ms 后认为用户停止滚动
+      scrollTimeout = setTimeout(() => {
+        setIsUserScrolling(false);
+      }, 500);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
+  }, []);
+
+  // 智能自动滚动：只在用户没有手动滚动且在底部时才自动滚动
+  useEffect(() => {
+    if (shouldAutoScroll && !isUserScrolling && scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages]);
+  }, [messages, shouldAutoScroll, isUserScrolling]);
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -93,7 +132,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   };
 
   return (
-    <MessageListContainer>
+    <MessageListContainer ref={containerRef}>
       <div className="py-8 flex flex-col">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-64 text-muted-foreground opacity-50">
@@ -166,7 +205,9 @@ export const MessageList: React.FC<MessageListProps> = ({
                     isStreaming={msg.isThinking}
                     toolCalls={msg.toolCalls}
                     showCursor={msg.isThinking && !msg.content}
+                    thinkingContent={msg.thinkingContent}
                     contentParts={msg.contentParts}
+                    actionRequests={msg.actionRequests}
                     onA2UISubmit={
                       onA2UISubmit
                         ? (formData) => onA2UISubmit(formData, msg.id)
@@ -174,6 +215,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                     }
                     onWriteFile={onWriteFile}
                     onFileClick={onFileClick}
+                    onPermissionResponse={onPermissionResponse}
                   />
                 ) : (
                   <MarkdownRenderer

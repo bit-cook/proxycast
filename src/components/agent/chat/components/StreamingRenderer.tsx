@@ -10,11 +10,12 @@ import { cn } from "@/lib/utils";
 import { ChevronDown, Lightbulb, FileText } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ToolCallList, ToolCallItem } from "./ToolCallDisplay";
+import { DecisionPanel } from "./DecisionPanel";
 import { parseAIResponse } from "@/components/content-creator/a2ui/parser";
 import { A2UIRenderer } from "@/components/content-creator/a2ui/components";
 import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
 import type { ToolCallState } from "@/lib/api/agent";
-import type { ContentPart } from "../types";
+import type { ContentPart, ActionRequired, ConfirmResponse } from "../types";
 
 // ============ 思考内容组件 ============
 
@@ -312,12 +313,16 @@ interface StreamingRendererProps {
    * 否则回退到 content + toolCalls 渲染方式
    */
   contentParts?: ContentPart[];
+  /** 权限确认请求列表（向后兼容） */
+  actionRequests?: ActionRequired[];
   /** A2UI 表单提交回调 */
   onA2UISubmit?: (formData: A2UIFormData) => void;
   /** 文件写入回调 */
   onWriteFile?: (content: string, fileName: string) => void;
   /** 文件点击回调 */
   onFileClick?: (fileName: string, content: string) => void;
+  /** 权限确认响应回调 */
+  onPermissionResponse?: (response: ConfirmResponse) => void;
 }
 
 /**
@@ -338,9 +343,11 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
     showCursor = true,
     thinkingContent: externalThinking,
     contentParts,
+    actionRequests,
     onA2UISubmit,
     onWriteFile,
     onFileClick,
+    onPermissionResponse,
   }) => {
     // 判断是否使用交错显示模式
     const useInterleavedMode = contentParts && contentParts.length > 0;
@@ -352,10 +359,14 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
     );
 
     // 解析 A2UI 和 write_file 内容
-    const parsedContent = useMemo(
-      () => parseAIResponse(visibleText, isStreaming),
-      [visibleText, isStreaming],
-    );
+    const parsedContent = useMemo(() => {
+      const result = parseAIResponse(visibleText, isStreaming);
+      // 添加调试日志
+      if (result.hasWriteFile) {
+        console.log("[StreamingRenderer] 检测到 write_file:", result.parts.filter(p => p.type === "write_file" || p.type === "pending_write_file"));
+      }
+      return result;
+    }, [visibleText, isStreaming]);
 
     // 处理文件写入 - 使用 ref 来追踪已处理的内容
     const processedWriteFilesRef = useRef<Set<string>>(new Set());
@@ -398,34 +409,32 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
     // 判断是否有可见内容
     const hasVisibleContent = useInterleavedMode
       ? contentParts.some(
-          (part) => part.type === "text" && part.text.length > 0,
-        )
+          (part) => 
+            (part.type === "text" && part.text.length > 0) ||
+            (part.type === "thinking" && part.text.length > 0),
+        ) || (isStreaming && (content.length > 0 || (externalThinking && externalThinking.length > 0)))
       : visibleText.length > 0;
 
     // 交错显示模式：按顺序渲染 contentParts
     if (useInterleavedMode) {
       return (
         <div className="flex flex-col gap-2">
-          {/* 思考内容 - 显示在最前面 */}
-          {finalThinking && (
-            <ThinkingBlock
-              content={finalThinking}
-              defaultExpanded={isStreaming}
-            />
-          )}
-
-          {/* 交错内容 */}
+          {/* 交错内容 - 不再在开头显示思考内容，避免重复 */}
           {contentParts.map((part, index) => {
             if (part.type === "text") {
-              // 解析并渲染文本（可能包含 thinking 标签和 write_file 标签）
-              const { visibleText: partVisible } = parseThinkingContent(
-                part.text,
-              );
-              if (!partVisible) return null;
+              // 在交错模式下，不再解析 thinking 标签，避免重复显示
+              // 直接使用原始文本内容
+              const partText = part.text;
+              if (!partText) return null;
 
               // 解析 write_file 标签
-              const partParsed = parseAIResponse(partVisible, isStreaming);
+              const partParsed = parseAIResponse(partText, isStreaming);
               const isLastPart = index === contentParts.length - 1;
+
+              // 添加调试日志
+              if (partParsed.hasWriteFile) {
+                console.log("[StreamingRenderer] 交错模式检测到 write_file:", partParsed.parts.filter(p => p.type === "write_file" || p.type === "pending_write_file"));
+              }
 
               // 处理文件写入回调
               if (onWriteFile) {
@@ -508,10 +517,20 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
               return (
                 <StreamingText
                   key={`text-${index}`}
-                  text={partVisible}
+                  text={partText}
                   isStreaming={isStreaming && isLastPart}
                   showCursor={shouldShowCursor && isLastPart}
                   onA2UISubmit={onA2UISubmit}
+                />
+              );
+            } else if (part.type === "thinking") {
+              // 渲染推理内容片段
+              const isLastPart = index === contentParts.length - 1;
+              return (
+                <ThinkingBlock
+                  key={`thinking-${index}`}
+                  content={part.text}
+                  defaultExpanded={isStreaming && isLastPart}
                 />
               );
             } else if (part.type === "tool_use") {
@@ -521,6 +540,15 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
                   key={part.toolCall.id}
                   toolCall={part.toolCall}
                   onFileClick={onFileClick}
+                />
+              );
+            } else if (part.type === "action_required") {
+              // 渲染权限确认请求
+              return (
+                <DecisionPanel
+                  key={part.actionRequired.requestId}
+                  request={part.actionRequired}
+                  onSubmit={onPermissionResponse || (() => {})}
                 />
               );
             }
@@ -542,6 +570,7 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
 
     // 回退模式：传统的 content + toolCalls 分开渲染
     const hasToolCalls = toolCalls && toolCalls.length > 0;
+    const hasActionRequests = actionRequests && actionRequests.length > 0;
 
     // 渲染解析后的内容（包括 A2UI、write_file、普通文本）
     const renderParsedContent = () => {
@@ -639,6 +668,19 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
         {/* 工具调用区域 */}
         {hasToolCalls && (
           <ToolCallList toolCalls={toolCalls} onFileClick={onFileClick} />
+        )}
+
+        {/* 权限确认区域 */}
+        {hasActionRequests && onPermissionResponse && (
+          <div className="space-y-3">
+            {actionRequests.map((request) => (
+              <DecisionPanel
+                key={request.requestId}
+                request={request}
+                onSubmit={onPermissionResponse}
+              />
+            ))}
+          </div>
         )}
 
         {/* 解析后的内容区域（包括 A2UI、write_file、普通文本） */}

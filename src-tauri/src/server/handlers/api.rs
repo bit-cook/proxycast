@@ -729,7 +729,7 @@ pub async fn chat_completions(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_lowercase());
 
-    // 尝试从凭证池中选择凭证
+    // 尝试从凭证池中选择凭证（带客户端兼容性检查）
     // 如果指定了 X-Provider-Id，优先使用它（不降级）
     // 否则使用 selected_provider
     eprintln!("[CHAT_COMPLETIONS] 开始选择凭证...");
@@ -743,7 +743,7 @@ pub async fn chat_completions(
                 );
                 let cred = state
                     .pool_service
-                    .select_credential(db, explicit_provider_id, Some(&request.model))
+                    .select_credential_with_client_check(db, explicit_provider_id, Some(&request.model), Some(&client_type))
                     .ok()
                     .flatten();
 
@@ -781,7 +781,7 @@ pub async fn chat_completions(
                 );
                 let cred = state
                     .pool_service
-                    .select_credential(db, &selected_provider, Some(&request.model))
+                    .select_credential_with_client_check(db, &selected_provider, Some(&request.model), Some(&client_type))
                     .ok()
                     .flatten();
 
@@ -829,7 +829,8 @@ pub async fn chat_completions(
                 db,
                 &crate::models::provider_pool_model::PoolProviderType::OpenAI,
                 Some(&provider_id_lower),
-            ) {
+                Some(&client_type),
+            ).await {
                 Ok(Some(cred)) => {
                     eprintln!(
                         "[CHAT_COMPLETIONS] 通过 provider_id '{}' 找到凭证: name={:?}",
@@ -1918,7 +1919,7 @@ pub async fn anthropic_messages(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_lowercase());
 
-    // 尝试从凭证池中选择凭证
+    // 尝试从凭证池中选择凭证（带客户端兼容性检查）
     // 如果指定了 X-Provider-Id，优先使用它（不降级）
     // 否则使用 selected_provider
     let credential = match &state.db {
@@ -1931,7 +1932,7 @@ pub async fn anthropic_messages(
                 );
                 let cred = state
                     .pool_service
-                    .select_credential(db, explicit_provider_id, Some(&request.model))
+                    .select_credential_with_client_check(db, explicit_provider_id, Some(&request.model), Some(&client_type))
                     .ok()
                     .flatten();
 
@@ -1968,7 +1969,7 @@ pub async fn anthropic_messages(
                 );
                 let cred = state
                     .pool_service
-                    .select_credential(db, &selected_provider, Some(&request.model))
+                    .select_credential_with_client_check(db, &selected_provider, Some(&request.model), Some(&client_type))
                     .ok()
                     .flatten();
 
@@ -2011,7 +2012,8 @@ pub async fn anthropic_messages(
                 db,
                 &crate::models::provider_pool_model::PoolProviderType::Anthropic,
                 Some(&selected_provider),
-            ) {
+                Some(&client_type),
+            ).await {
                 Ok(Some(cred)) => {
                     eprintln!(
                         "[ANTHROPIC_MESSAGES] 通过 provider_id '{}' 找到凭证: name={:?}",

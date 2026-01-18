@@ -102,8 +102,8 @@ export const Inputbar: React.FC<InputbarProps> = ({
   isLoading,
   disabled,
   onClearMessages,
-  onToggleCanvas: _onToggleCanvas,
-  isCanvasOpen: _isCanvasOpen,
+  onToggleCanvas,
+  isCanvasOpen = false,
   taskFiles = [],
   selectedFileId,
   taskFilesExpanded = false,
@@ -151,11 +151,14 @@ export const Inputbar: React.FC<InputbarProps> = ({
           setIsFullscreen((prev) => !prev);
           toast.info(isFullscreen ? "已退出全屏" : "已进入全屏编辑");
           break;
+        case "canvas":
+          onToggleCanvas?.();
+          break;
         default:
           break;
       }
     },
-    [setInput, onClearMessages, isFullscreen],
+    [setInput, onClearMessages, isFullscreen, onToggleCanvas],
   );
 
   const handleFileSelect = useCallback(
@@ -336,6 +339,7 @@ export const Inputbar: React.FC<InputbarProps> = ({
         onRemoveImage={handleRemoveImage}
         onPaste={handlePaste}
         isFullscreen={isFullscreen}
+        isCanvasOpen={isCanvasOpen}
       />
     </div>
   );

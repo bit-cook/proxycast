@@ -81,6 +81,8 @@ pub fn run() {
         webview_manager: webview_manager_state,
         update_check_service: update_check_service_state,
         session_files: session_files_state,
+        context_memory_service,
+        tool_hooks_service,
         shared_stats,
         shared_tokens,
         shared_logger,
@@ -164,6 +166,8 @@ pub fn run() {
         .manage(webview_manager_state)
         .manage(update_check_service_state)
         .manage(session_files_state)
+        .manage(context_memory_service)
+        .manage(tool_hooks_service)
         .on_window_event(move |window, event| {
             // 处理窗口关闭事件
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -190,13 +194,13 @@ pub fn run() {
             }
         })
         .setup(move |app| {
-            // 设置 TerminalTool 的 AppHandle（用于发送事件到前端）
-            crate::agent::tools::set_terminal_tool_app_handle(app.handle().clone());
-            tracing::info!("[启动] TerminalTool AppHandle 已设置");
+            // TODO: 重新实现 TerminalTool 和 TermScrollbackTool 的 AppHandle 设置
+            // 当前暂时注释掉，等待适配 aster-rust 工具系统
+            // crate::agent::tools::set_terminal_tool_app_handle(app.handle().clone());
+            // tracing::info!("[启动] TerminalTool AppHandle 已设置");
 
-            // 设置 TermScrollbackTool 的 AppHandle（用于发送事件到前端）
-            crate::agent::tools::set_term_scrollback_tool_app_handle(app.handle().clone());
-            tracing::info!("[启动] TermScrollbackTool AppHandle 已设置");
+            // crate::agent::tools::set_term_scrollback_tool_app_handle(app.handle().clone());
+            // tracing::info!("[启动] TermScrollbackTool AppHandle 已设置");
 
             // 初始化托盘管理器
             // Requirements 1.4: 应用启动时显示停止状态图标
@@ -1047,8 +1051,9 @@ pub fn run() {
             commands::agent_cmd::agent_get_session,
             commands::agent_cmd::agent_delete_session,
             commands::agent_cmd::agent_get_session_messages,
-            commands::agent_cmd::agent_terminal_command_response,
-            commands::agent_cmd::agent_term_scrollback_response,
+            // TODO: 重新启用这些命令，适配 aster-rust 工具系统
+            // commands::agent_cmd::agent_terminal_command_response,
+            // commands::agent_cmd::agent_term_scrollback_response,
             // Native Agent commands
             commands::native_agent_cmd::native_agent_init,
             commands::native_agent_cmd::native_agent_status,
@@ -1059,6 +1064,7 @@ pub fn run() {
             commands::native_agent_cmd::native_agent_get_session,
             commands::native_agent_cmd::native_agent_delete_session,
             commands::native_agent_cmd::native_agent_list_sessions,
+            commands::native_agent_cmd::agent_permission_response,
             // Aster Agent commands
             commands::aster_agent_cmd::aster_agent_init,
             commands::aster_agent_cmd::aster_agent_status,
@@ -1247,6 +1253,33 @@ pub fn run() {
             commands::session_files_cmd::session_files_list_files,
             commands::session_files_cmd::session_files_cleanup_expired,
             commands::session_files_cmd::session_files_cleanup_empty,
+            // General Chat commands
+            commands::general_chat_cmd::general_chat_create_session,
+            commands::general_chat_cmd::general_chat_list_sessions,
+            commands::general_chat_cmd::general_chat_get_session,
+            commands::general_chat_cmd::general_chat_delete_session,
+            commands::general_chat_cmd::general_chat_rename_session,
+            commands::general_chat_cmd::general_chat_get_messages,
+            commands::general_chat_cmd::general_chat_add_message,
+            commands::general_chat_cmd::general_chat_send_message,
+            commands::general_chat_cmd::general_chat_stop_generation,
+            // Context Memory commands
+            commands::context_memory::save_memory_entry,
+            commands::context_memory::get_session_memories,
+            commands::context_memory::get_memory_context,
+            commands::context_memory::record_error,
+            commands::context_memory::should_avoid_operation,
+            commands::context_memory::mark_error_resolved,
+            commands::context_memory::get_memory_stats,
+            commands::context_memory::cleanup_expired_memories,
+            // Tool Hooks commands
+            commands::tool_hooks::execute_hooks,
+            commands::tool_hooks::add_hook_rule,
+            commands::tool_hooks::remove_hook_rule,
+            commands::tool_hooks::toggle_hook_rule,
+            commands::tool_hooks::get_hook_rules,
+            commands::tool_hooks::get_hook_execution_stats,
+            commands::tool_hooks::clear_hook_execution_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

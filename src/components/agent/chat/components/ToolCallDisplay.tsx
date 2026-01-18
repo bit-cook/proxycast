@@ -27,8 +27,6 @@ import {
   Settings,
   Wrench,
   ExternalLink,
-  Check,
-  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ToolCallState } from "@/lib/api/agent";
@@ -187,7 +185,7 @@ const getFileName = (filePath: string): string => {
 /**
  * 获取文件扩展名对应的标签颜色
  */
-const getFileTypeColor = (fileName: string): string => {
+const _getFileTypeColor = (fileName: string): string => {
   const ext = fileName.split(".").pop()?.toLowerCase() || "";
   switch (ext) {
     case "ts":
@@ -541,8 +539,8 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
     }
   }, [toolCall.arguments]);
 
-  // 获取操作标签和图标
-  const { action, icon: ActionIcon } = useMemo(
+  // 获取操作标签和图标（保留用于未来扩展）
+  const _toolAction = useMemo(
     () => getToolActionLabel(toolCall.name, toolCall.status),
     [toolCall.name, toolCall.status],
   );
@@ -587,43 +585,48 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
     }
   }, [filePath, fileContent, onFileClick]);
 
-  // 简洁模式：单行显示
+  // 简洁模式：单行显示 - Claude 风格
   return (
     <div className="group">
-      {/* 主行 */}
+      {/* 主行 - Claude 风格卡片 */}
       <div
         className={cn(
-          "flex items-center gap-2 px-3 py-2 rounded-lg transition-colors",
-          "hover:bg-muted/50",
-          isExpanded && "bg-muted/30",
+          "flex items-center gap-2 px-3 py-2 rounded-2xl transition-colors",
+          "bg-[var(--surface-tertiary)] hover:bg-[var(--surface-secondary)]",
+          isExpanded && "bg-[var(--surface-secondary)]",
         )}
       >
-        {/* 状态图标 */}
-        <div className="flex items-center justify-center w-6 h-6 rounded-md bg-muted/50 shrink-0">
-          {isRunning ? (
-            <Loader2 className="w-4 h-4 text-primary animate-spin" />
-          ) : isCompleted ? (
-            <Check className="w-4 h-4 text-green-500" />
-          ) : isFailed ? (
-            <X className="w-4 h-4 text-red-500" />
-          ) : (
-            <ActionIcon className="w-4 h-4 text-muted-foreground" />
+        {/* 状态指示器 - Claude 风格 */}
+        <span className="claude-status-dot">
+          {isRunning && (
+            <span
+              className="claude-status-dot-ping"
+              style={{ backgroundColor: "var(--claude-accent)" }}
+            />
           )}
-        </div>
-
-        {/* 操作描述 */}
-        <span className="text-sm text-muted-foreground shrink-0">{action}</span>
-
-        {/* 文件名标签 */}
-        {fileName && (
           <span
-            className={cn(
-              "px-2 py-0.5 rounded text-xs font-mono",
-              filePath
-                ? getFileTypeColor(fileName)
-                : "bg-muted text-muted-foreground",
-            )}
-          >
+            className="claude-status-dot-inner"
+            style={{
+              backgroundColor: isCompleted
+                ? "var(--success)"
+                : isFailed
+                  ? "#DC2626"
+                  : "var(--claude-accent)",
+            }}
+          />
+        </span>
+
+        {/* 工具名称 - Claude 风格 */}
+        <span
+          className="text-sm font-medium"
+          style={{ color: "var(--claude-accent)" }}
+        >
+          {snakeToTitleCase(toolCall.name)}
+        </span>
+
+        {/* 文件名/参数 */}
+        {fileName && (
+          <span className="text-sm text-[var(--ink-600)] truncate">
             {fileName}
           </span>
         )}
@@ -634,10 +637,10 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
           {filePath && fileContent && onFileClick && (
             <button
               onClick={handleOpenFile}
-              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+              className="p-1.5 rounded-md hover:bg-[var(--surface-secondary)] transition-colors"
               title="在画布中打开"
             >
-              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+              <ExternalLink className="w-3.5 h-3.5 text-[var(--ink-600)] hover:text-[var(--ink-900)]" />
             </button>
           )}
 
@@ -645,12 +648,12 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
           {hasResult && (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+              className="p-1.5 rounded-md hover:bg-[var(--surface-secondary)] transition-colors"
               title={isExpanded ? "收起详情" : "展开详情"}
             >
               <ChevronRight
                 className={cn(
-                  "w-3.5 h-3.5 text-muted-foreground transition-transform",
+                  "w-3.5 h-3.5 text-[var(--ink-600)] transition-transform",
                   isExpanded && "rotate-90",
                 )}
               />
@@ -659,13 +662,19 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
         </div>
       </div>
 
-      {/* 展开的详情 */}
+      {/* 展开的详情 - Claude 风格 */}
       {isExpanded && hasResult && (
-        <div className="ml-8 mt-1 mb-2 p-3 rounded-lg bg-muted/30 border border-border/50">
+        <div className="ml-4 mt-2 mb-2 p-3 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--ink-900)]/10">
+          <div
+            className="text-xs font-semibold mb-2"
+            style={{ color: "var(--claude-accent)" }}
+          >
+            Output
+          </div>
           <pre
             className={cn(
               "whitespace-pre-wrap font-mono text-xs break-all max-h-40 overflow-y-auto",
-              isFailed ? "text-red-400" : "text-muted-foreground",
+              isFailed ? "text-red-500" : "text-[var(--ink-700)]",
             )}
           >
             {toolCall.result?.error || toolCall.result?.output || "(无输出)"}

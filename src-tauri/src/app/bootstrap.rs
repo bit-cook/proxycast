@@ -9,6 +9,7 @@ use crate::agent::AsterAgentState;
 use crate::agent::NativeAgentState;
 use crate::commands::api_key_provider_cmd::ApiKeyProviderServiceState;
 use crate::commands::connect_cmd::ConnectStateWrapper;
+use crate::commands::context_memory::ContextMemoryServiceState;
 use crate::commands::flow_monitor_cmd::{
     BatchOperationsState, BookmarkManagerState, EnhancedStatsServiceState, FlowInterceptorState,
     FlowMonitorState, FlowQueryServiceState, FlowReplayerState, QuickFilterManagerState,
@@ -24,6 +25,7 @@ use crate::commands::resilience_cmd::ResilienceConfigState;
 use crate::commands::session_files_cmd::SessionFilesState;
 use crate::commands::skill_cmd::SkillServiceState;
 use crate::commands::terminal_cmd::TerminalManagerState;
+use crate::commands::tool_hooks::ToolHooksServiceState;
 use crate::commands::webview_cmd::{WebviewManagerState, WebviewManagerWrapper};
 use crate::config::{self, Config, ConfigManager, GlobalConfigManager, GlobalConfigManagerState};
 use crate::database::{self, DbConnection};
@@ -36,9 +38,11 @@ use crate::logger;
 use crate::plugin;
 use crate::server;
 use crate::services::api_key_provider_service::ApiKeyProviderService;
+use crate::services::context_memory_service::{ContextMemoryConfig, ContextMemoryService};
 use crate::services::provider_pool_service::ProviderPoolService;
 use crate::services::skill_service::SkillService;
 use crate::services::token_cache_service::TokenCacheService;
+use crate::services::tool_hooks_service::ToolHooksService;
 use crate::services::update_check_service::UpdateCheckServiceState;
 use crate::telemetry;
 
@@ -145,6 +149,8 @@ pub struct AppStates {
     pub webview_manager: WebviewManagerWrapper,
     pub update_check_service: UpdateCheckServiceState,
     pub session_files: SessionFilesState,
+    pub context_memory_service: ContextMemoryServiceState,
+    pub tool_hooks_service: ToolHooksServiceState,
     // 用于 setup hook 的共享实例
     pub shared_stats: Arc<parking_lot::RwLock<telemetry::StatsAggregator>>,
     pub shared_tokens: Arc<parking_lot::RwLock<telemetry::TokenTracker>>,
@@ -253,6 +259,18 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
             .map_err(|e| format!("初始化默认技能仓库失败: {}", e))?;
     }
 
+    // 初始化上下文记忆服务
+    let context_memory_config = ContextMemoryConfig::default();
+    let context_memory_service = ContextMemoryService::new(context_memory_config)
+        .map_err(|e| format!("ContextMemoryService 初始化失败: {}", e))?;
+    let context_memory_service_arc = Arc::new(context_memory_service);
+    let context_memory_service_state =
+        ContextMemoryServiceState(context_memory_service_arc.clone());
+
+    // 初始化工具钩子服务
+    let tool_hooks_service = ToolHooksService::new(context_memory_service_arc.clone());
+    let tool_hooks_service_state = ToolHooksServiceState(Arc::new(tool_hooks_service));
+
     Ok(AppStates {
         state,
         logs,
@@ -288,6 +306,8 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
         webview_manager: webview_manager_state,
         update_check_service: update_check_service_state,
         session_files: session_files_state,
+        context_memory_service: context_memory_service_state,
+        tool_hooks_service: tool_hooks_service_state,
         shared_stats,
         shared_tokens,
         shared_logger,

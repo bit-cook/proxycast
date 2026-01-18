@@ -223,6 +223,19 @@ impl ProviderPoolService {
         provider_type: &str,
         model: Option<&str>,
     ) -> Result<Option<ProviderCredential>, String> {
+        self.select_credential_with_client_check(db, provider_type, model, None)
+    }
+
+    /// 选择凭证并检查客户端兼容性
+    ///
+    /// 内部方法，支持客户端类型检查
+    pub fn select_credential_with_client_check(
+        &self,
+        db: &DbConnection,
+        provider_type: &str,
+        model: Option<&str>,
+        client_type: Option<&crate::server::client_detector::ClientType>,
+    ) -> Result<Option<ProviderCredential>, String> {
         // 对于未知的 provider_type，直接返回 None（不是错误）
         // 这样可以让 select_credential_with_fallback 继续尝试智能降级
         let pt: PoolProviderType = match provider_type.parse() {
@@ -237,7 +250,7 @@ impl ProviderPoolService {
         };
         let conn = db.lock().map_err(|e| e.to_string())?;
 
-        // 获取凭证，对于 Anthropic 类型，也查找 Claude 类型的凭证
+        // 获取凭证，对于 AI Provider 类型，也查找 Assistant 类型的凭证
         let mut credentials =
             ProviderPoolDao::get_by_type(&conn, &pt).map_err(|e| e.to_string())?;
         eprintln!(
@@ -247,23 +260,23 @@ impl ProviderPoolService {
             credentials.len()
         );
 
-        // Anthropic 和 Claude 共享凭证（都使用 Anthropic API）
+        // AI Provider 和 Assistant 共享凭证（都使用 AI Provider API）
         if pt == PoolProviderType::Anthropic {
-            let claude_creds = ProviderPoolDao::get_by_type(&conn, &PoolProviderType::Claude)
+            let assistant_creds = ProviderPoolDao::get_by_type(&conn, &PoolProviderType::Claude)
                 .map_err(|e| e.to_string())?;
             eprintln!(
-                "[SELECT_CREDENTIAL] Anthropic: adding {} Claude credentials",
-                claude_creds.len()
+                "[SELECT_CREDENTIAL] AI Provider: adding {} Assistant credentials",
+                assistant_creds.len()
             );
-            credentials.extend(claude_creds);
+            credentials.extend(assistant_creds);
         } else if pt == PoolProviderType::Claude {
-            let anthropic_creds = ProviderPoolDao::get_by_type(&conn, &PoolProviderType::Anthropic)
+            let ai_provider_creds = ProviderPoolDao::get_by_type(&conn, &PoolProviderType::Anthropic)
                 .map_err(|e| e.to_string())?;
             eprintln!(
-                "[SELECT_CREDENTIAL] Claude: adding {} Anthropic credentials",
-                anthropic_creds.len()
+                "[SELECT_CREDENTIAL] Assistant: adding {} AI Provider credentials",
+                ai_provider_creds.len()
             );
-            credentials.extend(anthropic_creds);
+            credentials.extend(ai_provider_creds);
         }
 
         drop(conn);
@@ -321,8 +334,21 @@ impl ProviderPoolService {
             });
         }
 
+        // 过滤客户端兼容的凭证
+        available.retain(|c| {
+            let compatible = c.is_compatible_with_client(client_type);
+            if !compatible {
+                eprintln!(
+                    "[SELECT_CREDENTIAL] credential {} 不兼容客户端类型 {:?}",
+                    c.name.as_deref().unwrap_or("unnamed"),
+                    client_type
+                );
+            }
+            compatible
+        });
+
         eprintln!(
-            "[SELECT_CREDENTIAL] final available count: {}",
+            "[SELECT_CREDENTIAL] after client compatibility filter: {}",
             available.len()
         );
 
@@ -348,21 +374,23 @@ impl ProviderPoolService {
     /// # 参数
     /// - `db`: 数据库连接
     /// - `api_key_service`: API Key Provider 服务
-    /// - `provider_type`: Provider 类型字符串，如 "claude", "openai"
+    /// - `provider_type`: Provider 类型字符串，如 "assistant", "openai"
     /// - `model`: 可选的模型名称
     /// - `provider_id_hint`: 可选的 provider_id 提示，用于 60+ Provider 直接查找
+    /// - `client_type`: 可选的客户端类型，用于凭证兼容性检查
     ///
     /// # 返回
     /// - `Ok(Some(credential))`: 找到可用凭证（来自 Pool 或降级）
     /// - `Ok(None)`: 没有找到任何可用凭证
     /// - `Err(e)`: 查询过程中发生错误
-    pub fn select_credential_with_fallback(
+    pub async fn select_credential_with_fallback(
         &self,
         db: &DbConnection,
         api_key_service: &ApiKeyProviderService,
         provider_type: &str,
         model: Option<&str>,
         provider_id_hint: Option<&str>,
+        client_type: Option<&crate::server::client_detector::ClientType>,
     ) -> Result<Option<ProviderCredential>, String> {
         eprintln!(
             "[select_credential_with_fallback] 开始: provider_type={}, model={:?}, provider_id_hint={:?}",
@@ -370,7 +398,7 @@ impl ProviderPoolService {
         );
 
         // Step 1: 尝试从 Provider Pool 选择 (OAuth + API Key)
-        if let Some(cred) = self.select_credential(db, provider_type, model)? {
+        if let Some(cred) = self.select_credential_with_client_check(db, provider_type, model, client_type)? {
             eprintln!(
                 "[select_credential_with_fallback] 从 Provider Pool 找到凭证: {:?}",
                 cred.name
@@ -388,7 +416,7 @@ impl ProviderPoolService {
 
         // 传入 provider_id_hint 支持 60+ Provider
         eprintln!("[select_credential_with_fallback] 调用 get_fallback_credential");
-        if let Some(cred) = api_key_service.get_fallback_credential(db, &pt, provider_id_hint)? {
+        if let Some(cred) = api_key_service.get_fallback_credential(db, &pt, provider_id_hint, client_type).await? {
             eprintln!(
                 "[select_credential_with_fallback] 智能降级成功: {:?}",
                 cred.name
@@ -402,6 +430,27 @@ impl ProviderPoolService {
             provider_type
         );
         Ok(None)
+    }
+
+    /// 带智能降级的凭证选择（兼容方法）
+    ///
+    /// 为了向后兼容，保留原有的方法签名
+    pub async fn select_credential_with_fallback_legacy(
+        &self,
+        db: &DbConnection,
+        api_key_service: &ApiKeyProviderService,
+        provider_type: &str,
+        model: Option<&str>,
+        provider_id_hint: Option<&str>,
+    ) -> Result<Option<ProviderCredential>, String> {
+        self.select_credential_with_fallback(
+            db,
+            api_key_service,
+            provider_type,
+            model,
+            provider_id_hint,
+            None, // 兼容方法不传递客户端类型
+        ).await
     }
 
     /// 基于权重分数选择最优凭证

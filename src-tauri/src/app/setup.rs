@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use tauri::{App, Manager};
 
-use crate::agent::tools::{set_term_scrollback_tool_app_handle, set_terminal_tool_app_handle};
+// use crate::agent::tools::{set_term_scrollback_tool_app_handle, set_terminal_tool_app_handle};
 use crate::agent::NativeAgentState;
 use crate::commands::oauth_plugin_cmd::OAuthPluginManagerState;
 use crate::database;
@@ -53,13 +53,13 @@ pub fn setup_app(
     let native_agent_state = NativeAgentState::new();
     app.manage(native_agent_state);
 
-    // 设置 TerminalTool 的 AppHandle（用于发送事件到前端）
-    set_terminal_tool_app_handle(app.handle().clone());
-    tracing::info!("[启动] TerminalTool AppHandle 已设置");
+    // TODO: 重新实现 TerminalTool 和 TermScrollbackTool 的 AppHandle 设置
+    // 当前暂时注释掉，等待适配 aster-rust 工具系统
+    // set_terminal_tool_app_handle(app.handle().clone());
+    // tracing::info!("[启动] TerminalTool AppHandle 已设置");
 
-    // 设置 TermScrollbackTool 的 AppHandle（用于发送事件到前端）
-    set_term_scrollback_tool_app_handle(app.handle().clone());
-    tracing::info!("[启动] TermScrollbackTool AppHandle 已设置");
+    // set_term_scrollback_tool_app_handle(app.handle().clone());
+    // tracing::info!("[启动] TermScrollbackTool AppHandle 已设置");
 
     // 初始化 OAuth Plugin Manager State
     let oauth_plugin_manager_state = OAuthPluginManagerState::with_defaults();

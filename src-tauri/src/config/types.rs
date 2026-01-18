@@ -38,9 +38,6 @@ pub struct CredentialPoolConfig {
     /// Codex OAuth 凭证列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub codex: Vec<CredentialEntry>,
-    /// iFlow 凭证列表
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub iflow: Vec<IFlowCredentialEntry>,
 }
 
 /// Gemini API Key 凭证条目
@@ -88,30 +85,6 @@ pub struct VertexApiKeyEntry {
     /// 模型别名映射
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub models: Vec<VertexModelAlias>,
-    /// 单独的代理 URL
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proxy_url: Option<String>,
-    /// 是否禁用
-    #[serde(default)]
-    pub disabled: bool,
-}
-
-/// iFlow 凭证条目
-///
-/// 支持 OAuth 和 Cookie 两种认证方式
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct IFlowCredentialEntry {
-    /// 凭证 ID
-    pub id: String,
-    /// Token 文件路径（OAuth 模式）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub token_file: Option<String>,
-    /// 认证类型：oauth 或 cookie
-    #[serde(default = "default_auth_type")]
-    pub auth_type: String,
-    /// Cookie 字符串（Cookie 模式）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cookies: Option<String>,
     /// 单独的代理 URL
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_url: Option<String>,
@@ -1078,6 +1051,26 @@ impl Default for ModelsConfig {
             },
         );
 
+        // DeepSeek
+        providers.insert(
+            "deepseek".to_string(),
+            ProviderModelsConfig {
+                label: "DeepSeek".to_string(),
+                models: vec![
+                    ModelInfo {
+                        id: "deepseek-reasoner".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                    ModelInfo {
+                        id: "deepseek-chat".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                ],
+            },
+        );
+
         // Codex - 模型列表从别名配置动态加载
         providers.insert(
             "codex".to_string(),
@@ -1104,15 +1097,6 @@ impl Default for ModelsConfig {
                         enabled: true,
                     },
                 ],
-            },
-        );
-
-        // iFlow
-        providers.insert(
-            "iflow".to_string(),
-            ProviderModelsConfig {
-                label: "iFlow".to_string(),
-                models: vec![],
             },
         );
 
@@ -1154,6 +1138,61 @@ impl Default for ModelsConfig {
                     },
                     ModelInfo {
                         id: "gemini-claude-opus-4-5-thinking".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                ],
+            },
+        );
+
+        // Submodel
+        providers.insert(
+            "submodel".to_string(),
+            ProviderModelsConfig {
+                label: "Submodel".to_string(),
+                models: vec![
+                    ModelInfo {
+                        id: "openai/gpt-oss-120b".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                    ModelInfo {
+                        id: "Qwen/Qwen3-235B-A22B-Instruct-2507".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                    ModelInfo {
+                        id: "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                    ModelInfo {
+                        id: "Qwen/Qwen3-235B-A22B-Thinking-2507".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                    ModelInfo {
+                        id: "deepseek-ai/DeepSeek-R1-0528".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                    ModelInfo {
+                        id: "deepseek-ai/DeepSeek-V3.1".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                    ModelInfo {
+                        id: "deepseek-ai/DeepSeek-V3-0324".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                    ModelInfo {
+                        id: "zai-org/GLM-4.5-FP8".to_string(),
+                        name: None,
+                        enabled: true,
+                    },
+                    ModelInfo {
+                        id: "zai-org/GLM-4.5-Air".to_string(),
                         name: None,
                         enabled: true,
                     },
@@ -1377,7 +1416,6 @@ mod unit_tests {
             gemini_api_keys: vec![],
             vertex_api_keys: vec![],
             codex: vec![],
-            iflow: vec![],
         };
 
         let yaml = serde_yaml::to_string(&pool).unwrap();

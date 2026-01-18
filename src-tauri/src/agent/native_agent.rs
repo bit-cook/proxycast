@@ -19,7 +19,7 @@
 
 use crate::agent::protocols::{create_protocol, Protocol};
 use crate::agent::tool_loop::{ToolCallResult, ToolLoopEngine, ToolLoopState};
-use crate::agent::tools::{create_default_registry, create_terminal_registry, ToolRegistry};
+use crate::agent::tools::{create_default_registry, ToolRegistry};
 use crate::agent::types::*;
 use crate::models::openai::{
     ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ContentPart as OpenAIContentPart,
@@ -337,6 +337,7 @@ impl NativeAgent {
                 sid,
                 MessageContent::Text(result.content.clone()),
                 result.tool_calls.clone(),
+                result.reasoning_content.clone(),
             );
         }
 
@@ -355,8 +356,18 @@ impl NativeAgent {
         let session_id = request.session_id.clone();
         let mut state = ToolLoopState::new();
 
-        // 获取工具定义
-        let tools = tool_loop_engine.registry().list_definitions_api();
+        // 获取工具定义并转换为 OpenAI 格式
+        let aster_definitions = tool_loop_engine.registry().get_definitions();
+        let tools: Vec<crate::models::openai::Tool> = aster_definitions
+            .into_iter()
+            .map(|def| crate::models::openai::Tool::Function {
+                function: crate::models::openai::FunctionDef {
+                    name: def.name,
+                    description: Some(def.description),
+                    parameters: Some(def.input_schema),
+                },
+            })
+            .collect();
         let tools_ref = if tools.is_empty() {
             None
         } else {
@@ -498,6 +509,7 @@ impl NativeAgent {
             session_id,
             MessageContent::Text(result.content.clone()),
             result.tool_calls.clone(),
+            result.reasoning_content.clone(),
         );
 
         Ok(result)
@@ -652,12 +664,13 @@ impl NativeAgent {
         }
     }
 
-    /// 添加 assistant 消息到会话（支持工具调用）
+    /// 添加 assistant 消息到会话（支持工具调用和推理内容）
     fn add_assistant_message_to_session(
         &self,
         session_id: &str,
         content: MessageContent,
         tool_calls: Option<Vec<ToolCall>>,
+        reasoning_content: Option<String>,
     ) {
         let mut sessions = self.sessions.write();
         if let Some(session) = sessions.get_mut(session_id) {
@@ -667,7 +680,7 @@ impl NativeAgent {
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 tool_calls,
                 tool_call_id: None,
-                reasoning_content: None,
+                reasoning_content,
             });
             session.updated_at = chrono::Utc::now().to_rfc3339();
         }
@@ -832,7 +845,8 @@ impl NativeAgentState {
     ) -> Result<Arc<ToolRegistry>, String> {
         let base_dir = dirs::home_dir().ok_or_else(|| "无法获取用户 home 目录".to_string())?;
         let registry = if terminal_mode {
-            create_terminal_registry(base_dir)
+            // Terminal 模式暂时使用默认注册表
+            create_default_registry(base_dir)
         } else {
             create_default_registry(base_dir)
         };
@@ -954,17 +968,17 @@ mod tests {
         let data2 = r#"{"choices":[{"delta":{"content":" World"}}]}"#;
         let data3 = r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#;
 
-        let (text1, done1, _) = parser.parse_data(data1);
+        let (text1, _, is_done1, _) = parser.parse_data(data1);
         assert_eq!(text1, Some("Hello".to_string()));
-        assert!(!done1);
+        assert!(!is_done1);
 
-        let (text2, done2, _) = parser.parse_data(data2);
+        let (text2, _, is_done2, _) = parser.parse_data(data2);
         assert_eq!(text2, Some(" World".to_string()));
-        assert!(!done2);
+        assert!(!is_done2);
 
-        let (text3, done3, _) = parser.parse_data(data3);
+        let (text3, _, is_done3, _) = parser.parse_data(data3);
         assert!(text3.is_none());
-        assert!(done3);
+        assert!(is_done3);
 
         assert_eq!(parser.get_full_content(), "Hello World");
     }
@@ -981,9 +995,9 @@ mod tests {
         parser.parse_data(data1);
         parser.parse_data(data2);
         parser.parse_data(data3);
-        let (_, done, _) = parser.parse_data(data4);
+        let (_, _, is_done, _) = parser.parse_data(data4);
 
-        assert!(done);
+        assert!(is_done);
         assert!(parser.has_tool_calls());
 
         let tool_calls = parser.finalize_tool_calls();

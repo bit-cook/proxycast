@@ -38,6 +38,8 @@ interface InputbarCoreProps {
   onRemoveImage?: (index: number) => void;
   onPaste?: (e: React.ClipboardEvent) => void;
   isFullscreen?: boolean;
+  /** 画布是否打开 */
+  isCanvasOpen?: boolean;
 }
 
 export const InputbarCore: React.FC<InputbarCoreProps> = ({
@@ -53,6 +55,7 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
   onRemoveImage,
   onPaste,
   isFullscreen = false,
+  isCanvasOpen = false,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const hasContent = text.trim().length > 0 || pendingImages.length > 0;
@@ -122,6 +125,7 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
             <InputbarTools
               onToolClick={onToolClick}
               activeTools={activeTools}
+              isCanvasOpen={isCanvasOpen}
             />
           </LeftSection>
 

@@ -421,3 +421,33 @@ pub async fn native_agent_list_sessions(
 ) -> Result<Vec<AgentSession>, String> {
     Ok(agent_state.list_sessions())
 }
+
+/// 权限确认响应请求
+#[derive(Debug, Deserialize)]
+pub struct PermissionResponseRequest {
+    pub request_id: String,
+    pub confirmed: bool,
+    pub response: Option<String>,
+}
+
+/// 发送权限确认响应
+#[tauri::command]
+pub async fn agent_permission_response(
+    _agent_state: State<'_, NativeAgentState>,
+    request_id: String,
+    confirmed: bool,
+    response: Option<String>,
+) -> Result<(), String> {
+    tracing::info!(
+        "[NativeAgent] 权限确认响应: id={}, confirmed={}, response={:?}",
+        request_id,
+        confirmed,
+        response
+    );
+
+    // TODO: 实现权限确认响应逻辑
+    // 这需要与工具循环引擎集成，将用户的确认响应传递给等待中的工具
+    // 目前先记录日志并返回成功
+
+    Ok(())
+}

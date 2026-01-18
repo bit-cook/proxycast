@@ -3,6 +3,7 @@
  *
  * 包含聊天区域和侧边栏（话题/技能列表）
  * 支持内容创作模式下的布局过渡和步骤引导
+ * 当主题为 general 时，使用 GeneralChat 组件实现
  */
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
@@ -22,16 +23,21 @@ import { useWorkflow } from "@/components/content-creator/hooks/useWorkflow";
 import { CanvasFactory } from "@/components/content-creator/canvas/CanvasFactory";
 import {
   createInitialCanvasState,
-  isCanvasSupported,
   type CanvasStateUnion,
 } from "@/components/content-creator/canvas/canvasUtils";
 import { createInitialDocumentState } from "@/components/content-creator/canvas/document";
+import { CanvasPanel as GeneralCanvasPanel } from "@/components/general-chat/canvas";
+import {
+  type CanvasState as GeneralCanvasState,
+  DEFAULT_CANVAS_STATE,
+} from "@/components/general-chat/types";
 import { createInitialMusicState } from "@/components/content-creator/canvas/music/types";
 import { parseLyrics } from "@/components/content-creator/canvas/music/utils/lyricsParser";
 import {
   generateContentCreationPrompt,
   isContentCreationTheme,
 } from "@/components/content-creator/utils/systemPrompt";
+
 import type { MessageImage } from "./types";
 import type { ThemeType, LayoutMode } from "@/components/content-creator/types";
 import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
@@ -109,6 +115,10 @@ export function AgentChatPage({
   // 画布状态（支持多种画布类型）
   const [canvasState, setCanvasState] = useState<CanvasStateUnion | null>(null);
 
+  // General 主题专用画布状态
+  const [generalCanvasState, setGeneralCanvasState] =
+    useState<GeneralCanvasState>(DEFAULT_CANVAS_STATE);
+
   // 任务文件状态
   const [taskFiles, setTaskFiles] = useState<TaskFile[]>([]);
   const [taskFilesExpanded, setTaskFilesExpanded] = useState(false);
@@ -153,6 +163,7 @@ export function AgentChatPage({
     clearMessages,
     deleteMessage,
     editMessage,
+    handlePermissionResponse,
     topics,
     sessionId,
     switchTopic: originalSwitchTopic,
@@ -287,6 +298,7 @@ export function AgentChatPage({
       // 先重置本地状态
       setLayoutMode("chat");
       setCanvasState(null);
+      setGeneralCanvasState(DEFAULT_CANVAS_STATE);
       setTaskFiles([]);
       setSelectedFileId(undefined);
       processedMessageIds.current.clear();
@@ -406,6 +418,7 @@ export function AgentChatPage({
     setShowSidebar(true);
     // 清理画布和文件状态
     setCanvasState(null);
+    setGeneralCanvasState(DEFAULT_CANVAS_STATE);
     setTaskFiles([]);
     setSelectedFileId(undefined);
     processedMessageIds.current.clear();
@@ -457,28 +470,43 @@ export function AgentChatPage({
 
   // 切换画布显示
   const handleToggleCanvas = useCallback(() => {
+    // General 主题使用专门的画布
+    if (activeTheme === "general") {
+      setGeneralCanvasState((prev) => ({
+        ...prev,
+        isOpen: !prev.isOpen,
+        contentType: prev.contentType === "empty" ? "markdown" : prev.contentType,
+        content: prev.content || "# 新文档\n\n在这里开始编写内容...",
+      }));
+      setLayoutMode((prev) => (prev === "chat" ? "chat-canvas" : "chat"));
+      return;
+    }
+
     setLayoutMode((prev) => {
       if (prev === "chat") {
-        // 打开画布时，如果没有画布状态则根据主题创建初始状态
+        // 打开画布时，如果没有画布状态则创建初始状态
         if (!canvasState) {
-          const initialState = createInitialCanvasState(
-            mappedTheme,
-            "# 新文档\n\n在这里开始编写内容...",
-          );
-          if (initialState) {
-            setCanvasState(initialState);
-          }
+          const initialState =
+            createInitialCanvasState(
+              mappedTheme,
+              "# 新文档\n\n在这里开始编写内容...",
+            ) || createInitialDocumentState("# 新文档\n\n在这里开始编写内容...");
+          setCanvasState(initialState);
         }
         return "chat-canvas";
       }
       return "chat";
     });
-  }, [canvasState, mappedTheme]);
+  }, [canvasState, mappedTheme, activeTheme]);
 
   // 关闭画布
   const handleCloseCanvas = useCallback(() => {
     setLayoutMode("chat");
-  }, []);
+    // General 主题关闭画布状态
+    if (activeTheme === "general") {
+      setGeneralCanvasState((prev) => ({ ...prev, isOpen: false }));
+    }
+  }, [activeTheme]);
 
   // 处理文件写入 - 同名文件更新内容，不同名文件独立保存
   const handleWriteFile = useCallback(
@@ -489,6 +517,26 @@ export function AgentChatPage({
         content.length,
         "字符",
       );
+
+      // General 主题使用专门的画布处理
+      if (activeTheme === "general") {
+        const ext = fileName.split(".").pop()?.toLowerCase() || "";
+        const isCode = ["js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "scss", "json", "yaml", "yml", "toml", "xml", "html", "sql", "sh", "bash"].includes(ext);
+        const isMd = ["md", "markdown"].includes(ext);
+        
+        console.log("[AgentChatPage] General 主题文件写入:", fileName, "类型:", isCode ? "code" : isMd ? "markdown" : "file");
+        
+        setGeneralCanvasState({
+          isOpen: true,
+          contentType: isCode ? "code" : isMd ? "markdown" : "file",
+          content,
+          language: isCode ? ext : undefined,
+          filename: fileName,
+          isEditing: false,
+        });
+        setLayoutMode("chat-canvas");
+        return;
+      }
 
       const now = Date.now();
 
@@ -608,6 +656,7 @@ export function AgentChatPage({
       setLayoutMode("chat-canvas");
     },
     [
+      activeTheme, // 添加 activeTheme 依赖
       currentStepIndex,
       isContentCreationMode,
       completeStep,
@@ -624,7 +673,25 @@ export function AgentChatPage({
   // 处理文件点击 - 在画布中显示文件内容
   const handleFileClick = useCallback(
     (fileName: string, content: string) => {
-      console.log("[AgentChatPage] 文件点击:", fileName, "主题:", mappedTheme);
+      console.log("[AgentChatPage] 文件点击:", fileName, "主题:", activeTheme);
+
+      // General 主题使用专门的画布
+      if (activeTheme === "general") {
+        const ext = fileName.split(".").pop()?.toLowerCase() || "";
+        const isCode = ["js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "scss", "json", "yaml", "yml", "toml", "xml", "html", "sql", "sh", "bash"].includes(ext);
+        const isMd = ["md", "markdown"].includes(ext);
+        
+        setGeneralCanvasState({
+          isOpen: true,
+          contentType: isCode ? "code" : isMd ? "markdown" : "file",
+          content,
+          language: isCode ? ext : undefined,
+          filename: fileName,
+          isEditing: false,
+        });
+        setLayoutMode("chat-canvas");
+        return;
+      }
 
       // 查找或创建任务文件
       setTaskFiles((prev) => {
@@ -677,8 +744,11 @@ export function AgentChatPage({
       // 打开画布
       setLayoutMode("chat-canvas");
     },
-    [mappedTheme],
+    [activeTheme, mappedTheme],
   );
+
+  // 在画布中打开代码块（General 主题专用）- 通过 onFileClick 触发
+  // 此函数保留以备将来扩展使用
 
   // 处理任务文件点击 - 在画布中显示文件内容
   const handleTaskFileClick = useCallback(
@@ -761,6 +831,7 @@ export function AgentChatPage({
             onA2UISubmit={handleA2UISubmit}
             onWriteFile={handleWriteFile}
             onFileClick={handleFileClick}
+            onPermissionResponse={handlePermissionResponse}
           />
         </ChatContent>
       ) : (
@@ -803,24 +874,27 @@ export function AgentChatPage({
 
   // 画布区域内容
   const canvasContent = useMemo(() => {
-    console.log("[AgentChatPage] canvasContent 计算:", {
-      canvasState: canvasState ? { type: canvasState.type } : null,
-      mappedTheme,
-      isSupported: isCanvasSupported(mappedTheme),
-      layoutMode,
-    });
-    // 只要有 canvasState 就显示画布（支持显示任意主题的文件）
+    // General 主题使用专门的预览画布
+    if (activeTheme === "general") {
+      if (generalCanvasState.isOpen) {
+        return (
+          <GeneralCanvasPanel
+            state={generalCanvasState}
+            onClose={handleCloseCanvas}
+            onContentChange={(content) =>
+              setGeneralCanvasState((prev) => ({ ...prev, content }))
+            }
+          />
+        );
+      }
+      return null;
+    }
+
+    // 其他主题使用 CanvasFactory
     if (canvasState) {
-      // 根据 canvasState.type 确定使用的主题
-      const effectiveTheme: ThemeType =
-        canvasState.type === "music"
-          ? "music"
-          : canvasState.type === "poster"
-            ? "poster"
-            : "document";
       return (
         <CanvasFactory
-          theme={effectiveTheme}
+          theme={mappedTheme}
           state={canvasState}
           onStateChange={setCanvasState}
           onClose={handleCloseCanvas}
@@ -829,8 +903,19 @@ export function AgentChatPage({
       );
     }
     return null;
-  }, [canvasState, mappedTheme, handleCloseCanvas, isSending, layoutMode]);
+  }, [
+    activeTheme,
+    generalCanvasState,
+    canvasState,
+    mappedTheme,
+    handleCloseCanvas,
+    isSending,
+  ]);
 
+  // ========== 渲染逻辑 ==========
+
+  // 所有主题统一使用 useAgentChat 的状态和渲染逻辑
+  // General 主题与其他主题的区别仅在于不显示步骤进度条
   return (
     <PageContainer>
       {showSidebar && (
@@ -849,7 +934,7 @@ export function AgentChatPage({
           setProviderType={setProviderType}
           model={model}
           setModel={setModel}
-          isRunning={processStatus.running}
+          isRunning={isSending}
           onToggleHistory={handleToggleSidebar}
           onToggleFullscreen={() => {}}
           onToggleSettings={() => setShowSettings(!showSettings)}

@@ -44,17 +44,22 @@ impl OpenAISSEParser {
 
     /// 解析 SSE 数据行
     ///
-    /// 返回 (text_delta, is_done, usage)
-    pub fn parse_data(&mut self, data: &str) -> (Option<String>, bool, Option<TokenUsage>) {
+    /// 返回 (text_delta, reasoning_delta, is_done, usage)
+    /// - text_delta: 普通文本内容增量
+    /// - reasoning_delta: 推理内容增量（DeepSeek reasoner 等模型）
+    pub fn parse_data(
+        &mut self,
+        data: &str,
+    ) -> (Option<String>, Option<String>, bool, Option<TokenUsage>) {
         if data.trim() == "[DONE]" {
-            return (None, true, None);
+            return (None, None, true, None);
         }
 
         let json: Value = match serde_json::from_str(data) {
             Ok(v) => v,
             Err(e) => {
                 warn!("[OpenAISSEParser] 解析 JSON 失败: {} - data: {}", e, data);
-                return (None, false, None);
+                return (None, None, false, None);
             }
         };
 
@@ -75,17 +80,17 @@ impl OpenAISSEParser {
         // 检查是否有 choices
         let choices = match json.get("choices").and_then(|c| c.as_array()) {
             Some(c) => c,
-            None => return (None, false, usage),
+            None => return (None, None, false, usage),
         };
 
         if choices.is_empty() {
-            return (None, false, usage);
+            return (None, None, false, usage);
         }
 
         let choice = &choices[0];
         let delta = match choice.get("delta") {
             Some(d) => d,
-            None => return (None, false, usage),
+            None => return (None, None, false, usage),
         };
 
         // 检查 finish_reason
@@ -105,14 +110,15 @@ impl OpenAISSEParser {
                 s.to_string()
             });
 
-        // 提取推理内容（DeepSeek R1 等模型）
-        if let Some(reasoning) = delta
+        // 提取推理内容（DeepSeek reasoner 等模型）
+        let reasoning_delta = delta
             .get("reasoning_content")
             .and_then(|c| c.as_str())
             .filter(|s| !s.is_empty())
-        {
-            self.reasoning_content.push_str(reasoning);
-        }
+            .map(|s| {
+                self.reasoning_content.push_str(s);
+                s.to_string()
+            });
 
         // 提取工具调用
         if let Some(tool_calls) = delta.get("tool_calls").and_then(|tc| tc.as_array()) {
@@ -121,7 +127,7 @@ impl OpenAISSEParser {
             }
         }
 
-        (text_delta, is_done, usage)
+        (text_delta, reasoning_delta, is_done, usage)
     }
 
     /// 解析工具调用增量
@@ -219,19 +225,49 @@ mod tests {
         let data2 = r#"{"choices":[{"delta":{"content":" World"}}]}"#;
         let data3 = r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#;
 
-        let (text1, done1, _) = parser.parse_data(data1);
+        let (text1, _, done1, _) = parser.parse_data(data1);
         assert_eq!(text1, Some("Hello".to_string()));
         assert!(!done1);
 
-        let (text2, done2, _) = parser.parse_data(data2);
+        let (text2, _, done2, _) = parser.parse_data(data2);
         assert_eq!(text2, Some(" World".to_string()));
         assert!(!done2);
 
-        let (text3, done3, _) = parser.parse_data(data3);
+        let (text3, _, done3, _) = parser.parse_data(data3);
         assert!(text3.is_none());
         assert!(done3);
 
         assert_eq!(parser.get_full_content(), "Hello World");
+    }
+
+    #[test]
+    fn test_reasoning_content() {
+        let mut parser = OpenAISSEParser::new();
+
+        let data1 = r#"{"choices":[{"delta":{"reasoning_content":"Let me think"}}]}"#;
+        let data2 = r#"{"choices":[{"delta":{"reasoning_content":" about this"}}]}"#;
+        let data3 = r#"{"choices":[{"delta":{"content":"The answer is 42"}}]}"#;
+
+        let (text1, reasoning1, done1, _) = parser.parse_data(data1);
+        assert!(text1.is_none());
+        assert_eq!(reasoning1, Some("Let me think".to_string()));
+        assert!(!done1);
+
+        let (text2, reasoning2, done2, _) = parser.parse_data(data2);
+        assert!(text2.is_none());
+        assert_eq!(reasoning2, Some(" about this".to_string()));
+        assert!(!done2);
+
+        let (text3, reasoning3, done3, _) = parser.parse_data(data3);
+        assert_eq!(text3, Some("The answer is 42".to_string()));
+        assert!(reasoning3.is_none());
+        assert!(!done3);
+
+        assert_eq!(parser.get_full_content(), "The answer is 42");
+        assert_eq!(
+            parser.get_reasoning_content(),
+            Some("Let me think about this".to_string())
+        );
     }
 
     #[test]
@@ -246,7 +282,7 @@ mod tests {
         parser.parse_data(data1);
         parser.parse_data(data2);
         parser.parse_data(data3);
-        let (_, done, _) = parser.parse_data(data4);
+        let (_, _, done, _) = parser.parse_data(data4);
 
         assert!(done);
         assert!(parser.has_tool_calls());
@@ -263,7 +299,7 @@ mod tests {
         let mut parser = OpenAISSEParser::new();
 
         let data = r#"{"choices":[{"delta":{"content":"Hi"}}],"usage":{"prompt_tokens":10,"completion_tokens":5}}"#;
-        let (text, _, usage) = parser.parse_data(data);
+        let (text, _, _, usage) = parser.parse_data(data);
 
         assert_eq!(text, Some("Hi".to_string()));
         assert!(usage.is_some());
@@ -276,7 +312,7 @@ mod tests {
     fn test_done_signal() {
         let mut parser = OpenAISSEParser::new();
 
-        let (_, done, _) = parser.parse_data("[DONE]");
+        let (_, _, done, _) = parser.parse_data("[DONE]");
         assert!(done);
     }
 }

@@ -2,10 +2,11 @@
 //!
 //! 提供原生 Agent 的 Tauri 命令（兼容旧 API）
 
-use crate::agent::tools::{
-    handle_term_scrollback_response, handle_terminal_command_response, GetScrollbackResponse,
-    TerminalCommandResponse,
-};
+// TODO: 重新实现工具响应处理，适配 aster-rust 工具系统
+// use crate::agent::tools::{
+//     handle_term_scrollback_response, handle_terminal_command_response, GetScrollbackResponse,
+//     TerminalCommandResponse,
+// };
 use crate::agent::{
     AgentMessage, AgentSession, ImageData, NativeAgentState, NativeChatRequest, ProviderType,
 };
@@ -435,16 +436,19 @@ pub async fn agent_terminal_command_response(
         rejected
     );
 
-    let response = TerminalCommandResponse {
-        request_id,
-        success,
-        output,
-        error,
-        exit_code,
-        rejected,
-    };
+    // TODO: 重新实现终端命令响应处理，适配 aster-rust 工具系统
+    // let response = TerminalCommandResponse {
+    //     request_id,
+    //     success,
+    //     output,
+    //     error,
+    //     exit_code,
+    //     rejected,
+    // };
 
-    handle_terminal_command_response(response);
+    // handle_terminal_command_response(response);
+
+    tracing::warn!("[Agent] 终端命令响应处理暂时禁用，等待适配 aster-rust 工具系统");
 
     Ok(())
 }
@@ -469,18 +473,21 @@ pub async fn agent_term_scrollback_response(
         line_end
     );
 
-    let response = GetScrollbackResponse {
-        request_id,
-        success,
-        total_lines,
-        line_start,
-        line_end,
-        content,
-        has_more,
-        error,
-    };
+    // TODO: 重新实现终端滚动缓冲区响应处理，适配 aster-rust 工具系统
+    // let response = GetScrollbackResponse {
+    //     request_id,
+    //     success,
+    //     total_lines,
+    //     line_start,
+    //     line_end,
+    //     content,
+    //     has_more,
+    //     error,
+    // };
 
-    handle_term_scrollback_response(response);
+    // handle_term_scrollback_response(response);
+
+    tracing::warn!("[Agent] 终端滚动缓冲区响应处理暂时禁用，等待适配 aster-rust 工具系统");
 
     Ok(())
 }

@@ -591,6 +591,58 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         [],
     )?;
 
+    // ============================================================================
+    // General Chat 相关表
+    // ============================================================================
+
+    // 通用对话会话表
+    // 存储通用对话的会话元数据
+    // _Requirements: 1.6, 1.7_
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS general_chat_sessions (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            metadata TEXT
+        )",
+        [],
+    )?;
+
+    // 通用对话消息表
+    // 存储每个会话的消息历史
+    // _Requirements: 1.6, 1.7_
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS general_chat_messages (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+            content TEXT NOT NULL,
+            blocks TEXT,
+            status TEXT NOT NULL DEFAULT 'complete',
+            created_at INTEGER NOT NULL,
+            metadata TEXT,
+            FOREIGN KEY (session_id) REFERENCES general_chat_sessions(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 创建 general_chat_messages 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON general_chat_messages(session_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_created_at ON general_chat_messages(created_at)",
+        [],
+    )?;
+
+    // 创建 general_chat_sessions 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON general_chat_sessions(updated_at)",
+        [],
+    )?;
+
     Ok(())
 }
 

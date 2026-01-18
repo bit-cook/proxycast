@@ -8,7 +8,7 @@
  * _需求: 2.2, 3.2, 5.2_
  */
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import styled from "styled-components";
 import { withI18nPatch } from "./i18n/withI18nPatch";
 import { SplashScreen } from "./components/SplashScreen";
@@ -20,6 +20,7 @@ import { ToolsPage } from "./components/tools/ToolsPage";
 import { AgentChatPage } from "./components/agent";
 import { PluginUIRenderer } from "./components/plugins/PluginUIRenderer";
 import { PluginsPage } from "./components/plugins/PluginsPage";
+
 import {
   TerminalWorkspace,
   SysinfoView,
@@ -173,7 +174,7 @@ function AppContent() {
           <ApiServerPage />
         </PageWrapper>
 
-        {/* Agent 页面 - 使用 div 包装以支持显示/隐藏 */}
+        {/* Agent 页面 */}
         <div
           style={{
             flex: 1,
@@ -182,7 +183,7 @@ function AppContent() {
             flexDirection: "column",
           }}
         >
-          <AgentChatPage onNavigate={(page) => setCurrentPage(page as Page)} />
+          <AgentChatPage />
         </div>
 
         {/* 终端工作区 - 使用 div 包装以支持显示/隐藏 */}

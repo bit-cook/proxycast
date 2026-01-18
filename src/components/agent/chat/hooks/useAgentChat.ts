@@ -12,6 +12,7 @@ import {
   deleteAgentSession,
   getAgentSessionMessages,
   parseStreamEvent,
+  sendPermissionResponse,
   type AgentProcessStatus,
   type SessionInfo,
   type StreamEvent,
@@ -20,6 +21,8 @@ import {
   Message,
   MessageImage,
   ContentPart,
+  ActionRequired,
+  ConfirmResponse,
   PROVIDER_CONFIG,
   getProviderConfig,
   type ProviderConfigMap,
@@ -413,6 +416,7 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
     /**
      * 辅助函数：更新 contentParts，支持交错显示
      * - text_delta: 追加到最后一个 text 类型，或创建新的 text 类型
+     * - thinking_delta: 追加到最后一个 thinking 类型，或创建新的 thinking 类型
      * - tool_start: 添加新的 tool_use 类型
      * - tool_end: 更新对应的 tool_use 状态
      */
@@ -433,6 +437,35 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
         // 创建新的 text 类型
         newParts.push({ type: "text", text });
       }
+      return newParts;
+    };
+
+    const appendThinkingToParts = (
+      parts: ContentPart[],
+      text: string,
+    ): ContentPart[] => {
+      const newParts = [...parts];
+      const lastPart = newParts[newParts.length - 1];
+
+      if (lastPart && lastPart.type === "thinking") {
+        // 追加到最后一个 thinking 类型
+        newParts[newParts.length - 1] = {
+          type: "thinking",
+          text: lastPart.text + text,
+        };
+      } else {
+        // 创建新的 thinking 类型
+        newParts.push({ type: "thinking", text });
+      }
+      return newParts;
+    };
+
+    const addActionRequiredToParts = (
+      parts: ContentPart[],
+      actionRequired: ActionRequired,
+    ): ContentPart[] => {
+      const newParts = [...parts];
+      newParts.push({ type: "action_required", actionRequired });
       return newParts;
     };
 
@@ -476,6 +509,27 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
                       thinkingContent: undefined,
                       // 更新 contentParts，支持交错显示
                       contentParts: appendTextToParts(
+                        msg.contentParts || [],
+                        data.text,
+                      ),
+                    }
+                  : msg,
+              ),
+            );
+            break;
+
+          case "thinking_delta":
+            // 处理推理内容增量（DeepSeek reasoner 等模型的思考过程）
+            console.log("[AgentChat] 收到 thinking_delta:", data.text);
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMsgId
+                  ? {
+                      ...msg,
+                      thinkingContent: (msg.thinkingContent || "") + data.text,
+                      isThinking: true,
+                      // 同时更新 contentParts，支持交错显示
+                      contentParts: appendThinkingToParts(
                         msg.contentParts || [],
                         data.text,
                       ),
@@ -573,18 +627,29 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
 
             // 如果是写入文件工具，立即调用 onWriteFile 展开右边栏
             const toolName = data.tool_name.toLowerCase();
+            console.log(`[Tool Start] 工具名称: ${data.tool_name}, 小写: ${toolName}`);
+            console.log(`[Tool Start] 工具参数: ${data.arguments}`);
+            console.log(`[Tool Start] onWriteFile 回调存在: ${!!onWriteFile}`);
+            
             if (toolName.includes("write") || toolName.includes("create")) {
+              console.log(`[Tool Start] 匹配到文件写入工具: ${data.tool_name}`);
               try {
                 const args = JSON.parse(data.arguments || "{}");
+                console.log(`[Tool Start] 解析后的参数:`, args);
                 const filePath = args.path || args.file_path || args.filePath;
                 const content = args.content || args.text || "";
+                console.log(`[Tool Start] 文件路径: ${filePath}, 内容长度: ${content.length}`);
                 if (filePath && content && onWriteFile) {
                   console.log(`[Tool Start] 触发文件写入: ${filePath}`);
                   onWriteFile(content, filePath);
+                } else {
+                  console.log(`[Tool Start] 文件写入条件不满足: filePath=${!!filePath}, content=${!!content}, onWriteFile=${!!onWriteFile}`);
                 }
               } catch (e) {
                 console.warn("[Tool Start] 解析工具参数失败:", e);
               }
+            } else {
+              console.log(`[Tool Start] 工具名称不匹配文件写入: ${toolName}`);
             }
 
             setMessages((prev) =>
@@ -610,6 +675,49 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
                     ...(msg.contentParts || []),
                     { type: "tool_use" as const, toolCall: newToolCall },
                   ],
+                };
+              }),
+            );
+            break;
+          }
+
+          case "action_required": {
+            // 权限确认请求 - 添加到权限请求列表和 contentParts
+            console.log(`[Action Required] ${data.action_type} (${data.request_id})`);
+
+            const actionRequired: ActionRequired = {
+              requestId: data.request_id,
+              actionType: data.action_type as "tool_confirmation" | "ask_user" | "elicitation",
+              toolName: data.tool_name,
+              arguments: data.arguments,
+              prompt: data.prompt,
+              questions: data.questions,
+              requestedSchema: data.requested_schema,
+            };
+
+            setMessages((prev) =>
+              prev.map((msg) => {
+                if (msg.id !== assistantMsgId) return msg;
+
+                // 检查是否已存在相同 ID 的权限请求（避免重复）
+                const existingRequest = msg.actionRequests?.find(
+                  (ar) => ar.requestId === data.request_id,
+                );
+                if (existingRequest) {
+                  console.log(
+                    `[Action Required] 权限请求已存在，跳过: ${data.request_id}`,
+                  );
+                  return msg;
+                }
+
+                return {
+                  ...msg,
+                  actionRequests: [...(msg.actionRequests || []), actionRequired],
+                  // 添加到 contentParts，支持交错显示
+                  contentParts: addActionRequiredToParts(
+                    msg.contentParts || [],
+                    actionRequired,
+                  ),
                 };
               }),
             );
@@ -841,6 +949,38 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
     toast.info("已停止生成");
   };
 
+  // 处理权限确认响应
+  const handlePermissionResponse = async (response: ConfirmResponse) => {
+    try {
+      // 发送权限确认响应到后端
+      await sendPermissionResponse({
+        requestId: response.requestId,
+        confirmed: response.confirmed,
+        response: response.response,
+      });
+      
+      // 移除已处理的权限请求
+      setMessages((prev) =>
+        prev.map((msg) => ({
+          ...msg,
+          actionRequests: msg.actionRequests?.filter(
+            (ar) => ar.requestId !== response.requestId,
+          ),
+          contentParts: msg.contentParts?.filter(
+            (part) =>
+              part.type !== "action_required" ||
+              part.actionRequired.requestId !== response.requestId,
+          ),
+        })),
+      );
+
+      toast.success(response.confirmed ? "已确认操作" : "已拒绝操作");
+    } catch (error) {
+      console.error("[AgentChat] 权限确认响应失败:", error);
+      toast.error("权限确认响应失败");
+    }
+  };
+
   return {
     processStatus,
     handleStartProcess,
@@ -862,6 +1002,7 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
     clearMessages,
     deleteMessage,
     editMessage,
+    handlePermissionResponse, // 权限确认响应处理
 
     // 话题管理
     topics,

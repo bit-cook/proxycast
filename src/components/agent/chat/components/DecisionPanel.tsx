@@ -24,21 +24,7 @@ import {
   FileEdit,
   Globe,
 } from "lucide-react";
-import type { ActionRequired, ConfirmResponse } from "@/stores/agentStore";
-
-/** 问题选项 */
-interface QuestionOption {
-  label: string;
-  description?: string;
-}
-
-/** 问题数据 */
-interface Question {
-  question: string;
-  header?: string;
-  options?: QuestionOption[];
-  multiSelect?: boolean;
-}
+import type { ActionRequired, ConfirmResponse } from "../types";
 
 interface DecisionPanelProps {
   request: ActionRequired;
@@ -82,7 +68,7 @@ function formatArguments(args?: Record<string, unknown>): string {
 
 export function DecisionPanel({ request, onSubmit }: DecisionPanelProps) {
   // 解析问题数据（用于 ask_user 类型）
-  const questions: Question[] = (request as any).questions ?? [];
+  const questions = request.questions || [];
   const [selectedOptions, setSelectedOptions] = useState<
     Record<number, string[]>
   >({});
@@ -161,7 +147,8 @@ export function DecisionPanel({ request, onSubmit }: DecisionPanelProps) {
   };
 
   // 渲染用户问题面板
-  if (request.actionType === "ask_user" && questions.length > 0) {
+  if (request.actionType === "ask_user" && request.questions && request.questions.length > 0) {
+    const questions = request.questions;
     return (
       <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20">
         <CardHeader className="pb-2">

@@ -11,11 +11,59 @@ export interface MessageImage {
  *
  * 参考 aster 框架的 MessageContent 设计：
  * - text: 文本内容片段
+ * - thinking: 推理内容片段（DeepSeek R1 等模型）
  * - tool_use: 工具调用（包含状态和结果）
+ * - action_required: 权限确认请求
  */
 export type ContentPart =
   | { type: "text"; text: string }
-  | { type: "tool_use"; toolCall: ToolCallState };
+  | { type: "thinking"; text: string }
+  | { type: "tool_use"; toolCall: ToolCallState }
+  | { type: "action_required"; actionRequired: ActionRequired };
+
+// ============ 权限确认相关类型 ============
+
+/** 权限确认请求类型 */
+export interface ActionRequired {
+  /** 请求 ID */
+  requestId: string;
+  /** 操作类型 */
+  actionType: "tool_confirmation" | "ask_user" | "elicitation";
+  /** 工具名称（tool_confirmation 类型） */
+  toolName?: string;
+  /** 工具参数（tool_confirmation 类型） */
+  arguments?: Record<string, unknown>;
+  /** 提示信息 */
+  prompt?: string;
+  /** 问题列表（ask_user 类型） */
+  questions?: Question[];
+  /** 请求的数据结构（elicitation 类型） */
+  requestedSchema?: any;
+}
+
+/** 问题定义（用于 ask_user 类型） */
+export interface Question {
+  question: string;
+  header?: string;
+  options?: QuestionOption[];
+  multiSelect?: boolean;
+}
+
+/** 问题选项 */
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+
+/** 权限确认响应 */
+export interface ConfirmResponse {
+  /** 请求 ID */
+  requestId: string;
+  /** 是否确认 */
+  confirmed: boolean;
+  /** 响应内容（用户输入或选择的答案） */
+  response?: string;
+}
 
 export interface Message {
   id: string;
@@ -31,6 +79,8 @@ export interface Message {
   toolCalls?: ToolCallState[];
   /** Token 使用量（响应完成后） */
   usage?: TokenUsage;
+  /** 权限确认请求列表 */
+  actionRequests?: ActionRequired[];
   /**
    * 交错内容列表（按事件到达顺序排列）
    * 如果存在且非空，StreamingRenderer 会按顺序渲染
@@ -56,49 +106,32 @@ export const PROVIDER_CONFIG: Record<
   claude: {
     label: "Claude",
     models: [
-      "claude-opus-4-5",
       "claude-opus-4-5-20251101",
-      "claude-opus-4-1",
       "claude-opus-4-1-20250805",
       "claude-opus-4-20250514",
-      "claude-sonnet-4-5",
       "claude-sonnet-4-5-20250929",
-      "claude-sonnet-4-0",
       "claude-sonnet-4-20250514",
-      "claude-haiku-4-5",
       "claude-haiku-4-5-20251001",
-      "claude-3-7-sonnet-20250219",
-      "claude-3-5-haiku-20241022",
     ],
   },
   anthropic: {
     label: "Anthropic",
     models: [
-      "claude-opus-4-5",
       "claude-opus-4-5-20251101",
-      "claude-opus-4-1",
       "claude-opus-4-1-20250805",
       "claude-opus-4-20250514",
-      "claude-sonnet-4-5",
       "claude-sonnet-4-5-20250929",
-      "claude-sonnet-4-0",
       "claude-sonnet-4-20250514",
-      "claude-haiku-4-5",
       "claude-haiku-4-5-20251001",
-      "claude-3-7-sonnet-20250219",
-      "claude-3-5-haiku-20241022",
     ],
   },
   kiro: {
     label: "Kiro",
     models: [
-      "claude-opus-4-5",
       "claude-opus-4-5-20251101",
-      "claude-haiku-4-5",
-      "claude-sonnet-4-5",
       "claude-sonnet-4-5-20250929",
       "claude-sonnet-4-20250514",
-      "claude-3-7-sonnet-20250219",
+
     ],
   },
   openai: {
@@ -116,16 +149,6 @@ export const PROVIDER_CONFIG: Record<
       "gpt-5-codex-mini",
       "gpt-5-mini",
       "gpt-5-nano",
-      "o4-mini",
-      "o3",
-      "o3-mini",
-      "o1",
-      "o1-mini",
-      "gpt-4.1",
-      "gpt-4.1-mini",
-      "gpt-4.1-nano",
-      "gpt-4o",
-      "gpt-4o-mini",
     ],
   },
   gemini: {
@@ -133,14 +156,15 @@ export const PROVIDER_CONFIG: Record<
     models: [
       "gemini-3-pro-preview",
       "gemini-3-flash-preview",
-      "gemini-2.5-pro",
-      "gemini-2.5-flash",
-      "gemini-2.5-flash-lite",
     ],
   },
   qwen: {
     label: "通义千问",
     models: ["qwen3-coder-plus", "qwen3-coder-flash"],
+  },
+  deepseek: {
+    label: "DeepSeek",
+    models: ["deepseek-reasoner", "deepseek-chat"],
   },
   codex: {
     label: "Codex",
@@ -149,36 +173,9 @@ export const PROVIDER_CONFIG: Record<
   claude_oauth: {
     label: "Claude OAuth",
     models: [
-      "claude-opus-4-5",
       "claude-opus-4-5-20251101",
-      "claude-sonnet-4-5",
       "claude-sonnet-4-5-20250929",
       "claude-sonnet-4-20250514",
-      "claude-haiku-4-5",
-      "claude-3-7-sonnet-20250219",
-    ],
-  },
-  iflow: {
-    label: "iFlow",
-    models: [
-      "tstars2.0",
-      "qwen3-coder-plus",
-      "qwen3-max",
-      "qwen3-vl-plus",
-      "qwen3-max-preview",
-      "kimi-k2-0905",
-      "glm-4.7",
-      "glm-4.6",
-      "kimi-k2",
-      "kimi-k2-thinking",
-      "deepseek-v3.2-chat",
-      "deepseek-v3.2-reasoner",
-      "deepseek-v3.2",
-      "deepseek-v3.1",
-      "deepseek-r1",
-      "deepseek-v3",
-      "minimax-m2.1",
-      "minimax-m2",
     ],
   },
   antigravity: {
@@ -192,6 +189,20 @@ export const PROVIDER_CONFIG: Record<
       "gemini-claude-sonnet-4-5",
       "gemini-claude-sonnet-4-5-thinking",
       "gemini-claude-opus-4-5-thinking",
+    ],
+  },
+  submodel: {
+    label: "Submodel",
+    models: [
+      "openai/gpt-oss-120b",
+      "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+      "Qwen/Qwen3-235B-A22B-Thinking-2507",
+      "deepseek-ai/DeepSeek-R1-0528",
+      "deepseek-ai/DeepSeek-V3.1",
+      "deepseek-ai/DeepSeek-V3-0324",
+      "zai-org/GLM-4.5-FP8",
+      "zai-org/GLM-4.5-Air",
     ],
   },
 };

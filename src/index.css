@@ -20,6 +20,21 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --radius: 0.5rem;
+
+    /* Claude 风格颜色 */
+    --surface: #FFFFFF;
+    --surface-secondary: #F5F4F1;
+    --surface-tertiary: #EFEEE9;
+    --surface-cream: #FAF9F6;
+    --ink-900: #1A1915;
+    --ink-700: #4A4A45;
+    --ink-600: #666661;
+    --ink-400: #9B9B96;
+    --claude-accent: #D97757;
+    --claude-accent-hover: #CC785C;
+    --claude-accent-subtle: #FDF4F1;
+    --success: #16A34A;
+    --info: #2563EB;
   }
 
   .dark {
@@ -38,6 +53,19 @@
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
+
+    /* Claude 风格颜色 - 暗色模式 */
+    --surface: #1A1915;
+    --surface-secondary: #2D2D2A;
+    --surface-tertiary: #3A3A35;
+    --surface-cream: #242420;
+    --ink-900: #F5F4F1;
+    --ink-700: #D1D1CC;
+    --ink-600: #9B9B96;
+    --ink-400: #666661;
+    --claude-accent: #E8956F;
+    --claude-accent-hover: #D97757;
+    --claude-accent-subtle: #3D2A24;
   }
 }
 
@@ -79,5 +107,67 @@
   * {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
+}
+
+/* Claude 风格动画 */
+@keyframes shimmer {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* Claude 风格消息标题 */
+.claude-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--claude-accent);
+  margin-bottom: 0.5rem;
+}
+
+/* Claude 风格工具调用卡片 */
+.claude-tool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-radius: 1rem;
+  background: var(--surface-tertiary);
+  padding: 0.5rem 0.75rem;
+  margin-top: 1rem;
+}
+
+/* Claude 风格状态指示器 */
+.claude-status-dot {
+  position: relative;
+  display: flex;
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.claude-status-dot-inner {
+  position: relative;
+  display: inline-flex;
+  height: 0.5rem;
+  width: 0.5rem;
+  border-radius: 9999px;
+}
+
+.claude-status-dot-ping {
+  position: absolute;
+  display: inline-flex;
+  height: 100%;
+  width: 100%;
+  border-radius: 9999px;
+  opacity: 0.75;
+  animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
   }
 }

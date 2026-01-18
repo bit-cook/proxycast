@@ -7,6 +7,7 @@ import {
   Brush,
   MessageSquareDiff,
   Maximize2,
+  PanelRight,
 } from "lucide-react";
 import { ToolButton, Divider } from "../styles";
 import {
@@ -19,11 +20,14 @@ import {
 interface InputbarToolsProps {
   onToolClick?: (tool: string) => void;
   activeTools?: Record<string, boolean>;
+  /** 画布是否打开 */
+  isCanvasOpen?: boolean;
 }
 
 export const InputbarTools: React.FC<InputbarToolsProps> = ({
   onToolClick,
   activeTools = {},
+  isCanvasOpen = false,
 }) => {
   return (
     <TooltipProvider>
@@ -96,6 +100,22 @@ export const InputbarTools: React.FC<InputbarToolsProps> = ({
             </ToolButton>
           </TooltipTrigger>
           <TooltipContent side="top">全屏编辑</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <ToolButton
+              onClick={() => onToolClick?.("canvas")}
+              className={isCanvasOpen ? "active" : ""}
+            >
+              <PanelRight
+                className={isCanvasOpen ? "text-primary" : ""}
+              />
+            </ToolButton>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {isCanvasOpen ? "关闭画布" : "打开画布"}
+          </TooltipContent>
         </Tooltip>
 
         <Tooltip>

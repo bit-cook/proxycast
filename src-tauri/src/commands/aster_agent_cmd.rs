@@ -276,7 +276,7 @@ pub struct ConfirmRequest {
 /// 确认权限请求（用于工具调用确认等）
 #[tauri::command]
 pub async fn aster_agent_confirm(
-    state: State<'_, AsterAgentState>,
+    _state: State<'_, AsterAgentState>,
     request: ConfirmRequest,
 ) -> Result<(), String> {
     tracing::info!(

@@ -335,7 +335,6 @@ impl ExportService {
             gemini_api_keys: pool.gemini_api_keys.clone(),
             vertex_api_keys: pool.vertex_api_keys.clone(),
             codex: pool.codex.clone(),
-            iflow: pool.iflow.clone(),
         }
     }
 

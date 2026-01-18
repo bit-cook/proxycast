@@ -174,7 +174,7 @@ async fn handle_socket(socket: WebSocket, state: WsHandlerState, client_info: Op
                 let error =
                     WsMessage::Error(WsError::invalid_message("Binary messages not supported"));
                 let error_text = serde_json::to_string(&error).unwrap_or_default();
-                if sender.send(Message::Text(error_text)).await.is_err() {
+                if sender.send(Message::Text(error_text.into())).await.is_err() {
                     break;
                 }
             }

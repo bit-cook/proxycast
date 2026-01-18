@@ -41,8 +41,10 @@ export interface ToolExecutionResult {
  */
 export type StreamEvent =
   | StreamEventTextDelta
+  | StreamEventReasoningDelta
   | StreamEventToolStart
   | StreamEventToolEnd
+  | StreamEventActionRequired
   | StreamEventDone
   | StreamEventFinalDone
   | StreamEventError;
@@ -53,6 +55,15 @@ export type StreamEvent =
  */
 export interface StreamEventTextDelta {
   type: "text_delta";
+  text: string;
+}
+
+/**
+ * 推理内容增量事件（DeepSeek reasoner 等模型的思考过程）
+ * Requirements: 9.3 - THE Frontend SHALL distinguish between text responses and tool call responses visually
+ */
+export interface StreamEventReasoningDelta {
+  type: "thinking_delta";
   text: string;
 }
 
@@ -80,6 +91,36 @@ export interface StreamEventToolEnd {
   tool_id: string;
   /** 工具执行结果 */
   result: ToolExecutionResult;
+}
+
+/**
+ * 权限确认请求事件
+ * 当 Agent 需要用户确认某个操作时发送
+ */
+export interface StreamEventActionRequired {
+  type: "action_required";
+  /** 请求 ID */
+  request_id: string;
+  /** 操作类型 */
+  action_type: "tool_confirmation" | "ask_user" | "elicitation";
+  /** 工具名称（工具确认时） */
+  tool_name?: string;
+  /** 工具参数（工具确认时） */
+  arguments?: Record<string, unknown>;
+  /** 提示信息 */
+  prompt?: string;
+  /** 问题列表（ask_user 时） */
+  questions?: Array<{
+    question: string;
+    header?: string;
+    options?: Array<{
+      label: string;
+      description?: string;
+    }>;
+    multiSelect?: boolean;
+  }>;
+  /** 请求的数据结构（elicitation 时） */
+  requested_schema?: Record<string, unknown>;
 }
 
 /**
@@ -150,6 +191,11 @@ export function parseStreamEvent(data: unknown): StreamEvent | null {
         type: "text_delta",
         text: (event.text as string) || "",
       };
+    case "reasoning_delta":
+      return {
+        type: "thinking_delta",
+        text: (event.text as string) || "",
+      };
     case "tool_start":
       return {
         type: "tool_start",
@@ -162,6 +208,25 @@ export function parseStreamEvent(data: unknown): StreamEvent | null {
         type: "tool_end",
         tool_id: (event.tool_id as string) || "",
         result: event.result as ToolExecutionResult,
+      };
+    case "action_required":
+      return {
+        type: "action_required",
+        request_id: (event.request_id as string) || "",
+        action_type: (event.action_type as "tool_confirmation" | "ask_user" | "elicitation") || "tool_confirmation",
+        tool_name: event.tool_name as string | undefined,
+        arguments: event.arguments as Record<string, unknown> | undefined,
+        prompt: event.prompt as string | undefined,
+        questions: event.questions as Array<{
+          question: string;
+          header?: string;
+          options?: Array<{
+            label: string;
+            description?: string;
+          }>;
+          multiSelect?: boolean;
+        }> | undefined,
+        requested_schema: event.requested_schema as Record<string, unknown> | undefined,
       };
     case "done":
       return {
@@ -756,5 +821,36 @@ export async function sendTermScrollbackResponse(
     content: response.content,
     hasMore: response.has_more,
     error: response.error,
+  });
+}
+
+// ============================================================
+// Permission Confirmation API (权限确认)
+// ============================================================
+
+/**
+ * 权限确认响应
+ */
+export interface PermissionResponse {
+  /** 请求 ID */
+  requestId: string;
+  /** 是否确认 */
+  confirmed: boolean;
+  /** 响应内容（用户输入或选择的答案） */
+  response?: string;
+}
+
+/**
+ * 发送权限确认响应到后端
+ *
+ * 当用户确认或拒绝权限请求后，调用此函数将结果发送给 Agent
+ */
+export async function sendPermissionResponse(
+  response: PermissionResponse,
+): Promise<void> {
+  return await safeInvoke("agent_permission_response", {
+    requestId: response.requestId,
+    confirmed: response.confirmed,
+    response: response.response,
   });
 }

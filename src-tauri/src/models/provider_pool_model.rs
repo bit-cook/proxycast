@@ -318,6 +318,22 @@ impl ProviderCredential {
         true
     }
 
+    /// 检查凭证是否适用于指定的客户端类型
+    ///
+    /// 某些凭证可能有使用限制，例如 Claude Code 专用凭证只能用于 Claude Code 客户端
+    pub fn is_compatible_with_client(&self, client_type: Option<&crate::server::client_detector::ClientType>) -> bool {
+        // 检查是否是 Claude Code 专用凭证
+        if let Some(error_msg) = &self.last_error_message {
+            if error_msg.contains("only authorized for use with Claude Code") {
+                // 这是 Claude Code 专用凭证，只能用于 Claude Code 客户端
+                return matches!(client_type, Some(crate::server::client_detector::ClientType::ClaudeCode));
+            }
+        }
+
+        // 默认情况下，凭证适用于所有客户端
+        true
+    }
+
     /// 标记为健康
     pub fn mark_healthy(&mut self, check_model: Option<String>) {
         self.is_healthy = true;
