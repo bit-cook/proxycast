@@ -14,7 +14,6 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
 use serde::Serialize;
-use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
@@ -532,11 +531,6 @@ impl Protocol for AnthropicProtocol {
             .header("Content-Type", "application/json")
             .header("anthropic-version", "2023-06-01");
 
-        // 添加 X-Provider-Id header 用于精确路由
-        if let Some(pid) = provider_id {
-            req_builder = req_builder.header("X-Provider-Id", pid);
-        }
-
         let response = req_builder
             .json(&request)
             .send()
@@ -645,11 +639,6 @@ impl Protocol for AnthropicProtocol {
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .header("anthropic-version", "2023-06-01");
-
-        // 添加 X-Provider-Id header 用于精确路由
-        if let Some(pid) = provider_id {
-            req_builder = req_builder.header("X-Provider-Id", pid);
-        }
 
         let response = req_builder
             .json(&request)

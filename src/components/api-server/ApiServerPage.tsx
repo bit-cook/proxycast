@@ -80,6 +80,7 @@ const getProviderApiType = (provider: string): ApiType => {
   // Anthropic 类型
   if (
     p === "anthropic" ||
+    p === "anthropic-compatible" ||
     p === "claude" ||
     p === "claude_oauth" ||
     p === "kiro"

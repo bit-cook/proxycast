@@ -109,7 +109,7 @@ pub struct ToolLoopConfig {
 impl Default for ToolLoopConfig {
     fn default() -> Self {
         Self {
-            max_iterations: 25, // 默认最大 25 次迭代
+            max_iterations: 50, // 默认最大 25 次迭代
         }
     }
 }

@@ -13,13 +13,16 @@ pub enum ProviderType {
     #[serde(rename = "openai")]
     OpenAI,
     Claude,
+    #[serde(rename = "claude_oauth")]
+    ClaudeOAuth,
+    /// Anthropic 兼容格式（支持 system 数组格式等变体）
+    #[serde(rename = "anthropic_compatible")]
+    AnthropicCompatible,
     Antigravity,
     Vertex,
     #[serde(rename = "gemini_api_key")]
     GeminiApiKey,
     Codex,
-    #[serde(rename = "claude_oauth")]
-    ClaudeOAuth,
     // API Key Provider 类型
     Anthropic,
     #[serde(rename = "azure_openai")]
@@ -36,11 +39,12 @@ impl std::fmt::Display for ProviderType {
             ProviderType::Gemini => write!(f, "gemini"),
             ProviderType::OpenAI => write!(f, "openai"),
             ProviderType::Claude => write!(f, "claude"),
+            ProviderType::ClaudeOAuth => write!(f, "claude_oauth"),
+            ProviderType::AnthropicCompatible => write!(f, "anthropic_compatible"),
             ProviderType::Antigravity => write!(f, "antigravity"),
             ProviderType::Vertex => write!(f, "vertex"),
             ProviderType::GeminiApiKey => write!(f, "gemini_api_key"),
             ProviderType::Codex => write!(f, "codex"),
-            ProviderType::ClaudeOAuth => write!(f, "claude_oauth"),
             ProviderType::Anthropic => write!(f, "anthropic"),
             ProviderType::AzureOpenai => write!(f, "azure_openai"),
             ProviderType::AwsBedrock => write!(f, "aws_bedrock"),
@@ -58,11 +62,14 @@ impl std::str::FromStr for ProviderType {
             "gemini" => Ok(ProviderType::Gemini),
             "openai" => Ok(ProviderType::OpenAI),
             "claude" => Ok(ProviderType::Claude),
+            "claude_oauth" => Ok(ProviderType::ClaudeOAuth),
+            "anthropic_compatible" | "anthropic-compatible" => {
+                Ok(ProviderType::AnthropicCompatible)
+            }
             "antigravity" => Ok(ProviderType::Antigravity),
             "vertex" => Ok(ProviderType::Vertex),
             "gemini_api_key" => Ok(ProviderType::GeminiApiKey),
             "codex" => Ok(ProviderType::Codex),
-            "claude_oauth" => Ok(ProviderType::ClaudeOAuth),
             "anthropic" => Ok(ProviderType::Anthropic),
             "azure_openai" | "azure-openai" => Ok(ProviderType::AzureOpenai),
             "aws_bedrock" | "aws-bedrock" => Ok(ProviderType::AwsBedrock),

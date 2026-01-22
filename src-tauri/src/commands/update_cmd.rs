@@ -213,12 +213,16 @@ pub async fn start_background_update_check(
                     });
 
                     if should_notify {
-                        // 打开独立的更新提醒窗口
-                        if let Err(e) =
-                            update_window::open_update_window(&app_handle_clone, &result)
-                        {
-                            tracing::error!("[更新检查] 打开更新窗口失败: {}", e);
-                        }
+                        // 打开独立的更新提醒窗口 - 必须在主线程执行
+                        let app_handle_for_ui = app_handle_clone.clone();
+                        let result_clone = result.clone();
+                        let _ = app_handle_clone.run_on_main_thread(move || {
+                            if let Err(e) =
+                                update_window::open_update_window(&app_handle_for_ui, &result_clone)
+                            {
+                                tracing::error!("[更新检查] 打开更新窗口失败: {}", e);
+                            }
+                        });
                     }
                 }
             }

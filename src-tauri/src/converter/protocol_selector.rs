@@ -57,11 +57,13 @@ impl ProtocolSelector {
             PoolProviderType::Gemini => Protocol::Gemini,
             PoolProviderType::OpenAI => Protocol::OpenAI,
             PoolProviderType::Claude => Protocol::Anthropic,
+            PoolProviderType::ClaudeOAuth => Protocol::Anthropic, // Claude OAuth uses Anthropic protocol
+            // Anthropic 兼容格式使用 Anthropic 协议
+            PoolProviderType::AnthropicCompatible => Protocol::Anthropic,
             PoolProviderType::Antigravity => Protocol::Antigravity,
             PoolProviderType::Vertex => Protocol::Gemini, // Vertex AI uses Gemini protocol
             PoolProviderType::GeminiApiKey => Protocol::Gemini, // Gemini API Key uses Gemini protocol
             PoolProviderType::Codex => Protocol::OpenAI,        // Codex uses OpenAI protocol
-            PoolProviderType::ClaudeOAuth => Protocol::Anthropic, // Claude OAuth uses Anthropic protocol
             // API Key Provider 类型
             PoolProviderType::Anthropic => Protocol::Anthropic,
             PoolProviderType::AzureOpenai => Protocol::OpenAI,

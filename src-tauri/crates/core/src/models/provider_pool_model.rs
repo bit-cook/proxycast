@@ -498,11 +498,13 @@ pub fn get_default_check_model(provider_type: PoolProviderType) -> &'static str 
         PoolProviderType::OpenAI => "gpt-3.5-turbo",
         // 使用 claude-sonnet-4-5-20250929，兼容更多代理服务器
         PoolProviderType::Claude => "claude-sonnet-4-5-20250929",
+        PoolProviderType::ClaudeOAuth => "claude-sonnet-4-5-20250929",
+        // Anthropic 兼容格式使用相同的健康检查模型
+        PoolProviderType::AnthropicCompatible => "claude-sonnet-4-5-20250929",
         PoolProviderType::Antigravity => "gemini-3-pro-preview",
         PoolProviderType::Vertex => "gemini-2.0-flash",
         PoolProviderType::GeminiApiKey => "gemini-2.5-flash",
         PoolProviderType::Codex => "gpt-4o-mini",
-        PoolProviderType::ClaudeOAuth => "claude-sonnet-4-5-20250929",
         // API Key Provider 类型
         PoolProviderType::Anthropic => "claude-sonnet-4-5-20250929",
         PoolProviderType::AzureOpenai => "gpt-4o-mini",

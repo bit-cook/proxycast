@@ -22,19 +22,19 @@
     --radius: 0.5rem;
 
     /* Claude 风格颜色 */
-    --surface: #FFFFFF;
-    --surface-secondary: #F5F4F1;
-    --surface-tertiary: #EFEEE9;
-    --surface-cream: #FAF9F6;
-    --ink-900: #1A1915;
-    --ink-700: #4A4A45;
+    --surface: #ffffff;
+    --surface-secondary: #f5f4f1;
+    --surface-tertiary: #efeee9;
+    --surface-cream: #faf9f6;
+    --ink-900: #1a1915;
+    --ink-700: #4a4a45;
     --ink-600: #666661;
-    --ink-400: #9B9B96;
-    --claude-accent: #D97757;
-    --claude-accent-hover: #CC785C;
-    --claude-accent-subtle: #FDF4F1;
-    --success: #16A34A;
-    --info: #2563EB;
+    --ink-400: #9b9b96;
+    --claude-accent: #d97757;
+    --claude-accent-hover: #cc785c;
+    --claude-accent-subtle: #fdf4f1;
+    --success: #16a34a;
+    --info: #2563eb;
   }
 
   .dark {
@@ -55,17 +55,17 @@
     --border: 217.2 32.6% 17.5%;
 
     /* Claude 风格颜色 - 暗色模式 */
-    --surface: #1A1915;
-    --surface-secondary: #2D2D2A;
-    --surface-tertiary: #3A3A35;
+    --surface: #1a1915;
+    --surface-secondary: #2d2d2a;
+    --surface-tertiary: #3a3a35;
     --surface-cream: #242420;
-    --ink-900: #F5F4F1;
-    --ink-700: #D1D1CC;
-    --ink-600: #9B9B96;
+    --ink-900: #f5f4f1;
+    --ink-700: #d1d1cc;
+    --ink-600: #9b9b96;
     --ink-400: #666661;
-    --claude-accent: #E8956F;
-    --claude-accent-hover: #D97757;
-    --claude-accent-subtle: #3D2A24;
+    --claude-accent: #e8956f;
+    --claude-accent-hover: #d97757;
+    --claude-accent-subtle: #3d2a24;
   }
 }
 
@@ -112,8 +112,12 @@
 
 /* Claude 风格动画 */
 @keyframes shimmer {
-  0% { transform: translateX(-120%); }
-  100% { transform: translateX(120%); }
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
 }
 
 .animate-shimmer {
@@ -166,7 +170,8 @@
 }
 
 @keyframes ping {
-  75%, 100% {
+  75%,
+  100% {
     transform: scale(2);
     opacity: 0;
   }

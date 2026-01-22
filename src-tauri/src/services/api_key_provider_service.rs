@@ -861,7 +861,10 @@ impl ApiKeyProviderService {
                 "[get_fallback_credential] 尝试按 provider_id '{}' 查找",
                 provider_id
             );
-            if let Some(cred) = self.find_by_provider_id(db, provider_id, client_type).await? {
+            if let Some(cred) = self
+                .find_by_provider_id(db, provider_id, client_type)
+                .await?
+            {
                 eprintln!(
                     "[get_fallback_credential] 通过 provider_id '{}' 找到凭证: {:?}",
                     provider_id, cred.name
@@ -912,6 +915,7 @@ impl ApiKeyProviderService {
 
             // API Key Provider 类型 - 直接映射
             PoolProviderType::Anthropic => Some(ApiProviderType::Anthropic),
+            PoolProviderType::AnthropicCompatible => Some(ApiProviderType::AnthropicCompatible),
             PoolProviderType::AzureOpenai => Some(ApiProviderType::AzureOpenai),
             PoolProviderType::AwsBedrock => Some(ApiProviderType::AwsBedrock),
             PoolProviderType::Ollama => Some(ApiProviderType::Ollama),
@@ -1004,8 +1008,8 @@ impl ApiKeyProviderService {
             let conn = db.lock().map_err(|e| e.to_string())?;
 
             // 直接按 provider_id 查找
-            let provider =
-                ApiKeyProviderDao::get_provider_by_id(&conn, provider_id).map_err(|e| e.to_string())?;
+            let provider = ApiKeyProviderDao::get_provider_by_id(&conn, provider_id)
+                .map_err(|e| e.to_string())?;
 
             let provider = match provider {
                 Some(p) if p.enabled => {
@@ -1072,14 +1076,20 @@ impl ApiKeyProviderService {
             if provider.provider_type == ApiProviderType::Anthropic {
                 if let Some(client) = client_type {
                     // 对于 Claude Code 客户端，可以使用任何 Claude 凭证
-                    if matches!(client, crate::server::client_detector::ClientType::ClaudeCode) {
+                    if matches!(
+                        client,
+                        crate::server::client_detector::ClientType::ClaudeCode
+                    ) {
                         selected_key = Some(candidate_key);
                         break;
                     }
 
                     // 对于其他客户端，需要检查凭证是否是 Claude Code 专用
                     // 通过发送测试请求来检查
-                    if let Err(e) = self.test_claude_key_compatibility(&api_key, &provider.api_host).await {
+                    if let Err(e) = self
+                        .test_claude_key_compatibility(&api_key, &provider.api_host)
+                        .await
+                    {
                         if e.contains("CLAUDE_CODE_ONLY") {
                             eprintln!(
                                 "[find_by_provider_id] API Key {} 是 Claude Code 专用，跳过 (客户端: {:?})",
@@ -1140,6 +1150,15 @@ impl ApiKeyProviderService {
                     base_url: Some(provider.api_host.clone()),
                 };
                 (data, PoolProviderType::Claude)
+            }
+            ApiProviderType::AnthropicCompatible => {
+                // Anthropic 兼容格式使用 ClaudeKey（与 Anthropic 相同的凭证数据）
+                // 但使用 AnthropicCompatible 作为 PoolProviderType，以便使用正确的端点
+                let data = CredentialData::ClaudeKey {
+                    api_key: api_key.to_string(),
+                    base_url: Some(provider.api_host.clone()),
+                };
+                (data, PoolProviderType::AnthropicCompatible)
             }
             ApiProviderType::Gemini => {
                 // Gemini 类型使用 GeminiApiKey
@@ -1289,12 +1308,18 @@ impl ApiKeyProviderService {
                 let test_model = model_name
                     .or_else(|| provider.custom_models.first().cloned())
                     .unwrap_or_else(|| "claude-3-haiku-20240307".to_string());
-                
-                match self.test_anthropic_connection(&api_key, &provider.api_host, &test_model).await {
+
+                match self
+                    .test_anthropic_connection(&api_key, &provider.api_host, &test_model)
+                    .await
+                {
                     Ok(models) => Ok(models),
                     Err(e) if e == "CLAUDE_CODE_ONLY" => {
                         // Claude Code 专用凭证限制错误，返回特殊错误信息
-                        Err("凭证限制: 当前 Claude 凭证只能用于 Claude Code，不能用于通用 API 调用".to_string())
+                        Err(
+                            "凭证限制: 当前 Claude 凭证只能用于 Claude Code，不能用于通用 API 调用"
+                                .to_string(),
+                        )
                     }
                     Err(e) => Err(e),
                 }
@@ -1444,12 +1469,12 @@ impl ApiKeyProviderService {
             Ok(())
         } else {
             let body = response.text().await.unwrap_or_default();
-            
+
             // 检查是否是 Claude Code 专用凭证限制错误
             if body.contains("only authorized for use with Claude Code") {
                 return Err("CLAUDE_CODE_ONLY".to_string());
             }
-            
+
             // 其他错误不影响兼容性判断
             Ok(())
         }
@@ -1484,12 +1509,12 @@ impl ApiKeyProviderService {
         } else {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            
+
             // 检查是否是 Claude Code 专用凭证限制错误
             if body.contains("only authorized for use with Claude Code") {
                 return Err("CLAUDE_CODE_ONLY".to_string());
             }
-            
+
             Err(format!("API 返回错误: {} - {}", status, body))
         }
     }

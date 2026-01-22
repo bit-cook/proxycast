@@ -10,7 +10,6 @@
 import React, { useState, useEffect } from "react";
 import { AlertCircle, Package, Loader2, ExternalLink } from "lucide-react";
 import { safeInvoke } from "@/lib/dev-bridge";
-import { BrowserInterceptorTool } from "@/components/tools/browser-interceptor/BrowserInterceptorTool";
 import { FlowMonitorPage } from "@/pages";
 import { ConfigManagementPage } from "@/components/config/ConfigManagementPage";
 import { PluginUIRenderer as DynamicPluginRenderer } from "@/lib/plugin-loader/PluginUIRenderer";
@@ -174,7 +173,6 @@ const builtinPluginComponents: Record<
   string,
   React.ComponentType<{ onNavigate?: (page: Page) => void }>
 > = {
-  "browser-interception": BrowserInterceptorTool,
   "flow-monitor": FlowMonitorPage,
   "config-switch": ConfigManagementPage,
 };

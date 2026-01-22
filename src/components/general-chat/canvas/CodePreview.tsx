@@ -6,7 +6,7 @@
  * @requirements 4.1, 4.4
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo } from "react";
 
 interface CodePreviewProps {
   /** 代码内容 */
@@ -29,7 +29,7 @@ export const CodePreview: React.FC<CodePreviewProps> = ({
   onContentChange,
 }) => {
   // 计算行号
-  const lines = useMemo(() => code.split('\n'), [code]);
+  const lines = useMemo(() => code.split("\n"), [code]);
   const lineCount = lines.length;
   const lineNumberWidth = String(lineCount).length * 10 + 20;
 

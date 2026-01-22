@@ -4,6 +4,6 @@
  * @module components/general-chat/canvas
  */
 
-export { CanvasPanel } from './CanvasPanel';
-export { CodePreview } from './CodePreview';
-export { MarkdownPreview } from './MarkdownPreview';
+export { CanvasPanel } from "./CanvasPanel";
+export { CodePreview } from "./CodePreview";
+export { MarkdownPreview } from "./MarkdownPreview";

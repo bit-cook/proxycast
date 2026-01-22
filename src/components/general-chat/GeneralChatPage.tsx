@@ -6,13 +6,13 @@
  * @requirements 3.1, 3.5, 9.4
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { ChatPanel } from './chat/ChatPanel';
-import { CanvasPanel } from './canvas/CanvasPanel';
-import { ErrorBoundary } from './chat/ErrorBoundary';
-import { useGeneralChatStore } from './store/useGeneralChatStore';
-import type { CanvasState, GeneralChatPageProps } from './types';
-import { DEFAULT_CANVAS_STATE } from './types';
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { ChatPanel } from "./chat/ChatPanel";
+import { CanvasPanel } from "./canvas/CanvasPanel";
+import { ErrorBoundary } from "./chat/ErrorBoundary";
+import { useGeneralChatStore } from "./store/useGeneralChatStore";
+import type { CanvasState, GeneralChatPageProps } from "./types";
+import { DEFAULT_CANVAS_STATE } from "./types";
 
 /**
  * 通用对话主页面
@@ -26,15 +26,12 @@ export const GeneralChatPage: React.FC<GeneralChatPageProps> = ({
   initialSessionId,
   onNavigate,
 }) => {
-  const {
-    currentSessionId,
-    selectSession,
-    sessions,
-    createSession,
-  } = useGeneralChatStore();
+  const { currentSessionId, selectSession, sessions, createSession } =
+    useGeneralChatStore();
 
   // 画布状态
-  const [canvasState, setCanvasState] = useState<CanvasState>(DEFAULT_CANVAS_STATE);
+  const [canvasState, setCanvasState] =
+    useState<CanvasState>(DEFAULT_CANVAS_STATE);
 
   // 使用 ref 防止重复创建会话
   const sessionCreatedRef = useRef(false);
@@ -43,12 +40,22 @@ export const GeneralChatPage: React.FC<GeneralChatPageProps> = ({
   useEffect(() => {
     if (initialSessionId) {
       selectSession(initialSessionId);
-    } else if (sessions.length === 0 && !currentSessionId && !sessionCreatedRef.current) {
+    } else if (
+      sessions.length === 0 &&
+      !currentSessionId &&
+      !sessionCreatedRef.current
+    ) {
       // 如果没有会话，创建一个新会话（只创建一次）
       sessionCreatedRef.current = true;
       createSession();
     }
-  }, [initialSessionId, selectSession, sessions.length, currentSessionId, createSession]);
+  }, [
+    initialSessionId,
+    selectSession,
+    sessions.length,
+    currentSessionId,
+    createSession,
+  ]);
 
   // 打开画布
   const handleOpenCanvas = useCallback((state: CanvasState) => {
@@ -62,7 +69,7 @@ export const GeneralChatPage: React.FC<GeneralChatPageProps> = ({
 
   // 画布内容变更
   const handleCanvasContentChange = useCallback((content: string) => {
-    setCanvasState(prev => ({ ...prev, content }));
+    setCanvasState((prev) => ({ ...prev, content }));
   }, []);
 
   return (
@@ -72,8 +79,14 @@ export const GeneralChatPage: React.FC<GeneralChatPageProps> = ({
         <ErrorBoundary
           componentName="ChatPanel"
           onError={(error, errorInfo) => {
-            console.error('[GeneralChatPage] ChatPanel 渲染错误:', error.message);
-            console.error('[GeneralChatPage] 组件堆栈:', errorInfo.componentStack);
+            console.error(
+              "[GeneralChatPage] ChatPanel 渲染错误:",
+              error.message,
+            );
+            console.error(
+              "[GeneralChatPage] 组件堆栈:",
+              errorInfo.componentStack,
+            );
           }}
         >
           <ChatPanel
@@ -90,8 +103,14 @@ export const GeneralChatPage: React.FC<GeneralChatPageProps> = ({
           <ErrorBoundary
             componentName="CanvasPanel"
             onError={(error, errorInfo) => {
-              console.error('[GeneralChatPage] CanvasPanel 渲染错误:', error.message);
-              console.error('[GeneralChatPage] 组件堆栈:', errorInfo.componentStack);
+              console.error(
+                "[GeneralChatPage] CanvasPanel 渲染错误:",
+                error.message,
+              );
+              console.error(
+                "[GeneralChatPage] 组件堆栈:",
+                errorInfo.componentStack,
+              );
             }}
           >
             <CanvasPanel

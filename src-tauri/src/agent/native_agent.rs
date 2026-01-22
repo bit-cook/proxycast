@@ -100,33 +100,9 @@ impl NativeAgent {
 
     /// 获取 API 请求的有效 base_url
     ///
-    /// 对于自定义 Provider（如 moonshot），返回 `{base_url}/api/provider/{provider_id}`
-    /// 对于内置 Provider，返回原始 base_url
+    /// 所有 Provider 都使用标准路由，不再使用 Amp CLI 路由前缀
     fn get_effective_base_url(&self) -> String {
-        if let Some(ref pid) = self.provider_id {
-            // 检查 provider_id 是否是已知的内置类型
-            let is_builtin = matches!(
-                pid.to_lowercase().as_str(),
-                "openai"
-                    | "claude"
-                    | "anthropic"
-                    | "gemini"
-                    | "kiro"
-                    | "qwen"
-                    | "codex"
-                    | "antigravity"
-                    | "iflow"
-            );
-            if is_builtin {
-                self.base_url.clone()
-            } else {
-                // 自定义 Provider，使用 provider 特定路由
-                // 例如：http://127.0.0.1:8999/api/provider/moonshot
-                format!("{}/api/provider/{}", self.base_url, pid)
-            }
-        } else {
-            self.base_url.clone()
-        }
+        self.base_url.clone()
     }
 
     /// 检查是否是自定义 Provider
@@ -879,8 +855,56 @@ impl NativeAgentState {
         })
     }
 
+    /// 创建临时 Agent 用于异步操作（支持根据模型名称动态选择协议）
+    fn create_temp_agent_with_model(&self, model: &str) -> Result<NativeAgent, String> {
+        let guard = self.agent.read();
+        let agent = guard.as_ref().ok_or_else(|| "Agent 未初始化".to_string())?;
+
+        let client = Client::builder()
+            .timeout(Duration::from_secs(300))
+            .connect_timeout(Duration::from_secs(30))
+            .no_proxy()
+            .build()
+            .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+        // 如果有自定义 provider_id，尝试从模型名称推断协议类型
+        let provider_type = if let Some(provider_id) = &agent.provider_id {
+            ProviderType::from_provider_and_model(provider_id, model)
+        } else {
+            agent.provider_type
+        };
+
+        let protocol = create_protocol(provider_type);
+
+        info!(
+            "[NativeAgent] 创建临时 Agent: model={}, provider_type={:?}, provider_id={:?}, protocol_endpoint={}",
+            model,
+            provider_type,
+            agent.provider_id,
+            protocol.endpoint()
+        );
+
+        Ok(NativeAgent {
+            client,
+            base_url: agent.base_url.clone(),
+            api_key: agent.api_key.clone(),
+            sessions: agent.sessions.clone(),
+            config: agent.config.clone(),
+            provider_type,
+            protocol,
+            provider_id: agent.provider_id.clone(),
+        })
+    }
+
     pub async fn chat(&self, request: NativeChatRequest) -> Result<NativeChatResponse, String> {
-        let temp_agent = self.create_temp_agent()?;
+        let model = request.model.clone().unwrap_or_else(|| {
+            self.agent
+                .read()
+                .as_ref()
+                .map(|a| a.config.model.clone())
+                .unwrap_or_default()
+        });
+        let temp_agent = self.create_temp_agent_with_model(&model)?;
         temp_agent.chat(request).await
     }
 
@@ -889,7 +913,14 @@ impl NativeAgentState {
         request: NativeChatRequest,
         tx: mpsc::Sender<StreamEvent>,
     ) -> Result<StreamResult, String> {
-        let temp_agent = self.create_temp_agent()?;
+        let model = request.model.clone().unwrap_or_else(|| {
+            self.agent
+                .read()
+                .as_ref()
+                .map(|a| a.config.model.clone())
+                .unwrap_or_default()
+        });
+        let temp_agent = self.create_temp_agent_with_model(&model)?;
         temp_agent.chat_stream(request, None, tx).await
     }
 
@@ -899,7 +930,14 @@ impl NativeAgentState {
         tx: mpsc::Sender<StreamEvent>,
         tool_loop_engine: &ToolLoopEngine,
     ) -> Result<StreamResult, String> {
-        let temp_agent = self.create_temp_agent()?;
+        let model = request.model.clone().unwrap_or_else(|| {
+            self.agent
+                .read()
+                .as_ref()
+                .map(|a| a.config.model.clone())
+                .unwrap_or_default()
+        });
+        let temp_agent = self.create_temp_agent_with_model(&model)?;
         temp_agent
             .chat_stream_with_tools(request, tx, tool_loop_engine)
             .await

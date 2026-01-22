@@ -6,9 +6,9 @@
  * 用于在消息中显示图片内容，支持点击放大预览
  */
 
-import React, { useState, useCallback } from 'react';
-import { X, ZoomIn, Download } from 'lucide-react';
-import type { ContentBlock } from '../types';
+import React, { useState, useCallback } from "react";
+import { X, ZoomIn, Download } from "lucide-react";
+import type { ContentBlock } from "../types";
 
 interface ImageMessageProps {
   /** 图片内容块 */
@@ -38,9 +38,9 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
   onClose,
 }) => {
   const handleDownload = useCallback(() => {
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = src;
-    link.download = filename || 'image.png';
+    link.download = filename || "image.png";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -51,22 +51,22 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
       {/* 背景遮罩 */}
-      <div 
-        className="absolute inset-0" 
+      <div
+        className="absolute inset-0"
         onClick={onClose}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') onClose();
+          if (e.key === "Escape") onClose();
         }}
       />
-      
+
       {/* 图片容器 */}
       <div className="relative max-w-[90vw] max-h-[90vh] bg-white rounded-lg shadow-2xl">
         {/* 工具栏 */}
         <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-4 bg-gradient-to-b from-black/50 to-transparent">
           <div className="text-white text-sm font-medium">
-            {filename || '图片预览'}
+            {filename || "图片预览"}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -87,13 +87,13 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
             </button>
           </div>
         </div>
-        
+
         {/* 图片 */}
         <img
           src={src}
-          alt={filename || '图片'}
+          alt={filename || "图片"}
           className="max-w-full max-h-[90vh] object-contain rounded-lg"
-          style={{ minWidth: '300px', minHeight: '200px' }}
+          style={{ minWidth: "300px", minHeight: "200px" }}
         />
       </div>
     </div>
@@ -103,9 +103,12 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
 /**
  * 图片消息组件
  */
-export const ImageMessage: React.FC<ImageMessageProps> = ({ block, onClick }) => {
+export const ImageMessage: React.FC<ImageMessageProps> = ({
+  block,
+  onClick,
+}) => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  
+
   const handleImageClick = useCallback(() => {
     setIsPreviewOpen(true);
     onClick?.();
@@ -116,15 +119,18 @@ export const ImageMessage: React.FC<ImageMessageProps> = ({ block, onClick }) =>
   }, []);
 
   // 处理键盘事件
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleImageClick();
-    }
-  }, [handleImageClick]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleImageClick();
+      }
+    },
+    [handleImageClick],
+  );
 
   // 确保是图片类型
-  if (block.type !== 'image') {
+  if (block.type !== "image") {
     return null;
   }
 
@@ -142,11 +148,11 @@ export const ImageMessage: React.FC<ImageMessageProps> = ({ block, onClick }) =>
         >
           <img
             src={block.content}
-            alt={block.filename || '图片'}
+            alt={block.filename || "图片"}
             className="w-full h-auto max-h-64 object-cover transition-transform duration-200 group-hover:scale-105"
             loading="lazy"
           />
-          
+
           {/* 悬浮遮罩 */}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
             <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 rounded-full p-2">
@@ -154,7 +160,7 @@ export const ImageMessage: React.FC<ImageMessageProps> = ({ block, onClick }) =>
             </div>
           </div>
         </div>
-        
+
         {/* 文件名标签 */}
         {block.filename && (
           <div className="mt-2 text-xs text-ink-500 truncate">

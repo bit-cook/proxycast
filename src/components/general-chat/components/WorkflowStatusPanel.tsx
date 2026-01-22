@@ -1,19 +1,25 @@
 /**
  * 工作流状态面板组件
- * 
+ *
  * 显示三阶段工作流的当前状态、进度和统计信息
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  CheckCircle, 
-  Clock, 
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  CheckCircle,
+  Clock,
   AlertTriangle,
   FileText,
   Settings,
-} from 'lucide-react';
-import { ContextMemoryAPI, type MemoryStats } from '../../../lib/api/contextMemory';
-import { ToolHooksAPI, type HookExecutionStats } from '../../../lib/api/toolHooks';
+} from "lucide-react";
+import {
+  ContextMemoryAPI,
+  type MemoryStats,
+} from "../../../lib/api/contextMemory";
+import {
+  ToolHooksAPI,
+  type HookExecutionStats,
+} from "../../../lib/api/toolHooks";
 
 export interface WorkflowStatusPanelProps {
   sessionId: string;
@@ -44,7 +50,7 @@ export const WorkflowStatusPanel: React.FC<WorkflowStatusPanelProps> = ({
   visualOperationCount,
   onInitializeWorkflow,
   onFinalizeWorkflow,
-  className = '',
+  className = "",
 }) => {
   const [stats, setStats] = useState<WorkflowStats>({
     memoryStats: null,
@@ -54,14 +60,14 @@ export const WorkflowStatusPanel: React.FC<WorkflowStatusPanelProps> = ({
   });
 
   const [showInitDialog, setShowInitDialog] = useState(false);
-  const [projectName, setProjectName] = useState('');
-  const [goal, setGoal] = useState('');
+  const [projectName, setProjectName] = useState("");
+  const [goal, setGoal] = useState("");
 
   // 加载统计信息
   const loadStats = useCallback(async () => {
     if (!sessionId) return;
 
-    setStats(prev => ({ ...prev, isLoading: true, error: null }));
+    setStats((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
       const [memoryStats, hookStats] = await Promise.all([
@@ -76,10 +82,10 @@ export const WorkflowStatusPanel: React.FC<WorkflowStatusPanelProps> = ({
         error: null,
       });
     } catch (error) {
-      setStats(prev => ({
+      setStats((prev) => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : '加载统计信息失败',
+        error: error instanceof Error ? error.message : "加载统计信息失败",
       }));
     }
   }, [sessionId]);
@@ -97,8 +103,8 @@ export const WorkflowStatusPanel: React.FC<WorkflowStatusPanelProps> = ({
     if (projectName.trim() && goal.trim() && onInitializeWorkflow) {
       onInitializeWorkflow(projectName.trim(), goal.trim());
       setShowInitDialog(false);
-      setProjectName('');
-      setGoal('');
+      setProjectName("");
+      setGoal("");
     }
   };
 
@@ -114,19 +120,21 @@ export const WorkflowStatusPanel: React.FC<WorkflowStatusPanelProps> = ({
 
   const getStatusText = () => {
     if (!isWorkflowInitialized) {
-      return '工作流未初始化';
+      return "工作流未初始化";
     }
     if (!isWorkflowActive) {
-      return '工作流已暂停';
+      return "工作流已暂停";
     }
     if (stats.memoryStats && stats.memoryStats.unresolved_errors > 0) {
       return `工作流运行中 (${stats.memoryStats.unresolved_errors} 个错误)`;
     }
-    return '工作流运行正常';
+    return "工作流运行正常";
   };
 
   return (
-    <div className={`bg-white border border-gray-200 rounded-lg shadow-sm ${className}`}>
+    <div
+      className={`bg-white border border-gray-200 rounded-lg shadow-sm ${className}`}
+    >
       {/* 标题栏 */}
       <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
         <div className="flex items-center space-x-2">
@@ -157,9 +165,11 @@ export const WorkflowStatusPanel: React.FC<WorkflowStatusPanelProps> = ({
         {/* 基本状态 */}
         <div className="flex items-center justify-between text-sm">
           <span className="text-gray-600">状态:</span>
-          <span className={`font-medium ${
-            isWorkflowActive ? 'text-green-600' : 'text-gray-600'
-          }`}>
+          <span
+            className={`font-medium ${
+              isWorkflowActive ? "text-green-600" : "text-gray-600"
+            }`}
+          >
             {getStatusText()}
           </span>
         </div>
@@ -181,28 +191,40 @@ export const WorkflowStatusPanel: React.FC<WorkflowStatusPanelProps> = ({
           <div className="border-t border-gray-100 pt-3">
             <div className="flex items-center space-x-1 mb-2">
               <FileText className="h-4 w-4 text-gray-400" />
-              <span className="text-xs font-medium text-gray-700">记忆统计</span>
+              <span className="text-xs font-medium text-gray-700">
+                记忆统计
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-600">活跃记忆:</span>
-                <span className="font-medium">{stats.memoryStats.active_memories}</span>
+                <span className="font-medium">
+                  {stats.memoryStats.active_memories}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">已归档:</span>
-                <span className="font-medium">{stats.memoryStats.archived_memories}</span>
+                <span className="font-medium">
+                  {stats.memoryStats.archived_memories}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">未解决错误:</span>
-                <span className={`font-medium ${
-                  stats.memoryStats.unresolved_errors > 0 ? 'text-red-600' : 'text-green-600'
-                }`}>
+                <span
+                  className={`font-medium ${
+                    stats.memoryStats.unresolved_errors > 0
+                      ? "text-red-600"
+                      : "text-green-600"
+                  }`}
+                >
                   {stats.memoryStats.unresolved_errors}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">已解决错误:</span>
-                <span className="font-medium text-green-600">{stats.memoryStats.resolved_errors}</span>
+                <span className="font-medium text-green-600">
+                  {stats.memoryStats.resolved_errors}
+                </span>
               </div>
             </div>
           </div>
@@ -213,17 +235,23 @@ export const WorkflowStatusPanel: React.FC<WorkflowStatusPanelProps> = ({
           <div className="border-t border-gray-100 pt-3">
             <div className="flex items-center space-x-1 mb-2">
               <Settings className="h-4 w-4 text-gray-400" />
-              <span className="text-xs font-medium text-gray-700">钩子统计</span>
+              <span className="text-xs font-medium text-gray-700">
+                钩子统计
+              </span>
             </div>
             <div className="space-y-1">
-              {Object.entries(stats.hookStats).slice(0, 3).map(([ruleId, stat]) => (
-                <div key={ruleId} className="flex justify-between text-xs">
-                  <span className="text-gray-600 truncate">{ruleId.split('-')[0]}:</span>
-                  <span className="font-medium">
-                    {stat.success_count}/{stat.execution_count}
-                  </span>
-                </div>
-              ))}
+              {Object.entries(stats.hookStats)
+                .slice(0, 3)
+                .map(([ruleId, stat]) => (
+                  <div key={ruleId} className="flex justify-between text-xs">
+                    <span className="text-gray-600 truncate">
+                      {ruleId.split("-")[0]}:
+                    </span>
+                    <span className="font-medium">
+                      {stat.success_count}/{stat.execution_count}
+                    </span>
+                  </div>
+                ))}
             </div>
           </div>
         )}
@@ -247,8 +275,10 @@ export const WorkflowStatusPanel: React.FC<WorkflowStatusPanelProps> = ({
       {showInitDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">初始化工作流</h3>
-            
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              初始化工作流
+            </h3>
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -262,7 +292,7 @@ export const WorkflowStatusPanel: React.FC<WorkflowStatusPanelProps> = ({
                   placeholder="例如：数据分析项目"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   目标描述

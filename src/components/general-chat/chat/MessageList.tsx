@@ -10,18 +10,18 @@
  * - 支持动态高度消息（聊天消息高度不固定）
  * - 保持自动滚动到底部功能
  * - 流式消息更新时滚动行为正常
- * 
+ *
  * 分页加载实现说明：
  * - 滚动到顶部时自动加载更多历史消息
  * - 每次加载 20-50 条消息（可配置）
  * - 与虚拟滚动兼容
  */
 
-import React, { useRef, useEffect, useCallback } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import React, { useRef, useEffect, useCallback } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
-import type { Message, ContentBlock } from '../types';
-import { MessageItem } from './MessageItem';
+import type { Message, ContentBlock } from "../types";
+import { MessageItem } from "./MessageItem";
 
 /** 虚拟滚动启用阈值 - 超过此数量启用虚拟滚动 */
 const VIRTUAL_SCROLL_THRESHOLD = 50;
@@ -66,7 +66,7 @@ interface MessageListProps {
  * 当消息数量超过阈值时启用虚拟滚动，
  * 确保大量消息时 DOM 元素数量受控。
  * 支持滚动到顶部时加载更多历史消息。
- * 
+ *
  * @requirements 10.1, 10.2
  */
 export const MessageList: React.FC<MessageListProps> = ({
@@ -114,12 +114,12 @@ export const MessageList: React.FC<MessageListProps> = ({
 
   // 滚动到底部
   const scrollToBottom = useCallback(
-    (behavior: 'smooth' | 'auto' = 'smooth') => {
+    (behavior: "smooth" | "auto" = "smooth") => {
       if (useVirtualScroll) {
         virtualizer.scrollToIndex(messages.length - 1, {
-          align: 'end',
+          align: "end",
           // 使用类型断言解决 @tanstack/react-virtual 与 DOM ScrollBehavior 类型不兼容问题
-          behavior: behavior as 'smooth' | 'auto',
+          behavior: behavior as "smooth" | "auto",
         });
       } else {
         const parent = parentRef.current;
@@ -131,7 +131,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         }
       }
     },
-    [useVirtualScroll, virtualizer, messages.length]
+    [useVirtualScroll, virtualizer, messages.length],
   );
 
   // 监听滚动事件，更新是否在底部的状态
@@ -141,7 +141,7 @@ export const MessageList: React.FC<MessageListProps> = ({
 
     const handleScroll = () => {
       isAtBottomRef.current = checkIsAtBottom();
-      
+
       // 检查是否滚动到顶部，触发加载更多
       if (
         onLoadMore &&
@@ -153,16 +153,17 @@ export const MessageList: React.FC<MessageListProps> = ({
       }
     };
 
-    parent.addEventListener('scroll', handleScroll, { passive: true });
-    return () => parent.removeEventListener('scroll', handleScroll);
+    parent.addEventListener("scroll", handleScroll, { passive: true });
+    return () => parent.removeEventListener("scroll", handleScroll);
   }, [checkIsAtBottom, onLoadMore, hasMoreMessages, isLoadingMore]);
 
   // 新消息到达时自动滚动到底部
   useEffect(() => {
     const messageCountChanged = messages.length !== prevMessageCountRef.current;
     const firstMessageId = messages.length > 0 ? messages[0].id : null;
-    const firstMessageChanged = firstMessageId !== prevFirstMessageIdRef.current;
-    
+    const firstMessageChanged =
+      firstMessageId !== prevFirstMessageIdRef.current;
+
     // 更新引用
     const prevCount = prevMessageCountRef.current;
     prevMessageCountRef.current = messages.length;
@@ -177,8 +178,8 @@ export const MessageList: React.FC<MessageListProps> = ({
         const newMessagesCount = messages.length - prevCount;
         requestAnimationFrame(() => {
           virtualizer.scrollToIndex(newMessagesCount, {
-            align: 'start',
-            behavior: 'auto' as 'smooth' | 'auto',
+            align: "start",
+            behavior: "auto" as "smooth" | "auto",
           });
         });
       }
@@ -189,16 +190,22 @@ export const MessageList: React.FC<MessageListProps> = ({
     if (messageCountChanged && isAtBottomRef.current) {
       // 使用 requestAnimationFrame 确保 DOM 更新后再滚动
       requestAnimationFrame(() => {
-        scrollToBottom('smooth');
+        scrollToBottom("smooth");
       });
     }
-  }, [messages.length, messages, scrollToBottom, useVirtualScroll, virtualizer]);
+  }, [
+    messages.length,
+    messages,
+    scrollToBottom,
+    useVirtualScroll,
+    virtualizer,
+  ]);
 
   // 流式内容更新时保持滚动到底部
   useEffect(() => {
     if (isStreaming && isAtBottomRef.current) {
       requestAnimationFrame(() => {
-        scrollToBottom('auto');
+        scrollToBottom("auto");
       });
     }
   }, [isStreaming, partialContent, scrollToBottom]);
@@ -207,7 +214,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   const renderMessageItem = useCallback(
     (message: Message, index: number) => {
       const isLast = index === messages.length - 1;
-      const isStreamingMessage = isLast && isStreaming && message.role === 'assistant';
+      const isStreamingMessage =
+        isLast && isStreaming && message.role === "assistant";
       const isRetrying = retryingMessageId === message.id;
 
       return (
@@ -218,7 +226,9 @@ export const MessageList: React.FC<MessageListProps> = ({
           streamingContent={isStreamingMessage ? partialContent : undefined}
           onCopy={onCopy}
           onOpenInCanvas={onOpenInCanvas}
-          onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
+          onRegenerate={
+            onRegenerate ? () => onRegenerate(message.id) : undefined
+          }
           onRetry={onRetry ? () => onRetry(message.id) : undefined}
           isRetrying={isRetrying}
         />
@@ -233,7 +243,7 @@ export const MessageList: React.FC<MessageListProps> = ({
       onRegenerate,
       onRetry,
       retryingMessageId,
-    ]
+    ],
   );
 
   // 非虚拟滚动模式（消息数量较少时）
@@ -256,7 +266,9 @@ export const MessageList: React.FC<MessageListProps> = ({
         {/* 没有更多消息提示 */}
         {!hasMoreMessages && messages.length > 0 && (
           <div className="flex justify-center py-2">
-            <span className="text-xs text-muted-foreground">已加载全部消息</span>
+            <span className="text-xs text-muted-foreground">
+              已加载全部消息
+            </span>
           </div>
         )}
         {messages.map((message, index) => renderMessageItem(message, index))}
@@ -292,7 +304,9 @@ export const MessageList: React.FC<MessageListProps> = ({
         {/* 没有更多消息提示 */}
         {!hasMoreMessages && messages.length > 0 && !isLoadingMore && (
           <div className="absolute top-0 left-0 right-0 flex justify-center py-2 z-10">
-            <span className="text-xs text-muted-foreground">已加载全部消息</span>
+            <span className="text-xs text-muted-foreground">
+              已加载全部消息
+            </span>
           </div>
         )}
         {/* 虚拟滚动内容 */}

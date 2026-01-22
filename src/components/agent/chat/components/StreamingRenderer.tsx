@@ -363,7 +363,12 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
       const result = parseAIResponse(visibleText, isStreaming);
       // 添加调试日志
       if (result.hasWriteFile) {
-        console.log("[StreamingRenderer] 检测到 write_file:", result.parts.filter(p => p.type === "write_file" || p.type === "pending_write_file"));
+        console.log(
+          "[StreamingRenderer] 检测到 write_file:",
+          result.parts.filter(
+            (p) => p.type === "write_file" || p.type === "pending_write_file",
+          ),
+        );
       }
       return result;
     }, [visibleText, isStreaming]);
@@ -409,10 +414,13 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
     // 判断是否有可见内容
     const hasVisibleContent = useInterleavedMode
       ? contentParts.some(
-          (part) => 
+          (part) =>
             (part.type === "text" && part.text.length > 0) ||
             (part.type === "thinking" && part.text.length > 0),
-        ) || (isStreaming && (content.length > 0 || (externalThinking && externalThinking.length > 0)))
+        ) ||
+        (isStreaming &&
+          (content.length > 0 ||
+            (externalThinking && externalThinking.length > 0)))
       : visibleText.length > 0;
 
     // 交错显示模式：按顺序渲染 contentParts
@@ -433,7 +441,14 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
 
               // 添加调试日志
               if (partParsed.hasWriteFile) {
-                console.log("[StreamingRenderer] 交错模式检测到 write_file:", partParsed.parts.filter(p => p.type === "write_file" || p.type === "pending_write_file"));
+                console.log(
+                  "[StreamingRenderer] 交错模式检测到 write_file:",
+                  partParsed.parts.filter(
+                    (p) =>
+                      p.type === "write_file" ||
+                      p.type === "pending_write_file",
+                  ),
+                );
               }
 
               // 处理文件写入回调

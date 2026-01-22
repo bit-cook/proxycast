@@ -8,10 +8,10 @@
  * @requirements 2.1, 5.1, 5.2
  */
 
-import { useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { useGeneralChatStore } from '../store/useGeneralChatStore';
-import type { Message, ProviderConfig } from '../types';
+import { useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useGeneralChatStore } from "../store/useGeneralChatStore";
+import type { Message, ProviderConfig } from "../types";
 
 /**
  * 发送消息请求参数
@@ -42,65 +42,62 @@ interface UseChatOptions {
  * 聊天逻辑 Hook
  */
 export const useChat = (options: UseChatOptions) => {
-  const {
-    sessionId,
-    providerConfig,
-    onMessageSent,
-    onError,
-  } = options;
+  const { sessionId, providerConfig, onMessageSent, onError } = options;
 
-  const {
-    startStreaming,
-  } = useGeneralChatStore();
+  const { startStreaming } = useGeneralChatStore();
 
   /**
    * 发送消息
    */
-  const sendMessage = useCallback(async (content: string) => {
-    if (!sessionId || !content.trim()) {
-      return;
-    }
-
-    try {
-      // 构建事件名称
-      const eventName = `general-chat-stream-${sessionId}`;
-
-      // 调用 Tauri 命令发送消息
-      const request: SendMessageRequest = {
-        session_id: sessionId,
-        content: content.trim(),
-        event_name: eventName,
-        provider: providerConfig?.providerName,
-        model: providerConfig?.modelName,
-      };
-
-      const messageId = await invoke<string>('general_chat_send_message', {
-        request,
-      });
-
-      startStreaming(messageId);
-
-      // 消息发送成功
-      if (onMessageSent) {
-        const message: Message = {
-          id: messageId,
-          sessionId,
-          role: 'assistant',
-          content: '',
-          blocks: [],
-          status: 'streaming',
-          createdAt: Date.now(),
-        };
-        onMessageSent(message);
+  const sendMessage = useCallback(
+    async (content: string) => {
+      if (!sessionId || !content.trim()) {
+        return;
       }
-    } catch (error) {
-      // 停止流式状态
-      const { stopGeneration } = useGeneralChatStore.getState();
-      stopGeneration();
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      onError?.(errorMessage);
-    }
-  }, [sessionId, providerConfig, startStreaming, onMessageSent, onError]);
+
+      try {
+        // 构建事件名称
+        const eventName = `general-chat-stream-${sessionId}`;
+
+        // 调用 Tauri 命令发送消息
+        const request: SendMessageRequest = {
+          session_id: sessionId,
+          content: content.trim(),
+          event_name: eventName,
+          provider: providerConfig?.providerName,
+          model: providerConfig?.modelName,
+        };
+
+        const messageId = await invoke<string>("general_chat_send_message", {
+          request,
+        });
+
+        startStreaming(messageId);
+
+        // 消息发送成功
+        if (onMessageSent) {
+          const message: Message = {
+            id: messageId,
+            sessionId,
+            role: "assistant",
+            content: "",
+            blocks: [],
+            status: "streaming",
+            createdAt: Date.now(),
+          };
+          onMessageSent(message);
+        }
+      } catch (error) {
+        // 停止流式状态
+        const { stopGeneration } = useGeneralChatStore.getState();
+        stopGeneration();
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        onError?.(errorMessage);
+      }
+    },
+    [sessionId, providerConfig, startStreaming, onMessageSent, onError],
+  );
 
   /**
    * 停止生成
@@ -109,13 +106,13 @@ export const useChat = (options: UseChatOptions) => {
     if (!sessionId) return;
 
     try {
-      await invoke('general_chat_stop_generation', {
+      await invoke("general_chat_stop_generation", {
         sessionId,
       });
       const { stopGeneration: stopGen } = useGeneralChatStore.getState();
       stopGen();
     } catch (error) {
-      console.error('停止生成失败:', error);
+      console.error("停止生成失败:", error);
     }
   }, [sessionId]);
 
@@ -127,7 +124,7 @@ export const useChat = (options: UseChatOptions) => {
     // 1. 获取该消息之前的用户消息
     // 2. 删除该消息
     // 3. 重新发送用户消息
-    console.log('重新生成消息:', messageId);
+    console.log("重新生成消息:", messageId);
   }, []);
 
   return {

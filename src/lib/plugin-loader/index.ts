@@ -43,8 +43,6 @@ const PLUGIN_GLOBAL_NAMES: Record<string, string> = {
   "gemini-provider": "GeminiProviderPlugin",
   "antigravity-provider": "AntigravityProviderPlugin",
   "codex-provider": "CodexProviderPlugin",
-  "machine-id-tool": "MachineIdToolPlugin",
-  "browser-interception": "BrowserInterceptionPlugin",
   "flow-monitor": "FlowMonitorPlugin",
   "config-switch": "ConfigSwitchPlugin",
 };

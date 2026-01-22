@@ -270,8 +270,9 @@ impl ProviderPoolService {
             );
             credentials.extend(assistant_creds);
         } else if pt == PoolProviderType::Claude {
-            let ai_provider_creds = ProviderPoolDao::get_by_type(&conn, &PoolProviderType::Anthropic)
-                .map_err(|e| e.to_string())?;
+            let ai_provider_creds =
+                ProviderPoolDao::get_by_type(&conn, &PoolProviderType::Anthropic)
+                    .map_err(|e| e.to_string())?;
             eprintln!(
                 "[SELECT_CREDENTIAL] Assistant: adding {} AI Provider credentials",
                 ai_provider_creds.len()
@@ -398,7 +399,9 @@ impl ProviderPoolService {
         );
 
         // Step 1: 尝试从 Provider Pool 选择 (OAuth + API Key)
-        if let Some(cred) = self.select_credential_with_client_check(db, provider_type, model, client_type)? {
+        if let Some(cred) =
+            self.select_credential_with_client_check(db, provider_type, model, client_type)?
+        {
             eprintln!(
                 "[select_credential_with_fallback] 从 Provider Pool 找到凭证: {:?}",
                 cred.name
@@ -416,7 +419,10 @@ impl ProviderPoolService {
 
         // 传入 provider_id_hint 支持 60+ Provider
         eprintln!("[select_credential_with_fallback] 调用 get_fallback_credential");
-        if let Some(cred) = api_key_service.get_fallback_credential(db, &pt, provider_id_hint, client_type).await? {
+        if let Some(cred) = api_key_service
+            .get_fallback_credential(db, &pt, provider_id_hint, client_type)
+            .await?
+        {
             eprintln!(
                 "[select_credential_with_fallback] 智能降级成功: {:?}",
                 cred.name
@@ -450,7 +456,8 @@ impl ProviderPoolService {
             model,
             provider_id_hint,
             None, // 兼容方法不传递客户端类型
-        ).await
+        )
+        .await
     }
 
     /// 基于权重分数选择最优凭证

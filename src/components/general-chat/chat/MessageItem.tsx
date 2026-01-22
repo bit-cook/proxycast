@@ -6,11 +6,11 @@
  * @requirements 6.1, 6.2, 6.7, 2.6, 9.5
  */
 
-import React from 'react';
+import React from "react";
 
-import type { Message, ContentBlock } from '../types';
-import { UserMessage } from './UserMessage';
-import { AssistantMessage } from './AssistantMessage';
+import type { Message, ContentBlock } from "../types";
+import { UserMessage } from "./UserMessage";
+import { AssistantMessage } from "./AssistantMessage";
 
 interface MessageItemProps {
   /** 消息数据 */
@@ -44,16 +44,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   onRetry,
   isRetrying,
 }) => {
-  if (message.role === 'user') {
-    return (
-      <UserMessage
-        message={message}
-        onCopy={onCopy}
-      />
-    );
+  if (message.role === "user") {
+    return <UserMessage message={message} onCopy={onCopy} />;
   }
 
-  if (message.role === 'assistant') {
+  if (message.role === "assistant") {
     return (
       <AssistantMessage
         message={message}

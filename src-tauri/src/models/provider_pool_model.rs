@@ -321,12 +321,18 @@ impl ProviderCredential {
     /// 检查凭证是否适用于指定的客户端类型
     ///
     /// 某些凭证可能有使用限制，例如 Claude Code 专用凭证只能用于 Claude Code 客户端
-    pub fn is_compatible_with_client(&self, client_type: Option<&crate::server::client_detector::ClientType>) -> bool {
+    pub fn is_compatible_with_client(
+        &self,
+        client_type: Option<&crate::server::client_detector::ClientType>,
+    ) -> bool {
         // 检查是否是 Claude Code 专用凭证
         if let Some(error_msg) = &self.last_error_message {
             if error_msg.contains("only authorized for use with Claude Code") {
                 // 这是 Claude Code 专用凭证，只能用于 Claude Code 客户端
-                return matches!(client_type, Some(crate::server::client_detector::ClientType::ClaudeCode));
+                return matches!(
+                    client_type,
+                    Some(crate::server::client_detector::ClientType::ClaudeCode)
+                );
             }
         }
 
@@ -514,11 +520,13 @@ pub fn get_default_check_model(provider_type: PoolProviderType) -> &'static str 
         PoolProviderType::OpenAI => "gpt-3.5-turbo",
         // 使用 claude-sonnet-4-5-20250929，兼容更多代理服务器
         PoolProviderType::Claude => "claude-sonnet-4-5-20250929",
+        PoolProviderType::ClaudeOAuth => "claude-sonnet-4-5-20250929",
+        // Anthropic 兼容格式使用相同的健康检查模型
+        PoolProviderType::AnthropicCompatible => "claude-sonnet-4-5-20250929",
         PoolProviderType::Antigravity => "gemini-3-pro-preview",
         PoolProviderType::Vertex => "gemini-2.0-flash",
         PoolProviderType::GeminiApiKey => "gemini-2.5-flash",
         PoolProviderType::Codex => "gpt-4o-mini",
-        PoolProviderType::ClaudeOAuth => "claude-sonnet-4-5-20250929",
         // API Key Provider 类型
         PoolProviderType::Anthropic => "claude-sonnet-4-5-20250929",
         PoolProviderType::AzureOpenai => "gpt-4o-mini",

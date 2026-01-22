@@ -1228,7 +1228,6 @@ fn arb_credential_pool_config() -> impl Strategy<Value = CredentialPoolConfig> {
                 gemini_api_keys: vec![],
                 vertex_api_keys: vec![],
                 codex: vec![],
-                iflow: vec![],
             },
         )
 }
@@ -2223,30 +2222,6 @@ fn arb_vertex_api_key_entry() -> impl Strategy<Value = crate::config::VertexApiK
         })
 }
 
-/// 生成随机的 iFlow 凭证条目
-fn arb_iflow_credential_entry() -> impl Strategy<Value = crate::config::IFlowCredentialEntry> {
-    (
-        "[a-z]{3,10}-[0-9]{1,5}".prop_map(|s| s),
-        proptest::option::of("[a-z]+/iflow-token-[0-9]{1,5}\\.json".prop_map(|s| s)),
-        prop_oneof![Just("oauth".to_string()), Just("cookie".to_string())],
-        proptest::option::of("[a-zA-Z0-9=;]+".prop_map(|s| s)),
-        proptest::option::of("http://proxy\\.[a-z]+\\.com:[0-9]{4}".prop_map(|s| s)),
-        any::<bool>(),
-    )
-        .prop_map(
-            |(id, token_file, auth_type, cookies, proxy_url, disabled)| {
-                crate::config::IFlowCredentialEntry {
-                    id,
-                    token_file,
-                    auth_type,
-                    cookies,
-                    proxy_url,
-                    disabled,
-                }
-            },
-        )
-}
-
 /// 生成包含新 Provider 凭证的凭证池配置
 fn arb_extended_credential_pool_config() -> impl Strategy<Value = CredentialPoolConfig> {
     (
@@ -2257,30 +2232,20 @@ fn arb_extended_credential_pool_config() -> impl Strategy<Value = CredentialPool
         proptest::collection::vec(arb_api_key_entry(), 0..3),
         proptest::collection::vec(arb_gemini_api_key_entry(), 0..3),
         proptest::collection::vec(arb_vertex_api_key_entry(), 0..3),
-        proptest::collection::vec(arb_oauth_credential_entry(), 0..3),
-        proptest::collection::vec(arb_iflow_credential_entry(), 0..3),
+        proptest::collection::vec(arb_credential_entry(), 0..3),
     )
         .prop_map(
-            |(
-                kiro,
-                gemini,
-                qwen,
-                openai,
-                claude,
-                gemini_api_keys,
-                vertex_api_keys,
-                codex,
-                iflow,
-            )| CredentialPoolConfig {
-                kiro,
-                gemini,
-                qwen,
-                openai,
-                claude,
-                gemini_api_keys,
-                vertex_api_keys,
-                codex,
-                iflow,
+            |(kiro, gemini, qwen, openai, claude, gemini_api_keys, vertex_api_keys, codex)| {
+                CredentialPoolConfig {
+                    kiro,
+                    gemini,
+                    qwen,
+                    openai,
+                    claude,
+                    gemini_api_keys,
+                    vertex_api_keys,
+                    codex,
+                }
             },
         )
 }
@@ -2318,16 +2283,6 @@ proptest! {
             parsed.credential_pool.gemini.len(),
             "Gemini OAuth 凭证数量往返不一致"
         );
-        prop_assert_eq!(
-            pool.codex.len(),
-            parsed.credential_pool.codex.len(),
-            "Codex OAuth 凭证数量往返不一致"
-        );
-        prop_assert_eq!(
-            pool.iflow.len(),
-            parsed.credential_pool.iflow.len(),
-            "iFlow 凭证数量往返不一致"
-        );
 
         // 验证 Gemini API Key 多账号配置往返一致性
         prop_assert_eq!(
@@ -2342,44 +2297,6 @@ proptest! {
             parsed.credential_pool.vertex_api_keys.len(),
             "Vertex AI 凭证数量往返不一致"
         );
-
-        // 验证每个 Codex OAuth 凭证的详细内容
-        for (original, parsed_entry) in pool.codex.iter().zip(parsed.credential_pool.codex.iter()) {
-            prop_assert_eq!(
-                &original.id,
-                &parsed_entry.id,
-                "Codex 凭证 ID 往返不一致"
-            );
-            prop_assert_eq!(
-                &original.token_file,
-                &parsed_entry.token_file,
-                "Codex Token 文件路径往返不一致"
-            );
-            prop_assert_eq!(
-                original.disabled,
-                parsed_entry.disabled,
-                "Codex 禁用状态往返不一致"
-            );
-            prop_assert_eq!(
-                &original.proxy_url,
-                &parsed_entry.proxy_url,
-                "Codex 代理 URL 往返不一致"
-            );
-        }
-
-        // 验证每个 iFlow 凭证的详细内容
-        for (original, parsed_entry) in pool.iflow.iter().zip(parsed.credential_pool.iflow.iter()) {
-            prop_assert_eq!(
-                &original.id,
-                &parsed_entry.id,
-                "iFlow 凭证 ID 往返不一致"
-            );
-            prop_assert_eq!(
-                &original.auth_type,
-                &parsed_entry.auth_type,
-                "iFlow 认证类型往返不一致"
-            );
-        }
 
         // 验证每个 Gemini API Key 的详细内容
         for (original, parsed_entry) in pool.gemini_api_keys.iter().zip(parsed.credential_pool.gemini_api_keys.iter()) {
@@ -2431,7 +2348,6 @@ fn arb_provider_name() -> impl Strategy<Value = String> {
         Just("openai".to_string()),
         Just("claude".to_string()),
         Just("codex".to_string()),
-        Just("iflow".to_string()),
     ]
 }
 
@@ -2581,7 +2497,6 @@ fn arb_valid_provider_type() -> impl Strategy<Value = String> {
         Just("gemini_api_key".to_string()),
         Just("codex".to_string()),
         Just("claude_oauth".to_string()),
-        Just("iflow".to_string()),
     ]
 }
 
@@ -2601,7 +2516,6 @@ fn arb_invalid_provider_type() -> impl Strategy<Value = String> {
                 | "gemini_api_key"
                 | "codex"
                 | "claude_oauth"
-                | "iflow"
         )
     })
 }

@@ -107,7 +107,7 @@ export function detectLists(content: string): {
  * @returns 代码块信息数组
  */
 export function detectCodeBlocks(
-  content: string
+  content: string,
 ): Array<{ language: string; hasContent: boolean }> {
   const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
   const codeBlocks: Array<{ language: string; hasContent: boolean }> = [];
@@ -206,7 +206,7 @@ const unorderedListArbitrary: fc.Arbitrary<string> = fc
     fc
       .string({ minLength: 1, maxLength: 30 })
       .filter((s) => s.trim().length > 0 && !s.includes("\n")),
-    { minLength: 1, maxLength: 5 }
+    { minLength: 1, maxLength: 5 },
   )
   .map((items) => items.map((item) => `- ${item.trim()}`).join("\n"));
 
@@ -218,10 +218,10 @@ const orderedListArbitrary: fc.Arbitrary<string> = fc
     fc
       .string({ minLength: 1, maxLength: 30 })
       .filter((s) => s.trim().length > 0 && !s.includes("\n")),
-    { minLength: 1, maxLength: 5 }
+    { minLength: 1, maxLength: 5 },
   )
   .map((items) =>
-    items.map((item, index) => `${index + 1}. ${item.trim()}`).join("\n")
+    items.map((item, index) => `${index + 1}. ${item.trim()}`).join("\n"),
   );
 
 /**
@@ -237,7 +237,7 @@ const codeBlockArbitrary: fc.Arbitrary<{ markdown: string; language: string }> =
         "rust",
         "go",
         "java",
-        "plaintext"
+        "plaintext",
       ),
       code: fc
         .string({ minLength: 1, maxLength: 100 })
@@ -263,9 +263,9 @@ const tableArbitrary: fc.Arbitrary<string> = fc
           fc
             .string({ minLength: 1, maxLength: 10 })
             .filter((s) => s.trim().length > 0 && !s.includes("|")),
-          { minLength: cols, maxLength: cols }
+          { minLength: cols, maxLength: cols },
         ),
-        { minLength: rows + 1, maxLength: rows + 1 }
+        { minLength: rows + 1, maxLength: rows + 1 },
       )
       .map((data) => {
         const header = `| ${data[0].map((c) => c.trim()).join(" | ")} |`;
@@ -274,7 +274,7 @@ const tableArbitrary: fc.Arbitrary<string> = fc
           .slice(1)
           .map((row) => `| ${row.map((c) => c.trim()).join(" | ")} |`);
         return [header, separator, ...bodyRows].join("\n");
-      })
+      }),
   );
 
 /**
@@ -293,9 +293,9 @@ const mathFormulaArbitrary: fc.Arbitrary<{
     .constantFrom(
       "\\sum_{i=1}^{n} x_i",
       "\\int_0^\\infty e^{-x} dx",
-      "\\begin{matrix} a & b \\\\ c & d \\end{matrix}"
+      "\\begin{matrix} a & b \\\\ c & d \\end{matrix}",
     )
-    .map((formula) => ({ markdown: `$$${formula}$$`, isBlock: true }))
+    .map((formula) => ({ markdown: `$$${formula}$$`, isBlock: true })),
 );
 
 /**
@@ -316,7 +316,7 @@ const formattedTextArbitrary: fc.Arbitrary<{
           !s.includes("*") &&
           !s.includes("_") &&
           !s.includes("[") &&
-          !s.includes("]")
+          !s.includes("]"),
       ),
     format: fc.constantFrom("bold", "italic", "link", "boldItalic"),
   })
@@ -382,23 +382,24 @@ describe("消息渲染属性测试", () => {
      * **Validates: Requirements 2.3**
      */
     test.prop(
-      [fc.integer({ min: 1, max: 6 }).chain((level) => headingArbitrary(level))],
-      { numRuns: 100 }
-    )(
-      "对于任意 Markdown 标题，应正确检测标题级别",
-      (heading: string) => {
-        const headings = detectHeadings(heading);
+      [
+        fc
+          .integer({ min: 1, max: 6 })
+          .chain((level) => headingArbitrary(level)),
+      ],
+      { numRuns: 100 },
+    )("对于任意 Markdown 标题，应正确检测标题级别", (heading: string) => {
+      const headings = detectHeadings(heading);
 
-        // 应该检测到至少一个标题
-        expect(headings.length).toBeGreaterThanOrEqual(1);
+      // 应该检测到至少一个标题
+      expect(headings.length).toBeGreaterThanOrEqual(1);
 
-        // 标题级别应在 1-6 范围内
-        headings.forEach((level) => {
-          expect(level).toBeGreaterThanOrEqual(1);
-          expect(level).toBeLessThanOrEqual(6);
-        });
-      }
-    );
+      // 标题级别应在 1-6 范围内
+      headings.forEach((level) => {
+        expect(level).toBeGreaterThanOrEqual(1);
+        expect(level).toBeLessThanOrEqual(6);
+      });
+    });
 
     /**
      * 7.2 无序列表检测测试
@@ -410,7 +411,7 @@ describe("消息渲染属性测试", () => {
       (list: string) => {
         const { hasUnorderedList } = detectLists(list);
         expect(hasUnorderedList).toBe(true);
-      }
+      },
     );
 
     /**
@@ -423,7 +424,7 @@ describe("消息渲染属性测试", () => {
       (list: string) => {
         const { hasOrderedList } = detectLists(list);
         expect(hasOrderedList).toBe(true);
-      }
+      },
     );
 
     /**
@@ -445,7 +446,7 @@ describe("消息渲染属性测试", () => {
         const codeBlock = blocks.find((b) => b.type === "code");
         expect(codeBlock).toBeDefined();
         expect(codeBlock?.language).toBe(language);
-      }
+      },
     );
 
     /**
@@ -458,7 +459,7 @@ describe("消息渲染属性测试", () => {
       (table: string) => {
         const hasTable = detectTables(table);
         expect(hasTable).toBe(true);
-      }
+      },
     );
 
     /**
@@ -476,7 +477,7 @@ describe("消息渲染属性测试", () => {
         } else {
           expect(hasInlineMath).toBe(true);
         }
-      }
+      },
     );
 
     /**
@@ -508,7 +509,7 @@ describe("消息渲染属性测试", () => {
         if (hasLink) {
           expect(detected.hasLink).toBe(true);
         }
-      }
+      },
     );
 
     /**
@@ -531,35 +532,32 @@ describe("消息渲染属性测试", () => {
               fc
                 .string({ minLength: 1, maxLength: 50 })
                 .filter((s) => s.trim().length > 0 && !s.includes("```")),
-              codeBlockArbitrary
+              codeBlockArbitrary,
             )
-            .map(([text, code]) => `${text}\n\n${code.markdown}`)
+            .map(([text, code]) => `${text}\n\n${code.markdown}`),
         ),
       ],
-      { numRuns: 100 }
-    )(
-      "解析后的内容块应包含原始内容的所有非空白部分",
-      (content: string) => {
-        const blocks = parseContent(content);
+      { numRuns: 100 },
+    )("解析后的内容块应包含原始内容的所有非空白部分", (content: string) => {
+      const blocks = parseContent(content);
 
-        // 应该至少有一个内容块
-        expect(blocks.length).toBeGreaterThanOrEqual(1);
+      // 应该至少有一个内容块
+      expect(blocks.length).toBeGreaterThanOrEqual(1);
 
-        // 每个块都应该有类型和内容
-        blocks.forEach((block) => {
-          expect(block.type).toBeDefined();
-          expect(["text", "code", "image", "file"]).toContain(block.type);
-          // 内容可以为空字符串，但类型必须正确
-          expect(typeof block.content).toBe("string");
-        });
+      // 每个块都应该有类型和内容
+      blocks.forEach((block) => {
+        expect(block.type).toBeDefined();
+        expect(["text", "code", "image", "file"]).toContain(block.type);
+        // 内容可以为空字符串，但类型必须正确
+        expect(typeof block.content).toBe("string");
+      });
 
-        // 如果原始内容包含代码块，解析结果应包含代码块
-        if (content.includes("```")) {
-          const hasCodeBlock = blocks.some((b) => b.type === "code");
-          expect(hasCodeBlock).toBe(true);
-        }
+      // 如果原始内容包含代码块，解析结果应包含代码块
+      if (content.includes("```")) {
+        const hasCodeBlock = blocks.some((b) => b.type === "code");
+        expect(hasCodeBlock).toBe(true);
       }
-    );
+    });
 
     /**
      * 7.9 代码块语言标签正确性测试
@@ -578,10 +576,10 @@ describe("消息渲染属性测试", () => {
           "cpp",
           "c",
           "ruby",
-          "php"
+          "php",
         ),
       ],
-      { numRuns: 100 }
+      { numRuns: 100 },
     )(
       "代码块的语言标签应与原始 Markdown 中指定的语言一致",
       (language: string) => {
@@ -591,7 +589,7 @@ describe("消息渲染属性测试", () => {
         const codeBlock = blocks.find((b) => b.type === "code");
         expect(codeBlock).toBeDefined();
         expect(codeBlock?.language).toBe(language);
-      }
+      },
     );
 
     /**
@@ -605,17 +603,14 @@ describe("消息渲染属性测试", () => {
           .string({ minLength: 1, maxLength: 50 })
           .filter((s) => s.trim().length > 0 && !s.includes("```")),
       ],
-      { numRuns: 100 }
-    )(
-      "没有语言标签的代码块应默认为 plaintext",
-      (code: string) => {
-        const markdown = `\`\`\`\n${code}\n\`\`\``;
-        const blocks = parseContent(markdown);
+      { numRuns: 100 },
+    )("没有语言标签的代码块应默认为 plaintext", (code: string) => {
+      const markdown = `\`\`\`\n${code}\n\`\`\``;
+      const blocks = parseContent(markdown);
 
-        const codeBlock = blocks.find((b) => b.type === "code");
-        expect(codeBlock).toBeDefined();
-        expect(codeBlock?.language).toBe("plaintext");
-      }
-    );
+      const codeBlock = blocks.find((b) => b.type === "code");
+      expect(codeBlock).toBeDefined();
+      expect(codeBlock?.language).toBe("plaintext");
+    });
   });
 });

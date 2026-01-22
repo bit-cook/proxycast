@@ -1,19 +1,19 @@
 /**
  * 三阶段工作流管理器
- * 
+ *
  * 基于 planning-with-files 的核心机制，实现：
  * - Pre-Action → Action → Post-Action 三阶段工作流
  * - 自动化上下文工程和错误学习
  * - 2-Action 规则和 3次错误协议
  */
 
-import { ContextMemoryAPI } from '../api/contextMemory';
-import { ToolHooksAPI } from '../api/toolHooks';
+import { ContextMemoryAPI } from "../api/contextMemory";
+import { ToolHooksAPI } from "../api/toolHooks";
 
 export interface WorkflowPhase {
   number: number;
   name: string;
-  status: 'pending' | 'in_progress' | 'complete';
+  status: "pending" | "in_progress" | "complete";
   tasks: string[];
   notes?: string;
 }
@@ -62,23 +62,23 @@ export class ThreeStageWorkflowManager {
       this.sessionId,
       `任务计划: ${config.projectName}`,
       taskPlanContent,
-      5
+      5,
     );
 
     // 创建初始发现记录
     await ContextMemoryAPI.saveFinding(
       this.sessionId,
-      '工作流初始化',
+      "工作流初始化",
       `三阶段工作流已初始化\n项目: ${config.projectName}\n目标: ${config.goal}`,
-      ['初始化', '工作流'],
-      3
+      ["初始化", "工作流"],
+      3,
     );
 
     // 记录初始进度
     await ContextMemoryAPI.logProgress(
       this.sessionId,
-      '工作流启动',
-      `三阶段工作流已启动，共 ${config.phases.length} 个阶段`
+      "工作流启动",
+      `三阶段工作流已启动，共 ${config.phases.length} 个阶段`,
     );
   }
 
@@ -92,25 +92,27 @@ export class ThreeStageWorkflowManager {
       context.toolName || context.actionType,
       context.toolParameters || {},
       context.actionDescription,
-      context.messageCount
+      context.messageCount,
     );
 
     // 获取当前记忆上下文
-    const memoryContext = await ContextMemoryAPI.getMemoryContext(context.sessionId);
+    const memoryContext = await ContextMemoryAPI.getMemoryContext(
+      context.sessionId,
+    );
 
     // 检查是否应该避免该操作（3次错误协议）
     const shouldAvoid = await ContextMemoryAPI.shouldAvoidOperation(
       context.sessionId,
-      context.actionDescription
+      context.actionDescription,
     );
 
     if (shouldAvoid) {
       const warning = `⚠️ 3次错误协议警告: 该操作已失败3次，建议更换方法\n操作: ${context.actionDescription}`;
-      
+
       await ContextMemoryAPI.recordError({
         session_id: context.sessionId,
         error_description: `重复失败操作: ${context.actionDescription}`,
-        attempted_solution: '触发3次错误协议，建议更换方法',
+        attempted_solution: "触发3次错误协议，建议更换方法",
       });
 
       return `${warning}\n\n当前上下文:\n${memoryContext}`;
@@ -119,8 +121,8 @@ export class ThreeStageWorkflowManager {
     // 记录上下文刷新
     await ContextMemoryAPI.logProgress(
       context.sessionId,
-      'Pre-Action 上下文刷新',
-      `准备执行: ${context.actionDescription}`
+      "Pre-Action 上下文刷新",
+      `准备执行: ${context.actionDescription}`,
     );
 
     return `🔄 Pre-Action 上下文刷新完成\n\n准备执行: ${context.actionDescription}\n\n当前记忆上下文:\n${memoryContext}`;
@@ -129,12 +131,15 @@ export class ThreeStageWorkflowManager {
   /**
    * Action 阶段：执行实际操作
    */
-  async executeAction(context: ActionContext, actionResult: string): Promise<void> {
+  async executeAction(
+    context: ActionContext,
+    actionResult: string,
+  ): Promise<void> {
     // 记录操作执行
     await ContextMemoryAPI.logProgress(
       context.sessionId,
       `执行操作: ${context.actionType}`,
-      `操作描述: ${context.actionDescription}\n结果: ${actionResult.substring(0, 200)}${actionResult.length > 200 ? '...' : ''}`
+      `操作描述: ${context.actionDescription}\n结果: ${actionResult.substring(0, 200)}${actionResult.length > 200 ? "..." : ""}`,
     );
 
     // 如果是视觉操作，增加计数
@@ -146,8 +151,12 @@ export class ThreeStageWorkflowManager {
   /**
    * Post-Action 阶段：操作后的状态更新
    */
-  async postAction(context: ActionContext, actionResult: string, error?: string): Promise<string> {
-    let message = '📝 Post-Action 状态更新:\n\n';
+  async postAction(
+    context: ActionContext,
+    actionResult: string,
+    error?: string,
+  ): Promise<string> {
+    let message = "📝 Post-Action 状态更新:\n\n";
 
     // 处理错误情况
     if (error) {
@@ -159,11 +168,11 @@ export class ThreeStageWorkflowManager {
         context.sessionId,
         error,
         `尝试次数: ${attemptCount}`,
-        context.actionDescription
+        context.actionDescription,
       );
 
       message += `🚨 错误记录 (第${attemptCount}次尝试): ${error}\n`;
-      
+
       if (shouldAvoid) {
         message += `⚠️ 已达到3次错误限制，建议更换方法\n`;
       }
@@ -177,7 +186,7 @@ export class ThreeStageWorkflowManager {
       context.toolParameters || {},
       context.actionDescription,
       context.messageCount,
-      error
+      error,
     );
 
     // 应用 2-Action 规则
@@ -201,8 +210,8 @@ export class ThreeStageWorkflowManager {
    */
   private async apply2ActionRule(actionResult: string): Promise<void> {
     const timestamp = new Date().toLocaleTimeString();
-    const finding = `2-Action 规则触发 (${timestamp})\n\n最近操作结果:\n${actionResult.substring(0, 500)}${actionResult.length > 500 ? '...' : ''}`;
-    
+    const finding = `2-Action 规则触发 (${timestamp})\n\n最近操作结果:\n${actionResult.substring(0, 500)}${actionResult.length > 500 ? "..." : ""}`;
+
     await ContextMemoryAPI.apply2ActionRule(this.sessionId, finding);
   }
 
@@ -211,39 +220,43 @@ export class ThreeStageWorkflowManager {
    */
   async updatePhaseStatus(
     phaseNumber: number,
-    status: 'pending' | 'in_progress' | 'complete',
-    notes?: string
+    status: "pending" | "in_progress" | "complete",
+    notes?: string,
   ): Promise<void> {
     const statusText = {
-      pending: '待开始',
-      in_progress: '进行中',
-      complete: '已完成',
+      pending: "待开始",
+      in_progress: "进行中",
+      complete: "已完成",
     }[status];
 
     await ContextMemoryAPI.saveTaskPlan(
       this.sessionId,
       `阶段 ${phaseNumber} 状态更新`,
-      `阶段 ${phaseNumber} 状态已更新为: ${statusText}${notes ? `\n备注: ${notes}` : ''}`,
-      4
+      `阶段 ${phaseNumber} 状态已更新为: ${statusText}${notes ? `\n备注: ${notes}` : ""}`,
+      4,
     );
 
     await ContextMemoryAPI.logProgress(
       this.sessionId,
       `阶段 ${phaseNumber} 状态更新`,
-      `状态: ${statusText}${notes ? `\n备注: ${notes}` : ''}`
+      `状态: ${statusText}${notes ? `\n备注: ${notes}` : ""}`,
     );
   }
 
   /**
    * 记录重要发现
    */
-  async recordFinding(title: string, content: string, tags: string[] = []): Promise<void> {
+  async recordFinding(
+    title: string,
+    content: string,
+    tags: string[] = [],
+  ): Promise<void> {
     await ContextMemoryAPI.saveFinding(
       this.sessionId,
       title,
       content,
-      ['发现', ...tags],
-      4
+      ["发现", ...tags],
+      4,
     );
   }
 
@@ -255,8 +268,8 @@ export class ThreeStageWorkflowManager {
       this.sessionId,
       `决策: ${decision}`,
       `决策内容: ${decision}\n\n决策理由:\n${rationale}`,
-      ['决策', '重要'],
-      5
+      ["决策", "重要"],
+      5,
     );
   }
 
@@ -266,19 +279,22 @@ export class ThreeStageWorkflowManager {
   async checkCompletion(): Promise<{ isComplete: boolean; summary: string }> {
     const stats = await ContextMemoryAPI.getMemoryStats(this.sessionId);
     const memories = await ContextMemoryAPI.getSessionMemories(this.sessionId);
-    
+
     // 简单的完成度检查逻辑
-    const taskPlanMemories = memories.filter(m => m.file_type === 'task_plan');
-    const hasCompletedPhases = taskPlanMemories.some(m => 
-      m.content.includes('已完成') || m.content.includes('complete')
+    const taskPlanMemories = memories.filter(
+      (m) => m.file_type === "task_plan",
+    );
+    const hasCompletedPhases = taskPlanMemories.some(
+      (m) => m.content.includes("已完成") || m.content.includes("complete"),
     );
 
-    const summary = `📊 任务完成状态检查:\n\n` +
+    const summary =
+      `📊 任务完成状态检查:\n\n` +
       `- 活跃记忆: ${stats.active_memories} 个\n` +
       `- 未解决错误: ${stats.unresolved_errors} 个\n` +
       `- 已解决错误: ${stats.resolved_errors} 个\n` +
-      `- 是否有已完成阶段: ${hasCompletedPhases ? '是' : '否'}\n\n` +
-      `${stats.unresolved_errors > 0 ? '⚠️ 仍有未解决的错误需要处理' : '✅ 无未解决错误'}`;
+      `- 是否有已完成阶段: ${hasCompletedPhases ? "是" : "否"}\n\n` +
+      `${stats.unresolved_errors > 0 ? "⚠️ 仍有未解决的错误需要处理" : "✅ 无未解决错误"}`;
 
     return {
       isComplete: hasCompletedPhases && stats.unresolved_errors === 0,
@@ -300,10 +316,10 @@ export class ThreeStageWorkflowManager {
     // 保存会话摘要
     await ContextMemoryAPI.saveFinding(
       this.sessionId,
-      '工作流会话摘要',
+      "工作流会话摘要",
       `三阶段工作流已结束\n\n${summary}`,
-      ['摘要', '会话结束'],
-      5
+      ["摘要", "会话结束"],
+      5,
     );
 
     return `🎉 三阶段工作流已结束\n\n${summary}`;
@@ -320,7 +336,7 @@ export class ThreeStageWorkflowManager {
 
     config.phases.forEach((phase) => {
       content += `### 阶段 ${phase.number}: ${phase.name}\n`;
-      phase.tasks.forEach(task => {
+      phase.tasks.forEach((task) => {
         content += `- [ ] ${task}\n`;
       });
       content += `- **状态**: ${phase.status}\n\n`;
@@ -352,8 +368,17 @@ export class ThreeStageWorkflowManager {
    * 判断是否为视觉操作
    */
   private isVisualOperation(actionType: string): boolean {
-    const visualActions = ['view', 'read', 'browse', 'search', 'screenshot', 'image'];
-    return visualActions.some(action => actionType.toLowerCase().includes(action));
+    const visualActions = [
+      "view",
+      "read",
+      "browse",
+      "search",
+      "screenshot",
+      "image",
+    ];
+    return visualActions.some((action) =>
+      actionType.toLowerCase().includes(action),
+    );
   }
 
   /**
@@ -365,7 +390,7 @@ export class ThreeStageWorkflowManager {
     errorAttempts: Record<string, number>;
   }> {
     const memoryStats = await ContextMemoryAPI.getMemoryStats(this.sessionId);
-    
+
     return {
       memoryStats,
       visualOperationCount: this.visualOperationCount,

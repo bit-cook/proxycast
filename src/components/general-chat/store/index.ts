@@ -15,6 +15,6 @@ export {
   useCanvasState,
   useSessions,
   useIsStreaming,
-} from './useGeneralChatStore';
+} from "./useGeneralChatStore";
 
-export type { GeneralChatState } from './useGeneralChatStore';
+export type { GeneralChatState } from "./useGeneralChatStore";

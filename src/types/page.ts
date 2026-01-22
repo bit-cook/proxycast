@@ -19,4 +19,5 @@ export type Page =
   | "sysinfo"
   | "files"
   | "web"
+  | "image-analysis"
   | `plugin:${string}`;

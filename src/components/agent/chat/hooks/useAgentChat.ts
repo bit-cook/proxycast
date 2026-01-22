@@ -627,10 +627,12 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
 
             // 如果是写入文件工具，立即调用 onWriteFile 展开右边栏
             const toolName = data.tool_name.toLowerCase();
-            console.log(`[Tool Start] 工具名称: ${data.tool_name}, 小写: ${toolName}`);
+            console.log(
+              `[Tool Start] 工具名称: ${data.tool_name}, 小写: ${toolName}`,
+            );
             console.log(`[Tool Start] 工具参数: ${data.arguments}`);
             console.log(`[Tool Start] onWriteFile 回调存在: ${!!onWriteFile}`);
-            
+
             if (toolName.includes("write") || toolName.includes("create")) {
               console.log(`[Tool Start] 匹配到文件写入工具: ${data.tool_name}`);
               try {
@@ -638,12 +640,16 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
                 console.log(`[Tool Start] 解析后的参数:`, args);
                 const filePath = args.path || args.file_path || args.filePath;
                 const content = args.content || args.text || "";
-                console.log(`[Tool Start] 文件路径: ${filePath}, 内容长度: ${content.length}`);
+                console.log(
+                  `[Tool Start] 文件路径: ${filePath}, 内容长度: ${content.length}`,
+                );
                 if (filePath && content && onWriteFile) {
                   console.log(`[Tool Start] 触发文件写入: ${filePath}`);
                   onWriteFile(content, filePath);
                 } else {
-                  console.log(`[Tool Start] 文件写入条件不满足: filePath=${!!filePath}, content=${!!content}, onWriteFile=${!!onWriteFile}`);
+                  console.log(
+                    `[Tool Start] 文件写入条件不满足: filePath=${!!filePath}, content=${!!content}, onWriteFile=${!!onWriteFile}`,
+                  );
                 }
               } catch (e) {
                 console.warn("[Tool Start] 解析工具参数失败:", e);
@@ -683,11 +689,16 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
 
           case "action_required": {
             // 权限确认请求 - 添加到权限请求列表和 contentParts
-            console.log(`[Action Required] ${data.action_type} (${data.request_id})`);
+            console.log(
+              `[Action Required] ${data.action_type} (${data.request_id})`,
+            );
 
             const actionRequired: ActionRequired = {
               requestId: data.request_id,
-              actionType: data.action_type as "tool_confirmation" | "ask_user" | "elicitation",
+              actionType: data.action_type as
+                | "tool_confirmation"
+                | "ask_user"
+                | "elicitation",
               toolName: data.tool_name,
               arguments: data.arguments,
               prompt: data.prompt,
@@ -712,7 +723,10 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
 
                 return {
                   ...msg,
-                  actionRequests: [...(msg.actionRequests || []), actionRequired],
+                  actionRequests: [
+                    ...(msg.actionRequests || []),
+                    actionRequired,
+                  ],
                   // 添加到 contentParts，支持交错显示
                   contentParts: addActionRequiredToParts(
                     msg.contentParts || [],
@@ -958,7 +972,7 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
         confirmed: response.confirmed,
         response: response.response,
       });
-      
+
       // 移除已处理的权限请求
       setMessages((prev) =>
         prev.map((msg) => ({

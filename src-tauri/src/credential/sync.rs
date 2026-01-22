@@ -368,6 +368,12 @@ impl CredentialSyncService {
                     "Claude OAuth 凭证暂不支持同步到配置".to_string(),
                 ));
             }
+            // Anthropic 兼容格式 - 不支持同步到配置
+            PoolProviderType::AnthropicCompatible => {
+                return Err(SyncError::InvalidCredentialType(
+                    "Anthropic Compatible 凭证暂不支持同步到配置".to_string(),
+                ));
+            }
             // API Key Provider 类型 - 不支持同步到配置
             PoolProviderType::Anthropic
             | PoolProviderType::AzureOpenai

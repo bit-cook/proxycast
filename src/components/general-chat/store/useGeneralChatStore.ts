@@ -9,8 +9,8 @@
  * @requirements 8.1, 8.2
  */
 
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   Session,
   Message,
@@ -21,8 +21,8 @@ import type {
   ProviderSelectionState,
   ErrorInfo,
   PaginationState,
-} from '../types';
-import { ThreeStageWorkflowManager } from '@/lib/workflow/threeStageWorkflow';
+} from "../types";
+import { ThreeStageWorkflowManager } from "@/lib/workflow/threeStageWorkflow";
 import {
   DEFAULT_UI_STATE,
   DEFAULT_CANVAS_STATE,
@@ -30,7 +30,7 @@ import {
   DEFAULT_PROVIDER_SELECTION_STATE,
   DEFAULT_PAGINATION_STATE,
   parseApiError,
-} from '../types';
+} from "../types";
 
 // ============================================================================
 // Store 状态接口
@@ -110,7 +110,11 @@ export interface GeneralChatState {
 
   // ========== 三阶段工作流操作 ==========
   /** 初始化工作流 */
-  initializeWorkflow: (sessionId: string, projectName: string, goal: string) => Promise<void>;
+  initializeWorkflow: (
+    sessionId: string,
+    projectName: string,
+    goal: string,
+  ) => Promise<void>;
   /** 获取工作流管理器 */
   getWorkflowManager: (sessionId: string) => ThreeStageWorkflowManager | null;
   /** 启用/禁用工作流 */
@@ -133,7 +137,10 @@ export interface GeneralChatState {
   /** 加载更多历史消息 */
   loadMoreMessages: (sessionId: string) => Promise<void>;
   /** 设置分页状态 */
-  setPaginationState: (sessionId: string, state: Partial<PaginationState>) => void;
+  setPaginationState: (
+    sessionId: string,
+    state: Partial<PaginationState>,
+  ) => void;
   /** 重置分页状态 */
   resetPagination: (sessionId: string) => void;
   /** 获取分页状态 */
@@ -247,7 +254,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
         const timestamp = now();
         const newSession: Session = {
           id,
-          name: '新对话',
+          name: "新对话",
           createdAt: timestamp,
           updatedAt: timestamp,
           messageCount: 0,
@@ -309,7 +316,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
       renameSession: async (id: string, name: string) => {
         set((state) => ({
           sessions: state.sessions.map((s) =>
-            s.id === id ? { ...s, name, updatedAt: now() } : s
+            s.id === id ? { ...s, name, updatedAt: now() } : s,
           ),
         }));
 
@@ -324,7 +331,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
       updateSession: (id: string, updates: Partial<Session>) => {
         set((state) => ({
           sessions: state.sessions.map((s) =>
-            s.id === id ? { ...s, ...updates, updatedAt: now() } : s
+            s.id === id ? { ...s, ...updates, updatedAt: now() } : s,
           ),
         }));
       },
@@ -341,7 +348,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
 
         // 验证：必须有当前会话
         if (!currentSessionId) {
-          console.warn('No current session selected');
+          console.warn("No current session selected");
           return;
         }
 
@@ -355,28 +362,30 @@ export const useGeneralChatStore = create<GeneralChatState>()(
             // 将 File 对象转换为 base64 格式
             imageData = await Promise.all(
               images.map(async (file) => {
-                return new Promise<{ data: string; media_type: string }>((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onload = (e) => {
-                    const result = e.target?.result as string;
-                    if (!result) {
-                      reject(new Error('无法读取文件'));
-                      return;
-                    }
-                    // 提取 base64 数据（去掉 data:image/xxx;base64, 前缀）
-                    const base64Data = result.split(',')[1];
-                    resolve({
-                      data: base64Data,
-                      media_type: file.type,
-                    });
-                  };
-                  reader.onerror = () => reject(new Error('文件读取失败'));
-                  reader.readAsDataURL(file);
-                });
-              })
+                return new Promise<{ data: string; media_type: string }>(
+                  (resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                      const result = e.target?.result as string;
+                      if (!result) {
+                        reject(new Error("无法读取文件"));
+                        return;
+                      }
+                      // 提取 base64 数据（去掉 data:image/xxx;base64, 前缀）
+                      const base64Data = result.split(",")[1];
+                      resolve({
+                        data: base64Data,
+                        media_type: file.type,
+                      });
+                    };
+                    reader.onerror = () => reject(new Error("文件读取失败"));
+                    reader.readAsDataURL(file);
+                  },
+                );
+              }),
             );
           } catch (error) {
-            console.error('图片处理失败:', error);
+            console.error("图片处理失败:", error);
             return;
           }
         }
@@ -385,17 +394,19 @@ export const useGeneralChatStore = create<GeneralChatState>()(
         const userMessage: Message = {
           id: messageId,
           sessionId: currentSessionId,
-          role: 'user',
-          content: content.trim() || '[图片]',
+          role: "user",
+          content: content.trim() || "[图片]",
           blocks: [
-            ...(content.trim() ? [{ type: 'text' as const, content: content.trim() }] : []),
+            ...(content.trim()
+              ? [{ type: "text" as const, content: content.trim() }]
+              : []),
             ...(imageData?.map((img) => ({
-              type: 'image' as const,
+              type: "image" as const,
               content: `data:${img.media_type};base64,${img.data}`,
               mimeType: img.media_type,
             })) || []),
           ],
-          status: 'complete',
+          status: "complete",
           createdAt: timestamp,
         };
 
@@ -418,10 +429,10 @@ export const useGeneralChatStore = create<GeneralChatState>()(
         const assistantMessage: Message = {
           id: assistantMessageId,
           sessionId: currentSessionId,
-          role: 'assistant',
-          content: '',
+          role: "assistant",
+          content: "",
           blocks: [],
-          status: 'pending',
+          status: "pending",
           createdAt: timestamp + 1,
         };
 
@@ -429,7 +440,10 @@ export const useGeneralChatStore = create<GeneralChatState>()(
         set((state) => ({
           messages: {
             ...state.messages,
-            [currentSessionId]: [...(state.messages[currentSessionId] || []), assistantMessage],
+            [currentSessionId]: [
+              ...(state.messages[currentSessionId] || []),
+              assistantMessage,
+            ],
           },
         }));
 
@@ -437,16 +451,23 @@ export const useGeneralChatStore = create<GeneralChatState>()(
         get().startStreaming(assistantMessageId);
 
         // 三阶段工作流集成
-        const { workflowEnabled, workflowManagers, messages: allMessages } = get();
+        const {
+          workflowEnabled,
+          workflowManagers,
+          messages: allMessages,
+        } = get();
         let workflowManager = workflowManagers[currentSessionId];
-        
+
         // 检查是否应该自动启用工作流
-        if (!workflowManager && get().shouldAutoEnableWorkflow(currentSessionId)) {
+        if (
+          !workflowManager &&
+          get().shouldAutoEnableWorkflow(currentSessionId)
+        ) {
           // 自动初始化工作流
           await get().initializeWorkflow(
             currentSessionId,
-            '智能对话任务',
-            '协助用户完成复杂的对话任务，提供准确和有用的回答'
+            "智能对话任务",
+            "协助用户完成复杂的对话任务，提供准确和有用的回答",
           );
           workflowManager = get().workflowManagers[currentSessionId];
         }
@@ -457,12 +478,12 @@ export const useGeneralChatStore = create<GeneralChatState>()(
             const messageCount = (allMessages[currentSessionId] || []).length;
             const actionContext = {
               sessionId: currentSessionId,
-              actionType: 'send_message',
-              actionDescription: `发送消息: ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`,
-              toolName: 'aster_agent_chat_stream',
+              actionType: "send_message",
+              actionDescription: `发送消息: ${content.substring(0, 100)}${content.length > 100 ? "..." : ""}`,
+              toolName: "aster_agent_chat_stream",
               toolParameters: {
-                message: content.trim() || '请分析这张图片',
-                hasImages: imageData ? 'true' : 'false',
+                message: content.trim() || "请分析这张图片",
+                hasImages: imageData ? "true" : "false",
               },
               messageCount,
             };
@@ -470,16 +491,16 @@ export const useGeneralChatStore = create<GeneralChatState>()(
             // Pre-Action: 上下文刷新
             await workflowManager.preAction(actionContext);
           } catch (error) {
-            console.warn('工作流 Pre-Action 执行失败:', error);
+            console.warn("工作流 Pre-Action 执行失败:", error);
           }
         }
 
         try {
           // 调用 Tauri 命令发送消息并开始流式响应
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('aster_agent_chat_stream', {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("aster_agent_chat_stream", {
             sessionId: currentSessionId,
-            message: content.trim() || '请分析这张图片',
+            message: content.trim() || "请分析这张图片",
             eventName: `general-chat-stream-${currentSessionId}`,
             images: imageData,
           });
@@ -487,40 +508,49 @@ export const useGeneralChatStore = create<GeneralChatState>()(
           // 如果启用了工作流，执行 Action 阶段
           if (workflowManager && workflowEnabled) {
             try {
-              const messageCount = (get().messages[currentSessionId] || []).length;
+              const messageCount = (get().messages[currentSessionId] || [])
+                .length;
               const actionContext = {
                 sessionId: currentSessionId,
-                actionType: 'send_message',
-                actionDescription: `发送消息: ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`,
-                toolName: 'aster_agent_chat_stream',
+                actionType: "send_message",
+                actionDescription: `发送消息: ${content.substring(0, 100)}${content.length > 100 ? "..." : ""}`,
+                toolName: "aster_agent_chat_stream",
                 messageCount,
               };
 
-              await workflowManager.executeAction(actionContext, '消息发送成功，等待 AI 响应');
+              await workflowManager.executeAction(
+                actionContext,
+                "消息发送成功，等待 AI 响应",
+              );
             } catch (error) {
-              console.warn('工作流 Action 执行失败:', error);
+              console.warn("工作流 Action 执行失败:", error);
             }
           }
         } catch (error) {
-          console.error('发送消息失败:', error);
-          
+          console.error("发送消息失败:", error);
+
           // 如果启用了工作流，执行 Post-Action 阶段（错误情况）
           if (workflowManager && workflowEnabled) {
             try {
-              const messageCount = (get().messages[currentSessionId] || []).length;
+              const messageCount = (get().messages[currentSessionId] || [])
+                .length;
               const actionContext = {
                 sessionId: currentSessionId,
-                actionType: 'send_message',
-                actionDescription: `发送消息: ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`,
+                actionType: "send_message",
+                actionDescription: `发送消息: ${content.substring(0, 100)}${content.length > 100 ? "..." : ""}`,
                 messageCount,
               };
 
-              await workflowManager.postAction(actionContext, '', error as string);
+              await workflowManager.postAction(
+                actionContext,
+                "",
+                error as string,
+              );
             } catch (workflowError) {
-              console.warn('工作流 Post-Action 执行失败:', workflowError);
+              console.warn("工作流 Post-Action 执行失败:", workflowError);
             }
           }
-          
+
           // 设置错误状态
           get().setMessageError(assistantMessageId, error as string);
         }
@@ -538,8 +568,12 @@ export const useGeneralChatStore = create<GeneralChatState>()(
           const currentMessages = messages[currentSessionId] || [];
           const updatedMessages = currentMessages.map((m) =>
             m.id === streaming.currentMessageId
-              ? { ...m, status: 'complete' as const, content: streaming.partialContent }
-              : m
+              ? {
+                  ...m,
+                  status: "complete" as const,
+                  content: streaming.partialContent,
+                }
+              : m,
           );
 
           set((state) => ({
@@ -572,7 +606,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
           const updatedMessages = currentMessages.map((m) =>
             m.id === streaming.currentMessageId
               ? { ...m, content: get().streaming.partialContent }
-              : m
+              : m,
           );
 
           set((state) => ({
@@ -585,7 +619,13 @@ export const useGeneralChatStore = create<GeneralChatState>()(
       },
 
       finalizeMessage: async (metadata?: MessageMetadata) => {
-        const { streaming, currentSessionId, messages, workflowManagers, workflowEnabled } = get();
+        const {
+          streaming,
+          currentSessionId,
+          messages,
+          workflowManagers,
+          workflowEnabled,
+        } = get();
 
         if (!streaming.currentMessageId || !currentSessionId) {
           return;
@@ -596,11 +636,11 @@ export const useGeneralChatStore = create<GeneralChatState>()(
           m.id === streaming.currentMessageId
             ? {
                 ...m,
-                status: 'complete' as const,
+                status: "complete" as const,
                 content: streaming.partialContent,
                 metadata,
               }
-            : m
+            : m,
         );
 
         set((state) => ({
@@ -618,14 +658,17 @@ export const useGeneralChatStore = create<GeneralChatState>()(
             const messageCount = updatedMessages.length;
             const actionContext = {
               sessionId: currentSessionId,
-              actionType: 'receive_message',
-              actionDescription: `接收 AI 响应: ${streaming.partialContent.substring(0, 100)}${streaming.partialContent.length > 100 ? '...' : ''}`,
+              actionType: "receive_message",
+              actionDescription: `接收 AI 响应: ${streaming.partialContent.substring(0, 100)}${streaming.partialContent.length > 100 ? "..." : ""}`,
               messageCount,
             };
 
-            await workflowManager.postAction(actionContext, streaming.partialContent);
+            await workflowManager.postAction(
+              actionContext,
+              streaming.partialContent,
+            );
           } catch (error) {
-            console.warn('工作流 Post-Action 执行失败:', error);
+            console.warn("工作流 Post-Action 执行失败:", error);
           }
         }
       },
@@ -655,7 +698,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
 
         const currentMessages = messages[currentSessionId] || [];
         const updatedMessages = currentMessages.map((m) =>
-          m.id === messageId ? { ...m, ...updates } : m
+          m.id === messageId ? { ...m, ...updates } : m,
         );
 
         set((state) => ({
@@ -671,7 +714,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
           streaming: {
             isStreaming: true,
             currentMessageId: messageId,
-            partialContent: '',
+            partialContent: "",
           },
         });
       },
@@ -681,15 +724,14 @@ export const useGeneralChatStore = create<GeneralChatState>()(
         if (!currentSessionId) return;
 
         // 如果传入的是字符串，解析为 ErrorInfo
-        const errorInfo: ErrorInfo = typeof error === 'string' 
-          ? parseApiError(error)
-          : error;
+        const errorInfo: ErrorInfo =
+          typeof error === "string" ? parseApiError(error) : error;
 
         const currentMessages = messages[currentSessionId] || [];
         const updatedMessages = currentMessages.map((m) =>
-          m.id === messageId 
-            ? { ...m, status: 'error' as const, error: errorInfo } 
-            : m
+          m.id === messageId
+            ? { ...m, status: "error" as const, error: errorInfo }
+            : m,
         );
 
         set((state) => ({
@@ -707,19 +749,21 @@ export const useGeneralChatStore = create<GeneralChatState>()(
 
         const currentMessages = messages[currentSessionId] || [];
         const errorMessage = currentMessages.find((m) => m.id === messageId);
-        
-        if (!errorMessage || errorMessage.status !== 'error') {
+
+        if (!errorMessage || errorMessage.status !== "error") {
           return;
         }
 
         // 找到错误消息之前的用户消息
-        const messageIndex = currentMessages.findIndex((m) => m.id === messageId);
+        const messageIndex = currentMessages.findIndex(
+          (m) => m.id === messageId,
+        );
         if (messageIndex <= 0) return;
 
         // 查找最近的用户消息
         let userMessage: Message | null = null;
         for (let i = messageIndex - 1; i >= 0; i--) {
-          if (currentMessages[i].role === 'user') {
+          if (currentMessages[i].role === "user") {
             userMessage = currentMessages[i];
             break;
           }
@@ -729,9 +773,14 @@ export const useGeneralChatStore = create<GeneralChatState>()(
 
         // 清除错误状态，将消息状态改为 pending
         const updatedMessages = currentMessages.map((m) =>
-          m.id === messageId 
-            ? { ...m, status: 'pending' as const, error: undefined, content: '' } 
-            : m
+          m.id === messageId
+            ? {
+                ...m,
+                status: "pending" as const,
+                error: undefined,
+                content: "",
+              }
+            : m,
         );
 
         set((state) => ({
@@ -755,9 +804,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
 
         const currentMessages = messages[currentSessionId] || [];
         const updatedMessages = currentMessages.map((m) =>
-          m.id === messageId 
-            ? { ...m, error: undefined } 
-            : m
+          m.id === messageId ? { ...m, error: undefined } : m,
         );
 
         set((state) => ({
@@ -772,10 +819,15 @@ export const useGeneralChatStore = create<GeneralChatState>()(
 
       loadMoreMessages: async (sessionId: string) => {
         const { messages, pagination } = get();
-        const currentPagination = pagination[sessionId] || { ...DEFAULT_PAGINATION_STATE };
+        const currentPagination = pagination[sessionId] || {
+          ...DEFAULT_PAGINATION_STATE,
+        };
 
         // 如果正在加载或没有更多消息，直接返回
-        if (currentPagination.isLoadingMore || !currentPagination.hasMoreMessages) {
+        if (
+          currentPagination.isLoadingMore ||
+          !currentPagination.hasMoreMessages
+        ) {
           return;
         }
 
@@ -793,23 +845,32 @@ export const useGeneralChatStore = create<GeneralChatState>()(
         try {
           // 获取当前会话的消息列表
           const currentMessages = messages[sessionId] || [];
-          
+
           // 获取最早消息的 ID 用于分页
-          const oldestMessage = currentMessages.length > 0 ? currentMessages[0] : null;
+          const oldestMessage =
+            currentMessages.length > 0 ? currentMessages[0] : null;
           const beforeId = oldestMessage?.id || null;
 
           // 调用 Tauri 命令获取更多消息
-          const { invoke } = await import('@tauri-apps/api/core');
-          const olderMessages = await invoke<Array<{
-            id: string;
-            session_id: string;
-            role: string;
-            content: string;
-            blocks: Array<{ type: string; content: string; language?: string; filename?: string; mime_type?: string }> | null;
-            status: string;
-            created_at: number;
-            metadata: Record<string, unknown> | null;
-          }>>('general_chat_get_messages', {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const olderMessages = await invoke<
+            Array<{
+              id: string;
+              session_id: string;
+              role: string;
+              content: string;
+              blocks: Array<{
+                type: string;
+                content: string;
+                language?: string;
+                filename?: string;
+                mime_type?: string;
+              }> | null;
+              status: string;
+              created_at: number;
+              metadata: Record<string, unknown> | null;
+            }>
+          >("general_chat_get_messages", {
             sessionId,
             limit: currentPagination.pageSize,
             beforeId,
@@ -819,32 +880,38 @@ export const useGeneralChatStore = create<GeneralChatState>()(
           const convertedMessages: Message[] = olderMessages.map((msg) => ({
             id: msg.id,
             sessionId: msg.session_id,
-            role: msg.role as Message['role'],
+            role: msg.role as Message["role"],
             content: msg.content,
             blocks: msg.blocks?.map((b) => ({
-              type: b.type as Message['blocks'][0]['type'],
+              type: b.type as Message["blocks"][0]["type"],
               content: b.content,
               language: b.language,
               filename: b.filename,
               mimeType: b.mime_type,
-            })) || [{ type: 'text' as const, content: msg.content }],
-            status: msg.status as Message['status'],
+            })) || [{ type: "text" as const, content: msg.content }],
+            status: msg.status as Message["status"],
             createdAt: msg.created_at,
-            metadata: msg.metadata ? {
-              model: msg.metadata.model as string | undefined,
-              tokens: msg.metadata.tokens as number | undefined,
-              duration: msg.metadata.duration as number | undefined,
-            } : undefined,
+            metadata: msg.metadata
+              ? {
+                  model: msg.metadata.model as string | undefined,
+                  tokens: msg.metadata.tokens as number | undefined,
+                  duration: msg.metadata.duration as number | undefined,
+                }
+              : undefined,
           }));
 
           // 判断是否还有更多消息
-          const hasMore = convertedMessages.length >= currentPagination.pageSize;
+          const hasMore =
+            convertedMessages.length >= currentPagination.pageSize;
 
           // 将旧消息添加到列表前面
           set((state) => ({
             messages: {
               ...state.messages,
-              [sessionId]: [...convertedMessages, ...(state.messages[sessionId] || [])],
+              [sessionId]: [
+                ...convertedMessages,
+                ...(state.messages[sessionId] || []),
+              ],
             },
             pagination: {
               ...state.pagination,
@@ -852,12 +919,15 @@ export const useGeneralChatStore = create<GeneralChatState>()(
                 ...currentPagination,
                 isLoadingMore: false,
                 hasMoreMessages: hasMore,
-                oldestMessageId: convertedMessages.length > 0 ? convertedMessages[0].id : currentPagination.oldestMessageId,
+                oldestMessageId:
+                  convertedMessages.length > 0
+                    ? convertedMessages[0].id
+                    : currentPagination.oldestMessageId,
               },
             },
           }));
         } catch (error) {
-          console.error('加载更多消息失败:', error);
+          console.error("加载更多消息失败:", error);
           // 加载失败时重置加载状态
           set((state) => ({
             pagination: {
@@ -871,12 +941,17 @@ export const useGeneralChatStore = create<GeneralChatState>()(
         }
       },
 
-      setPaginationState: (sessionId: string, state: Partial<PaginationState>) => {
+      setPaginationState: (
+        sessionId: string,
+        state: Partial<PaginationState>,
+      ) => {
         set((prev) => ({
           pagination: {
             ...prev.pagination,
             [sessionId]: {
-              ...(prev.pagination[sessionId] || { ...DEFAULT_PAGINATION_STATE }),
+              ...(prev.pagination[sessionId] || {
+                ...DEFAULT_PAGINATION_STATE,
+              }),
               ...state,
             },
           },
@@ -1038,9 +1113,13 @@ export const useGeneralChatStore = create<GeneralChatState>()(
 
       // ========== 三阶段工作流操作实现 ==========
 
-      initializeWorkflow: async (sessionId: string, projectName: string, goal: string) => {
+      initializeWorkflow: async (
+        sessionId: string,
+        projectName: string,
+        goal: string,
+      ) => {
         const { workflowManagers } = get();
-        
+
         // 如果已存在工作流管理器，直接返回
         if (workflowManagers[sessionId]) {
           return;
@@ -1048,7 +1127,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
 
         // 创建新的工作流管理器
         const workflowManager = new ThreeStageWorkflowManager(sessionId);
-        
+
         // 初始化工作流配置
         const workflowConfig = {
           sessionId,
@@ -1057,52 +1136,52 @@ export const useGeneralChatStore = create<GeneralChatState>()(
           phases: [
             {
               number: 1,
-              name: '需求理解与发现',
-              status: 'in_progress' as const,
+              name: "需求理解与发现",
+              status: "in_progress" as const,
               tasks: [
-                '理解用户意图和需求',
-                '识别约束条件和依赖关系',
-                '记录发现到 findings.md',
+                "理解用户意图和需求",
+                "识别约束条件和依赖关系",
+                "记录发现到 findings.md",
               ],
             },
             {
               number: 2,
-              name: '规划与结构设计',
-              status: 'pending' as const,
+              name: "规划与结构设计",
+              status: "pending" as const,
               tasks: [
-                '定义技术方案和架构',
-                '创建项目结构（如需要）',
-                '记录关键决策和理由',
+                "定义技术方案和架构",
+                "创建项目结构（如需要）",
+                "记录关键决策和理由",
               ],
             },
             {
               number: 3,
-              name: '实施执行',
-              status: 'pending' as const,
+              name: "实施执行",
+              status: "pending" as const,
               tasks: [
-                '按计划逐步执行',
-                '执行前先写入文件',
-                '增量测试并记录结果',
+                "按计划逐步执行",
+                "执行前先写入文件",
+                "增量测试并记录结果",
               ],
             },
             {
               number: 4,
-              name: '测试与验证',
-              status: 'pending' as const,
+              name: "测试与验证",
+              status: "pending" as const,
               tasks: [
-                '验证所有需求已满足',
-                '记录测试结果到 progress.md',
-                '修复发现的问题并记录解决方案',
+                "验证所有需求已满足",
+                "记录测试结果到 progress.md",
+                "修复发现的问题并记录解决方案",
               ],
             },
             {
               number: 5,
-              name: '交付与完成',
-              status: 'pending' as const,
+              name: "交付与完成",
+              status: "pending" as const,
               tasks: [
-                '审查所有输出文件和交付物',
-                '确保完整性和质量',
-                '向用户交付最终结果',
+                "审查所有输出文件和交付物",
+                "确保完整性和质量",
+                "向用户交付最终结果",
               ],
             },
           ],
@@ -1111,7 +1190,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
         try {
           // 初始化工作流
           await workflowManager.initializeWorkflow(workflowConfig);
-          
+
           // 保存到状态中
           set((state) => ({
             workflowManagers: {
@@ -1122,7 +1201,7 @@ export const useGeneralChatStore = create<GeneralChatState>()(
 
           console.log(`三阶段工作流已为会话 ${sessionId} 初始化`);
         } catch (error) {
-          console.error('工作流初始化失败:', error);
+          console.error("工作流初始化失败:", error);
           throw error;
         }
       },
@@ -1143,13 +1222,13 @@ export const useGeneralChatStore = create<GeneralChatState>()(
       shouldAutoEnableWorkflow: (sessionId: string) => {
         const { messages, workflowThreshold, workflowEnabled } = get();
         if (!workflowEnabled) return false;
-        
+
         const messageCount = (messages[sessionId] || []).length;
         return messageCount >= workflowThreshold;
       },
     }),
     {
-      name: 'general-chat-storage',
+      name: "general-chat-storage",
       storage: createJSONStorage(() => localStorage),
       // 只持久化 UI 状态、当前会话 ID 和 Provider 选择
       partialize: (state) => ({
@@ -1160,8 +1239,8 @@ export const useGeneralChatStore = create<GeneralChatState>()(
           selectedModelId: state.providerSelection.selectedModelId,
         },
       }),
-    }
-  )
+    },
+  ),
 );
 
 // ============================================================================
@@ -1200,7 +1279,8 @@ export const useUIState = () => useGeneralChatStore((state) => state.ui);
 /**
  * 获取画布状态
  */
-export const useCanvasState = () => useGeneralChatStore((state) => state.canvas);
+export const useCanvasState = () =>
+  useGeneralChatStore((state) => state.canvas);
 
 /**
  * 获取会话列表
@@ -1238,7 +1318,7 @@ export const useSelectedModelId = () =>
 export const useCurrentPagination = () =>
   useGeneralChatStore((state) => {
     const { pagination, currentSessionId } = state;
-    return currentSessionId 
+    return currentSessionId
       ? pagination[currentSessionId] || { ...DEFAULT_PAGINATION_STATE }
       : { ...DEFAULT_PAGINATION_STATE };
   });

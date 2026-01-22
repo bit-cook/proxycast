@@ -7,8 +7,6 @@ import {
   User,
   FileCode,
   Activity,
-  Cpu,
-  Globe,
   Minimize2,
   Monitor,
   Maximize2,
@@ -82,22 +80,6 @@ export const onboardingPlugins: OnboardingPlugin[] = [
     icon: Activity,
     downloadUrl:
       "https://github.com/aiclientproxy/flow-monitor/releases/latest/download/flow-monitor-plugin.zip",
-  },
-  {
-    id: "machine-id-tool",
-    name: "机器码管理工具",
-    description: "查看、修改和管理系统机器码，支持跨平台操作",
-    icon: Cpu,
-    downloadUrl:
-      "https://github.com/aiclientproxy/MachineIdTool/releases/latest/download/machine-id-tool-plugin.zip",
-  },
-  {
-    id: "browser-interception",
-    name: "浏览器拦截器",
-    description: "拦截桌面应用的浏览器启动，支持手动复制 URL 到指纹浏览器",
-    icon: Globe,
-    downloadUrl:
-      "https://github.com/aiclientproxy/browser-interception/releases/latest/download/browser-interception-plugin.zip",
   },
 ];
 

@@ -131,7 +131,6 @@ export const PROVIDER_CONFIG: Record<
       "claude-opus-4-5-20251101",
       "claude-sonnet-4-5-20250929",
       "claude-sonnet-4-20250514",
-
     ],
   },
   openai: {
@@ -153,10 +152,7 @@ export const PROVIDER_CONFIG: Record<
   },
   gemini: {
     label: "Gemini",
-    models: [
-      "gemini-3-pro-preview",
-      "gemini-3-flash-preview",
-    ],
+    models: ["gemini-3-pro-preview", "gemini-3-flash-preview"],
   },
   qwen: {
     label: "通义千问",

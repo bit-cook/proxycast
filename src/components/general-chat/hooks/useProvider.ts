@@ -9,11 +9,14 @@
  * @requirements 5.1, 5.2, 5.3
  */
 
-import { useEffect, useCallback, useMemo, useRef } from 'react';
-import { useConfiguredProviders, type ConfiguredProvider } from '@/hooks/useConfiguredProviders';
-import { useProviderModels } from '@/hooks/useProviderModels';
-import { useGeneralChatStore } from '../store/useGeneralChatStore';
-import type { ProviderConfig } from '../types';
+import { useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  useConfiguredProviders,
+  type ConfiguredProvider,
+} from "@/hooks/useConfiguredProviders";
+import { useProviderModels } from "@/hooks/useProviderModels";
+import { useGeneralChatStore } from "../store/useGeneralChatStore";
+import type { ProviderConfig } from "../types";
 
 // ============================================================================
 // 类型定义
@@ -131,21 +134,34 @@ export function useProvider(): UseProviderResult {
     if (providersLoading) return;
 
     // 如果没有选中的 Provider，且有可用的 Provider，自动选择第一个
-    if (!selectedProviderKey && providers.length > 0 && !providerInitializedRef.current) {
+    if (
+      !selectedProviderKey &&
+      providers.length > 0 &&
+      !providerInitializedRef.current
+    ) {
       providerInitializedRef.current = true;
       setSelectedProvider(providers[0].key);
       return;
     }
 
     // 如果选中的 Provider 不在列表中（可能被删除），重新选择
-    if (selectedProviderKey && !providers.find((p) => p.key === selectedProviderKey)) {
+    if (
+      selectedProviderKey &&
+      !providers.find((p) => p.key === selectedProviderKey)
+    ) {
       if (providers.length > 0) {
         setSelectedProvider(providers[0].key);
       } else {
         setSelectedProvider(null);
       }
     }
-  }, [providersLoading, providers.length, selectedProviderKey, setSelectedProvider, providers]);
+  }, [
+    providersLoading,
+    providers.length,
+    selectedProviderKey,
+    setSelectedProvider,
+    providers,
+  ]);
 
   // 当 Provider 切换时，重置模型初始化标记
   useEffect(() => {
@@ -160,7 +176,11 @@ export function useProvider(): UseProviderResult {
     if (modelsLoading) return;
 
     // 如果没有选中的模型，且有可用的模型，自动选择第一个
-    if (!selectedModelId && availableModelIds.length > 0 && !modelInitializedRef.current) {
+    if (
+      !selectedModelId &&
+      availableModelIds.length > 0 &&
+      !modelInitializedRef.current
+    ) {
       modelInitializedRef.current = true;
       setSelectedModel(availableModelIds[0]);
       return;
@@ -190,7 +210,7 @@ export function useProvider(): UseProviderResult {
         setSelectedModel(null);
       }
     },
-    [providers, setSelectedProvider, setSelectedModel]
+    [providers, setSelectedProvider, setSelectedModel],
   );
 
   /**
@@ -202,7 +222,7 @@ export function useProvider(): UseProviderResult {
         setSelectedModel(modelId);
       }
     },
-    [availableModelIds, setSelectedModel]
+    [availableModelIds, setSelectedModel],
   );
 
   /**
@@ -216,7 +236,9 @@ export function useProvider(): UseProviderResult {
       return false;
     }
 
-    const currentIndex = providers.findIndex((p) => p.key === selectedProviderKey);
+    const currentIndex = providers.findIndex(
+      (p) => p.key === selectedProviderKey,
+    );
     const nextIndex = (currentIndex + 1) % providers.length;
     const nextProvider = providers[nextIndex];
 

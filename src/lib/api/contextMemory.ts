@@ -1,10 +1,10 @@
 /**
  * 上下文记忆管理 API
- * 
+ *
  * 基于文件系统的持久化记忆系统，解决 AI Agent 的上下文丢失、目标漂移、错误重复问题
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from "@tauri-apps/api/core";
 
 export interface MemoryEntry {
   id: string;
@@ -19,7 +19,11 @@ export interface MemoryEntry {
   archived: boolean;
 }
 
-export type MemoryFileType = 'task_plan' | 'findings' | 'progress' | 'error_log';
+export type MemoryFileType =
+  | "task_plan"
+  | "findings"
+  | "progress"
+  | "error_log";
 
 export interface MemoryStats {
   session_id: string;
@@ -60,7 +64,7 @@ export class ContextMemoryAPI {
    * 保存记忆条目
    */
   static async saveMemoryEntry(request: SaveMemoryRequest): Promise<void> {
-    return invoke('save_memory_entry', { request });
+    return invoke("save_memory_entry", { request });
   }
 
   /**
@@ -68,9 +72,9 @@ export class ContextMemoryAPI {
    */
   static async getSessionMemories(
     sessionId: string,
-    fileType?: MemoryFileType
+    fileType?: MemoryFileType,
   ): Promise<MemoryEntry[]> {
-    return invoke('get_session_memories', {
+    return invoke("get_session_memories", {
       sessionId,
       fileType: fileType || null,
     });
@@ -80,14 +84,14 @@ export class ContextMemoryAPI {
    * 获取记忆上下文（用于 AI 上下文）
    */
   static async getMemoryContext(sessionId: string): Promise<string> {
-    return invoke('get_memory_context', { sessionId });
+    return invoke("get_memory_context", { sessionId });
   }
 
   /**
    * 记录错误
    */
   static async recordError(request: RecordErrorRequest): Promise<void> {
-    return invoke('record_error', { request });
+    return invoke("record_error", { request });
   }
 
   /**
@@ -95,9 +99,9 @@ export class ContextMemoryAPI {
    */
   static async shouldAvoidOperation(
     sessionId: string,
-    operationDescription: string
+    operationDescription: string,
   ): Promise<boolean> {
-    return invoke('should_avoid_operation', {
+    return invoke("should_avoid_operation", {
       sessionId,
       operationDescription,
     });
@@ -107,21 +111,21 @@ export class ContextMemoryAPI {
    * 标记错误已解决
    */
   static async markErrorResolved(request: ResolveErrorRequest): Promise<void> {
-    return invoke('mark_error_resolved', { request });
+    return invoke("mark_error_resolved", { request });
   }
 
   /**
    * 获取记忆统计信息
    */
   static async getMemoryStats(sessionId: string): Promise<MemoryStats> {
-    return invoke('get_memory_stats', { sessionId });
+    return invoke("get_memory_stats", { sessionId });
   }
 
   /**
    * 清理过期记忆
    */
   static async cleanupExpiredMemories(): Promise<void> {
-    return invoke('cleanup_expired_memories');
+    return invoke("cleanup_expired_memories");
   }
 
   /**
@@ -131,14 +135,14 @@ export class ContextMemoryAPI {
     sessionId: string,
     title: string,
     content: string,
-    priority: number = 3
+    priority: number = 3,
   ): Promise<void> {
     return this.saveMemoryEntry({
       session_id: sessionId,
-      file_type: 'task_plan',
+      file_type: "task_plan",
       title,
       content,
-      tags: ['任务计划'],
+      tags: ["任务计划"],
       priority,
     });
   }
@@ -151,14 +155,14 @@ export class ContextMemoryAPI {
     title: string,
     content: string,
     tags: string[] = [],
-    priority: number = 4
+    priority: number = 4,
   ): Promise<void> {
     return this.saveMemoryEntry({
       session_id: sessionId,
-      file_type: 'findings',
+      file_type: "findings",
       title,
       content,
-      tags: ['发现', ...tags],
+      tags: ["发现", ...tags],
       priority,
     });
   }
@@ -169,14 +173,14 @@ export class ContextMemoryAPI {
   static async logProgress(
     sessionId: string,
     title: string,
-    content: string
+    content: string,
   ): Promise<void> {
     return this.saveMemoryEntry({
       session_id: sessionId,
-      file_type: 'progress',
+      file_type: "progress",
       title,
       content,
-      tags: ['进度'],
+      tags: ["进度"],
       priority: 2,
     });
   }
@@ -186,15 +190,15 @@ export class ContextMemoryAPI {
    */
   static async apply2ActionRule(
     sessionId: string,
-    finding: string
+    finding: string,
   ): Promise<void> {
     const timestamp = new Date().toLocaleTimeString();
     return this.saveFinding(
       sessionId,
       `2-Action 规则发现 (${timestamp})`,
       finding,
-      ['2-Action规则', '自动保存'],
-      4
+      ["2-Action规则", "自动保存"],
+      4,
     );
   }
 
@@ -205,7 +209,7 @@ export class ContextMemoryAPI {
     sessionId: string,
     errorDescription: string,
     attemptedSolution: string,
-    operationDescription?: string
+    operationDescription?: string,
   ): Promise<{ shouldAvoid: boolean }> {
     // 记录错误
     await this.recordError({

@@ -475,7 +475,8 @@ export function AgentChatPage({
       setGeneralCanvasState((prev) => ({
         ...prev,
         isOpen: !prev.isOpen,
-        contentType: prev.contentType === "empty" ? "markdown" : prev.contentType,
+        contentType:
+          prev.contentType === "empty" ? "markdown" : prev.contentType,
         content: prev.content || "# 新文档\n\n在这里开始编写内容...",
       }));
       setLayoutMode((prev) => (prev === "chat" ? "chat-canvas" : "chat"));
@@ -490,7 +491,8 @@ export function AgentChatPage({
             createInitialCanvasState(
               mappedTheme,
               "# 新文档\n\n在这里开始编写内容...",
-            ) || createInitialDocumentState("# 新文档\n\n在这里开始编写内容...");
+            ) ||
+            createInitialDocumentState("# 新文档\n\n在这里开始编写内容...");
           setCanvasState(initialState);
         }
         return "chat-canvas";
@@ -521,11 +523,39 @@ export function AgentChatPage({
       // General 主题使用专门的画布处理
       if (activeTheme === "general") {
         const ext = fileName.split(".").pop()?.toLowerCase() || "";
-        const isCode = ["js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "scss", "json", "yaml", "yml", "toml", "xml", "html", "sql", "sh", "bash"].includes(ext);
+        const isCode = [
+          "js",
+          "ts",
+          "tsx",
+          "jsx",
+          "py",
+          "rs",
+          "go",
+          "java",
+          "c",
+          "cpp",
+          "h",
+          "css",
+          "scss",
+          "json",
+          "yaml",
+          "yml",
+          "toml",
+          "xml",
+          "html",
+          "sql",
+          "sh",
+          "bash",
+        ].includes(ext);
         const isMd = ["md", "markdown"].includes(ext);
-        
-        console.log("[AgentChatPage] General 主题文件写入:", fileName, "类型:", isCode ? "code" : isMd ? "markdown" : "file");
-        
+
+        console.log(
+          "[AgentChatPage] General 主题文件写入:",
+          fileName,
+          "类型:",
+          isCode ? "code" : isMd ? "markdown" : "file",
+        );
+
         setGeneralCanvasState({
           isOpen: true,
           contentType: isCode ? "code" : isMd ? "markdown" : "file",
@@ -678,9 +708,32 @@ export function AgentChatPage({
       // General 主题使用专门的画布
       if (activeTheme === "general") {
         const ext = fileName.split(".").pop()?.toLowerCase() || "";
-        const isCode = ["js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "scss", "json", "yaml", "yml", "toml", "xml", "html", "sql", "sh", "bash"].includes(ext);
+        const isCode = [
+          "js",
+          "ts",
+          "tsx",
+          "jsx",
+          "py",
+          "rs",
+          "go",
+          "java",
+          "c",
+          "cpp",
+          "h",
+          "css",
+          "scss",
+          "json",
+          "yaml",
+          "yml",
+          "toml",
+          "xml",
+          "html",
+          "sql",
+          "sh",
+          "bash",
+        ].includes(ext);
         const isMd = ["md", "markdown"].includes(ext);
-        
+
         setGeneralCanvasState({
           isOpen: true,
           contentType: isCode ? "code" : isMd ? "markdown" : "file",

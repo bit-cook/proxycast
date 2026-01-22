@@ -8,15 +8,15 @@
  * @requirements 2.2, 2.5
  */
 
-import { useEffect, useCallback, useRef } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { useGeneralChatStore } from '../store/useGeneralChatStore';
+import { useEffect, useCallback, useRef } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useGeneralChatStore } from "../store/useGeneralChatStore";
 
 /**
  * 流式事件类型
  */
 interface StreamEvent {
-  type: 'start' | 'delta' | 'done' | 'error';
+  type: "start" | "delta" | "done" | "error";
   message_id?: string;
   content?: string;
   message?: string;
@@ -48,57 +48,57 @@ interface UseStreamingOptions {
 export const useStreaming = (options: UseStreamingOptions) => {
   const {
     sessionId,
-    eventName = 'general-chat-stream',
+    eventName = "general-chat-stream",
     onStart,
     onDelta,
     onDone,
     onError,
   } = options;
 
-  const {
-    startStreaming,
-    appendStreamingContent,
-  } = useGeneralChatStore();
+  const { startStreaming, appendStreamingContent } = useGeneralChatStore();
 
   const unlistenRef = useRef<UnlistenFn | null>(null);
-  const contentRef = useRef<string>('');
+  const contentRef = useRef<string>("");
 
   // 处理流式事件
-  const handleStreamEvent = useCallback((event: { payload: StreamEvent }) => {
-    const { type, message_id, content, message } = event.payload;
+  const handleStreamEvent = useCallback(
+    (event: { payload: StreamEvent }) => {
+      const { type, message_id, content, message } = event.payload;
 
-    switch (type) {
-      case 'start':
-        contentRef.current = '';
-        startStreaming(message_id || '');
-        onStart?.(message_id || '');
-        break;
+      switch (type) {
+        case "start":
+          contentRef.current = "";
+          startStreaming(message_id || "");
+          onStart?.(message_id || "");
+          break;
 
-      case 'delta':
-        if (content) {
-          contentRef.current += content;
-          appendStreamingContent(content);
-          onDelta?.(content);
+        case "delta":
+          if (content) {
+            contentRef.current += content;
+            appendStreamingContent(content);
+            onDelta?.(content);
+          }
+          break;
+
+        case "done": {
+          const { finalizeMessage } = useGeneralChatStore.getState();
+          finalizeMessage();
+          onDone?.(message_id || "", contentRef.current);
+          contentRef.current = "";
+          break;
         }
-        break;
 
-      case 'done': {
-        const { finalizeMessage } = useGeneralChatStore.getState();
-        finalizeMessage();
-        onDone?.(message_id || '', contentRef.current);
-        contentRef.current = '';
-        break;
+        case "error": {
+          const { stopGeneration: stopGen } = useGeneralChatStore.getState();
+          stopGen();
+          onError?.(message || "未知错误");
+          contentRef.current = "";
+          break;
+        }
       }
-
-      case 'error': {
-        const { stopGeneration: stopGen } = useGeneralChatStore.getState();
-        stopGen();
-        onError?.(message || '未知错误');
-        contentRef.current = '';
-        break;
-      }
-    }
-  }, [startStreaming, appendStreamingContent, onStart, onDelta, onDone, onError]);
+    },
+    [startStreaming, appendStreamingContent, onStart, onDelta, onDone, onError],
+  );
 
   // 设置事件监听
   useEffect(() => {
@@ -112,7 +112,10 @@ export const useStreaming = (options: UseStreamingOptions) => {
 
       // 设置新的监听器
       const eventKey = `${eventName}-${sessionId}`;
-      unlistenRef.current = await listen<StreamEvent>(eventKey, handleStreamEvent);
+      unlistenRef.current = await listen<StreamEvent>(
+        eventKey,
+        handleStreamEvent,
+      );
     };
 
     setupListener();
@@ -130,7 +133,7 @@ export const useStreaming = (options: UseStreamingOptions) => {
   const stopGeneration = useCallback(() => {
     const { stopGeneration: stopGen } = useGeneralChatStore.getState();
     stopGen();
-    contentRef.current = '';
+    contentRef.current = "";
   }, []);
 
   return {

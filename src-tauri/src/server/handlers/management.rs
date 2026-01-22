@@ -416,6 +416,25 @@ pub async fn management_add_credential(
                 );
             }
         }
+        // Anthropic 兼容格式 - 使用 ClaudeKey（与 Anthropic 相同）
+        PoolProviderType::AnthropicCompatible => {
+            if let Some(api_key) = request.api_key {
+                CredentialData::ClaudeKey {
+                    api_key,
+                    base_url: request.base_url,
+                }
+            } else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(AddCredentialResponse {
+                        success: false,
+                        message: "API key is required for Anthropic Compatible provider"
+                            .to_string(),
+                        id: None,
+                    }),
+                );
+            }
+        }
         // API Key Provider 类型 - 不支持通过此接口添加凭证
         PoolProviderType::AzureOpenai | PoolProviderType::AwsBedrock | PoolProviderType::Ollama => {
             return (

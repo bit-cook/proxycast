@@ -63,23 +63,23 @@ export const MessageList: React.FC<MessageListProps> = ({
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const isAtBottom = scrollHeight - scrollTop - clientHeight < 50; // 50px 容差
-      
+
       setIsUserScrolling(true);
       setShouldAutoScroll(isAtBottom);
-      
+
       // 清除之前的定时器
       clearTimeout(scrollTimeout);
-      
+
       // 500ms 后认为用户停止滚动
       scrollTimeout = setTimeout(() => {
         setIsUserScrolling(false);
       }, 500);
     };
 
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    
+    container.addEventListener("scroll", handleScroll, { passive: true });
+
     return () => {
-      container.removeEventListener('scroll', handleScroll);
+      container.removeEventListener("scroll", handleScroll);
       clearTimeout(scrollTimeout);
     };
   }, []);

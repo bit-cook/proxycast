@@ -9,8 +9,8 @@
  * @requirements 9.4
  */
 
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw, Home, Bug } from 'lucide-react';
+import React, { Component, ErrorInfo, ReactNode } from "react";
+import { AlertTriangle, RefreshCw, Home, Bug } from "lucide-react";
 
 // ============================================================================
 // 类型定义
@@ -55,7 +55,10 @@ interface ErrorBoundaryState {
  *
  * @requirements 9.4
  */
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ErrorBoundary extends Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = {
@@ -87,7 +90,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.setState({ errorInfo });
 
     // 记录错误日志
-    const logContext = componentName ? `[${componentName}]` : '[ErrorBoundary]';
+    const logContext = componentName ? `[${componentName}]` : "[ErrorBoundary]";
     console.error(`${logContext} 捕获到渲染错误:`, error);
     console.error(`${logContext} 组件堆栈:`, errorInfo.componentStack);
 
@@ -116,7 +119,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       componentName: this.props.componentName,
     };
 
-    console.info('[ErrorBoundary] 错误报告:', errorReport);
+    console.info("[ErrorBoundary] 错误报告:", errorReport);
   }
 
   /**
@@ -141,7 +144,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
    * 返回首页
    */
   private handleGoHome = (): void => {
-    window.location.href = '/';
+    window.location.href = "/";
   };
 
   render(): ReactNode {
@@ -204,9 +207,7 @@ const DefaultFallbackUI: React.FC<DefaultFallbackUIProps> = ({
       </div>
 
       {/* 错误标题 */}
-      <h2 className="text-xl font-semibold text-ink-900 mb-3">
-        内容渲染失败
-      </h2>
+      <h2 className="text-xl font-semibold text-ink-900 mb-3">内容渲染失败</h2>
 
       {/* 错误描述 */}
       <p className="text-sm text-ink-500 text-center max-w-md mb-6 leading-relaxed">
@@ -252,7 +253,7 @@ const DefaultFallbackUI: React.FC<DefaultFallbackUIProps> = ({
           className="flex items-center gap-2 text-xs text-ink-400 hover:text-ink-600 transition-colors mx-auto"
         >
           <Bug className="w-3 h-3" />
-          {showDetails ? '隐藏错误详情' : '查看错误详情'}
+          {showDetails ? "隐藏错误详情" : "查看错误详情"}
         </button>
 
         {showDetails && (
@@ -264,12 +265,16 @@ const DefaultFallbackUI: React.FC<DefaultFallbackUIProps> = ({
 
             <div className="mb-3">
               <p className="text-xs font-medium text-ink-600 mb-1">错误信息:</p>
-              <p className="text-xs text-red-600 font-mono break-all">{error.message}</p>
+              <p className="text-xs text-red-600 font-mono break-all">
+                {error.message}
+              </p>
             </div>
 
             {error.stack && (
               <div className="mb-3">
-                <p className="text-xs font-medium text-ink-600 mb-1">堆栈跟踪:</p>
+                <p className="text-xs font-medium text-ink-600 mb-1">
+                  堆栈跟踪:
+                </p>
                 <pre className="text-xs text-ink-500 font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
                   {error.stack}
                 </pre>
@@ -278,7 +283,9 @@ const DefaultFallbackUI: React.FC<DefaultFallbackUIProps> = ({
 
             {errorInfo?.componentStack && (
               <div>
-                <p className="text-xs font-medium text-ink-600 mb-1">组件堆栈:</p>
+                <p className="text-xs font-medium text-ink-600 mb-1">
+                  组件堆栈:
+                </p>
                 <pre className="text-xs text-ink-500 font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
                   {errorInfo.componentStack}
                 </pre>

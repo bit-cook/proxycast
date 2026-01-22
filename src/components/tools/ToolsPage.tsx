@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Package, Loader2, type LucideIcon } from "lucide-react";
+import { Package, Loader2, ArrowLeft, type LucideIcon } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { safeInvoke } from "@/lib/dev-bridge";
 import { Badge } from "@/components/ui/badge";
@@ -25,24 +25,8 @@ import { getPluginsForSurface, type PluginUIInfo } from "@/lib/api/pluginUI";
 import { PluginInstallDialog } from "@/components/plugins/PluginInstallDialog";
 import { ToolCardContextMenu } from "./ToolCardContextMenu";
 import { toast } from "sonner";
-
-/**
- * 页面类型定义
- *
- * 支持静态页面和动态插件页面
- * - 静态页面: 预定义的页面标识符
- * - 动态插件页面: `plugin:${string}` 格式，如 "plugin:machine-id-tool"
- *
- * _需求: 2.2, 3.2_
- */
-type Page =
-  | "provider-pool"
-  | "api-server"
-  | "agent"
-  | "tools"
-  | "settings"
-  | "plugins"
-  | `plugin:${string}`;
+import { ImageAnalysisTool } from "./image-analysis";
+import type { Page } from "@/types/page";
 
 interface ToolsPageProps {
   /**
@@ -163,7 +147,15 @@ function ToolCard({
 /**
  * 内置工具列表
  */
-const builtinTools: DynamicToolCard[] = [];
+const builtinTools: DynamicToolCard[] = [
+  {
+    id: "image-analysis",
+    title: "图像分析",
+    description: "使用 AI 分析图片内容，支持视觉理解和描述",
+    icon: "Image",
+    source: "builtin",
+  },
+];
 
 /**
  * 占位工具列表 (敬请期待)
@@ -199,6 +191,7 @@ export function ToolsPage({ onNavigate }: ToolsPageProps) {
   const [pluginTools, setPluginTools] = useState<DynamicToolCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInstallDialog, setShowInstallDialog] = useState(false);
+  const [selectedTool, setSelectedTool] = useState<string | null>(null);
 
   // 加载插件工具和已安装插件列表
   const loadPluginTools = useCallback(async () => {
@@ -279,9 +272,16 @@ export function ToolsPage({ onNavigate }: ToolsPageProps) {
       // 插件工具: 导航到 plugin:xxx 页面
       onNavigate(`plugin:${tool.pluginId}`);
     } else {
-      // 内置工具: 导航到对应页面
-      onNavigate(tool.id as Page);
+      // 内置工具: 在当前页面显示工具组件
+      setSelectedTool(tool.id);
     }
+  };
+
+  /**
+   * 返回工具列表
+   */
+  const handleBackToList = () => {
+    setSelectedTool(null);
   };
 
   /**
@@ -295,6 +295,22 @@ export function ToolsPage({ onNavigate }: ToolsPageProps) {
       />
     );
   };
+
+  // 如果选中了内置工具，显示该工具
+  if (selectedTool === "image-analysis") {
+    return (
+      <div className="space-y-4">
+        {/* 返回按钮 */}
+        <Button variant="ghost" onClick={handleBackToList} className="mb-4">
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          返回工具列表
+        </Button>
+
+        {/* 工具组件 */}
+        <ImageAnalysisTool />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

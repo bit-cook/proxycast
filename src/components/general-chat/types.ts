@@ -38,19 +38,19 @@ export interface Session {
  * 消息角色
  * @description 标识消息的发送者类型
  */
-export type MessageRole = 'user' | 'assistant' | 'system';
+export type MessageRole = "user" | "assistant" | "system";
 
 /**
  * 消息状态
  * @description 标识消息的当前处理状态
  */
-export type MessageStatus = 'pending' | 'streaming' | 'complete' | 'error';
+export type MessageStatus = "pending" | "streaming" | "complete" | "error";
 
 /**
  * 消息内容块类型
  * @description 标识内容块的类型
  */
-export type ContentBlockType = 'text' | 'code' | 'image' | 'file';
+export type ContentBlockType = "text" | "code" | "image" | "file";
 
 /**
  * 内容块
@@ -92,14 +92,14 @@ export interface MessageMetadata {
  * @requirements 9.2, 9.3
  */
 export type ErrorCode =
-  | 'NETWORK_ERROR'      // 网络连接错误
-  | 'TIMEOUT'            // 请求超时
-  | 'RATE_LIMIT'         // 请求频率限制
-  | 'TOKEN_LIMIT'        // Token 数量超限
-  | 'AUTH_ERROR'         // 认证错误
-  | 'SERVER_ERROR'       // 服务器错误
-  | 'PROVIDER_ERROR'     // Provider 错误
-  | 'UNKNOWN_ERROR';     // 未知错误
+  | "NETWORK_ERROR" // 网络连接错误
+  | "TIMEOUT" // 请求超时
+  | "RATE_LIMIT" // 请求频率限制
+  | "TOKEN_LIMIT" // Token 数量超限
+  | "AUTH_ERROR" // 认证错误
+  | "SERVER_ERROR" // 服务器错误
+  | "PROVIDER_ERROR" // Provider 错误
+  | "UNKNOWN_ERROR"; // 未知错误
 
 /**
  * 错误信息接口
@@ -129,39 +129,42 @@ export interface ErrorInfo {
  */
 export const createErrorInfo = (
   code: ErrorCode,
-  details?: string
+  details?: string,
 ): ErrorInfo => {
-  const errorMessages: Record<ErrorCode, { message: string; retryable: boolean }> = {
+  const errorMessages: Record<
+    ErrorCode,
+    { message: string; retryable: boolean }
+  > = {
     NETWORK_ERROR: {
-      message: '网络连接已断开，请检查网络设置',
+      message: "网络连接已断开，请检查网络设置",
       retryable: true,
     },
     TIMEOUT: {
-      message: '请求超时，请点击重试',
+      message: "请求超时，请点击重试",
       retryable: true,
     },
     RATE_LIMIT: {
-      message: '请求过于频繁，请稍后重试',
+      message: "请求过于频繁，请稍后重试",
       retryable: true,
     },
     TOKEN_LIMIT: {
-      message: '对话过长，建议新建会话',
+      message: "对话过长，建议新建会话",
       retryable: false,
     },
     AUTH_ERROR: {
-      message: '认证失败，请检查 Provider 配置',
+      message: "认证失败，请检查 Provider 配置",
       retryable: false,
     },
     SERVER_ERROR: {
-      message: '服务器错误，请稍后重试',
+      message: "服务器错误，请稍后重试",
       retryable: true,
     },
     PROVIDER_ERROR: {
-      message: 'AI 服务暂时不可用，请稍后重试',
+      message: "AI 服务暂时不可用，请稍后重试",
       retryable: true,
     },
     UNKNOWN_ERROR: {
-      message: '发生未知错误，请重试',
+      message: "发生未知错误，请重试",
       retryable: true,
     },
   };
@@ -187,34 +190,53 @@ export const parseApiError = (error: unknown): ErrorInfo => {
   const lowerError = errorStr.toLowerCase();
 
   // 根据错误信息判断错误类型
-  if (lowerError.includes('network') || lowerError.includes('fetch') || lowerError.includes('connection')) {
-    return createErrorInfo('NETWORK_ERROR', errorStr);
+  if (
+    lowerError.includes("network") ||
+    lowerError.includes("fetch") ||
+    lowerError.includes("connection")
+  ) {
+    return createErrorInfo("NETWORK_ERROR", errorStr);
   }
-  if (lowerError.includes('timeout') || lowerError.includes('timed out')) {
-    return createErrorInfo('TIMEOUT', errorStr);
+  if (lowerError.includes("timeout") || lowerError.includes("timed out")) {
+    return createErrorInfo("TIMEOUT", errorStr);
   }
-  if (lowerError.includes('rate limit') || lowerError.includes('429') || lowerError.includes('too many')) {
+  if (
+    lowerError.includes("rate limit") ||
+    lowerError.includes("429") ||
+    lowerError.includes("too many")
+  ) {
     const retryMatch = errorStr.match(/(\d+)\s*(?:seconds?|s)/i);
-    const info = createErrorInfo('RATE_LIMIT', errorStr);
+    const info = createErrorInfo("RATE_LIMIT", errorStr);
     if (retryMatch) {
       info.retryAfter = parseInt(retryMatch[1], 10);
     }
     return info;
   }
-  if (lowerError.includes('token') && (lowerError.includes('limit') || lowerError.includes('exceed'))) {
-    return createErrorInfo('TOKEN_LIMIT', errorStr);
+  if (
+    lowerError.includes("token") &&
+    (lowerError.includes("limit") || lowerError.includes("exceed"))
+  ) {
+    return createErrorInfo("TOKEN_LIMIT", errorStr);
   }
-  if (lowerError.includes('401') || lowerError.includes('unauthorized') || lowerError.includes('auth')) {
-    return createErrorInfo('AUTH_ERROR', errorStr);
+  if (
+    lowerError.includes("401") ||
+    lowerError.includes("unauthorized") ||
+    lowerError.includes("auth")
+  ) {
+    return createErrorInfo("AUTH_ERROR", errorStr);
   }
-  if (lowerError.includes('500') || lowerError.includes('server error') || lowerError.includes('internal')) {
-    return createErrorInfo('SERVER_ERROR', errorStr);
+  if (
+    lowerError.includes("500") ||
+    lowerError.includes("server error") ||
+    lowerError.includes("internal")
+  ) {
+    return createErrorInfo("SERVER_ERROR", errorStr);
   }
-  if (lowerError.includes('provider') || lowerError.includes('model')) {
-    return createErrorInfo('PROVIDER_ERROR', errorStr);
+  if (lowerError.includes("provider") || lowerError.includes("model")) {
+    return createErrorInfo("PROVIDER_ERROR", errorStr);
   }
 
-  return createErrorInfo('UNKNOWN_ERROR', errorStr);
+  return createErrorInfo("UNKNOWN_ERROR", errorStr);
 };
 
 /**
@@ -252,7 +274,7 @@ export interface Message {
  * 画布内容类型
  * @description 标识画布中显示的内容类型
  */
-export type CanvasContentType = 'code' | 'file' | 'markdown' | 'empty';
+export type CanvasContentType = "code" | "file" | "markdown" | "empty";
 
 /**
  * 画布状态
@@ -476,11 +498,11 @@ export interface ImagePreviewState {
  * 支持的图片格式
  */
 export const SUPPORTED_IMAGE_TYPES = [
-  'image/jpeg',
-  'image/jpg', 
-  'image/png',
-  'image/gif',
-  'image/webp'
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
 ] as const;
 
 /**
@@ -519,17 +541,17 @@ export const isValidImageSize = (file: File): boolean => {
 export const fileToImageData = (file: File): Promise<ImageData> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    
+
     reader.onload = (e) => {
       const result = e.target?.result as string;
       if (!result) {
-        reject(new Error('无法读取文件'));
+        reject(new Error("无法读取文件"));
         return;
       }
-      
+
       // 提取 base64 数据（去掉 data:image/xxx;base64, 前缀）
-      const base64Data = result.split(',')[1];
-      
+      const base64Data = result.split(",")[1];
+
       // 创建图片元素获取尺寸
       const img = new Image();
       img.onload = () => {
@@ -544,18 +566,18 @@ export const fileToImageData = (file: File): Promise<ImageData> => {
         };
         resolve(imageData);
       };
-      
+
       img.onerror = () => {
-        reject(new Error('无法解析图片'));
+        reject(new Error("无法解析图片"));
       };
-      
+
       img.src = result;
     };
-    
+
     reader.onerror = () => {
-      reject(new Error('文件读取失败'));
+      reject(new Error("文件读取失败"));
     };
-    
+
     reader.readAsDataURL(file);
   });
 };
@@ -595,8 +617,8 @@ export const DEFAULT_UI_STATE: UIState = {
  */
 export const DEFAULT_CANVAS_STATE: CanvasState = {
   isOpen: false,
-  contentType: 'empty',
-  content: '',
+  contentType: "empty",
+  content: "",
   isEditing: false,
 };
 
@@ -606,5 +628,5 @@ export const DEFAULT_CANVAS_STATE: CanvasState = {
 export const DEFAULT_STREAMING_STATE: StreamingState = {
   isStreaming: false,
   currentMessageId: null,
-  partialContent: '',
+  partialContent: "",
 };

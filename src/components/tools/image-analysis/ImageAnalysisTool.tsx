@@ -5,8 +5,21 @@
  */
 
 import React, { useState, useCallback } from "react";
-import { Upload, Image as ImageIcon, Sparkles, Loader2, X, AlertCircle } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Upload,
+  Image as ImageIcon,
+  Sparkles,
+  Loader2,
+  X,
+  AlertCircle,
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -24,32 +37,35 @@ export function ImageAnalysisTool() {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
 
-  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleImageSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      toast.error("请选择图片文件");
-      return;
-    }
+      if (!file.type.startsWith("image/")) {
+        toast.error("请选择图片文件");
+        return;
+      }
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("图片大小不能超过 10MB");
-      return;
-    }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("图片大小不能超过 10MB");
+        return;
+      }
 
-    setSelectedImage(file);
+      setSelectedImage(file);
 
-    // 创建预览
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+      // 创建预览
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
 
-    // 重置结果
-    setResult(null);
-  }, []);
+      // 重置结果
+      setResult(null);
+    },
+    [],
+  );
 
   const handleClearImage = useCallback(() => {
     setSelectedImage(null);
@@ -113,8 +129,12 @@ export function ImageAnalysisTool() {
           上传图片，AI 帮您分析内容、识别物体、提取文字
         </p>
         <div className="flex items-center justify-center gap-2">
-          <Badge className="bg-primary/10 text-primary border-primary/20">AI 驱动</Badge>
-          <Badge variant="outline" className="border-muted">支持多模态</Badge>
+          <Badge className="bg-primary/10 text-primary border-primary/20">
+            AI 驱动
+          </Badge>
+          <Badge variant="outline" className="border-muted">
+            支持多模态
+          </Badge>
         </div>
       </div>
 
@@ -185,7 +205,7 @@ export function ImageAnalysisTool() {
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{selectedImage?.name}</span>
                     <Badge variant="outline" className="text-xs">
-                      {selectedImage?.type.split('/')[1]?.toUpperCase()}
+                      {selectedImage?.type.split("/")[1]?.toUpperCase()}
                     </Badge>
                   </div>
                   <span className="text-muted-foreground">
@@ -205,9 +225,7 @@ export function ImageAnalysisTool() {
                 <Sparkles className="w-5 h-5 text-primary" />
                 分析设置
               </CardTitle>
-              <CardDescription>
-                描述您想了解的图片内容
-              </CardDescription>
+              <CardDescription>描述您想了解的图片内容</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* 输入提示 */}
@@ -265,7 +283,8 @@ export function ImageAnalysisTool() {
               <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <p>
-                  大图片可能导致分析失败，建议使用小于 2MB 的图片以获得最佳体验。
+                  大图片可能导致分析失败，建议使用小于 2MB
+                  的图片以获得最佳体验。
                 </p>
               </div>
             </CardContent>
@@ -285,7 +304,9 @@ export function ImageAnalysisTool() {
           <CardContent>
             {result.error ? (
               <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-                <p className="text-destructive whitespace-pre-wrap">{result.error}</p>
+                <p className="text-destructive whitespace-pre-wrap">
+                  {result.error}
+                </p>
               </div>
             ) : (
               <div className="prose prose-sm max-w-none dark:prose-invert">

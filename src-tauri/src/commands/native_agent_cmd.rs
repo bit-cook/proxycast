@@ -26,6 +26,7 @@ pub struct NativeAgentStatus {
 pub async fn native_agent_init(
     agent_state: State<'_, NativeAgentState>,
     app_state: State<'_, AppState>,
+    db: State<'_, crate::database::DbConnection>,
 ) -> Result<NativeAgentStatus, String> {
     tracing::info!("[NativeAgent] 初始化 Agent");
 
@@ -48,7 +49,63 @@ pub async fn native_agent_init(
     let api_key = api_key.ok_or_else(|| "ProxyCast API Server 未配置 API Key".to_string())?;
 
     let base_url = get_local_url(&host, port);
-    let provider_type = ProviderType::from_str(&default_provider);
+
+    // 对于自定义 Provider ID（如 custom-xxx），使用 Anthropic 兼容协议
+    let provider_type = if default_provider.starts_with("custom-") {
+        tracing::info!(
+            "[NativeAgent] 自定义 Provider ID '{}'，使用 Anthropic 兼容协议",
+            default_provider
+        );
+        ProviderType::AnthropicCompatible
+    } else {
+        // 对于标准 Provider，从数据库查询类型
+        match crate::database::dao::api_key_provider::ApiKeyProviderDao::get_provider_by_id(
+            &*db.lock().map_err(|e| e.to_string())?,
+            &default_provider,
+        ) {
+            Ok(Some(provider)) => {
+                // 从数据库的 provider_type 转换为 ProviderType
+                match provider.provider_type {
+                    crate::database::dao::api_key_provider::ApiProviderType::Anthropic |
+                    crate::database::dao::api_key_provider::ApiProviderType::AnthropicCompatible => {
+                        tracing::info!(
+                            "[NativeAgent] 从数据库获取 Provider 类型: {:?} (Anthropic)",
+                            provider.provider_type
+                        );
+                        ProviderType::Claude
+                    }
+                    crate::database::dao::api_key_provider::ApiProviderType::Gemini => {
+                        tracing::info!(
+                            "[NativeAgent] 从数据库获取 Provider 类型: {:?} (Gemini)",
+                            provider.provider_type
+                        );
+                        ProviderType::Gemini
+                    }
+                    _ => {
+                        tracing::info!(
+                            "[NativeAgent] 从数据库获取 Provider 类型: {:?} (OpenAI)",
+                            provider.provider_type
+                        );
+                        ProviderType::OpenAI
+                    }
+                }
+            }
+            Ok(None) => {
+                tracing::warn!(
+                    "[NativeAgent] 数据库中未找到 Provider '{}'，使用字符串解析",
+                    default_provider
+                );
+                ProviderType::from_str(&default_provider)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "[NativeAgent] 从数据库查询 Provider 失败: {}，使用字符串解析",
+                    e
+                );
+                ProviderType::from_str(&default_provider)
+            }
+        }
+    };
 
     tracing::info!(
         "[NativeAgent] 初始化 Agent: base_url={}, provider={:?}, use_default_prompt={}",
@@ -62,7 +119,7 @@ pub async fn native_agent_init(
         base_url.clone(),
         api_key,
         provider_type,
-        Some(default_provider),
+        Some(default_provider.to_string()),
         &agent_config,
     )?;
 

@@ -147,7 +147,11 @@ export function DecisionPanel({ request, onSubmit }: DecisionPanelProps) {
   };
 
   // 渲染用户问题面板
-  if (request.actionType === "ask_user" && request.questions && request.questions.length > 0) {
+  if (
+    request.actionType === "ask_user" &&
+    request.questions &&
+    request.questions.length > 0
+  ) {
     const questions = request.questions;
     return (
       <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20">

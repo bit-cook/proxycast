@@ -213,20 +213,28 @@ export function parseStreamEvent(data: unknown): StreamEvent | null {
       return {
         type: "action_required",
         request_id: (event.request_id as string) || "",
-        action_type: (event.action_type as "tool_confirmation" | "ask_user" | "elicitation") || "tool_confirmation",
+        action_type:
+          (event.action_type as
+            | "tool_confirmation"
+            | "ask_user"
+            | "elicitation") || "tool_confirmation",
         tool_name: event.tool_name as string | undefined,
         arguments: event.arguments as Record<string, unknown> | undefined,
         prompt: event.prompt as string | undefined,
-        questions: event.questions as Array<{
-          question: string;
-          header?: string;
-          options?: Array<{
-            label: string;
-            description?: string;
-          }>;
-          multiSelect?: boolean;
-        }> | undefined,
-        requested_schema: event.requested_schema as Record<string, unknown> | undefined,
+        questions: event.questions as
+          | Array<{
+              question: string;
+              header?: string;
+              options?: Array<{
+                label: string;
+                description?: string;
+              }>;
+              multiSelect?: boolean;
+            }>
+          | undefined,
+        requested_schema: event.requested_schema as
+          | Record<string, unknown>
+          | undefined,
       };
     case "done":
       return {

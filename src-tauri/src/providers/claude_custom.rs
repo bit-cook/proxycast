@@ -281,16 +281,17 @@ impl ClaudeCustomProvider {
 
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            
+
             // 检查是否是 Claude Code 专用凭证限制错误
             if body.contains("only authorized for use with Claude Code") {
                 return Err(format!(
                     "凭证限制错误: 当前 Claude 凭证只能用于 Claude Code，不能用于通用 API 调用。\
                     请使用通用的 Claude API Key 或 Anthropic API Key。\
                     错误详情: {status} - {body}"
-                ).into());
+                )
+                .into());
             }
-            
+
             return Err(format!("Claude API error: {status} - {body}").into());
         }
 

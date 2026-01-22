@@ -52,6 +52,41 @@ impl ProviderType {
         }
     }
 
+    /// 从 provider 字符串和模型名称推断 provider 类型
+    ///
+    /// 对于自定义 Provider ID（如 custom-xxx），尝试从模型名称推断协议类型
+    pub fn from_provider_and_model(provider: &str, model: &str) -> Self {
+        // 首先检查是否是自定义 Provider ID（以 custom- 开头）
+        if provider.starts_with("custom-") {
+            // 自定义 Provider 使用 Anthropic 兼容协议（Anthropic Compatible）
+            return Self::AnthropicCompatible;
+        }
+
+        // 对于其他 Provider，尝试直接解析
+        let provider_type = Self::from_str(provider);
+
+        // 如果能被识别，直接返回
+        if !matches!(provider_type, Self::OpenAI) || provider.eq_ignore_ascii_case("openai") {
+            return provider_type;
+        }
+
+        // 对于标准 Provider (kiro/openai/claude/gemini 等)，尝试从模型名称推断协议类型
+        let model_lower = model.to_lowercase();
+
+        // Claude 模型使用 Anthropic 协议
+        if model_lower.starts_with("claude-") || model_lower.starts_with("anthropic-") {
+            return Self::Claude;
+        }
+
+        // Gemini 模型
+        if model_lower.starts_with("gemini") || model_lower.contains("gemini") {
+            return Self::Gemini;
+        }
+
+        // 默认使用 OpenAI 协议
+        Self::OpenAI
+    }
+
     /// 获取 API 端点路径
     pub fn endpoint(&self) -> &'static str {
         match self {

@@ -89,6 +89,8 @@ pub async fn check_api_compatibility(
             ("claude-sonnet-4-5", "basic"),
             ("claude-sonnet-4-5", "tool_call"),
         ],
+        // Anthropic 兼容格式 - 使用 Claude 相同的测试
+        ProviderType::AnthropicCompatible => vec![],
         ProviderType::OpenAI | ProviderType::Claude => vec![],
         // API Key Provider 类型 - 暂不支持自动测试
         ProviderType::Anthropic

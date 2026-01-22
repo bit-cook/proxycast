@@ -108,9 +108,7 @@ export const InputbarTools: React.FC<InputbarToolsProps> = ({
               onClick={() => onToolClick?.("canvas")}
               className={isCanvasOpen ? "active" : ""}
             >
-              <PanelRight
-                className={isCanvasOpen ? "text-primary" : ""}
-              />
+              <PanelRight className={isCanvasOpen ? "text-primary" : ""} />
             </ToolButton>
           </TooltipTrigger>
           <TooltipContent side="top">
