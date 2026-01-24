@@ -1,7 +1,7 @@
 {
   "name": "proxycast",
   "private": true,
-  "version": "0.48.2",
+  "version": "0.48.3",
   "type": "module",
   "repository": {
     "type": "git",

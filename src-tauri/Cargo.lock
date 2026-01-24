@@ -6068,7 +6068,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast"
-version = "0.48.2"
+version = "0.48.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6147,7 +6147,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-core"
-version = "0.48.2"
+version = "0.48.3"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -6163,7 +6163,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-infra"
-version = "0.48.2"
+version = "0.48.3"
 dependencies = [
  "chrono",
  "dashmap 5.5.3",
