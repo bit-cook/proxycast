@@ -57,6 +57,7 @@ mod converter;
 mod data;
 #[cfg(debug_assertions)]
 mod dev_bridge;
+mod errors;
 mod logger;
 mod models;
 mod providers;

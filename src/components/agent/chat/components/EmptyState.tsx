@@ -30,6 +30,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { ProjectSelector } from "@/components/projects/ProjectSelector";
+import { useProjects } from "@/hooks/useProjects";
 import { Badge } from "@/components/ui/badge";
 
 // Import Assets
@@ -297,6 +299,10 @@ interface EmptyStateProps {
   onThemeChange?: (theme: string) => void;
   /** 推荐标签点击回调 */
   onRecommendationClick?: (shortLabel: string, fullPrompt: string) => void;
+  /** 当前选中的项目 ID */
+  projectId?: string | null;
+  /** 项目变更回调 */
+  onProjectChange?: (projectId: string) => void;
 }
 
 // Scenarios Configuration - 与 ProjectType 统一
@@ -495,7 +501,56 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   activeTheme = "general",
   onThemeChange,
   onRecommendationClick,
+  projectId: externalProjectId,
+  onProjectChange,
 }) => {
+  // 项目管理 - 内部状态（当外部未提供时使用）
+  const { defaultProject, getOrCreateDefault } = useProjects();
+  const [internalProjectId, setInternalProjectId] = useState<string | null>(
+    null,
+  );
+
+  // 使用外部或内部的 projectId
+  const projectId = externalProjectId ?? internalProjectId;
+
+  // 初始化默认项目
+  useEffect(() => {
+    if (!externalProjectId && !internalProjectId) {
+      if (defaultProject) {
+        // 通知父组件
+        if (onProjectChange) {
+          onProjectChange(defaultProject.id);
+        } else {
+          setInternalProjectId(defaultProject.id);
+        }
+      } else {
+        getOrCreateDefault().then((p) => {
+          // 通知父组件
+          if (onProjectChange) {
+            onProjectChange(p.id);
+          } else {
+            setInternalProjectId(p.id);
+          }
+        });
+      }
+    }
+  }, [
+    externalProjectId,
+    internalProjectId,
+    defaultProject,
+    getOrCreateDefault,
+    onProjectChange,
+  ]);
+
+  // 处理项目变更
+  const handleProjectChange = (newProjectId: string) => {
+    if (onProjectChange) {
+      onProjectChange(newProjectId);
+    } else {
+      setInternalProjectId(newProjectId);
+    }
+  };
+
   // 从配置中读取启用的主题
   const [enabledThemes, setEnabledThemes] = useState<string[]>(
     DEFAULT_ENABLED_THEMES,
@@ -664,6 +719,15 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
 
           <Toolbar>
             <ToolLoginLeft>
+              {/* 项目选择器 - PRD 4.2：始终显示，默认选中「默认项目」，按主题筛选 */}
+              <ProjectSelector
+                value={projectId}
+                onChange={handleProjectChange}
+                workspaceType={activeTheme}
+                placeholder="选择项目"
+                className="h-8 text-xs min-w-[120px]"
+              />
+
               {activeTheme === "social-media" && (
                 <>
                   <Select

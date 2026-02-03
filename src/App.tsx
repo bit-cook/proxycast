@@ -21,6 +21,7 @@ import { AgentChatPage } from "./components/agent";
 import { PluginsPage } from "./components/plugins/PluginsPage";
 import { ImageGenPage } from "./components/image-gen";
 import { ProjectsPage } from "./components/projects";
+import { ProjectDetailPage } from "./components/projects/ProjectDetailPage";
 import { CreateProjectDialog } from "./components/projects/CreateProjectDialog";
 import { ProjectType } from "./lib/api/project";
 
@@ -39,7 +40,12 @@ import { useRelayRegistry } from "./hooks/useRelayRegistry";
 import { ComponentDebugProvider } from "./contexts/ComponentDebugContext";
 import { SoundProvider } from "./contexts/SoundProvider";
 import { ComponentDebugOverlay } from "./components/dev";
-import { Page, PageParams, AgentPageParams } from "./types/page";
+import {
+  Page,
+  PageParams,
+  AgentPageParams,
+  ProjectDetailPageParams,
+} from "./types/page";
 import { open } from "@tauri-apps/plugin-dialog";
 import { createProject, createContent } from "./lib/api/project";
 import { toast } from "sonner";
@@ -290,6 +296,24 @@ function AppContent() {
         <PageWrapper $isActive={currentPage === "projects"}>
           <ProjectsPage onNavigate={handleNavigate} />
         </PageWrapper>
+
+        {/* 项目详情页 */}
+        {currentPage === "project-detail" &&
+          (pageParams as ProjectDetailPageParams).projectId && (
+            <PageWrapper $isActive={true}>
+              <ProjectDetailPage
+                projectId={(pageParams as ProjectDetailPageParams).projectId}
+                onBack={() => handleNavigate("projects")}
+                onNavigateToChat={(contentId) => {
+                  handleNavigate("agent", {
+                    projectId: (pageParams as ProjectDetailPageParams)
+                      .projectId,
+                    contentId,
+                  });
+                }}
+              />
+            </PageWrapper>
+          )}
 
         {/* 终端工作区 - 使用 div 包装以支持显示/隐藏 */}
         <div

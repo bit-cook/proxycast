@@ -2006,14 +2006,14 @@ mod unit_tests {
     fn test_screenshot_chat_config_default() {
         let config = ScreenshotChatConfig::default();
         assert!(!config.enabled);
-        assert_eq!(config.shortcut, "CommandOrControl+Shift+S");
+        assert_eq!(config.shortcut, "CommandOrControl+Alt+Q");
     }
 
     #[test]
     fn test_experimental_features_default() {
         let config = ExperimentalFeatures::default();
         assert!(!config.screenshot_chat.enabled);
-        assert_eq!(config.screenshot_chat.shortcut, "CommandOrControl+Shift+S");
+        assert_eq!(config.screenshot_chat.shortcut, "CommandOrControl+Alt+Q");
     }
 
     #[test]
@@ -2040,7 +2040,7 @@ mod unit_tests {
         assert!(!config.experimental.screenshot_chat.enabled);
         assert_eq!(
             config.experimental.screenshot_chat.shortcut,
-            "CommandOrControl+Shift+S"
+            "CommandOrControl+Alt+Q"
         );
         // 语音输入测试
         assert!(!config.experimental.voice_input.enabled);

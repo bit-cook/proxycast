@@ -12,6 +12,8 @@
 //! - `workspace_get_default` - 获取默认 workspace
 
 use crate::database::DbConnection;
+use crate::models::project_model::ProjectContext;
+use crate::services::project_context_builder::ProjectContextBuilder;
 use crate::workspace::{
     Workspace, WorkspaceManager, WorkspaceSettings, WorkspaceType, WorkspaceUpdate,
 };
@@ -207,4 +209,82 @@ pub async fn workspace_get_by_path(
     let manager = WorkspaceManager::new(db.inner().clone());
     let workspace = manager.get_by_path(&PathBuf::from(&root_path))?;
     Ok(workspace.map(|ws| ws.into()))
+}
+
+// ==================== 项目上下文相关命令 ====================
+
+/// 获取或创建默认项目
+///
+/// 如果默认项目不存在，则自动创建一个。
+/// 用于确保系统始终有一个默认项目可用。
+///
+/// # 返回
+/// - 成功返回默认项目
+/// - 失败返回错误信息
+#[tauri::command]
+pub async fn get_or_create_default_project(
+    db: State<'_, DbConnection>,
+) -> Result<WorkspaceListItem, String> {
+    let manager = WorkspaceManager::new(db.inner().clone());
+
+    // 先尝试获取默认项目
+    if let Some(workspace) = manager.get_default()? {
+        return Ok(workspace.into());
+    }
+
+    // 不存在则创建默认项目
+    let workspace = manager.create_with_type(
+        "默认项目".to_string(),
+        PathBuf::from("default"),
+        WorkspaceType::Persistent,
+    )?;
+
+    // 设置为默认
+    manager.set_default(&workspace.id)?;
+
+    // 重新获取以确保 is_default 标志正确
+    let workspace = manager.get(&workspace.id)?.ok_or("创建默认项目失败")?;
+    Ok(workspace.into())
+}
+
+/// 获取项目上下文
+///
+/// 加载项目的完整上下文，包括人设、素材、模板等配置。
+/// 用于在发送消息前构建 AI 的 System Prompt。
+///
+/// # 参数
+/// - `project_id`: 项目 ID
+///
+/// # 返回
+/// - 成功返回项目上下文
+/// - 失败返回错误信息
+#[tauri::command]
+pub async fn get_project_context(
+    db: State<'_, DbConnection>,
+    project_id: String,
+) -> Result<ProjectContext, String> {
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+    ProjectContextBuilder::build_context(&conn, &project_id).map_err(|e| e.to_string())
+}
+
+/// 构建项目 System Prompt
+///
+/// 根据项目配置构建 AI 的 System Prompt。
+/// 包含人设信息、素材引用、排版规则等。
+///
+/// # 参数
+/// - `project_id`: 项目 ID
+///
+/// # 返回
+/// - 成功返回构建好的 System Prompt 字符串
+/// - 失败返回错误信息
+#[tauri::command]
+pub async fn build_project_system_prompt(
+    db: State<'_, DbConnection>,
+    project_id: String,
+) -> Result<String, String> {
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+    let context =
+        ProjectContextBuilder::build_context(&conn, &project_id).map_err(|e| e.to_string())?;
+    Ok(ProjectContextBuilder::build_system_prompt(&context))
 }

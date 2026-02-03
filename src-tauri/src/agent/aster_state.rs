@@ -28,6 +28,7 @@ use crate::agent::credential_bridge::{
 };
 use crate::database::DbConnection;
 use crate::services::aster_session_store::ProxyCastSessionStore;
+use crate::services::project_context_builder::ProjectContextBuilder;
 
 /// Provider 配置信息
 #[derive(Debug, Clone)]
@@ -394,6 +395,57 @@ impl AsterAgentState {
     pub async fn remove_cancel_token(&self, session_id: &str) {
         let mut tokens = self.cancel_tokens.write().await;
         tokens.remove(session_id);
+    }
+
+    // ------------------------------------------------------------------------
+    // 项目上下文支持
+    // ------------------------------------------------------------------------
+
+    /// 构建带项目上下文的 System Prompt
+    ///
+    /// 加载项目的人设、素材、模板配置，构建完整的 AI 提示词。
+    ///
+    /// # 参数
+    /// - `db`: 数据库连接
+    /// - `project_id`: 项目 ID
+    ///
+    /// # 返回
+    /// - 成功返回构建好的 System Prompt
+    /// - 失败返回错误信息
+    pub fn build_project_system_prompt(
+        db: &DbConnection,
+        project_id: &str,
+    ) -> Result<String, String> {
+        let conn = db
+            .lock()
+            .map_err(|e| format!("获取数据库连接失败: {}", e))?;
+        let context = ProjectContextBuilder::build_context(&conn, project_id)
+            .map_err(|e| format!("构建项目上下文失败: {}", e))?;
+        Ok(ProjectContextBuilder::build_system_prompt(&context))
+    }
+
+    /// 创建带项目上下文的会话配置
+    ///
+    /// 自动加载项目配置并构建 SessionConfig。
+    ///
+    /// # 参数
+    /// - `db`: 数据库连接
+    /// - `session_id`: 会话 ID
+    /// - `project_id`: 项目 ID（可选，如果为 None 则不注入项目上下文）
+    ///
+    /// # 返回
+    /// - 构建好的 SessionConfig
+    pub fn create_session_config_with_project(
+        db: &DbConnection,
+        session_id: &str,
+        project_id: Option<&str>,
+    ) -> SessionConfig {
+        let system_prompt =
+            project_id.and_then(|pid| Self::build_project_system_prompt(db, pid).ok());
+
+        SessionConfigBuilder::new(session_id)
+            .system_prompt(system_prompt.unwrap_or_default())
+            .build()
     }
 
     /// 检查 Agent 是否已初始化

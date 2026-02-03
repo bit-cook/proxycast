@@ -134,7 +134,7 @@ mod tests {
             let test_cases = [
                 json!({}),
                 json!({"simple": "value"}),
-                json!({"number": 42, "float": 3.14, "bool": true, "null": null}),
+                json!({"number": 42, "float": 3.15, "bool": true, "null": null}),
                 json!({"nested": {"deep": {"value": "here"}}}),
                 json!({"array": [1, 2, 3, "four", {"five": 5}]}),
                 json!({"unicode": "你好世界 🌍", "special": "\"quotes\" and \\backslash"}),

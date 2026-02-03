@@ -2494,11 +2494,12 @@ proptest! {
 use crate::ProviderType;
 
 /// 生成有效的 Provider 类型字符串
+/// 注意：只包含往返一致的 Provider 类型（即 parse().to_string() == 原值）
+/// qwen 等第三方 Provider 会被映射到 openai，不满足往返一致性
 fn arb_valid_provider_type() -> impl Strategy<Value = String> {
     prop_oneof![
         Just("kiro".to_string()),
         Just("gemini".to_string()),
-        Just("qwen".to_string()),
         Just("openai".to_string()),
         Just("claude".to_string()),
         Just("antigravity".to_string()),
@@ -2506,26 +2507,22 @@ fn arb_valid_provider_type() -> impl Strategy<Value = String> {
         Just("gemini_api_key".to_string()),
         Just("codex".to_string()),
         Just("claude_oauth".to_string()),
+        Just("anthropic".to_string()),
+        Just("anthropic_compatible".to_string()),
+        Just("azure_openai".to_string()),
+        Just("aws_bedrock".to_string()),
+        Just("ollama".to_string()),
     ]
 }
 
 /// 生成无效的 Provider 类型字符串
 fn arb_invalid_provider_type() -> impl Strategy<Value = String> {
     // 生成不在有效列表中的字符串
+    // 注意：需要排除所有在 ProviderType::from_str 中有效的字符串
     "[a-z]{3,15}".prop_filter("排除有效的 Provider 类型", |s| {
-        !matches!(
-            s.as_str(),
-            "kiro"
-                | "gemini"
-                | "qwen"
-                | "openai"
-                | "claude"
-                | "antigravity"
-                | "vertex"
-                | "gemini_api_key"
-                | "codex"
-                | "claude_oauth"
-        )
+        // 排除所有在 ProviderType::from_str 中能成功解析的字符串
+        use std::str::FromStr;
+        crate::ProviderType::from_str(s).is_err()
     })
 }
 

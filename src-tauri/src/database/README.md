@@ -8,7 +8,8 @@
 |------|------|
 | `mod.rs` | 模块入口，数据库初始化 |
 | `schema.rs` | 表结构定义和创建 |
-| `migration.rs` | 数据迁移逻辑 |
+| `migration.rs` | 数据迁移逻辑（API Keys、Provider ID 等） |
+| `migration_v2.rs` | 统一内容系统迁移（默认项目、话题迁移） |
 | `system_providers.rs` | 系统预设 Provider 配置 |
 | `dao/` | 数据访问对象层 |
 
@@ -58,6 +59,17 @@
 - 保留使用统计和错误计数
 - 标记来源为 `imported`
 - 迁移完成后设置 `migrated_api_keys_to_pool` 标记，避免重复迁移
+
+### 统一内容系统迁移 (migration_v2)
+
+`migrate_unified_content_system()` 函数实现统一内容系统的数据迁移：
+
+- **创建默认项目**: 如果不存在 `is_default=true` 的项目，自动创建"默认项目"
+- **迁移话题**: 将所有 `project_id` 为 null 的内容迁移到默认项目
+- **事务保护**: 迁移过程使用事务，失败时自动回滚
+- **幂等性**: 迁移完成后设置标记，避免重复执行
+
+_Requirements: 2.1, 2.2, 2.3, 2.4_
 
 ## 使用示例
 

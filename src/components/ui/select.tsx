@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 
@@ -31,9 +37,34 @@ const Select: React.FC<SelectProps> = ({
 }) => {
   const [internalValue, setInternalValue] = useState(defaultValue || "");
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const currentValue = value !== undefined ? value : internalValue;
   const handleValueChange = onValueChange || setInternalValue;
+
+  // 点击外部关闭下拉菜单
+  useEffect(() => {
+    if (!open) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+
+    // 延迟添加监听器，避免立即触发
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [open]);
 
   return (
     <SelectContext.Provider
@@ -46,6 +77,7 @@ const Select: React.FC<SelectProps> = ({
       }}
     >
       <div
+        ref={containerRef}
         className="relative"
         onMouseLeave={closeOnMouseLeave ? () => setOpen(false) : undefined}
       >

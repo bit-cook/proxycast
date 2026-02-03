@@ -167,6 +167,9 @@ pub struct AsterChatRequest {
     /// Provider 配置（可选，如果未配置则使用当前配置）
     #[serde(default)]
     pub provider_config: Option<ConfigureProviderRequest>,
+    /// 项目 ID（可选，用于注入项目上下文到 System Prompt）
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 /// 图片输入
@@ -214,30 +217,59 @@ pub async fn aster_agent_chat_stream(
     // 同时 get_session 也会自动创建不存在的 session
     let session_id = &request.session_id;
 
-    // 从 ProxyCast 数据库读取 session 的 system_prompt（如果存在）
+    // 构建 system_prompt：优先使用项目上下文，其次使用 session 的 system_prompt
     let system_prompt = {
         let db_conn = db.lock().map_err(|e| format!("获取数据库连接失败: {e}"))?;
-        match AgentDao::get_session(&db_conn, session_id) {
-            Ok(Some(session)) => {
-                tracing::debug!(
-                    "[AsterAgent] 找到 session，system_prompt: {:?}",
-                    session.system_prompt.as_ref().map(|s| s.len())
-                );
-                session.system_prompt
+
+        // 1. 如果提供了 project_id，构建项目上下文
+        let project_prompt = if let Some(ref project_id) = request.project_id {
+            match AsterAgentState::build_project_system_prompt(&db, project_id) {
+                Ok(prompt) => {
+                    tracing::info!(
+                        "[AsterAgent] 已加载项目上下文: project_id={}, prompt_len={}",
+                        project_id,
+                        prompt.len()
+                    );
+                    Some(prompt)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[AsterAgent] 加载项目上下文失败: {}, 继续使用 session prompt",
+                        e
+                    );
+                    None
+                }
             }
-            Ok(None) => {
-                tracing::debug!(
-                    "[AsterAgent] ProxyCast 数据库中未找到 session: {}",
-                    session_id
-                );
-                None
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "[AsterAgent] 读取 session 失败: {}, 继续使用空 system_prompt",
-                    e
-                );
-                None
+        } else {
+            None
+        };
+
+        // 2. 如果没有项目上下文，尝试从 session 读取
+        if project_prompt.is_some() {
+            project_prompt
+        } else {
+            match AgentDao::get_session(&db_conn, session_id) {
+                Ok(Some(session)) => {
+                    tracing::debug!(
+                        "[AsterAgent] 找到 session，system_prompt: {:?}",
+                        session.system_prompt.as_ref().map(|s| s.len())
+                    );
+                    session.system_prompt
+                }
+                Ok(None) => {
+                    tracing::debug!(
+                        "[AsterAgent] ProxyCast 数据库中未找到 session: {}",
+                        session_id
+                    );
+                    None
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[AsterAgent] 读取 session 失败: {}, 继续使用空 system_prompt",
+                        e
+                    );
+                    None
+                }
             }
         }
     };

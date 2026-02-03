@@ -6,6 +6,7 @@ pub mod machine_id;
 pub mod mcp_model;
 pub mod model_registry;
 pub mod openai;
+pub mod project_model;
 pub mod prompt_model;
 pub mod provider_model;
 pub mod provider_pool_model;
@@ -20,6 +21,8 @@ pub use codewhisperer::*;
 pub use mcp_model::McpServer;
 #[allow(unused_imports)]
 pub use openai::*;
+#[allow(unused_imports)]
+pub use project_model::*;
 pub use prompt_model::Prompt;
 pub use provider_model::Provider;
 #[allow(unused_imports)]

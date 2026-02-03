@@ -586,6 +586,24 @@ fn infer_model_tier(model_id: &str, model_name: &str) -> ModelTier {
     let id_lower = model_id.to_lowercase();
     let name_lower = model_name.to_lowercase();
 
+    // Mini 等级模型（优先检查，因为 gpt-4o-mini 包含 gpt-4o）
+    let mini_patterns = [
+        "mini",
+        "nano",
+        "lite",
+        "flash",
+        "haiku",
+        "gpt-4o-mini",
+        "gemini-flash",
+        "qwen-turbo",
+        "glm-4-flash",
+    ];
+    for pattern in mini_patterns {
+        if id_lower.contains(pattern) || name_lower.contains(pattern) {
+            return ModelTier::Mini;
+        }
+    }
+
     // Max 等级模型
     let max_patterns = [
         "opus",
@@ -601,24 +619,6 @@ fn infer_model_tier(model_id: &str, model_name: &str) -> ModelTier {
     for pattern in max_patterns {
         if id_lower.contains(pattern) || name_lower.contains(pattern) {
             return ModelTier::Max;
-        }
-    }
-
-    // Mini 等级模型
-    let mini_patterns = [
-        "mini",
-        "nano",
-        "lite",
-        "flash",
-        "haiku",
-        "gpt-4o-mini",
-        "gemini-flash",
-        "qwen-turbo",
-        "glm-4-flash",
-    ];
-    for pattern in mini_patterns {
-        if id_lower.contains(pattern) || name_lower.contains(pattern) {
-            return ModelTier::Mini;
         }
     }
 

@@ -154,7 +154,7 @@ function isCanvasStateEmpty(state: CanvasStateUnion | null): boolean {
 
 export function AgentChatPage({
   onNavigate: _onNavigate,
-  projectId,
+  projectId: externalProjectId,
   contentId,
   onRecommendationClick: _onRecommendationClick,
 }: {
@@ -171,6 +171,14 @@ export function AgentChatPage({
   const [activeTheme, setActiveTheme] = useState<string>("general");
   const [creationMode, setCreationMode] = useState<CreationMode>("guided");
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("chat");
+
+  // 内部 projectId 状态（当外部未提供时使用）
+  const [internalProjectId, setInternalProjectId] = useState<string | null>(
+    null,
+  );
+
+  // 使用外部或内部的 projectId
+  const projectId = externalProjectId ?? internalProjectId ?? undefined;
 
   // 画布状态（支持多种画布类型）
   const [canvasState, setCanvasState] = useState<CanvasStateUnion | null>(null);
@@ -367,9 +375,23 @@ export function AgentChatPage({
           content = JSON.stringify(canvasState);
       }
 
-      // 如果有 contentId，直接同步
+      // 如果有 contentId，先验证内容存在再同步
       if (contentId && content) {
-        syncContent(contentId, content);
+        // 先检查内容是否存在，避免同步到不存在的记录
+        getContent(contentId)
+          .then((existingContent) => {
+            if (existingContent) {
+              syncContent(contentId, content);
+            } else {
+              console.warn(
+                "[AgentChatPage] contentId 对应的内容不存在，跳过同步:",
+                contentId,
+              );
+            }
+          })
+          .catch((err) => {
+            console.error("[AgentChatPage] 检查内容存在性失败:", err);
+          });
       }
       // 如果没有 contentId 但有 projectId，自动创建 Content
       else if (!contentId && projectId && content && project) {
@@ -789,13 +811,26 @@ export function AgentChatPage({
         console.error("[AgentChatPage] 持久化文件失败:", err);
       });
 
-      // 同步内容到项目（如果有 contentId）
+      // 同步内容到项目（如果有 contentId，先验证存在性）
       if (contentId) {
-        updateContent(contentId, {
-          body: content,
-        }).catch((err) => {
-          console.error("[AgentChatPage] 同步内容到项目失败:", err);
-        });
+        getContent(contentId)
+          .then((existingContent) => {
+            if (existingContent) {
+              updateContent(contentId, {
+                body: content,
+              }).catch((err) => {
+                console.error("[AgentChatPage] 同步内容到项目失败:", err);
+              });
+            } else {
+              console.warn(
+                "[AgentChatPage] contentId 对应的内容不存在，跳过同步:",
+                contentId,
+              );
+            }
+          })
+          .catch((err) => {
+            console.error("[AgentChatPage] 检查内容存在性失败:", err);
+          });
       }
 
       // 根据文件名推进工作流步骤（使用动态映射）
@@ -1211,6 +1246,8 @@ export function AgentChatPage({
           onCreationModeChange={setCreationMode}
           activeTheme={activeTheme}
           onThemeChange={setActiveTheme}
+          projectId={projectId}
+          onProjectChange={(newProjectId) => setInternalProjectId(newProjectId)}
           onRecommendationClick={(shortLabel, fullPrompt) => {
             // 直接将推荐提示词放入输入框，不创建项目
             setInput(fullPrompt);

@@ -284,7 +284,13 @@ export function ProjectsPage({ onNavigate }: ProjectsPageProps) {
 
   // 点击项目
   const handleProjectClick = (project: Project) => {
-    setSelectedProject(project);
+    // 如果提供了 onNavigate，导航到项目详情页
+    if (onNavigate) {
+      onNavigate("project-detail", { projectId: project.id });
+    } else {
+      // 否则使用内部状态显示内容列表
+      setSelectedProject(project);
+    }
   };
 
   // 点击内容时跳转到创作界面

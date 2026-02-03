@@ -30,8 +30,8 @@ async fn test_request_processor_components() {
     // 验证路由器可以正常使用
     {
         let router = processor.router.read().await;
-        // 默认使用 Kiro
-        assert_eq!(router.default_provider(), Some(ProviderType::Kiro));
+        // 默认路由器为空，等待从配置加载
+        assert_eq!(router.default_provider(), None);
     }
 
     // 验证映射器可以正常使用
@@ -117,13 +117,13 @@ async fn test_route_model_returns_default() {
     let pool_service = Arc::new(ProviderPoolService::new());
     let processor = RequestProcessor::with_defaults(pool_service);
 
-    // 所有模型都应返回默认 Provider
+    // 默认路由器为空，所有模型都应返回 None
     let (provider, is_default) = processor.route_model("gemini-2.5-flash").await;
-    assert_eq!(provider, Some(ProviderType::Kiro));
+    assert_eq!(provider, None);
     assert!(is_default);
 
     let (provider, is_default) = processor.route_model("claude-sonnet-4-5").await;
-    assert_eq!(provider, Some(ProviderType::Kiro));
+    assert_eq!(provider, None);
     assert!(is_default);
 }
 
@@ -136,11 +136,11 @@ async fn test_route_for_context() {
     let mut ctx = RequestContext::new("gemini-2.5-flash".to_string());
     ctx.set_resolved_model("gemini-2.5-flash".to_string());
 
-    // 路由并更新上下文
+    // 路由并更新上下文（默认路由器为空，返回 None）
     let provider = processor.route_for_context(&mut ctx).await;
 
-    assert_eq!(provider, Some(ProviderType::Kiro));
-    assert_eq!(ctx.provider, Some(ProviderType::Kiro));
+    assert_eq!(provider, None);
+    assert_eq!(ctx.provider, None);
 }
 
 #[tokio::test]
@@ -158,11 +158,11 @@ async fn test_resolve_and_route() {
     let mut ctx = RequestContext::new("gpt-4".to_string());
     let provider = processor.resolve_and_route(&mut ctx).await;
 
-    // gpt-4 -> claude-sonnet-4-5 -> Kiro (默认)
+    // gpt-4 -> claude-sonnet-4-5 -> None (默认路由器为空)
     assert_eq!(ctx.original_model, "gpt-4");
     assert_eq!(ctx.resolved_model, "claude-sonnet-4-5");
-    assert_eq!(provider, Some(ProviderType::Kiro));
-    assert_eq!(ctx.provider, Some(ProviderType::Kiro));
+    assert_eq!(provider, None);
+    assert_eq!(ctx.provider, None);
 }
 
 // ========== 属性测试 (Property-Based Tests) ==========

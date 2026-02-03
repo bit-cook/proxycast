@@ -18,6 +18,14 @@ interface StreamChunkEvent {
 }
 
 /**
+ * 流式对话选项
+ */
+interface StreamChatOptions {
+  /** 项目 ID（可选，用于注入项目上下文） */
+  projectId?: string;
+}
+
+/**
  * 流式响应处理 Hook
  *
  * 提供与后端的流式通信能力
@@ -31,12 +39,14 @@ export function useStreaming() {
    * @param messages - 消息历史
    * @param onChunk - 收到数据块时的回调
    * @param signal - AbortSignal 用于取消请求
+   * @param options - 可选配置（包含 projectId）
    */
   const streamChat = useCallback(
     async (
       messages: Message[],
       onChunk: (chunk: string) => void,
       signal?: AbortSignal,
+      options?: StreamChatOptions,
     ): Promise<void> => {
       let unlisten: UnlistenFn | null = null;
       let isAborted = false;
@@ -69,6 +79,7 @@ export function useStreaming() {
             role: m.role,
             content: m.content,
           })),
+          projectId: options?.projectId,
         });
       } catch (err) {
         if (!isAborted) {

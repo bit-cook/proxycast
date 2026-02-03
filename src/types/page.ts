@@ -22,6 +22,7 @@ export type Page =
   | "web"
   | "image-analysis"
   | "projects"
+  | "project-detail"
   | `plugin:${string}`;
 
 /**
@@ -34,6 +35,16 @@ export interface AgentPageParams {
 }
 
 /**
+ * 项目详情页参数
+ */
+export interface ProjectDetailPageParams {
+  projectId: string;
+}
+
+/**
  * 页面参数联合类型
  */
-export type PageParams = AgentPageParams | Record<string, unknown>;
+export type PageParams =
+  | AgentPageParams
+  | ProjectDetailPageParams
+  | Record<string, unknown>;

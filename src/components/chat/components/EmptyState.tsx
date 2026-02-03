@@ -2,9 +2,10 @@
  * @file 空状态组件
  * @description 无消息时显示的欢迎界面
  * @module components/chat/components/EmptyState
+ * @requirements 4.1, 4.4
  */
 
-import React, { memo } from "react";
+import React, { memo, useState } from "react";
 import styled from "styled-components";
 import {
   MessageSquare,
@@ -13,6 +14,7 @@ import {
   Languages,
   Lightbulb,
 } from "lucide-react";
+import { ProjectSelector } from "@/components/projects/ProjectSelector";
 
 const Container = styled.div`
   flex: 1;
@@ -108,6 +110,12 @@ const SuggestionDesc = styled.div`
   white-space: nowrap;
 `;
 
+const ProjectSelectorWrapper = styled.div`
+  margin-bottom: 24px;
+  width: 100%;
+  max-width: 280px;
+`;
+
 const suggestions = [
   {
     icon: Code,
@@ -138,15 +146,28 @@ const suggestions = [
 interface EmptyStateProps {
   /** 点击建议时的回调 */
   onSuggestionClick?: (prompt: string) => void;
+  /** 当前选中的项目 ID */
+  selectedProjectId?: string | null;
+  /** 项目选择变化回调 */
+  onProjectChange?: (projectId: string) => void;
 }
 
 /**
  * 空状态组件
  *
- * 显示欢迎信息和快捷建议
+ * 显示欢迎信息、项目选择器和快捷建议
  */
 export const EmptyState: React.FC<EmptyStateProps> = memo(
-  ({ onSuggestionClick }) => {
+  ({ onSuggestionClick, selectedProjectId, onProjectChange }) => {
+    const [localProjectId, setLocalProjectId] = useState<string | null>(
+      selectedProjectId || null,
+    );
+
+    const handleProjectChange = (projectId: string) => {
+      setLocalProjectId(projectId);
+      onProjectChange?.(projectId);
+    };
+
     return (
       <Container>
         <IconWrapper>
@@ -157,6 +178,14 @@ export const EmptyState: React.FC<EmptyStateProps> = memo(
         <Subtitle>
           我是你的 AI 助手，可以帮你解答问题、编写代码、翻译文本、头脑风暴等
         </Subtitle>
+
+        <ProjectSelectorWrapper>
+          <ProjectSelector
+            value={localProjectId}
+            onChange={handleProjectChange}
+            placeholder="选择项目"
+          />
+        </ProjectSelectorWrapper>
 
         <SuggestionsGrid>
           {suggestions.map((item) => (

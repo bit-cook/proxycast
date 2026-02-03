@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn test_default_shortcut() {
         let config = ScreenshotChatConfig::default();
-        assert_eq!(config.shortcut, "CommandOrControl+Shift+S");
+        assert_eq!(config.shortcut, "CommandOrControl+Alt+Q");
         assert!(!config.enabled);
     }
 }

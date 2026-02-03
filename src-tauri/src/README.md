@@ -15,6 +15,7 @@ Tauri 后端核心代码，处理系统级功能和 API 服务。
 - `converter/` - 协议转换（OpenAI ↔ CW/Claude/Antigravity）
 - `credential/` - 凭证池管理（负载均衡、健康检查）
 - `database/` - 数据库层（SQLite + DAO）
+- `errors/` - 错误类型定义（项目、人设、素材、模板、迁移错误）
 - `flow_monitor/` - LLM 流量监控（拦截、存储、查询）
 - `injection/` - 请求注入（系统提示词等）
 - `middleware/` - HTTP 中间件

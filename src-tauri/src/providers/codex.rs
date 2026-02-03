@@ -1512,6 +1512,17 @@ fn transform_to_codex_format(
     let instructions = get_codex_instructions_for_model(model);
     codex_request["instructions"] = serde_json::json!(instructions);
 
+    // 处理可选参数：temperature, max_tokens (-> max_output_tokens), top_p
+    if let Some(temp) = request.get("temperature") {
+        codex_request["temperature"] = temp.clone();
+    }
+    if let Some(max_tokens) = request.get("max_tokens") {
+        codex_request["max_output_tokens"] = max_tokens.clone();
+    }
+    if let Some(top_p) = request.get("top_p") {
+        codex_request["top_p"] = top_p.clone();
+    }
+
     // Build tools array if present
     if let Some(tools) = request["tools"].as_array() {
         let codex_tools: Vec<serde_json::Value> = tools

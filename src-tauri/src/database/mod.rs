@@ -1,5 +1,6 @@
 pub mod dao;
 pub mod migration;
+pub mod migration_v2;
 pub mod schema;
 pub mod system_providers;
 
@@ -80,6 +81,25 @@ pub fn init_database() -> Result<DbConnection, String> {
         }
         Err(e) => {
             tracing::warn!("[数据库] 旧 API Key 凭证清理失败（非致命）: {}", e);
+        }
+    }
+
+    // 执行统一内容系统迁移（创建默认项目，迁移话题）
+    // _Requirements: 2.1, 2.2, 2.3, 2.4_
+    match migration_v2::migrate_unified_content_system(&conn) {
+        Ok(result) => {
+            if result.executed {
+                if let Some(stats) = result.stats {
+                    tracing::info!(
+                        "[数据库] 统一内容系统迁移完成: 默认项目={}, 迁移内容数={}",
+                        stats.default_project_id,
+                        stats.migrated_contents_count
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("[数据库] 统一内容系统迁移失败（非致命）: {}", e);
         }
     }
 

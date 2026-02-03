@@ -580,6 +580,19 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         [],
     );
 
+    // Migration: 添加默认人设和模板引用字段到 workspaces 表
+    // _Requirements: 11.2, 11.3_
+    // 注意：SQLite 不支持 ALTER TABLE ADD COLUMN 带外键约束，
+    // 外键约束通过应用层逻辑保证
+    let _ = conn.execute(
+        "ALTER TABLE workspaces ADD COLUMN default_persona_id TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE workspaces ADD COLUMN default_template_id TEXT",
+        [],
+    );
+
     // Migration: 迁移旧的项目类型到新类型
     // drama -> video, social -> social-media
     let _ = conn.execute(
@@ -694,6 +707,134 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (project_id) REFERENCES workspaces(id) ON DELETE CASCADE
         )",
+        [],
+    )?;
+
+    // ============================================================================
+    // 人设表 (Persona)
+    // 存储项目级人设配置，用于 AI 内容生成时的风格控制
+    // _Requirements: 6.3_
+    // ============================================================================
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS personas (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            style TEXT NOT NULL DEFAULT '',
+            tone TEXT,
+            target_audience TEXT,
+            forbidden_words_json TEXT NOT NULL DEFAULT '[]',
+            preferred_words_json TEXT NOT NULL DEFAULT '[]',
+            examples TEXT,
+            platforms_json TEXT NOT NULL DEFAULT '[]',
+            is_default INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES workspaces(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 创建 personas 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_personas_project_id ON personas(project_id)",
+        [],
+    )?;
+
+    // ============================================================================
+    // 素材表 (Material)
+    // 存储项目级素材，包括文档、图片、文本、数据文件等
+    // _Requirements: 7.3_
+    // ============================================================================
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS materials (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            material_type TEXT NOT NULL DEFAULT 'document',
+            file_path TEXT,
+            file_size INTEGER,
+            mime_type TEXT,
+            content TEXT,
+            tags_json TEXT NOT NULL DEFAULT '[]',
+            description TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES workspaces(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 创建 materials 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_materials_project_id ON materials(project_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_materials_type ON materials(material_type)",
+        [],
+    )?;
+
+    // ============================================================================
+    // 排版模板表 (Template)
+    // 存储项目级排版模板，用于控制 AI 输出内容的格式
+    // _Requirements: 8.3_
+    // ============================================================================
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS templates (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            title_style TEXT,
+            paragraph_style TEXT,
+            ending_style TEXT,
+            emoji_usage TEXT NOT NULL DEFAULT 'moderate',
+            hashtag_rules TEXT,
+            image_rules TEXT,
+            is_default INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES workspaces(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 创建 templates 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_templates_project_id ON templates(project_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_templates_platform ON templates(platform)",
+        [],
+    )?;
+
+    // ============================================================================
+    // 发布配置表 (PublishConfig)
+    // 存储项目级发布配置，包括平台凭证和发布历史
+    // _Requirements: 9.4_
+    // ============================================================================
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS publish_configs (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            is_configured INTEGER DEFAULT 0,
+            credentials_encrypted TEXT,
+            last_published_at INTEGER,
+            publish_count INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+            UNIQUE(project_id, platform)
+        )",
+        [],
+    )?;
+
+    // 创建 publish_configs 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_publish_configs_project_id ON publish_configs(project_id)",
         [],
     )?;
 
