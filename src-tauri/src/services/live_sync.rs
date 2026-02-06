@@ -10,6 +10,10 @@ const ENV_BLOCK_END: &str = "# <<< ProxyCast Claude Config <<<";
 
 /// 原子写入 JSON 文件，防止配置损坏
 /// 参考 cc-switch 的实现：使用临时文件 + 重命名的原子操作
+///
+/// Windows 优化：
+/// - 避免不必要的 flush() 调用（Windows 上 flush 会触发磁盘同步）
+/// - 跳过验证步骤以减少文件读取
 pub(crate) fn write_json_file_atomic(
     path: &std::path::Path,
     value: &Value,
@@ -29,12 +33,21 @@ pub(crate) fn write_json_file_atomic(
     let content = serde_json::to_string_pretty(value)?;
     let mut temp_file = fs::File::create(&temp_path)?;
     temp_file.write_all(content.as_bytes())?;
+
+    // Windows 优化：只在非 Windows 平台调用 flush
+    // Windows 上 flush() 会触发 FlushFileBuffers()，导致等待物理磁盘写入
+    #[cfg(not(target_os = "windows"))]
     temp_file.flush()?;
+
     drop(temp_file); // 确保文件句柄被释放
 
-    // 验证 JSON 格式正确性
-    let verify_content = fs::read_to_string(&temp_path)?;
-    let _: Value = serde_json::from_str(&verify_content)?; // 验证解析
+    // Windows 优化：跳过验证步骤，减少一次文件读取
+    // 验证主要是为了防止 JSON 序列化错误，但 serde_json 已经保证了正确性
+    #[cfg(not(target_os = "windows"))]
+    {
+        let verify_content = fs::read_to_string(&temp_path)?;
+        let _: Value = serde_json::from_str(&verify_content)?; // 验证解析
+    }
 
     // 原子性重命名
     fs::rename(&temp_path, path)?;
@@ -47,12 +60,30 @@ pub(crate) fn write_json_file_atomic(
 pub(crate) fn create_backup(
     path: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if !should_create_backup() {
+        tracing::info!("Skip backup for: {}", path.display());
+        return Ok(());
+    }
+
     if path.exists() {
         let backup_path = path.with_extension("bak");
         std::fs::copy(path, &backup_path)?;
         tracing::info!("Created backup: {}", backup_path.display());
     }
     Ok(())
+}
+
+fn should_create_backup() -> bool {
+    if cfg!(target_os = "windows") {
+        return std::env::var("PROXYCAST_FORCE_BACKUP")
+            .map(|value| {
+                let value = value.to_lowercase();
+                value == "1" || value == "true" || value == "yes"
+            })
+            .unwrap_or(false);
+    }
+
+    true
 }
 
 /// 获取当前 shell 配置文件路径
@@ -88,6 +119,8 @@ fn get_shell_config_path() -> Result<PathBuf, Box<dyn std::error::Error + Send +
 
 /// 将环境变量写入 shell 配置文件
 /// 使用标记块管理，避免重复添加
+///
+/// Windows 优化：避免不必要的 flush() 调用
 pub fn write_env_to_shell_config(
     env_vars: &[(String, String)],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -146,12 +179,15 @@ pub fn write_env_to_shell_config(
         new_content.push('\n');
     }
 
-    // 创建备份
+    // 创建备份（Windows 优化：异步或跳过备份可以进一步优化）
     create_backup(&config_path)?;
 
     // 写入文件
     let mut file = fs::File::create(&config_path)?;
     file.write_all(new_content.as_bytes())?;
+
+    // Windows 优化：只在非 Windows 平台调用 flush
+    #[cfg(not(target_os = "windows"))]
     file.flush()?;
 
     tracing::info!(
@@ -338,18 +374,21 @@ fn sync_claude_settings(
     write_json_file_atomic(&config_path, &settings)?;
     tracing::info!("Claude 配置文件同步完成: {}", config_path.display());
 
-    // 同时写入 shell 配置文件
+    // 同时写入 shell 配置文件（后台任务，避免阻塞切换响应）
     if !env_vars_for_shell.is_empty() {
-        match write_env_to_shell_config(&env_vars_for_shell) {
-            Ok(_) => {
-                tracing::info!("Claude 环境变量已写入 shell 配置文件");
-                tracing::info!("请重启终端或执行 'source ~/.zshrc' (或 ~/.bashrc) 使配置生效");
-            }
-            Err(e) => {
-                tracing::warn!("写入 shell 配置文件失败: {}", e);
-                // 不中断流程，配置文件方式仍然可用
-            }
-        }
+        let env_vars_for_shell = env_vars_for_shell;
+        std::thread::spawn(
+            move || match write_env_to_shell_config(&env_vars_for_shell) {
+                Ok(_) => {
+                    tracing::info!("Claude 环境变量已写入 shell 配置文件");
+                    tracing::info!("请重启终端或执行 'source ~/.zshrc' (或 ~/.bashrc) 使配置生效");
+                }
+                Err(e) => {
+                    tracing::warn!("写入 shell 配置文件失败: {}", e);
+                    // 不中断流程，配置文件方式仍然可用
+                }
+            },
+        );
     }
 
     Ok(())

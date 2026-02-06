@@ -8,3 +8,4 @@ export { QuotaSettings } from "./QuotaSettings";
 export { RemoteManagementSettings } from "./RemoteManagementSettings";
 export { DeveloperSettings } from "./DeveloperSettings";
 export { ExperimentalSettings } from "./ExperimentalSettings";
+export { ExternalToolsSettings } from "./ExternalToolsSettings";

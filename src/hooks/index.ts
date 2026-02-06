@@ -12,6 +12,8 @@ export { useMaterials } from "./useMaterials";
 export { usePosterMaterial } from "./usePosterMaterial";
 export { useTemplates } from "./useTemplates";
 export { useProjectContext } from "./useProjectContext";
+export { useSkillExecution } from "./useSkillExecution";
+export { useMcp } from "./useMcp";
 export type { UseSoundReturn } from "./useSound";
 export type {
   Workspace,
@@ -41,3 +43,8 @@ export type {
   ConnectError,
   UseDeepLinkReturn,
 } from "./useDeepLink";
+export type {
+  UseSkillExecutionOptions,
+  UseSkillExecutionReturn,
+} from "./useSkillExecution";
+export type { UseMcpReturn } from "./useMcp";

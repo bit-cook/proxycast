@@ -18,6 +18,7 @@ use aster::session::{
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 
 /// ProxyCast 的 SessionStore 实现
@@ -43,6 +44,43 @@ impl ProxyCastSessionStore {
         } else {
             "assistant".to_string()
         }
+    }
+
+    /// 解析会话 working_dir（优先默认 workspace，其次应用默认项目目录）
+    fn resolve_session_working_dir(conn: &rusqlite::Connection) -> PathBuf {
+        // 1) 优先使用默认 workspace（is_default = 1）
+        let default_workspace_path: Option<String> = conn
+            .query_row(
+                "SELECT root_path FROM workspaces WHERE is_default = 1 LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(path) = default_workspace_path {
+            if !path.trim().is_empty() {
+                let pb = PathBuf::from(path);
+                return if pb.is_absolute() {
+                    pb
+                } else {
+                    std::env::current_dir()
+                        .unwrap_or_else(|_| PathBuf::from("."))
+                        .join(pb)
+                };
+            }
+        }
+
+        // 2) 回退到 ~/.proxycast/projects/default
+        if let Some(home) = dirs::home_dir() {
+            let fallback = home.join(".proxycast").join("projects").join("default");
+            if !fallback.exists() {
+                let _ = fs::create_dir_all(&fallback);
+            }
+            return fallback;
+        }
+
+        // 3) 最终回退到进程当前目录
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     }
 }
 
@@ -154,6 +192,7 @@ impl SessionStore for ProxyCastSessionStore {
             .unwrap_or_else(|_| Utc::now());
 
         let session_type = model.parse().unwrap_or(SessionType::User);
+        let working_dir = Self::resolve_session_working_dir(&conn);
 
         let conversation = if include_messages {
             Some(self.load_conversation(&conn, &id)?)
@@ -165,7 +204,7 @@ impl SessionStore for ProxyCastSessionStore {
 
         Ok(Session {
             id: id.to_string(),
-            working_dir: PathBuf::from("."),
+            working_dir,
             name: title.unwrap_or_else(|| "未命名会话".to_string()),
             user_set_name: false,
             session_type,
@@ -334,6 +373,7 @@ impl SessionStore for ProxyCastSessionStore {
 
     async fn list_sessions(&self) -> Result<Vec<Session>> {
         let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
+        let default_working_dir = Self::resolve_session_working_dir(&conn);
 
         let mut stmt = conn.prepare(
             "SELECT id, model, system_prompt, title, created_at, updated_at
@@ -362,7 +402,7 @@ impl SessionStore for ProxyCastSessionStore {
 
                 Session {
                     id,
-                    working_dir: PathBuf::from("."),
+                    working_dir: default_working_dir.clone(),
                     name: title.unwrap_or_else(|| "未命名会话".to_string()),
                     user_set_name: false,
                     session_type,

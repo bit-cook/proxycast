@@ -10,6 +10,24 @@ use crate::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+/// 安全截断字符串，确保不会在多字节字符中间切割
+///
+/// # 参数
+/// - `s`: 要截断的字符串
+/// - `max_chars`: 最大字符数（按 Unicode 字符计算，非字节）
+///
+/// # 返回
+/// 截断后的字符串，如果被截断则添加 "..." 后缀
+fn truncate_string(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_chars {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max_chars).collect();
+        format!("{}...", truncated)
+    }
+}
+
 /// Agent 进程状态响应
 #[derive(Debug, Serialize)]
 pub struct AgentProcessStatus {
@@ -360,11 +378,8 @@ pub async fn agent_generate_title(
             "助手"
         };
         let content = msg.content.as_text();
-        let truncated_content = if content.len() > 100 {
-            format!("{}...", &content[..100])
-        } else {
-            content
-        };
+        // 使用字符边界安全截断，避免在多字节字符中间切割
+        let truncated_content = truncate_string(&content, 100);
         conversation.push_str(&format!("{role}：{truncated_content}\n"));
     }
 
@@ -372,11 +387,8 @@ pub async fn agent_generate_title(
     // 这里简化处理：使用第一条用户消息的前 15 个字作为默认标题
     if let Some(first_user_msg) = chat_messages.iter().find(|msg| msg.role == "user") {
         let content = first_user_msg.content.as_text();
-        let title = if content.len() > 15 {
-            format!("{}...", &content[..15])
-        } else {
-            content
-        };
+        // 使用字符边界安全截断
+        let title = truncate_string(&content, 15);
         Ok(title)
     } else {
         Ok("新话题".to_string())

@@ -497,6 +497,55 @@ pub fn cleanup_legacy_api_key_credentials(conn: &Connection) -> Result<usize, St
     Ok(deleted)
 }
 
+/// 修复历史 MCP 导入数据：补齐 enabled_proxycast
+///
+/// 早期版本从 Claude/Codex/Gemini 导入 MCP 时，默认写入 enabled_proxycast=0，
+/// 导致 ProxyCast 本身不会使用这些服务器。
+///
+/// 迁移策略：
+/// - 仅处理 enabled_proxycast=0 的记录
+/// - 且至少在一个外部应用中启用（enabled_claude/codex/gemini 任一为 1）
+/// - 将 enabled_proxycast 设为 1
+pub fn migrate_mcp_proxycast_enabled(conn: &Connection) -> Result<usize, String> {
+    // 检查是否已经迁移过
+    let migrated: bool = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'migrated_mcp_proxycast_enabled'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    if migrated {
+        tracing::debug!("[迁移] MCP proxycast 启用状态已迁移过，跳过");
+        return Ok(0);
+    }
+
+    let updated = conn
+        .execute(
+            "UPDATE mcp_servers
+             SET enabled_proxycast = 1
+             WHERE enabled_proxycast = 0
+               AND (enabled_claude = 1 OR enabled_codex = 1 OR enabled_gemini = 1)",
+            [],
+        )
+        .map_err(|e| format!("修复 MCP enabled_proxycast 失败: {e}"))?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('migrated_mcp_proxycast_enabled', 'true')",
+        [],
+    )
+    .map_err(|e| format!("标记 MCP proxycast 迁移完成失败: {e}"))?;
+
+    tracing::info!(
+        "[迁移] MCP proxycast 启用状态修复完成，更新 {} 条记录",
+        updated
+    );
+
+    Ok(updated)
+}
+
 /// 当前模型注册表版本
 /// 每次更新模型数据结构或添加新 Provider 时，增加此版本号
 const MODEL_REGISTRY_VERSION: &str = "2026.01.16.1";

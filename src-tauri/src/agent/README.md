@@ -11,6 +11,7 @@ AI Agent 集成模块，基于 aster-rust 框架实现。
 - **Aster 框架**：使用 aster-rust 框架获得多 Provider、工具系统、会话管理等能力
 - **凭证池桥接**：自动从 ProxyCast 凭证池选择凭证配置 Aster Provider
 - **流式响应**：通过 Tauri 事件系统向前端推送流式内容
+- **Skills 集成**：自动加载 ProxyCast Skills 到 aster-rust，使 AI 能够自动调用
 
 ## 文件索引
 
@@ -18,32 +19,56 @@ AI Agent 集成模块，基于 aster-rust 框架实现。
 |------|------|
 | `mod.rs` | 模块入口，导出公共类型 |
 | `types.rs` | Agent 相关类型定义 |
-| `aster_state.rs` | Aster Agent 状态管理（Provider 配置、取消令牌） |
+| `aster_state.rs` | Aster Agent 状态管理（Provider 配置、取消令牌、Skills 加载） |
 | `aster_agent.rs` | Aster Agent 包装器（会话管理） |
 | `event_converter.rs` | Aster 事件到 Tauri 事件转换 |
 | `credential_bridge.rs` | 凭证池桥接（连接 ProxyCast 凭证池与 Aster Provider） |
+
+## Skills 集成
+
+### 自动加载机制
+
+Agent 初始化时自动加载 `~/.proxycast/skills/` 目录下的 Skills：
+
+```rust
+// init_agent_with_db() 内部调用
+Self::load_proxycast_skills();
+```
+
+### AI 自动调用
+
+aster-rust 的 `SkillTool` 会从 `global_registry` 读取可用 Skills，AI 可以：
+- 根据用户意图自动选择合适的 Skill
+- 通过 `/skill-name` 命令显式调用 Skill
+
+### 动态刷新
+
+安装/卸载 Skills 后自动刷新：
+
+```rust
+// skill_cmd.rs 中调用
+AsterAgentState::reload_proxycast_skills();
+```
 
 ## 使用方式
 
 ### 从凭证池配置（推荐）
 
 ```rust
-// 初始化
-state.init_agent().await?;
+// 初始化（同时加载 Skills）
+state.init_agent_with_db(&db).await?;
 
 // 从凭证池自动选择凭证并配置 Provider
 let config = state
     .configure_provider_from_pool(&db, "openai", "gpt-4", &session_id)
     .await?;
-
-// config.credential_uuid 包含使用的凭证 UUID
 ```
 
 ### 手动配置
 
 ```rust
 // 初始化
-state.init_agent().await?;
+state.init_agent_with_db(&db).await?;
 
 // 手动配置 Provider
 let config = ProviderConfig {
@@ -53,7 +78,7 @@ let config = ProviderConfig {
     base_url: None,
     credential_uuid: None,
 };
-state.configure_provider(config, &session_id).await?;
+state.configure_provider(config, &session_id, &db).await?;
 ```
 
 ### 发送消息

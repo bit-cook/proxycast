@@ -13,6 +13,7 @@ export type Page =
   | "api-server"
   | "agent"
   | "image-gen"
+  | "mcp"
   | "tools"
   | "plugins"
   | "settings"
@@ -23,6 +24,7 @@ export type Page =
   | "image-analysis"
   | "projects"
   | "project-detail"
+  | "vibe"
   | `plugin:${string}`;
 
 /**

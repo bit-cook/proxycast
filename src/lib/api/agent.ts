@@ -192,6 +192,7 @@ export function parseStreamEvent(data: unknown): StreamEvent | null {
         text: (event.text as string) || "",
       };
     case "reasoning_delta":
+    case "thinking_delta":
       return {
         type: "thinking_delta",
         text: (event.text as string) || "",
@@ -209,7 +210,10 @@ export function parseStreamEvent(data: unknown): StreamEvent | null {
         tool_id: (event.tool_id as string) || "",
         result: event.result as ToolExecutionResult,
       };
-    case "action_required":
+    case "action_required": {
+      const actionData =
+        (event.data as Record<string, unknown> | undefined) || {};
+
       return {
         type: "action_required",
         request_id: (event.request_id as string) || "",
@@ -218,24 +222,44 @@ export function parseStreamEvent(data: unknown): StreamEvent | null {
             | "tool_confirmation"
             | "ask_user"
             | "elicitation") || "tool_confirmation",
-        tool_name: event.tool_name as string | undefined,
-        arguments: event.arguments as Record<string, unknown> | undefined,
-        prompt: event.prompt as string | undefined,
-        questions: event.questions as
-          | Array<{
-              question: string;
-              header?: string;
-              options?: Array<{
-                label: string;
-                description?: string;
-              }>;
-              multiSelect?: boolean;
-            }>
-          | undefined,
-        requested_schema: event.requested_schema as
-          | Record<string, unknown>
-          | undefined,
+        tool_name:
+          (event.tool_name as string | undefined) ||
+          (actionData.tool_name as string | undefined),
+        arguments:
+          (event.arguments as Record<string, unknown> | undefined) ||
+          (actionData.arguments as Record<string, unknown> | undefined),
+        prompt:
+          (event.prompt as string | undefined) ||
+          (actionData.prompt as string | undefined) ||
+          (actionData.message as string | undefined),
+        questions:
+          (event.questions as
+            | Array<{
+                question: string;
+                header?: string;
+                options?: Array<{
+                  label: string;
+                  description?: string;
+                }>;
+                multiSelect?: boolean;
+              }>
+            | undefined) ||
+          (actionData.questions as
+            | Array<{
+                question: string;
+                header?: string;
+                options?: Array<{
+                  label: string;
+                  description?: string;
+                }>;
+                multiSelect?: boolean;
+              }>
+            | undefined),
+        requested_schema:
+          (event.requested_schema as Record<string, unknown> | undefined) ||
+          (actionData.requested_schema as Record<string, unknown> | undefined),
       };
+    }
     case "done":
       return {
         type: "done",
@@ -626,26 +650,42 @@ export interface AsterProviderConfig {
 }
 
 /**
- * Aster 会话信息
+ * Aster 会话信息（匹配后端 SessionInfo 结构）
  */
 export interface AsterSessionInfo {
   id: string;
   name?: string;
-  created_at: string;
-  updated_at: string;
-  messages_count: number;
+  created_at: number;
+  updated_at: number;
+  messages_count?: number;
 }
 
 /**
- * Aster 会话详情
+ * TauriMessageContent（匹配后端 TauriMessageContent 枚举）
+ */
+export interface TauriMessageContent {
+  type: string;
+  text?: string;
+  id?: string;
+  tool_name?: string;
+  arguments?: unknown;
+  success?: boolean;
+  output?: string;
+}
+
+/**
+ * Aster 会话详情（匹配后端 SessionDetail 结构）
  */
 export interface AsterSessionDetail {
   id: string;
   name?: string;
+  created_at: number;
+  updated_at: number;
   messages: Array<{
+    id?: string;
     role: string;
-    content: string;
-    timestamp: string;
+    content: TauriMessageContent[];
+    timestamp: number;
   }>;
 }
 

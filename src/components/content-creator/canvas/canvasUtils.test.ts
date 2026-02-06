@@ -24,9 +24,10 @@ describe("getCanvasTypeForTheme", () => {
     expect(getCanvasTypeForTheme("music")).toBe("music");
     expect(getCanvasTypeForTheme("social-media")).toBe("document");
     expect(getCanvasTypeForTheme("document")).toBe("document");
-    expect(getCanvasTypeForTheme("general")).toBeNull();
-    expect(getCanvasTypeForTheme("knowledge")).toBeNull();
-    expect(getCanvasTypeForTheme("planning")).toBeNull();
+    // 所有主题现在都支持 document 画布
+    expect(getCanvasTypeForTheme("general")).toBe("document");
+    expect(getCanvasTypeForTheme("knowledge")).toBe("document");
+    expect(getCanvasTypeForTheme("planning")).toBe("document");
   });
 
   it("应该覆盖所有 ThemeType", () => {
@@ -61,12 +62,13 @@ describe("isCanvasSupported", () => {
     expect(isCanvasSupported("music")).toBe(true);
     expect(isCanvasSupported("social-media")).toBe(true);
     expect(isCanvasSupported("document")).toBe(true);
-    expect(isCanvasSupported("general")).toBe(false);
-    expect(isCanvasSupported("knowledge")).toBe(false);
-    expect(isCanvasSupported("planning")).toBe(false);
+    // 所有主题现在都支持画布
+    expect(isCanvasSupported("general")).toBe(true);
+    expect(isCanvasSupported("knowledge")).toBe(true);
+    expect(isCanvasSupported("planning")).toBe(true);
   });
 
-  it("支持画布的主题数量应该是 6 种", () => {
+  it("所有 9 种主题都应该支持画布", () => {
     const allThemes: ThemeType[] = [
       "general",
       "social-media",
@@ -82,7 +84,7 @@ describe("isCanvasSupported", () => {
     const supportedCount = allThemes.filter((theme) =>
       isCanvasSupported(theme),
     ).length;
-    expect(supportedCount).toBe(6);
+    expect(supportedCount).toBe(9);
   });
 });
 
@@ -117,10 +119,19 @@ describe("createInitialCanvasState", () => {
     expect(socialState?.type).toBe("document");
   });
 
-  it("不支持画布的主题应该返回 null", () => {
-    expect(createInitialCanvasState("general", "test")).toBeNull();
-    expect(createInitialCanvasState("knowledge", "test")).toBeNull();
-    expect(createInitialCanvasState("planning", "test")).toBeNull();
+  it("所有主题都应该返回有效的画布状态", () => {
+    // general、knowledge、planning 现在也支持 document 画布
+    const generalState = createInitialCanvasState("general", "test");
+    expect(generalState).not.toBeNull();
+    expect(generalState?.type).toBe("document");
+
+    const knowledgeState = createInitialCanvasState("knowledge", "test");
+    expect(knowledgeState).not.toBeNull();
+    expect(knowledgeState?.type).toBe("document");
+
+    const planningState = createInitialCanvasState("planning", "test");
+    expect(planningState).not.toBeNull();
+    expect(planningState?.type).toBe("document");
   });
 
   it("应该正确处理空内容参数", () => {

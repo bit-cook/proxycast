@@ -33,7 +33,7 @@ import KimiIcon from "./kimi.svg?react";
 import MinimaxIcon from "./minimax.svg?react";
 import DoubaoIcon from "./doubao.svg?react";
 import AzureIcon from "./azure.svg?react";
-import AntigravityIcon from "./antigravity.svg?react";
+import antigravityIconUrl from "./antigravity.svg?url";
 import ProxycastIcon from "./proxycast.svg?react";
 
 // 新增图标 - 主流 AI
@@ -104,6 +104,20 @@ import CherryinIcon from "./cherryin.svg?react";
 
 // 自定义 Provider 图标
 import CustomIcon from "./custom.svg?react";
+
+const AntigravityIcon: React.FC<SVGProps<SVGSVGElement>> = ({
+  width = "1em",
+  height = "1em",
+}) => {
+  return (
+    <img
+      src={antigravityIconUrl}
+      width={width}
+      height={height}
+      alt="Antigravity"
+    />
+  );
+};
 
 // ============================================================================
 // 图标组件映射

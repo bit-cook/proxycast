@@ -10,10 +10,12 @@ import { ExtensionsSettings } from "./ExtensionsSettings";
 import { DeveloperSettings } from "./DeveloperSettings";
 import { ConnectionsSettings } from "./ConnectionsSettings";
 import { ExperimentalSettings } from "./ExperimentalSettings";
+import { ExternalToolsSettings } from "./ExternalToolsSettings";
 
 type SettingsTab =
   | "general"
   | "connections"
+  | "tools"
   | "security"
   | "advanced"
   | "extensions"
@@ -24,6 +26,7 @@ type SettingsTab =
 const tabs: { id: SettingsTab; label: string; experimental?: boolean }[] = [
   { id: "general", label: "通用" },
   { id: "connections", label: "连接" },
+  { id: "tools", label: "外部工具" },
   { id: "security", label: "安全" },
   { id: "advanced", label: "高级" },
   { id: "extensions", label: "扩展", experimental: true },
@@ -70,6 +73,7 @@ export function SettingsPage() {
       <div className="flex-1 overflow-auto">
         {activeTab === "general" && <GeneralSettings />}
         {activeTab === "connections" && <ConnectionsSettings />}
+        {activeTab === "tools" && <ExternalToolsSettings />}
         {activeTab === "security" && (
           <div className="space-y-6 max-w-2xl">
             <TlsSettings />

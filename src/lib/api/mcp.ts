@@ -1,5 +1,9 @@
 import { safeInvoke } from "@/lib/dev-bridge";
 
+// ============================================================================
+// 基础类型定义
+// ============================================================================
+
 export interface McpServer {
   id: string;
   name: string;
@@ -7,6 +11,8 @@ export interface McpServer {
     command: string;
     args?: string[];
     env?: Record<string, string>;
+    cwd?: string;
+    timeout?: number;
   };
   description?: string;
   enabled_proxycast: boolean;
@@ -16,7 +22,114 @@ export interface McpServer {
   created_at?: number;
 }
 
+/** MCP 服务器能力信息 */
+export interface McpServerCapabilities {
+  name: string;
+  version: string;
+  supports_tools: boolean;
+  supports_prompts: boolean;
+  supports_resources: boolean;
+}
+
+/** MCP 服务器信息（包含运行状态） */
+export interface McpServerInfo {
+  id: string;
+  name: string;
+  description?: string;
+  config: McpServer["server_config"];
+  is_running: boolean;
+  server_info?: McpServerCapabilities;
+  enabled_proxycast: boolean;
+  enabled_claude: boolean;
+  enabled_codex: boolean;
+  enabled_gemini: boolean;
+}
+
+// ============================================================================
+// 工具类型
+// ============================================================================
+
+/** MCP 工具定义 */
+export interface McpToolDefinition {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  server_name: string;
+}
+
+/** MCP 内容类型 */
+export type McpContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mime_type: string }
+  | { type: "resource"; uri: string; text?: string; blob?: string };
+
+/** MCP 工具调用结果 */
+export interface McpToolResult {
+  content: McpContent[];
+  is_error: boolean;
+}
+
+// ============================================================================
+// 提示词类型
+// ============================================================================
+
+/** MCP 提示词参数 */
+export interface McpPromptArgument {
+  name: string;
+  description?: string;
+  required: boolean;
+}
+
+/** MCP 提示词定义 */
+export interface McpPromptDefinition {
+  name: string;
+  description?: string;
+  arguments: McpPromptArgument[];
+  server_name: string;
+}
+
+/** MCP 提示词消息 */
+export interface McpPromptMessage {
+  role: string;
+  content: McpContent;
+}
+
+/** MCP 提示词结果 */
+export interface McpPromptResult {
+  description?: string;
+  messages: McpPromptMessage[];
+}
+
+// ============================================================================
+// 资源类型
+// ============================================================================
+
+/** MCP 资源定义 */
+export interface McpResourceDefinition {
+  uri: string;
+  name: string;
+  description?: string;
+  mime_type?: string;
+  server_name: string;
+}
+
+/** MCP 资源内容 */
+export interface McpResourceContent {
+  uri: string;
+  mime_type?: string;
+  text?: string;
+  blob?: string;
+}
+
+// ============================================================================
+// API 封装
+// ============================================================================
+
 export const mcpApi = {
+  // --------------------------------------------------------------------------
+  // 配置管理 API
+  // --------------------------------------------------------------------------
+
   getServers: (): Promise<McpServer[]> => safeInvoke("get_mcp_servers"),
 
   addServer: (server: McpServer): Promise<void> =>
@@ -40,4 +153,61 @@ export const mcpApi = {
 
   /** 同步所有 MCP 配置到实际配置文件 */
   syncAllToLive: (): Promise<void> => safeInvoke("sync_all_mcp_to_live"),
+
+  // --------------------------------------------------------------------------
+  // 生命周期管理 API
+  // --------------------------------------------------------------------------
+
+  /** 获取所有服务器及其运行状态 */
+  listServersWithStatus: (): Promise<McpServerInfo[]> =>
+    safeInvoke("mcp_list_servers_with_status"),
+
+  /** 启动 MCP 服务器 */
+  startServer: (name: string): Promise<void> =>
+    safeInvoke("mcp_start_server", { name }),
+
+  /** 停止 MCP 服务器 */
+  stopServer: (name: string): Promise<void> =>
+    safeInvoke("mcp_stop_server", { name }),
+
+  // --------------------------------------------------------------------------
+  // 工具管理 API
+  // --------------------------------------------------------------------------
+
+  /** 获取所有可用工具 */
+  listTools: (): Promise<McpToolDefinition[]> => safeInvoke("mcp_list_tools"),
+
+  /** 调用工具 */
+  callTool: (
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<McpToolResult> =>
+    safeInvoke("mcp_call_tool", { toolName, arguments: args }),
+
+  // --------------------------------------------------------------------------
+  // 提示词管理 API
+  // --------------------------------------------------------------------------
+
+  /** 获取所有可用提示词 */
+  listPrompts: (): Promise<McpPromptDefinition[]> =>
+    safeInvoke("mcp_list_prompts"),
+
+  /** 获取提示词内容 */
+  getPrompt: (
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<McpPromptResult> =>
+    safeInvoke("mcp_get_prompt", { name, arguments: args }),
+
+  // --------------------------------------------------------------------------
+  // 资源管理 API
+  // --------------------------------------------------------------------------
+
+  /** 获取所有可用资源 */
+  listResources: (): Promise<McpResourceDefinition[]> =>
+    safeInvoke("mcp_list_resources"),
+
+  /** 读取资源内容 */
+  readResource: (uri: string): Promise<McpResourceContent> =>
+    safeInvoke("mcp_read_resource", { uri }),
 };

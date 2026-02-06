@@ -119,8 +119,9 @@ impl CredentialBridge {
                 ))
             })?;
 
-        // 2. 转换为 Aster Provider 配置
-        self.credential_to_config(&credential, model, db).await
+        // 2. 转换为 Aster Provider 配置，传递 provider_type 以便正确识别 Provider
+        self.credential_to_config(&credential, model, provider_type, db)
+            .await
     }
 
     /// 将 ProxyCast 凭证转换为 Aster Provider 配置
@@ -128,15 +129,31 @@ impl CredentialBridge {
         &self,
         credential: &ProviderCredential,
         model: &str,
+        provider_type_hint: &str,
         db: &DbConnection,
     ) -> Result<AsterProviderConfig, CredentialBridgeError> {
+        tracing::info!(
+            "[CredentialBridge] credential_to_config: provider_type_hint={}, credential_type={:?}",
+            provider_type_hint,
+            credential.provider_type
+        );
+
         let (provider_name, api_key, base_url) = match &credential.credential {
-            // OpenAI API Key
-            CredentialData::OpenAIKey { api_key, base_url } => (
-                "openai".to_string(),
-                Some(api_key.clone()),
-                base_url.clone(),
-            ),
+            // OpenAI API Key - 根据 provider_type_hint 确定实际的 Provider
+            CredentialData::OpenAIKey { api_key, base_url } => {
+                // 使用 provider_type_hint 来确定 aster provider 名称
+                let provider = map_provider_type_to_aster(provider_type_hint);
+                tracing::info!(
+                    "[CredentialBridge] OpenAIKey: provider_type_hint={} -> aster_provider={}",
+                    provider_type_hint,
+                    provider
+                );
+                (
+                    provider.to_string(),
+                    Some(api_key.clone()),
+                    base_url.clone(),
+                )
+            }
 
             // Claude/Anthropic API Key
             CredentialData::ClaudeKey { api_key, base_url }
@@ -343,6 +360,13 @@ pub async fn create_aster_provider(
 
 /// 设置 Provider 环境变量
 fn set_provider_env_vars(config: &AsterProviderConfig) {
+    tracing::info!(
+        "[CredentialBridge] set_provider_env_vars: provider_name={}, has_api_key={}, base_url={:?}",
+        config.provider_name,
+        config.api_key.is_some(),
+        config.base_url
+    );
+
     let env_key = match config.provider_name.as_str() {
         "openai" => "OPENAI_API_KEY",
         "anthropic" => "ANTHROPIC_API_KEY",
@@ -350,8 +374,14 @@ fn set_provider_env_vars(config: &AsterProviderConfig) {
         "bedrock" => "AWS_ACCESS_KEY_ID", // Bedrock 使用 AWS 凭证
         "gcpvertexai" => "GOOGLE_API_KEY",
         "codex" => "OPENAI_API_KEY", // Codex 兼容 OpenAI
-        _ => "OPENAI_API_KEY",       // 默认使用 OpenAI 格式
+        "deepseek" | "custom_deepseek" => "OPENAI_API_KEY", // DeepSeek 使用 OpenAI 兼容 API
+        "groq" => "OPENAI_API_KEY",  // Groq 使用 OpenAI 兼容 API
+        "mistral" => "OPENAI_API_KEY", // Mistral 使用 OpenAI 兼容 API
+        "openrouter" => "OPENROUTER_API_KEY",
+        _ => "OPENAI_API_KEY", // 默认使用 OpenAI 格式
     };
+
+    tracing::info!("[CredentialBridge] 设置环境变量: {}=***", env_key);
 
     if let Some(api_key) = &config.api_key {
         std::env::set_var(env_key, api_key);
@@ -400,6 +430,35 @@ pub fn map_pool_type_to_aster(pool_type: &PoolProviderType) -> &'static str {
         PoolProviderType::AzureOpenai => "azure",
         PoolProviderType::AwsBedrock => "bedrock",
         PoolProviderType::Ollama => "ollama",
+    }
+}
+
+/// 将 provider_type 字符串映射到 Aster Provider 名称
+///
+/// 支持 60+ API Key Provider，包括 deepseek, moonshot, qwen 等
+fn map_provider_type_to_aster(provider_type: &str) -> &'static str {
+    match provider_type {
+        // 标准 Provider
+        "openai" => "openai",
+        "anthropic" | "claude" => "anthropic",
+        "google" | "gemini" => "google",
+        "bedrock" | "kiro" => "bedrock",
+        "gcpvertexai" | "vertex" => "gcpvertexai",
+        "codex" => "codex",
+        "azure" | "azure-openai" => "azure",
+        "ollama" => "ollama",
+
+        // DeepSeek - 使用 openai 兼容 provider（Aster 会通过 alias 映射）
+        "deepseek" | "custom_deepseek" => "openai",
+
+        // 其他 OpenAI 兼容 Provider - 使用 openai provider
+        // 这些 Provider 都使用 OpenAI 兼容 API，通过 base_url 区分
+        "groq" => "openai",
+        "mistral" => "openai",
+        "openrouter" => "openrouter",
+
+        // 默认使用 openai（OpenAI 兼容格式）
+        _ => "openai",
     }
 }
 

@@ -15,10 +15,16 @@
 //! 包括名称、语言偏好、产品描述等。这是架构层面的正确做法，
 //! 而不是简单地追加提示词。
 //!
+//! ## Skills 集成
+//!
+//! Agent 初始化时会自动加载 `~/.proxycast/skills/` 目录下的 Skills 到
+//! aster-rust 的 global_registry，使 AI 能够自动发现和调用这些 Skills。
+//!
 //! 参考文档：`docs/prd/chat-architecture-redesign.md`
 
 use aster::agents::{Agent, AgentIdentity, SessionConfig};
 use aster::model::ModelConfig;
+use aster::skills::{global_registry, load_skills_from_directory, SkillSource};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -80,6 +86,7 @@ impl AsterAgentState {
     ///
     /// 创建 Agent 并注入 ProxyCastSessionStore，确保消息存储到 ProxyCast 数据库。
     /// 同时设置 ProxyCast 专属的 Agent 身份（名称、语言、描述）。
+    /// 自动加载 `~/.proxycast/skills/` 目录下的 Skills 到 aster-rust 的 global_registry。
     ///
     /// **推荐使用此方法**而不是 `init_agent()`。
     ///
@@ -106,14 +113,71 @@ impl AsterAgentState {
             let identity = Self::create_proxycast_identity();
             agent.set_identity(identity).await;
 
+            // 加载 ProxyCast Skills 到 aster-rust 的 global_registry
+            Self::load_proxycast_skills();
+
             *agent_guard = Some(agent);
             tracing::info!(
-                "[AsterAgent] Agent 初始化成功，已注入 ProxyCastSessionStore 和 ProxyCast 身份"
+                "[AsterAgent] Agent 初始化成功，已注入 ProxyCastSessionStore、ProxyCast 身份和 Skills"
             );
         } else {
             tracing::debug!("[AsterAgent] Agent 已初始化，跳过");
         }
         Ok(())
+    }
+
+    /// 加载 ProxyCast Skills 到 aster-rust 的 global_registry
+    ///
+    /// 从 `~/.proxycast/skills/` 目录加载 Skills，使 AI 能够自动发现和调用。
+    fn load_proxycast_skills() {
+        let home = match dirs::home_dir() {
+            Some(h) => h,
+            None => {
+                tracing::warn!("[AsterAgent] 无法获取 home 目录，跳过 Skills 加载");
+                return;
+            }
+        };
+
+        let skills_dir = home.join(".proxycast").join("skills");
+        if !skills_dir.exists() {
+            tracing::info!(
+                "[AsterAgent] ProxyCast Skills 目录不存在: {:?}，跳过加载",
+                skills_dir
+            );
+            return;
+        }
+
+        // 从 ProxyCast skills 目录加载 Skills
+        let skills = load_skills_from_directory(&skills_dir, SkillSource::User);
+        let skill_count = skills.len();
+
+        if skill_count == 0 {
+            tracing::info!("[AsterAgent] ProxyCast Skills 目录为空，无 Skills 可加载");
+            return;
+        }
+
+        // 注册到 global_registry
+        let registry = global_registry();
+        if let Ok(mut registry_guard) = registry.write() {
+            for skill in skills {
+                let skill_name = skill.skill_name.clone();
+                registry_guard.register(skill);
+                tracing::debug!("[AsterAgent] 已注册 Skill: {}", skill_name);
+            }
+            tracing::info!(
+                "[AsterAgent] 成功加载 {} 个 ProxyCast Skills 到 global_registry",
+                skill_count
+            );
+        } else {
+            tracing::error!("[AsterAgent] 无法获取 global_registry 写锁，Skills 加载失败");
+        }
+    }
+
+    /// 重新加载 ProxyCast Skills
+    ///
+    /// 当用户安装或卸载 Skills 后调用此方法刷新 registry。
+    pub fn reload_proxycast_skills() {
+        Self::load_proxycast_skills();
     }
 
     /// 创建 ProxyCast 专属的 Agent 身份配置
@@ -296,17 +360,29 @@ impl AsterAgentState {
 
     /// 设置 Provider 相关的环境变量
     fn set_provider_env_vars(&self, config: &ProviderConfig) {
+        tracing::info!(
+            "[AsterAgent] set_provider_env_vars: provider_name={}, model_name={}, has_api_key={}, base_url={:?}",
+            config.provider_name,
+            config.model_name,
+            config.api_key.is_some(),
+            config.base_url
+        );
+
         // 根据 provider 类型设置对应的环境变量
         let env_key = match config.provider_name.as_str() {
             "openai" => "OPENAI_API_KEY",
             "anthropic" => "ANTHROPIC_API_KEY",
             "google" => "GOOGLE_API_KEY",
-            "deepseek" | "custom_deepseek" => "DEEPSEEK_API_KEY",
-            "groq" => "GROQ_API_KEY",
-            "mistral" => "MISTRAL_API_KEY",
+            "deepseek" | "custom_deepseek" => "OPENAI_API_KEY", // DeepSeek 使用 OpenAI 兼容 API
+            "groq" => "OPENAI_API_KEY",                         // Groq 使用 OpenAI 兼容 API
+            "mistral" => "OPENAI_API_KEY",                      // Mistral 使用 OpenAI 兼容 API
             "openrouter" => "OPENROUTER_API_KEY",
             "ollama" => return, // Ollama 不需要 API Key
             _ => {
+                tracing::warn!(
+                    "[AsterAgent] 未知的 provider_name: {}, 使用通用 OpenAI 格式",
+                    config.provider_name
+                );
                 // 通用 OpenAI 兼容格式
                 if let Some(api_key) = &config.api_key {
                     std::env::set_var("OPENAI_API_KEY", api_key);
@@ -317,6 +393,8 @@ impl AsterAgentState {
                 return;
             }
         };
+
+        tracing::info!("[AsterAgent] 设置环境变量: {}=***", env_key);
 
         if let Some(api_key) = &config.api_key {
             std::env::set_var(env_key, api_key);
@@ -334,6 +412,15 @@ impl AsterAgentState {
     /// 获取当前 Provider 配置
     pub async fn get_provider_config(&self) -> Option<ProviderConfig> {
         self.current_provider_config.read().await.clone()
+    }
+
+    /// 清除当前 Provider 配置
+    ///
+    /// 用于切换凭证后重置状态，下次对话时会重新从凭证池选择凭证
+    pub async fn clear_provider_config(&self) {
+        let mut config_guard = self.current_provider_config.write().await;
+        *config_guard = None;
+        tracing::info!("[AsterAgent] Provider 配置已清除");
     }
 
     /// 检查 Provider 是否已配置
@@ -541,6 +628,8 @@ ProxyCast 是一个 AI 代理服务应用，帮助用户：
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_aster_state_init() {
@@ -565,5 +654,100 @@ mod tests {
 
         state.remove_cancel_token(session_id).await;
         assert!(!state.cancel_session(session_id).await);
+    }
+
+    // =========================================================================
+    // Skills 集成测试
+    // =========================================================================
+
+    /// 测试辅助函数：创建测试用的 Skill 目录
+    fn create_test_skill(skills_dir: &std::path::Path, skill_name: &str, description: &str) {
+        let skill_path = skills_dir.join(skill_name);
+        fs::create_dir_all(&skill_path).unwrap();
+        let skill_md = format!(
+            r#"---
+name: {}
+description: {}
+---
+
+# {}
+
+这是一个测试 Skill。
+"#,
+            skill_name, description, skill_name
+        );
+        fs::write(skill_path.join("SKILL.md"), skill_md).unwrap();
+    }
+
+    /// 测试：load_skills_from_directory 能正确加载 Skills
+    #[test]
+    fn test_load_skills_from_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let skills_dir = temp_dir.path();
+
+        // 创建测试 Skills
+        create_test_skill(skills_dir, "test-skill-1", "第一个测试技能");
+        create_test_skill(skills_dir, "test-skill-2", "第二个测试技能");
+
+        // 加载 Skills
+        let skills = load_skills_from_directory(skills_dir, SkillSource::User);
+
+        // 验证
+        assert_eq!(skills.len(), 2);
+        let names: Vec<_> = skills.iter().map(|s| s.display_name.as_str()).collect();
+        assert!(names.contains(&"test-skill-1"));
+        assert!(names.contains(&"test-skill-2"));
+    }
+
+    /// 测试：空目录返回空列表
+    #[test]
+    fn test_load_skills_empty_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let skills = load_skills_from_directory(temp_dir.path(), SkillSource::User);
+        assert!(skills.is_empty());
+    }
+
+    /// 测试：不存在的目录返回空列表
+    #[test]
+    fn test_load_skills_nonexistent_directory() {
+        let nonexistent = std::path::Path::new("/nonexistent/path/to/skills");
+        let skills = load_skills_from_directory(nonexistent, SkillSource::User);
+        assert!(skills.is_empty());
+    }
+
+    /// 测试：global_registry 能正确注册和查找 Skills
+    #[test]
+    fn test_global_registry_register_and_find() {
+        let temp_dir = TempDir::new().unwrap();
+        let skills_dir = temp_dir.path();
+
+        // 创建测试 Skill
+        create_test_skill(skills_dir, "registry-test-skill", "注册表测试技能");
+
+        // 加载并注册到 global_registry
+        let skills = load_skills_from_directory(skills_dir, SkillSource::User);
+        let registry = global_registry();
+
+        if let Ok(mut registry_guard) = registry.write() {
+            for skill in skills {
+                registry_guard.register(skill);
+            }
+        }
+
+        // 验证能找到注册的 Skill
+        if let Ok(registry_guard) = registry.read() {
+            let found = registry_guard.find("registry-test-skill");
+            assert!(found.is_some());
+            assert_eq!(found.unwrap().display_name, "registry-test-skill");
+        }
+    }
+
+    /// 测试：reload_proxycast_skills 不会 panic（即使目录不存在）
+    #[test]
+    fn test_reload_proxycast_skills_no_panic() {
+        // 这个测试确保 reload_proxycast_skills 在各种情况下都不会 panic
+        // 即使 ~/.proxycast/skills/ 目录不存在
+        AsterAgentState::reload_proxycast_skills();
+        // 如果没有 panic，测试通过
     }
 }

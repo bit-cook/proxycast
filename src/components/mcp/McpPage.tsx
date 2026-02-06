@@ -85,6 +85,7 @@ export function McpPage({ hideHeader = false }: McpPageProps) {
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editConfig, setEditConfig] = useState("");
+  const [enabledProxycast, setEnabledProxycast] = useState(true);
   const [enabledClaude, setEnabledClaude] = useState(true);
   const [enabledCodex, setEnabledCodex] = useState(true);
   const [enabledGemini, setEnabledGemini] = useState(true);
@@ -125,6 +126,7 @@ export function McpPage({ hideHeader = false }: McpPageProps) {
     setEditName(server.name);
     setEditDescription(server.description || "");
     setEditConfig(JSON.stringify(server.server_config, null, 2));
+    setEnabledProxycast(server.enabled_proxycast);
     setEnabledClaude(server.enabled_claude);
     setEnabledCodex(server.enabled_codex);
     setEnabledGemini(server.enabled_gemini);
@@ -138,6 +140,7 @@ export function McpPage({ hideHeader = false }: McpPageProps) {
     setEditName("");
     setEditDescription("");
     setEditConfig(defaultServerConfig);
+    setEnabledProxycast(true);
     setEnabledClaude(true);
     setEnabledCodex(true);
     setEnabledGemini(true);
@@ -189,7 +192,7 @@ export function McpPage({ hideHeader = false }: McpPageProps) {
           name: editName.trim(),
           description: editDescription.trim() || undefined,
           server_config: serverConfig,
-          enabled_proxycast: false,
+          enabled_proxycast: enabledProxycast,
           enabled_claude: enabledClaude,
           enabled_codex: enabledCodex,
           enabled_gemini: enabledGemini,
@@ -202,6 +205,7 @@ export function McpPage({ hideHeader = false }: McpPageProps) {
           name: editName.trim(),
           description: editDescription.trim() || undefined,
           server_config: serverConfig,
+          enabled_proxycast: enabledProxycast,
           enabled_claude: enabledClaude,
           enabled_codex: enabledCodex,
           enabled_gemini: enabledGemini,
@@ -230,6 +234,7 @@ export function McpPage({ hideHeader = false }: McpPageProps) {
   // 获取启用的应用标签
   const getEnabledApps = (server: McpServer) => {
     const apps: string[] = [];
+    if (server.enabled_proxycast) apps.push("ProxyCast");
     if (server.enabled_claude) apps.push("Claude");
     if (server.enabled_codex) apps.push("Codex");
     if (server.enabled_gemini) apps.push("Gemini");
@@ -541,6 +546,15 @@ export function McpPage({ hideHeader = false }: McpPageProps) {
                   <span className="text-xs font-medium text-muted-foreground">
                     同步到:
                   </span>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enabledProxycast}
+                      onChange={(e) => setEnabledProxycast(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-gray-300"
+                    />
+                    <span className="text-xs">ProxyCast</span>
+                  </label>
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="checkbox"

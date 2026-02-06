@@ -90,6 +90,9 @@ impl std::str::FromStr for ProviderType {
             "siliconflow" => Ok(ProviderType::OpenAI),
             "oneapi" | "one-api" | "newapi" | "new-api" => Ok(ProviderType::OpenAI),
             "custom" | "custom_openai" => Ok(ProviderType::OpenAI),
+            // 自定义 Provider（UUID 格式，如 custom-ba4e7574-dd00-4784-945a-0f383dfa1272）
+            // 这些是用户通过 API Key Provider 添加的自定义服务
+            s if s.starts_with("custom-") => Ok(ProviderType::OpenAI),
             _ => Err(format!("Unknown provider: {s}")),
         }
     }
@@ -152,6 +155,28 @@ mod tests {
             ProviderType::Vertex
         );
         assert!("invalid".parse::<ProviderType>().is_err());
+    }
+
+    #[test]
+    fn test_custom_provider_uuid_format() {
+        // 自定义 Provider UUID 格式应该映射到 OpenAI
+        assert_eq!(
+            "custom-ba4e7574-dd00-4784-945a-0f383dfa1272"
+                .parse::<ProviderType>()
+                .unwrap(),
+            ProviderType::OpenAI
+        );
+        assert_eq!(
+            "custom-12345678-1234-1234-1234-123456789abc"
+                .parse::<ProviderType>()
+                .unwrap(),
+            ProviderType::OpenAI
+        );
+        // 普通 custom 也应该映射到 OpenAI
+        assert_eq!(
+            "custom".parse::<ProviderType>().unwrap(),
+            ProviderType::OpenAI
+        );
     }
 
     #[test]

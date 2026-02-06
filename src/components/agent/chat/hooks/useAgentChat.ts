@@ -32,6 +32,10 @@ import {
   type ProviderConfigMap,
 } from "../types";
 import { useArtifactParser } from "@/lib/artifact/hooks/useArtifactParser";
+import {
+  parseSkillSlashCommand,
+  tryExecuteSlashSkillCommand,
+} from "./skillCommand";
 
 /** 话题（会话）信息 */
 export interface Topic {
@@ -479,12 +483,43 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
     // 保存当前消息 ID 到 ref，用于停止时更新状态
     currentAssistantMsgIdRef.current = assistantMsgId;
 
-    // 初始化 Artifact 解析器，开始新的解析会话
-    startArtifactParsing();
-
     // 用于累积流式内容
     let accumulatedContent = "";
     let unlisten: UnlistenFn | null = null;
+
+    // === Skill 拦截逻辑 ===
+    // 检测 /skill-name args 格式的输入，直接调用 execute_skill 命令
+    // 绕过 aster_agent_chat_stream 路径（某些 Provider 如 Codex 不支持工具调用）
+    const parsedSkillCommand = parseSkillSlashCommand(content);
+    if (parsedSkillCommand) {
+      const skillHandled = await tryExecuteSlashSkillCommand({
+        command: parsedSkillCommand,
+        rawContent: content,
+        assistantMsgId,
+        providerType,
+        model: model || undefined,
+        ensureSession: _ensureSession,
+        setMessages,
+        setIsSending,
+        setCurrentAssistantMsgId: (id) => {
+          currentAssistantMsgIdRef.current = id;
+        },
+        setStreamUnlisten: (unlistenFn) => {
+          unlistenRef.current = unlistenFn;
+        },
+        playTypewriterSound,
+        playToolcallSound,
+        onWriteFile,
+      });
+
+      if (skillHandled) {
+        return;
+      }
+    }
+    // === Skill 拦截结束 ===
+
+    // 初始化 Artifact 解析器，开始新的解析会话
+    startArtifactParsing();
 
     /**
      * 辅助函数：更新 contentParts，支持交错显示

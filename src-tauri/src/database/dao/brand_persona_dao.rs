@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::errors::project_error::PersonaError;
 use crate::models::project_model::{
     BrandPersona, BrandPersonaExtension, BrandPersonaTemplate, BrandTone,
-    CreateBrandExtensionRequest, DesignConfig, Persona, UpdateBrandExtensionRequest, VisualConfig,
+    CreateBrandExtensionRequest, DesignConfig, UpdateBrandExtensionRequest, VisualConfig,
 };
 
 use super::persona_dao::PersonaDao;
@@ -418,6 +418,7 @@ mod tests {
     use super::*;
     use crate::database::schema::create_tables;
     use crate::models::project_model::CreatePersonaRequest;
+    use crate::models::Persona;
 
     /// 创建测试数据库连接
     fn setup_test_db() -> Connection {

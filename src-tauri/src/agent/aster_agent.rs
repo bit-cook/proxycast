@@ -144,15 +144,19 @@ impl AsterAgentWrapper {
 
         Ok(sessions
             .into_iter()
-            .map(|s| SessionInfo {
-                id: s.id,
-                name: s.title.unwrap_or_else(|| "未命名".to_string()),
-                created_at: chrono::DateTime::parse_from_rfc3339(&s.created_at)
-                    .map(|dt| dt.timestamp())
-                    .unwrap_or(0),
-                updated_at: chrono::DateTime::parse_from_rfc3339(&s.updated_at)
-                    .map(|dt| dt.timestamp())
-                    .unwrap_or(0),
+            .map(|s| {
+                let messages_count = AgentDao::get_message_count(&conn, &s.id).unwrap_or(0);
+                SessionInfo {
+                    id: s.id,
+                    name: s.title.unwrap_or_else(|| "未命名".to_string()),
+                    created_at: chrono::DateTime::parse_from_rfc3339(&s.created_at)
+                        .map(|dt| dt.timestamp())
+                        .unwrap_or(0),
+                    updated_at: chrono::DateTime::parse_from_rfc3339(&s.updated_at)
+                        .map(|dt| dt.timestamp())
+                        .unwrap_or(0),
+                    messages_count,
+                }
             })
             .collect())
     }
@@ -192,6 +196,7 @@ pub struct SessionInfo {
     pub name: String,
     pub created_at: i64,
     pub updated_at: i64,
+    pub messages_count: usize,
 }
 
 /// 会话详情（包含消息）

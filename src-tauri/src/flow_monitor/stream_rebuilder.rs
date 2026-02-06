@@ -69,15 +69,6 @@ struct ToolCallBuilder {
 }
 
 impl ToolCallBuilder {
-    fn new() -> Self {
-        Self {
-            id: None,
-            tool_type: "function".to_string(),
-            function_name: None,
-            arguments: String::new(),
-        }
-    }
-
     fn build(self) -> Option<ToolCall> {
         let id = self.id?;
         let name = self.function_name?;

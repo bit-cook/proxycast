@@ -70,7 +70,7 @@ const providerLabels: Record<PoolProviderType, string> = {
   antigravity: "Antigravity (Gemini 3 Pro)",
   openai: "OpenAI",
   claude: "Claude (Anthropic)",
-  codex: "Codex (OAuth / API Key)",
+  codex: "Codex (OpenAI)",
   claude_oauth: "Claude OAuth",
   gemini_api_key: "Gemini",
 };

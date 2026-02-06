@@ -654,5 +654,17 @@ export function clearMocks() {
   mockCommands.clear();
 }
 
+/**
+ * Mock convertFileSrc function
+ * 在真实 Tauri 环境中，这个函数将本地文件路径转换为可在 webview 中使用的 URL
+ * 在 mock 环境中，直接返回原始路径（或 blob URL 如果需要）
+ */
+export function convertFileSrc(filePath: string, _protocol?: string): string {
+  // 在 mock 环境中，返回一个占位符或原始路径
+  // 实际图片无法在 web 环境中显示，但不会导致构建错误
+  console.log(`[Mock] convertFileSrc: ${filePath}`);
+  return filePath;
+}
+
 // 导出类型以保持兼容
 export type { InvokeOptions } from "@tauri-apps/api/core";

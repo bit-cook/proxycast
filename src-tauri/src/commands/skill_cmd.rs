@@ -1,3 +1,4 @@
+use crate::agent::aster_state::AsterAgentState;
 use crate::database::dao::skills::SkillDao;
 use crate::database::DbConnection;
 use crate::models::{AppType, Skill, SkillRepo, SkillState};
@@ -66,7 +67,7 @@ pub async fn get_skills(
     db: State<'_, DbConnection>,
     skill_service: State<'_, SkillServiceState>,
 ) -> Result<Vec<Skill>, String> {
-    get_skills_for_app(db, skill_service, "claude".to_string()).await
+    get_skills_for_app(db, skill_service, "proxycast".to_string()).await
 }
 
 #[tauri::command]
@@ -120,7 +121,7 @@ pub async fn install_skill(
     skill_service: State<'_, SkillServiceState>,
     directory: String,
 ) -> Result<bool, String> {
-    install_skill_for_app(db, skill_service, "claude".to_string(), directory).await
+    install_skill_for_app(db, skill_service, "proxycast".to_string(), directory).await
 }
 
 #[tauri::command]
@@ -186,12 +187,15 @@ pub async fn install_skill_for_app(
         SkillDao::update_skill_state(&conn, &key, &state).map_err(|e| e.to_string())?;
     }
 
+    // 刷新 aster-rust 的 global_registry，使 AI 能够发现新安装的 Skill
+    AsterAgentState::reload_proxycast_skills();
+
     Ok(true)
 }
 
 #[tauri::command]
 pub fn uninstall_skill(db: State<'_, DbConnection>, directory: String) -> Result<bool, String> {
-    uninstall_skill_for_app(db, "claude".to_string(), directory)
+    uninstall_skill_for_app(db, "proxycast".to_string(), directory)
 }
 
 #[tauri::command]
@@ -214,6 +218,9 @@ pub fn uninstall_skill_for_app(
 
     let conn = db.lock().map_err(|e| e.to_string())?;
     SkillDao::update_skill_state(&conn, &key, &state).map_err(|e| e.to_string())?;
+
+    // 刷新 aster-rust 的 global_registry，移除已卸载的 Skill
+    AsterAgentState::reload_proxycast_skills();
 
     Ok(true)
 }

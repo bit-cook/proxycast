@@ -113,16 +113,16 @@ const mapProviderName = (providerType: string): string => {
     // Google
     google: "google",
     gemini: "google",
-    // DeepSeek
-    deepseek: "custom_deepseek",
-    "deepseek-reasoner": "custom_deepseek",
+    // DeepSeek（OpenAI 兼容）
+    deepseek: "deepseek",
+    "deepseek-reasoner": "deepseek",
     // Ollama
     ollama: "ollama",
     // OpenRouter
     openrouter: "openrouter",
-    // 其他
-    groq: "groq",
-    mistral: "mistral",
+    // 其他（OpenAI 兼容）
+    groq: "openai",
+    mistral: "openai",
   };
   return mapping[providerType.toLowerCase()] || providerType;
 };
@@ -172,9 +172,9 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions = {}) {
           id: s.id,
           title:
             s.name ||
-            `话题 ${new Date(s.created_at).toLocaleDateString("zh-CN")}`,
-          createdAt: new Date(s.created_at),
-          messagesCount: s.messages_count,
+            `话题 ${new Date(s.created_at * 1000).toLocaleDateString("zh-CN")}`,
+          createdAt: new Date(s.created_at * 1000),
+          messagesCount: s.messages_count ?? 0,
         }));
         setTopics(topicList);
       } catch (err) {
@@ -192,9 +192,9 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions = {}) {
         id: s.id,
         title:
           s.name ||
-          `话题 ${new Date(s.created_at).toLocaleDateString("zh-CN")}`,
-        createdAt: new Date(s.created_at),
-        messagesCount: s.messages_count,
+          `话题 ${new Date(s.created_at * 1000).toLocaleDateString("zh-CN")}`,
+        createdAt: new Date(s.created_at * 1000),
+        messagesCount: s.messages_count ?? 0,
       }));
       setTopics(topicList);
     } catch (error) {
@@ -571,13 +571,29 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions = {}) {
 
       try {
         const detail = await getAsterSession(topicId);
-        const loadedMessages: Message[] = detail.messages.map((msg, index) => ({
-          id: `${topicId}-${index}`,
-          role: msg.role as "user" | "assistant",
-          content: msg.content,
-          timestamp: new Date(msg.timestamp),
-          isThinking: false,
-        }));
+        const loadedMessages: Message[] = detail.messages.map((msg, index) => {
+          // 从 TauriMessageContent 数组中提取文本和 contentParts
+          const contentParts: ContentPart[] = [];
+          const textParts: string[] = [];
+
+          for (const part of msg.content) {
+            if (part.type === "text" && part.text) {
+              textParts.push(part.text);
+              contentParts.push({ type: "text", text: part.text });
+            } else if (part.type === "thinking" && part.text) {
+              contentParts.push({ type: "thinking", text: part.text });
+            }
+          }
+
+          return {
+            id: `${topicId}-${index}`,
+            role: msg.role as "user" | "assistant",
+            content: textParts.join("\n"),
+            contentParts: contentParts.length > 0 ? contentParts : undefined,
+            timestamp: new Date(msg.timestamp * 1000),
+            isThinking: false,
+          };
+        });
 
         setMessages(loadedMessages);
         setSessionId(topicId);

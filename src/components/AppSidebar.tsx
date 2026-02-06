@@ -25,6 +25,8 @@ import {
   Terminal,
   Image,
   FolderKanban,
+  Blocks,
+  Sparkles,
   LucideIcon,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
@@ -128,6 +130,8 @@ const mainMenuItems: { id: Page; label: string; icon: typeof Bot }[] = [
   { id: "image-gen", label: "图片生成", icon: Image },
   { id: "api-server", label: "API Server", icon: Globe },
   { id: "provider-pool", label: "凭证池", icon: Database },
+  { id: "mcp", label: "MCP 服务器", icon: Blocks },
+  { id: "vibe", label: "Vibe Zone", icon: Sparkles },
   { id: "terminal", label: "终端", icon: Terminal },
   { id: "tools", label: "工具", icon: Wrench },
   { id: "plugins", label: "插件中心", icon: Puzzle },
@@ -151,6 +155,8 @@ const DEFAULT_ENABLED_NAV_ITEMS = [
   "image-gen",
   "api-server",
   "provider-pool",
+  "mcp",
+  "vibe",
 ];
 
 export function AppSidebar({ currentPage, onNavigate }: AppSidebarProps) {
@@ -178,9 +184,19 @@ export function AppSidebar({ currentPage, onNavigate }: AppSidebarProps) {
     const loadNavConfig = async () => {
       try {
         const config = await getConfig();
-        setEnabledNavItems(
-          config.navigation?.enabled_items || DEFAULT_ENABLED_NAV_ITEMS,
-        );
+        const saved = config.navigation?.enabled_items;
+        if (saved && saved.length > 0) {
+          // 自动补充新增的默认导航项（避免新功能不可见）
+          const merged = [...saved];
+          for (const item of DEFAULT_ENABLED_NAV_ITEMS) {
+            if (!merged.includes(item)) {
+              merged.push(item);
+            }
+          }
+          setEnabledNavItems(merged);
+        } else {
+          setEnabledNavItems(DEFAULT_ENABLED_NAV_ITEMS);
+        }
       } catch (error) {
         console.error("加载导航配置失败:", error);
       }

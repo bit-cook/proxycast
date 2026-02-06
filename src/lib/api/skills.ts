@@ -19,20 +19,23 @@ export interface SkillRepo {
   enabled: boolean;
 }
 
-export type AppType = "claude" | "codex" | "gemini";
+export type AppType = "claude" | "codex" | "gemini" | "proxycast";
 
 export const skillsApi = {
-  async getAll(app: AppType = "claude"): Promise<Skill[]> {
+  async getAll(app: AppType = "proxycast"): Promise<Skill[]> {
     return safeInvoke("get_skills_for_app", { app });
   },
 
-  async install(directory: string, app: AppType = "claude"): Promise<boolean> {
+  async install(
+    directory: string,
+    app: AppType = "proxycast",
+  ): Promise<boolean> {
     return safeInvoke("install_skill_for_app", { app, directory });
   },
 
   async uninstall(
     directory: string,
-    app: AppType = "claude",
+    app: AppType = "proxycast",
   ): Promise<boolean> {
     return safeInvoke("uninstall_skill_for_app", { app, directory });
   },

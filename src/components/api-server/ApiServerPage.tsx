@@ -10,7 +10,6 @@ import {
 import * as Select from "@radix-ui/react-select";
 import { invoke } from "@tauri-apps/api/core";
 import { LogsTab } from "./LogsTab";
-import { RoutesTab } from "./RoutesTab";
 import { ProviderIcon } from "@/icons/providers";
 import {
   startServer,
@@ -56,7 +55,7 @@ interface TestState {
   httpStatus?: number;
 }
 
-type TabId = "server" | "routes" | "logs";
+type TabId = "server" | "logs";
 
 // Provider 到 API 类型的映射
 type ApiType = "openai" | "anthropic" | "gemini";
@@ -67,6 +66,7 @@ const getProviderApiType = (provider: string): ApiType => {
   // OpenAI 兼容类型
   if (
     p === "codex" ||
+    p === "codex_oauth" ||
     p === "openai" ||
     p === "openai-response" ||
     p === "azure_openai" ||
@@ -108,6 +108,7 @@ const ALIAS_PROVIDERS = [
   "antigravity",
   "kiro",
   "codex",
+  "codex_oauth",
   "gemini",
   "gemini_api_key",
 ];
@@ -115,6 +116,7 @@ const ALIAS_PROVIDERS = [
 // 别名配置文件名映射（某些 Provider 共享同一个别名配置）
 const ALIAS_CONFIG_MAPPING: Record<string, string> = {
   gemini_api_key: "gemini",
+  codex_oauth: "codex",
 };
 
 // 可用的 Provider 信息（合并 OAuth 凭证池和 API Key Provider）
@@ -518,7 +520,8 @@ export function ApiServerPage() {
     qwen: "Qwen",
     antigravity: "Antigravity",
     claude: "Claude",
-    codex: "Codex",
+    codex: "Codex API",
+    codex_oauth: "Codex OAuth",
     iflow: "iFlow",
     claude_oauth: "Claude OAuth",
     vertex: "Vertex AI",
@@ -540,6 +543,7 @@ export function ApiServerPage() {
     antigravity: "gemini",
     claude: "claude",
     codex: "openai",
+    codex_oauth: "openai",
     iflow: "iflow",
     claude_oauth: "claude",
     vertex: "gemini",
@@ -615,6 +619,7 @@ export function ApiServerPage() {
   };
 
   // 合并 OAuth 凭证池和 API Key Provider，生成可用 Provider 列表
+  // 注意：Codex 需要特殊处理，OAuth 和 API Key 分开显示
   const buildAvailableProviders = () => {
     const providerMap = new Map<string, AvailableProvider>();
 
@@ -624,7 +629,11 @@ export function ApiServerPage() {
         (c) => !c.is_disabled,
       );
       if (enabledCredentials.length > 0) {
-        const id = overview.provider_type;
+        // Codex OAuth 使用特殊 ID，与 API Key 分开
+        const id =
+          overview.provider_type === "codex"
+            ? "codex_oauth"
+            : overview.provider_type;
         const existing = providerMap.get(id);
         if (existing) {
           existing.oauthCount = enabledCredentials.length;
@@ -634,10 +643,16 @@ export function ApiServerPage() {
               ? "both"
               : "oauth";
         } else {
+          // Codex OAuth 使用特殊标签
+          const label =
+            overview.provider_type === "codex"
+              ? "Codex OAuth"
+              : providerLabels[overview.provider_type] ||
+                overview.provider_type;
           providerMap.set(id, {
             id,
-            label: providerLabels[id] || id,
-            iconType: providerIconMap[id] || "openai",
+            label,
+            iconType: providerIconMap[overview.provider_type] || "openai",
             source: "oauth",
             oauthCount: enabledCredentials.length,
             apiKeyCount: 0,
@@ -751,7 +766,10 @@ export function ApiServerPage() {
 
   const handleSetDefaultProvider = async (providerId: string) => {
     try {
-      await setDefaultProvider(providerId);
+      // codex_oauth 在后端映射到 codex 凭证池
+      const backendProviderId =
+        providerId === "codex_oauth" ? "codex" : providerId;
+      await setDefaultProvider(backendProviderId);
       setDefaultProviderState(providerId);
 
       // 获取最新的凭证池数据
@@ -1066,7 +1084,6 @@ export function ApiServerPage() {
       <div className="flex gap-2 border-b overflow-x-auto">
         {[
           { id: "server" as TabId, name: "服务器控制" },
-          { id: "routes" as TabId, name: "路由端点" },
           { id: "logs" as TabId, name: "系统日志" },
         ].map((tab) => (
           <button
@@ -1269,8 +1286,11 @@ export function ApiServerPage() {
               const _currentProvider = availableProviders.find(
                 (p) => p.id === defaultProvider,
               );
+              // codex_oauth 在后端对应 codex 凭证池
+              const poolProviderType =
+                defaultProvider === "codex_oauth" ? "codex" : defaultProvider;
               const currentOverview = poolOverview.find(
-                (o) => o.provider_type === defaultProvider,
+                (o) => o.provider_type === poolProviderType,
               );
               const oauthCredentials = (
                 currentOverview?.credentials || []
@@ -1280,15 +1300,19 @@ export function ApiServerPage() {
               // 支持两种匹配方式：
               // 1. 通过 provider.id 直接匹配（用于自定义 Provider）
               // 2. 通过 type 映射匹配（用于内置 Provider）
-              const matchingApiKeyProviders = apiKeyProviders.filter((p) => {
-                // 首先尝试直接通过 id 匹配
-                if (p.id === defaultProvider && p.enabled) {
-                  return true;
-                }
-                // 然后尝试通过 type 映射匹配
-                const mappedId = mapApiKeyProviderToId(p.type);
-                return mappedId === defaultProvider && p.enabled;
-              });
+              // 注意：codex_oauth 只显示 OAuth 凭证，不显示 API Key
+              const matchingApiKeyProviders =
+                defaultProvider === "codex_oauth"
+                  ? []
+                  : apiKeyProviders.filter((p) => {
+                      // 首先尝试直接通过 id 匹配
+                      if (p.id === defaultProvider && p.enabled) {
+                        return true;
+                      }
+                      // 然后尝试通过 type 映射匹配
+                      const mappedId = mapApiKeyProviderToId(p.type);
+                      return mappedId === defaultProvider && p.enabled;
+                    });
               const apiKeys = matchingApiKeyProviders.flatMap((p) =>
                 p.api_keys.filter((k) => k.enabled),
               );
@@ -1550,9 +1574,6 @@ export function ApiServerPage() {
           </div>
         </div>
       )}
-
-      {/* Routes Tab */}
-      {activeTab === "routes" && <RoutesTab />}
 
       {/* Logs Tab */}
       {activeTab === "logs" && <LogsTab />}

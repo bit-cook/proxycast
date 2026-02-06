@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { skillsApi, Skill, SkillRepo, AppType } from "@/lib/api/skills";
 
-export function useSkills(app: AppType = "claude") {
+export function useSkills(app: AppType = "proxycast") {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [repos, setRepos] = useState<SkillRepo[]>([]);
   const [loading, setLoading] = useState(true);

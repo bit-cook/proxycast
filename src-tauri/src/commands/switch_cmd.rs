@@ -43,13 +43,14 @@ pub fn delete_switch_provider(
     SwitchService::delete_provider(&db, &app_type, &id)
 }
 
+/// 切换 Provider（异步版本，优化 Windows 性能）
 #[tauri::command]
-pub fn switch_provider(
+pub async fn switch_provider(
     db: State<'_, DbConnection>,
     app_type: String,
     id: String,
 ) -> Result<(), String> {
-    SwitchService::switch_provider(&db, &app_type, &id)
+    SwitchService::switch_provider_async(&db, &app_type, &id).await
 }
 
 #[tauri::command]
@@ -88,7 +89,7 @@ pub fn check_config_sync_status(
 
 /// 从外部配置同步到 ProxyCast
 #[tauri::command]
-pub fn sync_from_external_config(
+pub async fn sync_from_external_config(
     db: State<'_, DbConnection>,
     app_type: String,
 ) -> Result<String, String> {
@@ -102,7 +103,7 @@ pub fn sync_from_external_config(
         .map_err(|e| format!("Failed to sync from external: {e}"))?;
 
     // 切换到外部检测到的 provider
-    SwitchService::switch_provider(&db, &app_type, &external_provider)?;
+    SwitchService::switch_provider_async(&db, &app_type, &external_provider).await?;
 
     Ok(format!("已同步到外部配置的 provider: {external_provider}"))
 }

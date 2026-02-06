@@ -62,12 +62,26 @@ export function useSwitch(appType: AppType) {
   };
 
   const switchToProvider = async (id: string) => {
+    const previousProvider = currentProvider;
+    const targetProvider =
+      providers.find((provider) => provider.id === id) || null;
+
+    if (targetProvider) {
+      setCurrentProvider(targetProvider);
+      setProviders((prev) =>
+        prev.map((provider) => ({
+          ...provider,
+          is_current: provider.id === id,
+        })),
+      );
+    }
+
     try {
       // 显示加载状态
       const loadingToast = toast.loading("正在切换配置...");
 
       await switchApi.switchProvider(appType, id);
-      await fetchProviders();
+      void fetchProviders();
 
       // 关闭加载提示，显示成功消息
       toast.dismiss(loadingToast);
@@ -88,6 +102,15 @@ export function useSwitch(appType: AppType) {
       } else {
         toast.error(`切换失败: ${errorMessage}`);
       }
+
+      // 回滚乐观更新
+      setCurrentProvider(previousProvider);
+      setProviders((prev) =>
+        prev.map((provider) => ({
+          ...provider,
+          is_current: provider.id === previousProvider?.id,
+        })),
+      );
 
       // 重新加载当前状态
       await fetchProviders();

@@ -11,6 +11,9 @@ use crate::agent::{
 };
 use crate::database::dao::agent::AgentDao;
 use crate::database::DbConnection;
+use crate::mcp::{McpManagerState, McpServerConfig};
+use crate::services::mcp_service::McpService;
+use aster::agents::extension::{Envs, ExtensionConfig};
 use aster::conversation::message::Message;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -155,6 +158,28 @@ pub async fn aster_agent_status(
     })
 }
 
+/// 重置 Aster Agent
+///
+/// 清除当前 Provider 配置，下次对话时会重新从凭证池选择凭证。
+/// 用于切换凭证后无需重启应用即可生效。
+#[tauri::command]
+pub async fn aster_agent_reset(
+    state: State<'_, AsterAgentState>,
+) -> Result<AsterAgentStatus, String> {
+    tracing::info!("[AsterAgent] 重置 Agent Provider 配置");
+
+    // 清除当前 Provider 配置
+    state.clear_provider_config().await;
+
+    Ok(AsterAgentStatus {
+        initialized: state.is_initialized().await,
+        provider_configured: false,
+        provider_name: None,
+        model_name: None,
+        credential_uuid: None,
+    })
+}
+
 /// 发送消息请求参数
 #[derive(Debug, Deserialize)]
 pub struct AsterChatRequest {
@@ -186,6 +211,7 @@ pub async fn aster_agent_chat_stream(
     app: AppHandle,
     state: State<'_, AsterAgentState>,
     db: State<'_, DbConnection>,
+    mcp_manager: State<'_, McpManagerState>,
     request: AsterChatRequest,
 ) -> Result<(), String> {
     tracing::info!(
@@ -216,6 +242,23 @@ pub async fn aster_agent_chat_stream(
     // ProxyCastSessionStore 会在 add_message 时自动创建不存在的 session
     // 同时 get_session 也会自动创建不存在的 session
     let session_id = &request.session_id;
+
+    // 启动并注入 MCP extensions 到 Aster Agent
+    let (_start_ok, start_fail) = ensure_proxycast_mcp_servers_running(&db, &mcp_manager).await;
+    if start_fail > 0 {
+        tracing::warn!(
+            "[AsterAgent] 部分 MCP server 自动启动失败 ({} 失败)，后续可用工具可能不完整",
+            start_fail
+        );
+    }
+
+    let (_mcp_ok, mcp_fail) = inject_mcp_extensions(&state, &mcp_manager).await;
+    if mcp_fail > 0 {
+        tracing::warn!(
+            "[AsterAgent] 部分 MCP extension 注入失败 ({} 失败)，Agent 可能无法使用某些 MCP 工具",
+            mcp_fail
+        );
+    }
 
     // 构建 system_prompt：优先使用项目上下文，其次使用 session 的 system_prompt
     let system_prompt = {
@@ -276,6 +319,13 @@ pub async fn aster_agent_chat_stream(
 
     // 如果提供了 Provider 配置，则配置 Provider
     if let Some(provider_config) = &request.provider_config {
+        tracing::info!(
+            "[AsterAgent] 收到 provider_config: provider_name={}, model_name={}, has_api_key={}, base_url={:?}",
+            provider_config.provider_name,
+            provider_config.model_name,
+            provider_config.api_key.is_some(),
+            provider_config.base_url
+        );
         let config = ProviderConfig {
             provider_name: provider_config.provider_name.clone(),
             model_name: provider_config.model_name.clone(),
@@ -283,7 +333,20 @@ pub async fn aster_agent_chat_stream(
             base_url: provider_config.base_url.clone(),
             credential_uuid: None,
         };
-        state.configure_provider(config, session_id, &db).await?;
+        // 如果前端提供了 api_key，直接使用；否则从凭证池选择凭证
+        if provider_config.api_key.is_some() {
+            state.configure_provider(config, session_id, &db).await?;
+        } else {
+            // 没有 api_key，使用凭证池（provider_name 作为 provider_type）
+            state
+                .configure_provider_from_pool(
+                    &db,
+                    &provider_config.provider_name,
+                    &provider_config.model_name,
+                    session_id,
+                )
+                .await?;
+        }
     }
 
     // 检查 Provider 是否已配置
@@ -297,7 +360,7 @@ pub async fn aster_agent_chat_stream(
     // 创建用户消息
     let user_message = Message::user().with_text(&request.message);
 
-    // 创建会话配置，包含 system_prompt
+    // 创建会话配置
     let mut session_config_builder = SessionConfigBuilder::new(session_id);
     if let Some(prompt) = system_prompt {
         session_config_builder = session_config_builder.system_prompt(prompt);
@@ -450,4 +513,184 @@ mod tests {
         assert_eq!(request.session_id, "test-session");
         assert_eq!(request.event_name, "agent_stream");
     }
+}
+
+/// 将 ProxyCast 已运行的 MCP servers 注入到 Aster Agent 作为 extensions
+///
+/// 获取 McpClientManager 中所有已运行的 server 配置，
+/// 转换为 Aster 的 ExtensionConfig::Stdio 并注册到 Agent。
+///
+/// 关键：将当前进程的 PATH 等环境变量合并到 MCP server 的 env 中，
+/// 确保 Aster 启动的子进程能找到 npx/uvx 等命令。
+///
+/// 返回 (成功数, 失败数)
+async fn inject_mcp_extensions(
+    state: &AsterAgentState,
+    mcp_manager: &McpManagerState,
+) -> (usize, usize) {
+    let manager = mcp_manager.lock().await;
+    let running_servers = manager.get_running_servers().await;
+
+    if running_servers.is_empty() {
+        tracing::debug!("[AsterAgent] 没有运行中的 MCP servers，跳过注入");
+        return (0, 0);
+    }
+
+    let agent_arc = state.get_agent_arc();
+    let guard = agent_arc.read().await;
+    let agent = match guard.as_ref() {
+        Some(a) => a,
+        None => {
+            tracing::warn!("[AsterAgent] Agent 未初始化，无法注入 MCP extensions");
+            return (0, running_servers.len());
+        }
+    };
+
+    let mut success_count = 0usize;
+    let mut fail_count = 0usize;
+
+    for server_name in &running_servers {
+        // 检查是否已注册（避免重复注册）
+        let ext_configs = agent.get_extension_configs().await;
+        if ext_configs.iter().any(|c| c.name() == *server_name) {
+            tracing::debug!("[AsterAgent] MCP extension '{}' 已注册，跳过", server_name);
+            success_count += 1;
+            continue;
+        }
+
+        if let Some(config) = manager.get_client_config(server_name).await {
+            // 合并当前进程的关键环境变量到 MCP server 的 env 中
+            // 确保子进程能找到 npx/uvx/node 等命令
+            let mut merged_env = config.env.clone();
+            for key in &["PATH", "HOME", "USER", "SHELL", "NODE_PATH", "NVM_DIR"] {
+                if !merged_env.contains_key(*key) {
+                    if let Ok(val) = std::env::var(key) {
+                        merged_env.insert(key.to_string(), val);
+                    }
+                }
+            }
+
+            tracing::info!(
+                "[AsterAgent] 注入 MCP extension '{}': cmd='{}', args={:?}, env_keys={:?}",
+                server_name,
+                config.command,
+                config.args,
+                merged_env.keys().collect::<Vec<_>>()
+            );
+
+            // 增加超时时间：npx 首次下载可能需要较长时间
+            let timeout = std::cmp::max(config.timeout, 60);
+
+            let extension = ExtensionConfig::Stdio {
+                name: server_name.clone(),
+                description: format!("MCP Server: {server_name}"),
+                cmd: config.command.clone(),
+                args: config.args.clone(),
+                envs: Envs::new(merged_env),
+                env_keys: vec![],
+                timeout: Some(timeout),
+                bundled: Some(false),
+                available_tools: vec![],
+            };
+
+            match agent.add_extension(extension).await {
+                Ok(_) => {
+                    tracing::info!("[AsterAgent] 成功注入 MCP extension: {}", server_name);
+                    success_count += 1;
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "[AsterAgent] 注入 MCP extension '{}' 失败: {}。\
+                        cmd='{}', args={:?}。请检查命令是否在 PATH 中可用。",
+                        server_name,
+                        e,
+                        config.command,
+                        config.args
+                    );
+                    fail_count += 1;
+                }
+            }
+        } else {
+            tracing::warn!("[AsterAgent] 无法获取 MCP server '{}' 的配置", server_name);
+            fail_count += 1;
+        }
+    }
+
+    if fail_count > 0 {
+        tracing::warn!(
+            "[AsterAgent] MCP 注入结果: {} 成功, {} 失败",
+            success_count,
+            fail_count
+        );
+    } else {
+        tracing::info!(
+            "[AsterAgent] MCP 注入完成: {} 个 extension 全部成功",
+            success_count
+        );
+    }
+
+    (success_count, fail_count)
+}
+
+/// 确保 ProxyCast 可用的 MCP servers 已启动
+///
+/// 启动启用了 `enabled_proxycast` 的服务器。
+async fn ensure_proxycast_mcp_servers_running(
+    db: &DbConnection,
+    mcp_manager: &McpManagerState,
+) -> (usize, usize) {
+    let servers = match McpService::get_all(db) {
+        Ok(items) => items,
+        Err(e) => {
+            tracing::warn!("[AsterAgent] 读取 MCP 配置失败，跳过自动启动: {}", e);
+            return (0, 0);
+        }
+    };
+
+    if servers.is_empty() {
+        return (0, 0);
+    }
+
+    let candidates: Vec<&crate::models::McpServer> =
+        servers.iter().filter(|s| s.enabled_proxycast).collect();
+
+    if candidates.is_empty() {
+        return (0, 0);
+    }
+
+    let manager = mcp_manager.lock().await;
+    let mut success_count = 0usize;
+    let mut fail_count = 0usize;
+
+    for server in candidates {
+        if manager.is_server_running(&server.name).await {
+            continue;
+        }
+
+        let parsed = server.parse_config();
+        let config = McpServerConfig {
+            command: parsed.command,
+            args: parsed.args,
+            env: parsed.env,
+            cwd: parsed.cwd,
+            timeout: parsed.timeout,
+        };
+
+        match manager.start_server(&server.name, &config).await {
+            Ok(_) => {
+                tracing::info!("[AsterAgent] MCP server 已自动启动: {}", server.name);
+                success_count += 1;
+            }
+            Err(e) => {
+                tracing::error!(
+                    "[AsterAgent] MCP server 自动启动失败: {} => {}",
+                    server.name,
+                    e
+                );
+                fail_count += 1;
+            }
+        }
+    }
+
+    (success_count, fail_count)
 }

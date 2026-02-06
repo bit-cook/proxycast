@@ -33,6 +33,9 @@ export default defineConfig(({ mode }) => {
     react({
       jsxRuntime: mode === "development" ? "automatic" : "automatic",
       jsxImportSource: "react",
+      babel: {
+        compact: true,
+      },
     }),
     svgr(),
   ],
@@ -52,6 +55,22 @@ export default defineConfig(({ mode }) => {
       "@tauri-apps/plugin-deep-link",
       "@tauri-apps/plugin-global-shortcut",
     ],
+  },
+  build: {
+    chunkSizeWarningLimit: 12000,
+    rollupOptions: {
+      onwarn(warning, defaultHandler) {
+        const isMixedImportWarning =
+          warning.message.includes("dynamically imported by") &&
+          warning.message.includes("also statically imported by");
+
+        if (isMixedImportWarning) {
+          return;
+        }
+
+        defaultHandler(warning);
+      },
+    },
   },
   clearScreen: false,
   server: {

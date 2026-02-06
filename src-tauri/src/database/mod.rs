@@ -84,6 +84,18 @@ pub fn init_database() -> Result<DbConnection, String> {
         }
     }
 
+    // 修复历史 MCP 导入数据（补齐 enabled_proxycast）
+    match migration::migrate_mcp_proxycast_enabled(&conn) {
+        Ok(count) => {
+            if count > 0 {
+                tracing::info!("[数据库] 已修复 {} 条 MCP ProxyCast 启用状态", count);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("[数据库] MCP ProxyCast 启用状态修复失败（非致命）: {}", e);
+        }
+    }
+
     // 执行统一内容系统迁移（创建默认项目，迁移话题）
     // _Requirements: 2.1, 2.2, 2.3, 2.4_
     match migration_v2::migrate_unified_content_system(&conn) {

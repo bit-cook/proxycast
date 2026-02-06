@@ -50,6 +50,12 @@ pub mod tray;
 pub mod voice;
 pub mod workspace;
 
+// Skills 集成模块
+pub mod skills;
+
+// MCP 集成模块
+pub mod mcp;
+
 // 内部模块
 mod commands;
 mod config;

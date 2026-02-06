@@ -1,0 +1,13 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 399023994da7d3a7d7407cbcc210e9c88f626c7158b717607e01a3f767d1e0b6 # shrinks to num_providers = 2
+cc 9598ca62cf55f54ee97f00786a0e6029df29a5ede07c2f6ccd731a92ac2f1d6e # shrinks to num_keys = 2
+cc 8ecfedd6b97ec094a400ca1af4c6c011f39a60688dd76327247ca8a54ca3240c # shrinks to num_keys = 2
+cc d9e6f7a966ae7126d118843e3c99009616930f30348a08dfedaeab933fe9877b # shrinks to num_errors = 1
+cc dfc5e61afb3ab4ec5b6283e3b92fa88ae5149458c321170000e222b95bd499e4 # shrinks to name = "aaa", api_host = "https://aaa.aa/"
+cc b35b5acac2443a80f05fd96b8f46cd2b80e38a54e73b4a09aaaf5c3b68af319c # shrinks to api_key = "a0a0___a-0a-aA_-A---"
+cc 05448979dc0877ad4bffe94f37f10f79ba6243d3289e0bf7629616ac8901c292 # shrinks to api_key = "-A0a_aa0-A0a_-a-_Aaa", alias = None

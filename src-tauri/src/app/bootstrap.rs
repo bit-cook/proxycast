@@ -34,6 +34,7 @@ use crate::flow_monitor::{
     QuickFilterManager, RotationConfig, SessionManager,
 };
 use crate::logger;
+use crate::mcp::McpManagerState;
 use crate::plugin;
 use crate::server;
 use crate::services::api_key_provider_service::ApiKeyProviderService;
@@ -151,6 +152,7 @@ pub struct AppStates {
     pub context_memory_service: ContextMemoryServiceState,
     pub tool_hooks_service: ToolHooksServiceState,
     pub recording_service: RecordingServiceState,
+    pub mcp_manager: McpManagerState,
     // 用于 setup hook 的共享实例
     pub shared_stats: Arc<parking_lot::RwLock<telemetry::StatsAggregator>>,
     pub shared_tokens: Arc<parking_lot::RwLock<telemetry::TokenTracker>>,
@@ -288,6 +290,10 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
     // 录音服务（使用独立线程 + channel 通信解决 cpal::Stream 不是 Send 的问题）
     let recording_service_state = create_recording_service_state();
 
+    // 初始化 MCP 客户端管理器（延迟设置 AppHandle，在 setup hook 中完成）
+    let mcp_manager = crate::mcp::McpClientManager::new(None);
+    let mcp_manager_state: McpManagerState = Arc::new(tokio::sync::Mutex::new(mcp_manager));
+
     Ok(AppStates {
         state,
         logs,
@@ -324,6 +330,7 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
         context_memory_service: context_memory_service_state,
         tool_hooks_service: tool_hooks_service_state,
         recording_service: recording_service_state,
+        mcp_manager: mcp_manager_state,
         shared_stats,
         shared_tokens,
         shared_logger,

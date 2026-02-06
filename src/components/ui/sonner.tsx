@@ -5,6 +5,7 @@ export function Toaster() {
     <SonnerToaster
       position="top-center"
       richColors
+      closeButton
       theme="system"
       toastOptions={{
         duration: 5000,

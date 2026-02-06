@@ -3,8 +3,9 @@ import { RefreshCw, Search, Settings } from "lucide-react";
 import { useSkills } from "@/hooks/useSkills";
 import { SkillCard } from "./SkillCard";
 import { RepoManagerPanel } from "./RepoManagerPanel";
+import { SkillExecutionDialog } from "./SkillExecutionDialog";
 import { HelpTip } from "@/components/HelpTip";
-import type { AppType } from "@/lib/api/skills";
+import type { AppType, Skill } from "@/lib/api/skills";
 
 interface SkillsPageProps {
   initialApp?: AppType;
@@ -17,7 +18,7 @@ export interface SkillsPageRef {
 }
 
 export const SkillsPage = forwardRef<SkillsPageRef, SkillsPageProps>(
-  ({ initialApp = "claude", hideHeader = false }, ref) => {
+  ({ initialApp = "proxycast", hideHeader = false }, ref) => {
     const [app] = useState<AppType>(initialApp);
     const [searchQuery, setSearchQuery] = useState("");
     const [filterStatus, setFilterStatus] = useState<
@@ -27,6 +28,10 @@ export const SkillsPage = forwardRef<SkillsPageRef, SkillsPageProps>(
     const [installingSkills, setInstallingSkills] = useState<Set<string>>(
       new Set(),
     );
+    // 执行对话框状态
+    const [executionDialogOpen, setExecutionDialogOpen] = useState(false);
+    const [selectedSkillForExecution, setSelectedSkillForExecution] =
+      useState<Skill | null>(null);
 
     const {
       skills,
@@ -72,6 +77,28 @@ export const SkillsPage = forwardRef<SkillsPageRef, SkillsPageProps>(
           next.delete(directory);
           return next;
         });
+      }
+    };
+
+    /**
+     * 处理执行按钮点击
+     * 打开执行对话框并设置选中的 Skill
+     *
+     * @param skill - 要执行的 Skill
+     * @requirements 6.3
+     */
+    const handleExecute = (skill: Skill) => {
+      setSelectedSkillForExecution(skill);
+      setExecutionDialogOpen(true);
+    };
+
+    /**
+     * 处理执行对话框关闭
+     */
+    const handleExecutionDialogClose = (open: boolean) => {
+      setExecutionDialogOpen(open);
+      if (!open) {
+        setSelectedSkillForExecution(null);
       }
     };
 
@@ -147,8 +174,8 @@ export const SkillsPage = forwardRef<SkillsPageRef, SkillsPageProps>(
 
         <HelpTip title="什么是 Skills？" variant="green">
           <ul className="list-disc list-inside space-y-1 text-sm text-green-700 dark:text-green-400">
-            <li>Skills 是 Claude Code 的扩展功能包，提供特定领域的专业能力</li>
-            <li>安装后会自动添加到 Claude Code 的 skills 目录</li>
+            <li>Skills 是 ProxyCast 的扩展功能包，提供特定领域的专业能力</li>
+            <li>安装后 AI 助手可以自动发现并调用这些 Skills</li>
             <li>可通过"仓库管理"添加自定义 Skills 仓库</li>
           </ul>
         </HelpTip>
@@ -224,6 +251,7 @@ export const SkillsPage = forwardRef<SkillsPageRef, SkillsPageProps>(
                 skill={skill}
                 onInstall={handleInstall}
                 onUninstall={handleUninstall}
+                onExecute={handleExecute}
                 installing={installingSkills.has(skill.directory)}
               />
             ))}
@@ -238,6 +266,15 @@ export const SkillsPage = forwardRef<SkillsPageRef, SkillsPageProps>(
             onAddRepo={addRepo}
             onRemoveRepo={removeRepo}
             onRefresh={refresh}
+          />
+        )}
+
+        {/* Skill 执行对话框 */}
+        {selectedSkillForExecution && (
+          <SkillExecutionDialog
+            skillName={selectedSkillForExecution.name}
+            open={executionDialogOpen}
+            onOpenChange={handleExecutionDialogClose}
           />
         )}
       </div>

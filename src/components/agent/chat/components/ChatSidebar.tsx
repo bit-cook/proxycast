@@ -256,7 +256,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   const loadSkills = async () => {
     setLoadingSkills(true);
     try {
-      const allSkills = await skillsApi.getAll("claude");
+      const allSkills = await skillsApi.getAll("proxycast");
       setSkills(allSkills);
     } catch (error) {
       console.error("加载技能列表失败:", error);
@@ -273,7 +273,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   const handleInstall = async (skill: Skill) => {
     setActionLoading(skill.directory);
     try {
-      const result = await skillsApi.install(skill.directory, "claude");
+      const result = await skillsApi.install(skill.directory, "proxycast");
       if (result) {
         toast.success(`已安装: ${skill.name}`);
         await loadSkills();
@@ -292,7 +292,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   const handleUninstall = async (skill: Skill) => {
     setActionLoading(skill.directory);
     try {
-      const result = await skillsApi.uninstall(skill.directory, "claude");
+      const result = await skillsApi.uninstall(skill.directory, "proxycast");
       if (result) {
         toast.success(`已卸载: ${skill.name}`);
         await loadSkills();

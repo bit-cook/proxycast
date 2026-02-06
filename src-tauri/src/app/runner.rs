@@ -82,6 +82,7 @@ pub fn run() {
         context_memory_service,
         tool_hooks_service,
         recording_service,
+        mcp_manager: mcp_manager_state,
         shared_stats,
         shared_tokens,
         shared_logger,
@@ -166,6 +167,7 @@ pub fn run() {
         .manage(context_memory_service)
         .manage(tool_hooks_service)
         .manage(recording_service)
+        .manage(mcp_manager_state)
         .on_window_event(move |window, event| {
             // 处理窗口关闭事件
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -225,6 +227,16 @@ pub fn run() {
             {
                 config_manager.0.set_app_handle(app.handle().clone());
                 tracing::info!("[启动] GlobalConfigManager AppHandle 已设置");
+            }
+
+            // 设置 MCP Manager 的 AppHandle（用于发送 mcp:* 事件）
+            if let Some(mcp_manager) = app.try_state::<crate::mcp::McpManagerState>() {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::block_on(async {
+                    let mut manager = mcp_manager.lock().await;
+                    manager.set_app_handle(app_handle);
+                });
+                tracing::info!("[启动] MCP Manager AppHandle 已设置");
             }
 
             // 初始化截图对话模块
@@ -728,6 +740,19 @@ pub fn run() {
             commands::mcp_cmd::toggle_mcp_server,
             commands::mcp_cmd::import_mcp_from_app,
             commands::mcp_cmd::sync_all_mcp_to_live,
+            // MCP 生命周期管理命令
+            commands::mcp_cmd::mcp_list_servers_with_status,
+            commands::mcp_cmd::mcp_start_server,
+            commands::mcp_cmd::mcp_stop_server,
+            // MCP 工具管理命令
+            commands::mcp_cmd::mcp_list_tools,
+            commands::mcp_cmd::mcp_call_tool,
+            // MCP 提示词管理命令
+            commands::mcp_cmd::mcp_list_prompts,
+            commands::mcp_cmd::mcp_get_prompt,
+            // MCP 资源管理命令
+            commands::mcp_cmd::mcp_list_resources,
+            commands::mcp_cmd::mcp_read_resource,
             // Prompt commands
             commands::prompt_cmd::get_prompts,
             commands::prompt_cmd::upsert_prompt,
@@ -750,6 +775,10 @@ pub fn run() {
             commands::skill_cmd::add_skill_repo,
             commands::skill_cmd::remove_skill_repo,
             commands::skill_cmd::get_installed_proxycast_skills,
+            // Skill Execution commands
+            commands::skill_exec_cmd::execute_skill,
+            commands::skill_exec_cmd::list_executable_skills,
+            commands::skill_exec_cmd::get_skill_detail,
             // Provider Pool commands
             commands::provider_pool_cmd::get_provider_pool_overview,
             commands::provider_pool_cmd::get_provider_pool_credentials,
@@ -1069,6 +1098,7 @@ pub fn run() {
             // Aster Agent commands
             commands::aster_agent_cmd::aster_agent_init,
             commands::aster_agent_cmd::aster_agent_status,
+            commands::aster_agent_cmd::aster_agent_reset,
             commands::aster_agent_cmd::aster_agent_configure_provider,
             commands::aster_agent_cmd::aster_agent_configure_from_pool,
             commands::aster_agent_cmd::aster_agent_chat_stream,
@@ -1349,6 +1379,11 @@ pub fn run() {
             commands::asr_cmd::delete_asr_credential,
             commands::asr_cmd::set_default_asr_credential,
             commands::asr_cmd::test_asr_credential,
+            // External Tools commands (Codex CLI 等外部工具)
+            commands::external_tools_cmd::check_codex_cli_status,
+            commands::external_tools_cmd::open_codex_cli_login,
+            commands::external_tools_cmd::open_codex_cli_logout,
+            commands::external_tools_cmd::get_external_tools,
             // Voice Input commands
             crate::voice::commands::get_voice_input_config,
             crate::voice::commands::save_voice_input_config,

@@ -178,6 +178,7 @@ impl Default for MaterialType {
     }
 }
 
+#[allow(dead_code)]
 impl MaterialType {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -239,6 +240,7 @@ impl Default for ImageCategory {
     }
 }
 
+#[allow(dead_code)]
 impl ImageCategory {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -298,6 +300,7 @@ impl Default for LayoutCategory {
     }
 }
 
+#[allow(dead_code)]
 impl LayoutCategory {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -567,6 +570,7 @@ impl Default for Platform {
     }
 }
 
+#[allow(dead_code)]
 impl Platform {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -622,6 +626,7 @@ impl Default for EmojiUsage {
     }
 }
 
+#[allow(dead_code)]
 impl EmojiUsage {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -820,6 +825,7 @@ impl Default for BrandPersonality {
     }
 }
 
+#[allow(dead_code)]
 impl BrandPersonality {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -885,6 +891,7 @@ impl Default for DesignStyle {
     }
 }
 
+#[allow(dead_code)]
 impl DesignStyle {
     pub fn as_str(&self) -> &'static str {
         match self {

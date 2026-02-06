@@ -1,10 +1,18 @@
 /**
  * @file SkillCard.tsx
  * @description Skill 卡片组件，展示单个 Skill 的信息和操作按钮
+ *
+ * 功能：
+ * - 显示 Skill 基本信息（名称、描述、来源）
+ * - 安装/卸载操作按钮
+ * - 执行按钮（仅已安装的 Skill 显示）
+ * - GitHub 链接按钮
+ *
  * @module components/skills
+ * @requirements 6.1, 6.3
  */
 
-import { Download, Trash2, ExternalLink, Loader2 } from "lucide-react";
+import { Download, Trash2, ExternalLink, Loader2, Play } from "lucide-react";
 import type { Skill } from "@/lib/api/skills";
 
 /**
@@ -81,13 +89,28 @@ interface SkillCardProps {
   skill: Skill;
   onInstall: (directory: string) => void;
   onUninstall: (directory: string) => void;
+  onExecute?: (skill: Skill) => void;
   installing: boolean;
 }
 
+/**
+ * Skill 卡片组件
+ *
+ * 展示单个 Skill 的信息和操作按钮，包括：
+ * - 安装/卸载按钮
+ * - 执行按钮（仅已安装的 Skill 显示）
+ * - GitHub 链接按钮
+ *
+ * @param props - 组件属性
+ * @returns React 组件
+ *
+ * @requirements 6.1, 6.3
+ */
 export function SkillCard({
   skill,
   onInstall,
   onUninstall,
+  onExecute,
   installing,
 }: SkillCardProps) {
   const handleAction = () => {
@@ -102,6 +125,16 @@ export function SkillCard({
   const openGithub = () => {
     if (skill.readmeUrl) {
       window.open(skill.readmeUrl, "_blank");
+    }
+  };
+
+  /**
+   * 处理执行按钮点击
+   * 仅已安装的 Skill 可以执行
+   */
+  const handleExecute = () => {
+    if (skill.installed && onExecute) {
+      onExecute(skill);
     }
   };
 
@@ -163,6 +196,19 @@ export function SkillCard({
             </>
           )}
         </button>
+
+        {/* 执行按钮 - 仅已安装的 Skill 显示 */}
+        {skill.installed && onExecute && (
+          <button
+            onClick={handleExecute}
+            disabled={installing}
+            className="flex items-center justify-center gap-2 rounded-lg border border-blue-500 px-3 py-2 text-sm font-medium text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="执行此 Skill"
+          >
+            <Play className="h-4 w-4" />
+            执行
+          </button>
+        )}
 
         {skill.readmeUrl && (
           <button
