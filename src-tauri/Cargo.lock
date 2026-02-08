@@ -6674,6 +6674,7 @@ dependencies = [
  "proxycast-providers",
  "proxycast-services",
  "proxycast-terminal",
+ "proxycast-websocket",
  "rand 0.8.5",
  "regex",
  "reqwest 0.12.28",
@@ -6873,6 +6874,22 @@ dependencies = [
  "tracing",
  "uuid",
  "whoami",
+]
+
+[[package]]
+name = "proxycast-websocket"
+version = "0.60.0"
+dependencies = [
+ "axum 0.7.9",
+ "dashmap 5.5.3",
+ "futures",
+ "parking_lot",
+ "proptest",
+ "proxycast-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

@@ -5,8 +5,8 @@
 use super::{
     WsApiRequest, WsApiResponse, WsEndpoint, WsError, WsMessage, WsStreamChunk, WsStreamEnd,
 };
-use crate::models::anthropic::AnthropicMessagesRequest;
-use crate::models::openai::ChatCompletionRequest;
+use proxycast_core::models::anthropic::AnthropicMessagesRequest;
+use proxycast_core::models::openai::ChatCompletionRequest;
 use serde_json::Value;
 
 /// 消息处理器
@@ -32,12 +32,10 @@ impl MessageProcessor {
 
     /// 验证请求 payload
     pub fn validate_request(request: &WsApiRequest) -> Result<(), WsError> {
-        // 验证 request_id 不为空
         if request.request_id.is_empty() {
             return Err(WsError::invalid_request(None, "request_id cannot be empty"));
         }
 
-        // 验证 payload 是对象
         if !request.payload.is_object() {
             return Err(WsError::invalid_request(
                 Some(request.request_id.clone()),
@@ -45,7 +43,6 @@ impl MessageProcessor {
             ));
         }
 
-        // 根据端点类型验证必需字段
         match request.endpoint {
             WsEndpoint::ChatCompletions => {
                 Self::validate_chat_completions_payload(&request.request_id, &request.payload)?;
@@ -53,21 +50,17 @@ impl MessageProcessor {
             WsEndpoint::Messages => {
                 Self::validate_messages_payload(&request.request_id, &request.payload)?;
             }
-            WsEndpoint::Models => {
-                // Models 端点不需要特殊验证
-            }
+            WsEndpoint::Models => {}
         }
 
         Ok(())
     }
 
-    /// 验证 ChatCompletions payload
     fn validate_chat_completions_payload(request_id: &str, payload: &Value) -> Result<(), WsError> {
         let obj = payload.as_object().ok_or_else(|| {
             WsError::invalid_request(Some(request_id.to_string()), "payload must be an object")
         })?;
 
-        // 验证 model 字段
         if !obj.contains_key("model") {
             return Err(WsError::invalid_request(
                 Some(request_id.to_string()),
@@ -75,7 +68,6 @@ impl MessageProcessor {
             ));
         }
 
-        // 验证 messages 字段
         if !obj.contains_key("messages") {
             return Err(WsError::invalid_request(
                 Some(request_id.to_string()),
@@ -94,13 +86,11 @@ impl MessageProcessor {
         Ok(())
     }
 
-    /// 验证 Messages payload (Anthropic 格式)
     fn validate_messages_payload(request_id: &str, payload: &Value) -> Result<(), WsError> {
         let obj = payload.as_object().ok_or_else(|| {
             WsError::invalid_request(Some(request_id.to_string()), "payload must be an object")
         })?;
 
-        // 验证 model 字段
         if !obj.contains_key("model") {
             return Err(WsError::invalid_request(
                 Some(request_id.to_string()),
@@ -108,7 +98,6 @@ impl MessageProcessor {
             ));
         }
 
-        // 验证 messages 字段
         if !obj.contains_key("messages") {
             return Err(WsError::invalid_request(
                 Some(request_id.to_string()),
@@ -116,7 +105,6 @@ impl MessageProcessor {
             ));
         }
 
-        // 验证 max_tokens 字段 (Anthropic 要求)
         if !obj.contains_key("max_tokens") {
             return Err(WsError::invalid_request(
                 Some(request_id.to_string()),
@@ -172,8 +160,7 @@ mod tests {
             endpoint: WsEndpoint::Models,
             payload: serde_json::json!({}),
         };
-        let result = MessageProcessor::validate_request(&request);
-        assert!(result.is_err());
+        assert!(MessageProcessor::validate_request(&request).is_err());
     }
 
     #[test]
@@ -183,8 +170,7 @@ mod tests {
             endpoint: WsEndpoint::Models,
             payload: serde_json::json!("not an object"),
         };
-        let result = MessageProcessor::validate_request(&request);
-        assert!(result.is_err());
+        assert!(MessageProcessor::validate_request(&request).is_err());
     }
 
     #[test]
@@ -196,8 +182,7 @@ mod tests {
                 "messages": [{"role": "user", "content": "hello"}]
             }),
         };
-        let result = MessageProcessor::validate_request(&request);
-        assert!(result.is_err());
+        assert!(MessageProcessor::validate_request(&request).is_err());
     }
 
     #[test]
@@ -205,12 +190,9 @@ mod tests {
         let request = WsApiRequest {
             request_id: "req-1".to_string(),
             endpoint: WsEndpoint::ChatCompletions,
-            payload: serde_json::json!({
-                "model": "gpt-4"
-            }),
+            payload: serde_json::json!({"model": "gpt-4"}),
         };
-        let result = MessageProcessor::validate_request(&request);
-        assert!(result.is_err());
+        assert!(MessageProcessor::validate_request(&request).is_err());
     }
 
     #[test]
@@ -223,8 +205,7 @@ mod tests {
                 "messages": [{"role": "user", "content": "hello"}]
             }),
         };
-        let result = MessageProcessor::validate_request(&request);
-        assert!(result.is_ok());
+        assert!(MessageProcessor::validate_request(&request).is_ok());
     }
 
     #[test]
@@ -237,8 +218,7 @@ mod tests {
                 "messages": [{"role": "user", "content": "hello"}]
             }),
         };
-        let result = MessageProcessor::validate_request(&request);
-        assert!(result.is_err());
+        assert!(MessageProcessor::validate_request(&request).is_err());
     }
 
     #[test]
@@ -252,8 +232,7 @@ mod tests {
                 "max_tokens": 1024
             }),
         };
-        let result = MessageProcessor::validate_request(&request);
-        assert!(result.is_ok());
+        assert!(MessageProcessor::validate_request(&request).is_ok());
     }
 
     #[test]
@@ -263,8 +242,7 @@ mod tests {
             endpoint: WsEndpoint::Models,
             payload: serde_json::json!({}),
         };
-        let result = MessageProcessor::validate_request(&request);
-        assert!(result.is_ok());
+        assert!(MessageProcessor::validate_request(&request).is_ok());
     }
 
     #[test]

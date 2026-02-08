@@ -1,0 +1,32 @@
+[package]
+name = "proxycast-websocket"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+# 项目内 crate
+proxycast-core.workspace = true
+
+# 序列化
+serde.workspace = true
+serde_json.workspace = true
+
+# 异步运行时
+tokio.workspace = true
+futures.workspace = true
+
+# HTTP 服务器（WebSocket 支持）
+axum.workspace = true
+
+# 时间和 UUID
+uuid.workspace = true
+
+# 工具库
+dashmap.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

@@ -14,6 +14,7 @@ use axum::{
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
+use proxycast_core::LogStore;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -25,16 +26,12 @@ pub struct WsHandlerState {
     /// API 密钥
     pub api_key: String,
     /// 日志存储
-    pub logs: Arc<RwLock<crate::logger::LogStore>>,
+    pub logs: Arc<RwLock<LogStore>>,
 }
 
 impl WsHandlerState {
     /// 创建新的处理器状态
-    pub fn new(
-        config: WsConfig,
-        api_key: String,
-        logs: Arc<RwLock<crate::logger::LogStore>>,
-    ) -> Self {
+    pub fn new(config: WsConfig, api_key: String, logs: Arc<RwLock<LogStore>>) -> Self {
         Self {
             manager: Arc::new(WsConnectionManager::new(config)),
             api_key,
@@ -167,8 +164,8 @@ async fn handle_socket(socket: WebSocket, state: WsHandlerState, client_info: Op
                     }
                 }
             }
+
             Ok(Message::Binary(_)) => {
-                // 不支持二进制消息
                 state.manager.on_error();
                 let error =
                     WsMessage::Error(WsError::invalid_message("Binary messages not supported"));
@@ -215,10 +212,7 @@ async fn handle_message(
 ) -> Option<WsMessage> {
     match msg {
         WsMessage::Ping { timestamp } => Some(WsMessage::Pong { timestamp }),
-        WsMessage::Pong { .. } => {
-            // 忽略 pong 消息
-            None
-        }
+        WsMessage::Pong { .. } => None,
         WsMessage::Request(request) => {
             state.logs.write().await.add(
                 "info",
@@ -229,22 +223,17 @@ async fn handle_message(
                     request.endpoint
                 ),
             );
-
-            // 处理 API 请求
             let response = handle_api_request(state, &request).await;
             Some(response)
         }
+
         WsMessage::Response(_) | WsMessage::StreamChunk(_) | WsMessage::StreamEnd(_) => {
-            // 客户端不应发送这些消息
             Some(WsMessage::Error(WsError::invalid_request(
                 None,
                 "Invalid message type from client",
             )))
         }
-        WsMessage::Error(_) => {
-            // 忽略客户端发送的错误消息
-            None
-        }
+        WsMessage::Error(_) => None,
         WsMessage::SubscribeKiroEvents => {
             // TODO: 实现Kiro事件订阅
             None
@@ -253,12 +242,9 @@ async fn handle_message(
             // TODO: 实现Kiro事件取消订阅
             None
         }
-        WsMessage::KiroCredentialEvent(_) => {
-            // Kiro事件是服务端到客户端的消息，客户端不应该发送
-            Some(WsMessage::Error(WsError::invalid_message(
-                "KiroCredentialEvent messages are server-to-client only",
-            )))
-        }
+        WsMessage::KiroCredentialEvent(_) => Some(WsMessage::Error(WsError::invalid_message(
+            "KiroCredentialEvent messages are server-to-client only",
+        ))),
     }
 }
 
@@ -266,7 +252,6 @@ async fn handle_message(
 async fn handle_api_request(_state: &WsHandlerState, request: &WsApiRequest) -> WsMessage {
     match request.endpoint {
         WsEndpoint::Models => {
-            // 返回模型列表
             let models = serde_json::json!({
                 "object": "list",
                 "data": [
@@ -283,19 +268,15 @@ async fn handle_api_request(_state: &WsHandlerState, request: &WsApiRequest) -> 
                 payload: models,
             })
         }
-        WsEndpoint::ChatCompletions | WsEndpoint::Messages => {
-            // 对于 chat completions 和 messages，返回一个占位响应
-            // 实际实现需要集成现有的请求处理逻辑
-            WsMessage::Response(WsApiResponse {
-                request_id: request.request_id.clone(),
-                payload: serde_json::json!({
-                    "error": {
-                        "message": "WebSocket API requests are not yet fully implemented. Please use HTTP endpoints.",
-                        "type": "not_implemented"
-                    }
-                }),
-            })
-        }
+        WsEndpoint::ChatCompletions | WsEndpoint::Messages => WsMessage::Response(WsApiResponse {
+            request_id: request.request_id.clone(),
+            payload: serde_json::json!({
+                "error": {
+                    "message": "WebSocket API requests are not yet fully implemented. Please use HTTP endpoints.",
+                    "type": "not_implemented"
+                }
+            }),
+        }),
     }
 }
 
