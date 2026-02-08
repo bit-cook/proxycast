@@ -199,12 +199,15 @@ pub fn run() {
                 }
             }
 
-            // 设置 GlobalConfigManager 的 AppHandle（用于向前端发送事件）
+            // 设置 GlobalConfigManager 的事件发射器（用于向前端发送事件）
             if let Some(config_manager) =
                 app.try_state::<crate::config::GlobalConfigManagerState>()
             {
-                config_manager.0.set_app_handle(app.handle().clone());
-                tracing::info!("[启动] GlobalConfigManager AppHandle 已设置");
+                let emitter = std::sync::Arc::new(
+                    crate::config::observer::TauriConfigEmitter::new(app.handle().clone()),
+                );
+                config_manager.0.set_emitter(emitter);
+                tracing::info!("[启动] GlobalConfigManager 事件发射器已设置");
             }
 
             // 设置 MCP Manager 的 AppHandle（用于发送 mcp:* 事件）

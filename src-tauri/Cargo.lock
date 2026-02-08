@@ -6669,6 +6669,7 @@ dependencies = [
  "parking_lot",
  "portable-pty",
  "proptest",
+ "proxycast-config",
  "proxycast-core",
  "proxycast-infra",
  "proxycast-providers",
@@ -6718,6 +6719,22 @@ dependencies = [
  "windows 0.56.0",
  "winreg 0.52.0",
  "zip",
+]
+
+[[package]]
+name = "proxycast-config"
+version = "0.60.0"
+dependencies = [
+ "async-trait",
+ "parking_lot",
+ "proptest",
+ "proxycast-core",
+ "proxycast-infra",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

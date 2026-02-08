@@ -1,0 +1,20 @@
+[package]
+name = "proxycast-config"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+proxycast-core.workspace = true
+proxycast-infra.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true

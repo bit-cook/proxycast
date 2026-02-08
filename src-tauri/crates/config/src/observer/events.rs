@@ -11,31 +11,22 @@ use std::collections::HashMap;
 pub enum ConfigChangeEvent {
     /// 完整配置重载
     FullReload(FullReloadEvent),
-
     /// 路由配置变更
     RoutingChanged(RoutingChangeEvent),
-
     /// 注入配置变更
     InjectionChanged(InjectionChangeEvent),
-
     /// 端点 Provider 配置变更
     EndpointProvidersChanged(EndpointProvidersChangeEvent),
-
     /// 服务器配置变更
     ServerChanged(ServerChangeEvent),
-
     /// 日志配置变更
     LoggingChanged(LoggingChangeEvent),
-
     /// 重试配置变更
     RetryChanged(RetryChangeEvent),
-
     /// Amp CLI 配置变更
     AmpConfigChanged(AmpConfigChangeEvent),
-
     /// 凭证池配置变更
     CredentialPoolChanged(CredentialPoolChangeEvent),
-
     /// Native Agent 配置变更
     NativeAgentChanged(NativeAgentChangeEvent),
 }

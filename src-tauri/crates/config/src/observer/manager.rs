@@ -1,24 +1,24 @@
 //! 全局配置管理器
 //!
-//! 整合配置主题、热重载和观察者管理
+//! 整合配置主题、热重载和观察者管理。
+//! register_processor_observers 和 register_tauri_observer
+//! 保留在主 crate（依赖 Tauri / RequestProcessor）。
 
+use super::emitter::ConfigEventEmit;
 use super::events::ConfigChangeSource;
 use super::observers::{
-    DefaultProviderRefObserver, EndpointObserver, InjectorObserver, LoggingObserver,
-    RouterObserver, TauriObserver,
+    DefaultProviderRefObserver, EndpointObserver, InjectorObserver, LoggingObserver, RouterObserver,
 };
 use super::subject::ConfigSubject;
 use super::traits::ConfigObserver;
-use crate::config::{Config, EndpointProvidersConfig, HotReloadManager, ReloadResult};
-use crate::processor::RequestProcessor;
+use proxycast_core::config::{Config, EndpointProvidersConfig, HotReloadManager, ReloadResult};
+use proxycast_core::router::{ModelMapper, Router};
+use proxycast_infra::Injector;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 /// 全局配置管理器
-///
-/// 整合配置主题、热重载和观察者管理
 pub struct GlobalConfigManager {
     /// 配置主题
     subject: Arc<ConfigSubject>,
@@ -54,9 +54,9 @@ impl GlobalConfigManager {
         self.subject.config()
     }
 
-    /// 设置 Tauri AppHandle
-    pub fn set_app_handle(&self, handle: AppHandle) {
-        self.subject.set_app_handle(handle);
+    /// 设置事件发射器（替代原来的 set_app_handle）
+    pub fn set_emitter(&self, emitter: Arc<dyn ConfigEventEmit>) {
+        self.subject.set_emitter(emitter);
     }
 
     /// 注册观察者
@@ -69,24 +69,23 @@ impl GlobalConfigManager {
         self.subject.unregister(name);
     }
 
-    /// 注册 RequestProcessor 相关的观察者
-    pub fn register_processor_observers(&self, processor: &RequestProcessor) {
-        // 路由器观察者
-        let router_observer = Arc::new(RouterObserver::new(
-            processor.router.clone(),
-            processor.mapper.clone(),
-        ));
+    /// 注册路由器相关观察者
+    pub fn register_router_observers(
+        &self,
+        router: Arc<RwLock<Router>>,
+        mapper: Arc<RwLock<ModelMapper>>,
+        injector: Arc<RwLock<Injector>>,
+    ) {
+        let router_observer = Arc::new(RouterObserver::new(router, mapper));
         self.subject.register(router_observer);
 
-        // 注入器观察者
-        let injector_observer = Arc::new(InjectorObserver::new(processor.injector.clone()));
+        let injector_observer = Arc::new(InjectorObserver::new(injector));
         self.subject.register(injector_observer);
 
-        // 日志观察者
         let logging_observer = Arc::new(LoggingObserver);
         self.subject.register(logging_observer);
 
-        tracing::info!("[GlobalConfigManager] 已注册 RequestProcessor 观察者");
+        tracing::info!("[GlobalConfigManager] 已注册路由器相关观察者");
     }
 
     /// 注册端点 Provider 观察者
@@ -107,21 +106,12 @@ impl GlobalConfigManager {
         self.subject.register(observer);
     }
 
-    /// 注册 Tauri 前端观察者
-    pub fn register_tauri_observer(&self, app_handle: AppHandle) {
-        let observer = Arc::new(TauriObserver::new(app_handle));
-        self.subject.register(observer);
-    }
-
     /// 更新配置并通知观察者
     pub async fn update_config(&self, new_config: Config, source: ConfigChangeSource) {
-        // 更新热重载管理器
         {
             let hot_reload = self.hot_reload.read();
             hot_reload.update_config(new_config.clone());
         }
-
-        // 通知观察者
         self.subject.update_config(new_config, source).await;
     }
 
@@ -142,7 +132,6 @@ impl GlobalConfigManager {
                 self.subject
                     .update_config(new_config, ConfigChangeSource::HotReload)
                     .await;
-
                 tracing::info!("[GlobalConfigManager] 热重载成功");
             }
             ReloadResult::RolledBack { error, .. } => {
@@ -158,12 +147,9 @@ impl GlobalConfigManager {
 
     /// 保存配置到文件并通知观察者
     pub async fn save_config(&self, config: &Config) -> Result<(), String> {
-        crate::config::save_config(config).map_err(|e| e.to_string())?;
-
-        // 更新内部状态并通知观察者
+        proxycast_core::config::save_config(config).map_err(|e| e.to_string())?;
         self.update_config(config.clone(), ConfigChangeSource::ApiCall)
             .await;
-
         Ok(())
     }
 
@@ -185,23 +171,6 @@ impl GlobalConfigManager {
     /// 获取观察者名称列表
     pub fn observer_names(&self) -> Vec<String> {
         self.subject.observer_names()
-    }
-}
-
-/// 全局配置管理器状态（用于 Tauri 状态管理）
-pub struct GlobalConfigManagerState(pub Arc<GlobalConfigManager>);
-
-impl GlobalConfigManagerState {
-    pub fn new(manager: GlobalConfigManager) -> Self {
-        Self(Arc::new(manager))
-    }
-}
-
-impl std::ops::Deref for GlobalConfigManagerState {
-    type Target = Arc<GlobalConfigManager>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 

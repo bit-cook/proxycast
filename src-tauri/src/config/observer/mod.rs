@@ -1,22 +1,30 @@
 //! 配置观察者模块
 //!
-//! 提供基于观察者模式的全局配置管理系统
+//! 核心逻辑已迁移到 proxycast-config crate。
+//! 本模块保留 Tauri 相关实现和重新导出。
 
-mod events;
-mod manager;
-mod observers;
-mod subject;
-mod traits;
+mod tauri_emitter;
+mod tauri_observer;
 
-pub use events::{
+// 从 proxycast-config crate 重新导出所有类型
+pub use proxycast_config::observer::emitter::{ConfigEventEmit, NoOpEmitter};
+pub use proxycast_config::observer::events::{
     AmpConfigChangeEvent, ConfigChangeEvent, ConfigChangeSource, CredentialPoolChangeEvent,
     EndpointProvidersChangeEvent, FullReloadEvent, InjectionChangeEvent, LoggingChangeEvent,
     NativeAgentChangeEvent, RetryChangeEvent, RoutingChangeEvent, ServerChangeEvent,
 };
-pub use manager::{GlobalConfigManager, GlobalConfigManagerState};
-pub use observers::{
-    DefaultProviderRefObserver, EndpointObserver, InjectorObserver, LoggingObserver,
-    RouterObserver, TauriObserver,
+pub use proxycast_config::observer::manager::GlobalConfigManager;
+pub use proxycast_config::observer::observers::{
+    DefaultProviderRefObserver, EndpointObserver, InjectorObserver, LoggingObserver, RouterObserver,
 };
-pub use subject::{ConfigSubject, CONFIG_CHANGED_EVENT, CONFIG_RELOAD_EVENT};
-pub use traits::{ConfigObserver, FnObserver, SyncConfigObserver, SyncObserverWrapper};
+pub use proxycast_config::observer::subject::{
+    ConfigSubject, CONFIG_CHANGED_EVENT, CONFIG_RELOAD_EVENT,
+};
+pub use proxycast_config::observer::traits::{
+    ConfigObserver, FnObserver, SyncConfigObserver, SyncObserverWrapper,
+};
+pub use proxycast_config::GlobalConfigManagerState;
+
+// Tauri 相关实现
+pub use tauri_emitter::TauriConfigEmitter;
+pub use tauri_observer::TauriObserver;

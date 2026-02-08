@@ -3,8 +3,8 @@
 //! 定义观察者接口，支持异步和同步两种模式
 
 use super::events::ConfigChangeEvent;
-use crate::config::Config;
 use async_trait::async_trait;
+use proxycast_core::config::Config;
 use std::sync::Arc;
 
 /// 配置观察者 Trait
@@ -16,30 +16,18 @@ pub trait ConfigObserver: Send + Sync {
     fn name(&self) -> &str;
 
     /// 处理配置变更事件
-    ///
-    /// # Arguments
-    /// * `event` - 配置变更事件
-    /// * `config` - 变更后的完整配置
-    ///
-    /// # Returns
-    /// * `Ok(())` - 处理成功
-    /// * `Err(String)` - 处理失败，包含错误信息
     async fn on_config_changed(
         &self,
         event: &ConfigChangeEvent,
         config: &Config,
     ) -> Result<(), String>;
 
-    /// 是否对特定事件类型感兴趣
-    ///
-    /// 默认实现对所有事件感兴趣
+    /// 是否对特定事件类型感兴趣（默认对所有事件感兴趣）
     fn is_interested_in(&self, _event: &ConfigChangeEvent) -> bool {
         true
     }
 
-    /// 观察者优先级（数字越小优先级越高）
-    ///
-    /// 默认优先级为 100
+    /// 观察者优先级（数字越小优先级越高，默认 100）
     fn priority(&self) -> i32 {
         100
     }
@@ -97,7 +85,6 @@ impl<T: SyncConfigObserver + 'static> ConfigObserver for SyncObserverWrapper<T> 
 }
 
 /// 函数式观察者（用于简单的回调场景）
-/// 目前主要用于测试，将来可用于动态注册观察者
 #[allow(dead_code)]
 pub struct FnObserver<F>
 where
@@ -153,7 +140,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::observer::events::{ConfigChangeSource, FullReloadEvent};
+    use crate::observer::events::{ConfigChangeSource, FullReloadEvent};
 
     struct TestObserver {
         name: String,

@@ -2,14 +2,14 @@
 //!
 //! 管理配置观察者的注册、注销和通知
 
+use super::emitter::ConfigEventEmit;
 use super::events::{ConfigChangeEvent, ConfigChangeSource, FullReloadEvent};
 use super::traits::ConfigObserver;
-use crate::config::Config;
 use parking_lot::RwLock;
+use proxycast_core::config::Config;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter};
 use tokio::sync::broadcast;
 
 /// Tauri 事件名称常量
@@ -33,10 +33,10 @@ pub struct ConfigSubject {
     current_config: RwLock<Config>,
     /// 事件广播通道
     event_tx: broadcast::Sender<ConfigChangeEvent>,
-    /// Tauri AppHandle（用于向前端发送事件）
-    app_handle: RwLock<Option<AppHandle>>,
-    /// 是否启用 Tauri 事件
-    tauri_events_enabled: RwLock<bool>,
+    /// 事件发射器（抽象 Tauri AppHandle）
+    emitter: RwLock<Option<Arc<dyn ConfigEventEmit>>>,
+    /// 是否启用事件发射
+    events_enabled: RwLock<bool>,
 }
 
 impl ConfigSubject {
@@ -48,21 +48,21 @@ impl ConfigSubject {
             observers: RwLock::new(BTreeMap::new()),
             current_config: RwLock::new(initial_config),
             event_tx,
-            app_handle: RwLock::new(None),
-            tauri_events_enabled: RwLock::new(true),
+            emitter: RwLock::new(None),
+            events_enabled: RwLock::new(true),
         }
     }
 
-    /// 设置 Tauri AppHandle
-    pub fn set_app_handle(&self, handle: AppHandle) {
-        let mut app_handle = self.app_handle.write();
-        *app_handle = Some(handle);
-        tracing::debug!("[ConfigSubject] AppHandle 已设置");
+    /// 设置事件发射器
+    pub fn set_emitter(&self, emitter: Arc<dyn ConfigEventEmit>) {
+        let mut e = self.emitter.write();
+        *e = Some(emitter);
+        tracing::debug!("[ConfigSubject] 事件发射器已设置");
     }
 
-    /// 启用/禁用 Tauri 事件
-    pub fn set_tauri_events_enabled(&self, enabled: bool) {
-        let mut flag = self.tauri_events_enabled.write();
+    /// 启用/禁用事件发射
+    pub fn set_events_enabled(&self, enabled: bool) {
+        let mut flag = self.events_enabled.write();
         *flag = enabled;
     }
 
@@ -88,9 +88,7 @@ impl ConfigSubject {
         for entries in observers.values_mut() {
             entries.retain(|e| e.observer.name() != name);
         }
-        // 清理空的优先级组
         observers.retain(|_, v| !v.is_empty());
-
         tracing::info!("[ConfigSubject] 注销观察者: {}", name);
     }
 
@@ -112,25 +110,18 @@ impl ConfigSubject {
 
     /// 更新配置并通知观察者
     pub async fn update_config(&self, new_config: Config, source: ConfigChangeSource) {
-        // 创建完整重载事件
         let event = ConfigChangeEvent::FullReload(FullReloadEvent {
             timestamp_ms: Self::current_timestamp_ms(),
             source,
         });
 
-        // 更新配置
         {
             let mut config = self.current_config.write();
             *config = new_config.clone();
         }
 
-        // 通知观察者
         self.notify_observers(&event, &new_config).await;
-
-        // 发送 Tauri 事件
-        self.emit_tauri_event(&event);
-
-        // 广播事件
+        self.emit_event(&event);
         let _ = self.event_tx.send(event);
     }
 
@@ -138,7 +129,7 @@ impl ConfigSubject {
     pub async fn notify_event(&self, event: ConfigChangeEvent) {
         let config = self.config();
         self.notify_observers(&event, &config).await;
-        self.emit_tauri_event(&event);
+        self.emit_event(&event);
         let _ = self.event_tx.send(event);
     }
 
@@ -149,7 +140,6 @@ impl ConfigSubject {
 
     /// 通知所有观察者
     async fn notify_observers(&self, event: &ConfigChangeEvent, config: &Config) {
-        // 收集所有感兴趣的观察者
         let observers: Vec<Arc<dyn ConfigObserver>> = {
             let observers = self.observers.read();
             observers
@@ -166,7 +156,6 @@ impl ConfigSubject {
             event.event_type()
         );
 
-        // 按优先级顺序通知（BTreeMap 已排序）
         for observer in observers {
             let name = observer.name().to_string();
             match observer.on_config_changed(event, config).await {
@@ -180,19 +169,19 @@ impl ConfigSubject {
         }
     }
 
-    /// 发送 Tauri 事件到前端
-    fn emit_tauri_event(&self, event: &ConfigChangeEvent) {
-        let enabled = *self.tauri_events_enabled.read();
+    /// 发送事件（通过抽象发射器）
+    fn emit_event(&self, event: &ConfigChangeEvent) {
+        let enabled = *self.events_enabled.read();
         if !enabled {
             return;
         }
 
-        let app_handle = self.app_handle.read();
-        if let Some(handle) = app_handle.as_ref() {
-            if let Err(e) = handle.emit(CONFIG_CHANGED_EVENT, event) {
-                tracing::error!("[ConfigSubject] 发送 Tauri 事件失败: {}", e);
+        let emitter = self.emitter.read();
+        if let Some(emitter) = emitter.as_ref() {
+            if let Err(e) = emitter.emit_config_event(CONFIG_CHANGED_EVENT, event) {
+                tracing::error!("[ConfigSubject] 发送事件失败: {}", e);
             } else {
-                tracing::debug!("[ConfigSubject] 已发送 Tauri 事件: {}", event.event_type());
+                tracing::debug!("[ConfigSubject] 已发送事件: {}", event.event_type());
             }
         }
     }
@@ -231,7 +220,7 @@ impl Default for ConfigSubject {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::observer::events::ConfigChangeSource;
+    use crate::observer::events::ConfigChangeSource;
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -306,7 +295,6 @@ mod tests {
     async fn test_priority_order() {
         let subject = ConfigSubject::new(Config::default());
 
-        // 注册不同优先级的观察者
         for (name, priority) in [("low", 100), ("high", 10), ("medium", 50)] {
             let observer = Arc::new(CountingObserver {
                 name: name.to_string(),
@@ -316,7 +304,6 @@ mod tests {
             subject.register(observer);
         }
 
-        // 验证观察者名称列表
         let names = subject.observer_names();
         assert_eq!(names.len(), 3);
     }

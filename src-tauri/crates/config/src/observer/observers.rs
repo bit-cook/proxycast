@@ -1,15 +1,15 @@
 //! 内置配置观察者实现
 //!
-//! 提供常用组件的配置观察者
+//! 提供常用组件的配置观察者。
+//! TauriObserver 保留在主 crate（依赖 Tauri）。
 
 use super::events::ConfigChangeEvent;
 use super::traits::ConfigObserver;
-use crate::config::{Config, EndpointProvidersConfig};
-use crate::injection::Injector;
-use crate::router::{ModelMapper, Router};
 use async_trait::async_trait;
+use proxycast_core::config::{Config, EndpointProvidersConfig};
+use proxycast_core::router::{ModelMapper, Router};
+use proxycast_infra::Injector;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 /// 路由器观察者
@@ -33,7 +33,7 @@ impl ConfigObserver for RouterObserver {
     }
 
     fn priority(&self) -> i32 {
-        10 // 高优先级，路由器需要先更新
+        10
     }
 
     fn is_interested_in(&self, event: &ConfigChangeEvent) -> bool {
@@ -52,7 +52,7 @@ impl ConfigObserver for RouterObserver {
         if let Ok(provider_type) = config
             .routing
             .default_provider
-            .parse::<crate::ProviderType>()
+            .parse::<proxycast_core::ProviderType>()
         {
             let mut router = self.router.write().await;
             router.set_default_provider(provider_type);
@@ -80,8 +80,6 @@ impl ConfigObserver for RouterObserver {
 }
 
 /// 注入器观察者
-///
-/// 监听注入配置变更，更新 Injector
 pub struct InjectorObserver {
     injector: Arc<RwLock<Injector>>,
 }
@@ -131,8 +129,6 @@ impl ConfigObserver for InjectorObserver {
 }
 
 /// 端点 Provider 观察者
-///
-/// 监听端点 Provider 配置变更
 pub struct EndpointObserver {
     endpoint_providers: Arc<RwLock<EndpointProvidersConfig>>,
 }
@@ -167,16 +163,12 @@ impl ConfigObserver for EndpointObserver {
     ) -> Result<(), String> {
         let mut ep = self.endpoint_providers.write().await;
         *ep = config.endpoint_providers.clone();
-
         tracing::info!("[EndpointObserver] 更新端点 Provider 配置");
-
         Ok(())
     }
 }
 
 /// 日志观察者
-///
-/// 监听日志配置变更
 pub struct LoggingObserver;
 
 #[async_trait]
@@ -206,58 +198,11 @@ impl ConfigObserver for LoggingObserver {
             config.logging.enabled,
             config.logging.level
         );
-
-        Ok(())
-    }
-}
-
-/// Tauri 前端通知观察者
-///
-/// 将配置变更事件转发到前端
-pub struct TauriObserver {
-    app_handle: AppHandle,
-}
-
-impl TauriObserver {
-    pub fn new(app_handle: AppHandle) -> Self {
-        Self { app_handle }
-    }
-}
-
-#[async_trait]
-impl ConfigObserver for TauriObserver {
-    fn name(&self) -> &str {
-        "TauriObserver"
-    }
-
-    fn priority(&self) -> i32 {
-        1000 // 最低优先级，确保其他观察者先处理
-    }
-
-    async fn on_config_changed(
-        &self,
-        event: &ConfigChangeEvent,
-        _config: &Config,
-    ) -> Result<(), String> {
-        // 发送详细事件
-        self.app_handle
-            .emit("config-changed-detail", event)
-            .map_err(|e| e.to_string())?;
-
-        // 发送简化的刷新通知
-        self.app_handle
-            .emit("config-refresh-needed", ())
-            .map_err(|e| e.to_string())?;
-
-        tracing::debug!("[TauriObserver] 已通知前端配置变更: {}", event.event_type());
-
         Ok(())
     }
 }
 
 /// 默认 Provider 引用观察者
-///
-/// 更新 default_provider_ref（用于向后兼容）
 pub struct DefaultProviderRefObserver {
     default_provider_ref: Arc<RwLock<String>>,
 }
@@ -277,7 +222,7 @@ impl ConfigObserver for DefaultProviderRefObserver {
     }
 
     fn priority(&self) -> i32 {
-        5 // 最高优先级，确保引用先更新
+        5
     }
 
     fn is_interested_in(&self, event: &ConfigChangeEvent) -> bool {
@@ -294,12 +239,10 @@ impl ConfigObserver for DefaultProviderRefObserver {
     ) -> Result<(), String> {
         let mut dp = self.default_provider_ref.write().await;
         *dp = config.routing.default_provider.clone();
-
         tracing::debug!(
             "[DefaultProviderRefObserver] 更新 default_provider_ref: {}",
             config.routing.default_provider
         );
-
         Ok(())
     }
 }
@@ -307,7 +250,7 @@ impl ConfigObserver for DefaultProviderRefObserver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::observer::events::{ConfigChangeSource, FullReloadEvent};
+    use crate::observer::events::{ConfigChangeSource, FullReloadEvent};
 
     #[tokio::test]
     async fn test_router_observer_priority() {

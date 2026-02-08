@@ -12,6 +12,7 @@ homepage = "https://github.com/aiclientproxy/proxycast"
 [workspace.dependencies]
 # 项目内 crate 依赖
 proxycast-core = { path = "crates/core" }
+proxycast-config = { path = "crates/config" }
 proxycast-infra = { path = "crates/infra" }
 proxycast-providers = { path = "crates/providers" }
 proxycast-services = { path = "crates/services" }
@@ -188,6 +189,7 @@ tauri-build.workspace = true
 [dependencies]
 # 项目内 crate
 proxycast-core.workspace = true
+proxycast-config.workspace = true
 proxycast-infra.workspace = true
 proxycast-providers.workspace = true
 proxycast-services.workspace = true
