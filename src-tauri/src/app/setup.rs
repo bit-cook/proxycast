@@ -8,11 +8,11 @@ use tauri::{App, Manager};
 // use crate::agent::tools::{set_term_scrollback_tool_app_handle, set_terminal_tool_app_handle};
 use crate::agent::AsterAgentState;
 use crate::database;
-use crate::services::aster_session_store::ProxyCastSessionStore;
-use crate::services::provider_pool_service::ProviderPoolService;
-use crate::services::token_cache_service::TokenCacheService;
 use crate::telemetry;
 use crate::tray::{TrayIconStatus, TrayManager, TrayStateSnapshot};
+use proxycast_services::aster_session_store::ProxyCastSessionStore;
+use proxycast_services::provider_pool_service::ProviderPoolService;
+use proxycast_services::token_cache_service::TokenCacheService;
 
 use super::types::{AppState, LogState, TrayManagerState};
 

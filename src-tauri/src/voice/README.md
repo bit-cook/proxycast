@@ -7,12 +7,12 @@
 | 文件 | 说明 |
 |------|------|
 | `mod.rs` | 模块入口，导出子模块 |
-| `asr_service.rs` | ASR 服务，统一管理本地 Whisper 和云端 ASR |
+| `asr_service.rs` | ASR 桥接层（纯逻辑已迁移到 `crates/services/src/voice_asr_service.rs`） |
 | `commands.rs` | Tauri 命令，供前端调用 |
-| `config.rs` | 配置管理，读写语音输入配置 |
-| `output_service.rs` | 文字输出服务，模拟键盘输入和剪贴板 |
-| `processor.rs` | LLM 润色处理，调用本地 API 服务器 |
-| `recording_service.rs` | 录音服务，使用独立线程 + channel 通信 |
+| `config.rs` | 配置桥接层（纯逻辑已迁移到 `crates/services/src/voice_config_service.rs`） |
+| `output_service.rs` | 输出桥接层（纯逻辑已迁移到 `crates/services/src/voice_output_service.rs`） |
+| `processor.rs` | 润色桥接层（纯逻辑已迁移到 `crates/services/src/voice_processor_service.rs`） |
+| `recording_service.rs` | 录音桥接层（纯逻辑已迁移到 `crates/services/src/voice_recording_service.rs`） |
 | `shortcut.rs` | 全局快捷键管理 |
 | `window.rs` | 悬浮窗管理 |
 
@@ -42,10 +42,11 @@
 
 ```
 voice/
-├── asr_service.rs ──→ voice-core (WhisperTranscriber, AsrClient)
-├── output_service.rs ──→ voice-core (OutputHandler)
-├── recording_service.rs ──→ voice-core (threaded_recorder + Tauri State 包装)
-├── processor.rs ──→ 本地 API 服务器 (LLM 润色)
+├── asr_service.rs ──→ proxycast-services (voice_asr_service)
+├── recording_service.rs ──→ proxycast-services (voice_recording_service)
+├── config.rs ──→ proxycast-services (voice_config_service)
+├── output_service.rs ──→ proxycast-services (voice_output_service)
+├── processor.rs ──→ proxycast-services (voice_processor_service)
 └── commands.rs ──→ 上述所有服务
 ```
 

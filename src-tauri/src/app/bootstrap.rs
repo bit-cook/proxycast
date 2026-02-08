@@ -21,89 +21,27 @@ use crate::commands::skill_cmd::SkillServiceState;
 use crate::commands::terminal_cmd::TerminalManagerState;
 use crate::commands::tool_hooks::ToolHooksServiceState;
 use crate::commands::webview_cmd::{WebviewManagerState, WebviewManagerWrapper};
-use crate::config::{self, Config, ConfigManager, GlobalConfigManager, GlobalConfigManagerState};
+use crate::config::{GlobalConfigManager, GlobalConfigManagerState};
 use crate::database::{self, DbConnection};
 use crate::logger;
 use crate::mcp::McpManagerState;
 use crate::plugin;
-use crate::server;
-use crate::services::api_key_provider_service::ApiKeyProviderService;
-use crate::services::aster_session_store::ProxyCastSessionStore;
-use crate::services::context_memory_service::{ContextMemoryConfig, ContextMemoryService};
-use crate::services::provider_pool_service::ProviderPoolService;
-use crate::services::skill_service::SkillService;
-use crate::services::token_cache_service::TokenCacheService;
-use crate::services::tool_hooks_service::ToolHooksService;
-use crate::services::update_check_service::UpdateCheckServiceState;
 use crate::telemetry;
 use crate::voice::recording_service::{create_recording_service_state, RecordingServiceState};
+use proxycast_core::config::{Config, ConfigManager};
+use proxycast_server as server;
+use proxycast_services::api_key_provider_service::ApiKeyProviderService;
+use proxycast_services::aster_session_store::ProxyCastSessionStore;
+use proxycast_services::context_memory_service::{ContextMemoryConfig, ContextMemoryService};
+use proxycast_services::provider_pool_service::ProviderPoolService;
+use proxycast_services::skill_service::SkillService;
+use proxycast_services::token_cache_service::TokenCacheService;
+use proxycast_services::tool_hooks_service::ToolHooksService;
+use proxycast_services::update_check_service::UpdateCheckServiceState;
 
 use super::types::{AppState, LogState, TokenCacheServiceState};
-use super::utils::{generate_api_key, is_valid_bind_host};
 
-/// 配置验证错误
-#[derive(Debug)]
-pub enum ConfigError {
-    LoadFailed(String),
-    SaveFailed(String),
-    InvalidHost,
-    DefaultApiKeyWithNonLocalBind,
-    TlsNotSupported,
-    RemoteManagementNotSupported,
-}
-
-impl std::fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ConfigError::LoadFailed(e) => write!(f, "配置加载失败: {e}"),
-            ConfigError::SaveFailed(e) => write!(f, "配置保存失败: {e}"),
-            ConfigError::InvalidHost => {
-                write!(
-                    f,
-                    "无效的监听地址。允许的地址：127.0.0.1、localhost、::1、0.0.0.0、::"
-                )
-            }
-            ConfigError::DefaultApiKeyWithNonLocalBind => write!(
-                f,
-                "监听所有网络接口 (0.0.0.0 或 ::) 时，必须设置非默认的 API Key"
-            ),
-            ConfigError::TlsNotSupported => write!(f, "当前版本尚未支持 TLS"),
-            ConfigError::RemoteManagementNotSupported => {
-                write!(f, "远程管理需要 TLS 支持，当前版本未启用")
-            }
-        }
-    }
-}
-
-/// 加载并验证配置
-pub fn load_and_validate_config() -> Result<Config, ConfigError> {
-    let mut config = config::load_config().map_err(|e| ConfigError::LoadFailed(e.to_string()))?;
-
-    // 验证主机地址
-    if !is_valid_bind_host(&config.server.host) {
-        return Err(ConfigError::InvalidHost);
-    }
-
-    // 如果使用默认 API key，自动生成新密钥
-    if config.server.api_key == config::DEFAULT_API_KEY {
-        let new_key = generate_api_key();
-        config.server.api_key = new_key;
-        config::save_config(&config).map_err(|e| ConfigError::SaveFailed(e.to_string()))?;
-        tracing::info!("检测到默认 API key，已自动生成并保存新密钥");
-    }
-
-    // 检查 TLS 配置
-    if config.server.tls.enable {
-        return Err(ConfigError::TlsNotSupported);
-    }
-
-    // 检查远程管理配置
-    if config.remote_management.allow_remote {
-        return Err(ConfigError::RemoteManagementNotSupported);
-    }
-
-    Ok(config)
-}
+pub use proxycast_core::app_bootstrap::{load_and_validate_config, ConfigError};
 
 /// 应用状态集合
 pub struct AppStates {
@@ -167,7 +105,7 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
     let token_cache_service = TokenCacheService::new();
     let token_cache_service_state = TokenCacheServiceState(Arc::new(token_cache_service));
 
-    let machine_id_service = crate::services::machine_id_service::MachineIdService::new()
+    let machine_id_service = proxycast_services::machine_id_service::MachineIdService::new()
         .map_err(|e| format!("MachineIdService 初始化失败: {e}"))?;
     let machine_id_service_state: MachineIdState = Arc::new(RwLock::new(machine_id_service));
 

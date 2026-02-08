@@ -19,12 +19,12 @@ AI Agent 集成模块，基于 aster-rust 框架实现。
 |------|------|
 | `mod.rs` | 模块入口，导出公共类型 |
 | `types.rs` | Agent 相关类型定义 |
-| `aster_state.rs` | Aster Agent 状态管理（Provider 配置、取消令牌、Skills 加载） |
-| `aster_agent.rs` | Aster Agent 包装器（会话管理） |
+| `aster_state.rs` | Aster Agent 状态管理（主状态桥接；会话配置/项目上下文/身份配置/Skills 加载辅助逻辑委托 `crates/agent/src/aster_state_support.rs`） |
+| `aster_agent.rs` | Aster Agent 包装器（流式桥接，会话存储逻辑委托 `crates/agent/src/session_store.rs`） |
 | `event_converter.rs` | Aster 事件到 Tauri 事件转换 |
-| `credential_bridge.rs` | 凭证池桥接（连接 ProxyCast 凭证池与 Aster Provider，智能拆分 base_url） |
+| `credential_bridge.rs` | 重导出层（纯逻辑已迁移到 `crates/agent/src/credential_bridge.rs`） |
 | `mcp_bridge.rs` | MCP 服务桥接 |
-| `subagent_scheduler.rs` | 子 Agent 调度器 |
+| `subagent_scheduler.rs` | Tauri 事件桥接层（纯逻辑已迁移到 `crates/agent/src/subagent_scheduler.rs`） |
 
 ## Skills 集成
 
@@ -34,7 +34,7 @@ Agent 初始化时自动加载 `~/.proxycast/skills/` 目录下的 Skills：
 
 ```rust
 // init_agent_with_db() 内部调用
-Self::load_proxycast_skills();
+proxycast_agent::reload_proxycast_skills();
 ```
 
 ### AI 自动调用
@@ -104,7 +104,7 @@ let stream = agent.reply(user_message, session_config, Some(cancel_token)).await
 
 ## 凭证池桥接
 
-`credential_bridge.rs` 模块将 ProxyCast 凭证池与 Aster Provider 系统连接：
+`credential_bridge.rs` 在主 crate 中仅作为兼容导出，核心逻辑位于 `crates/agent/src/credential_bridge.rs`：
 
 - 自动从凭证池选择可用凭证
 - 支持 OAuth 和 API Key 两种凭证类型

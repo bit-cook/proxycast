@@ -14,77 +14,52 @@
 // 该警告来自 cocoa/objc 依赖的 msg_send! 宏，是已知的 issue
 #![allow(unexpected_cfgs)]
 
-// 重新导出子 crate 的类型
-// 注意：主 crate 保留了自己的 data, logger, models 模块，所以只导出 core 的具体类型
-pub use proxycast_core::{LogEntry, LogStore, LogStoreConfig, SharedLogStore};
-// infra crate 的类型通过 proxycast_infra 前缀访问，避免与 core 的 InjectionMode/InjectionRule 冲突
-pub use proxycast_infra::{
-    injection, proxy, resilience, telemetry, Failover, FailoverConfig, InjectionConfig,
-    InjectionMode, InjectionResult, InjectionRule, Injector, LogRotationConfig, LoggerError,
-    ModelStats, ModelTokenStats, PeriodTokenStats, ProviderStats, ProviderTokenStats,
-    ProxyClientFactory, ProxyError, ProxyProtocol, RequestLog, RequestLogger, RequestStatus,
-    Retrier, RetryConfig, StatsAggregator, StatsSummary, TimeRange, TimeoutConfig,
-    TimeoutController, TokenSource, TokenStatsSummary, TokenTracker, TokenUsageRecord,
-};
-
 // 从 providers crate 重新导出（保持 crate::xxx 路径兼容）
-pub use proxycast_providers::converter;
 pub use proxycast_providers::providers;
-pub use proxycast_providers::stream;
-pub use proxycast_providers::streaming;
-pub use proxycast_providers::translator;
 
 // 从 core crate 重新导出（保持 crate::xxx 路径兼容）
-pub use proxycast_core::backends;
 pub use proxycast_core::connect;
-pub use proxycast_core::orchestrator;
+pub use proxycast_core::content;
+pub use proxycast_core::credential;
+pub use proxycast_core::database;
+pub use proxycast_core::memory;
 pub use proxycast_core::session_files;
+pub use proxycast_core::workspace;
 
-// 核心模块
+// 从 infra crate 重新导出（保持 crate::xxx 路径兼容）
+pub use proxycast_infra::{injection, resilience, telemetry};
+
+// MCP 模块（从 proxycast-mcp crate 重新导出）
+pub use proxycast_mcp as mcp;
+
+// 核心模块（Tauri 相关业务逻辑）
 pub mod agent;
 pub mod app;
-pub mod content;
-pub mod credential;
-pub mod database;
-pub mod memory;
 pub mod plugin;
 pub mod screenshot;
 pub mod services;
-pub mod session;
+pub mod skills;
 pub mod terminal;
 pub mod tray;
 pub mod voice;
-pub mod workspace;
-
-// Skills 集成模块
-pub mod skills;
-
-// MCP 集成模块
-pub mod mcp;
 
 // 内部模块
 mod commands;
 mod config;
 mod data;
 #[cfg(debug_assertions)]
+#[allow(dead_code)]
 mod dev_bridge;
 mod logger;
-mod models;
-mod server_utils;
+use proxycast_core::models;
 
-// 从 core crate 重新导出 errors
-pub use proxycast_core::errors;
-
-// 服务器相关模块
-mod middleware;
-mod processor;
-mod router;
-mod server;
-mod websocket;
+// 测试模块
+#[cfg(test)]
+mod tests;
 
 // 重新导出核心类型以保持向后兼容
 pub use app::{AppState, LogState, ProviderType, TokenCacheServiceState, TrayManagerState};
-pub use services::provider_pool_service::ProviderPoolService;
+pub use proxycast_services::provider_pool_service::ProviderPoolService;
 
-// 重新导出 run 函数
+// 重新导出 run 函数（main.rs 入口）
 pub use app::run;

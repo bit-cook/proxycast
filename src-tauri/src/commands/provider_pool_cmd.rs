@@ -2,15 +2,15 @@
 
 #![allow(dead_code)]
 
-use crate::credential::CredentialSyncService;
 use crate::database::dao::provider_pool::ProviderPoolDao;
 use crate::database::DbConnection;
 use crate::models::provider_pool_model::{
     AddCredentialRequest, CredentialData, CredentialDisplay, HealthCheckResult, OAuthStatus,
     PoolProviderType, ProviderCredential, ProviderPoolOverview, UpdateCredentialRequest,
 };
-use crate::services::provider_pool_service::ProviderPoolService;
 use chrono::Utc;
+use proxycast_credential::CredentialSyncService;
+use proxycast_services::provider_pool_service::ProviderPoolService;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -3852,7 +3852,7 @@ pub async fn get_credential_health(
     db: State<'_, DbConnection>,
     pool_service: State<'_, ProviderPoolServiceState>,
     uuid: String,
-) -> Result<Option<crate::services::provider_pool_service::CredentialHealthInfo>, String> {
+) -> Result<Option<proxycast_services::provider_pool_service::CredentialHealthInfo>, String> {
     pool_service.0.get_credential_health(&db, &uuid)
 }
 
@@ -3862,6 +3862,6 @@ pub async fn get_credential_health(
 pub async fn get_all_credential_health(
     db: State<'_, DbConnection>,
     pool_service: State<'_, ProviderPoolServiceState>,
-) -> Result<Vec<crate::services::provider_pool_service::CredentialHealthInfo>, String> {
+) -> Result<Vec<proxycast_services::provider_pool_service::CredentialHealthInfo>, String> {
     pool_service.0.get_all_credential_health(&db)
 }

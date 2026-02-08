@@ -8,7 +8,7 @@
 //!
 //! _需求: 1.1, 2.1, 2.2, 2.4, 3.1, 3.2, 3.3, 4.2, 6.1_
 
-use crate::plugin::installer::{
+use proxycast_core::plugin::installer::{
     InstallProgress, InstalledPlugin, PluginInstaller, ProgressCallback,
 };
 use serde::{Deserialize, Serialize};
@@ -44,7 +44,7 @@ impl<R: Runtime> TauriProgressCallback<R> {
     }
 }
 
-impl<R: Runtime> crate::plugin::installer::ProgressCallback for TauriProgressCallback<R> {
+impl<R: Runtime> proxycast_core::plugin::installer::ProgressCallback for TauriProgressCallback<R> {
     fn on_progress(&self, progress: InstallProgress) {
         // 发送进度事件到前端
         let _ = self.app_handle.emit(INSTALL_PROGRESS_EVENT, &progress);

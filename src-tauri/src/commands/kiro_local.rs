@@ -6,7 +6,7 @@ use crate::commands::provider_pool_cmd::ProviderPoolServiceState;
 use crate::database::DbConnection;
 use crate::models::kiro_fingerprint::{KiroFingerprintStore, SwitchToLocalResult};
 use crate::models::provider_pool_model::CredentialData;
-use crate::services::machine_id_service::MachineIdService;
+use proxycast_services::machine_id_service::MachineIdService;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;

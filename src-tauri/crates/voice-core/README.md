@@ -19,6 +19,7 @@ src/
 ├── device.rs        # 音频设备枚举
 ├── recorder.rs      # 音频录制
 ├── threaded_recorder.rs # 线程化录音服务（可跨线程控制）
+├── text_polish.rs   # 文本润色与本地 LLM 调用
 ├── transcriber.rs   # Whisper 本地识别
 ├── output.rs        # 文字输出
 └── asr_client/      # 云端 ASR

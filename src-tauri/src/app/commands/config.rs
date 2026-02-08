@@ -203,7 +203,7 @@ pub async fn update_provider_env_vars(
     api_host: String,
     api_key: Option<String>,
 ) -> Result<(), String> {
-    use crate::services::live_sync::write_env_to_shell_config;
+    use proxycast_services::live_sync::write_env_to_shell_config;
     use serde_json::{json, Value};
     use std::fs;
 

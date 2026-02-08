@@ -11,7 +11,7 @@
 
 #![allow(dead_code)]
 
-use crate::plugin::{PluginConfig, PluginInfo, PluginManager, PluginManifest, PluginType};
+use proxycast_core::plugin::{PluginConfig, PluginInfo, PluginManager, PluginManifest, PluginType};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -360,7 +360,7 @@ pub async fn get_plugins_with_ui(
 // 插件 UI 相关命令
 // ============================================================================
 
-use crate::plugin::{UIMessage, UserAction};
+use proxycast_core::plugin::{UIMessage, UserAction};
 
 /// 获取插件 UI 定义
 /// 返回插件的初始 UI 消息列表

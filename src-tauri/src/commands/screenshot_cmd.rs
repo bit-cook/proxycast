@@ -10,10 +10,7 @@
 
 use crate::config::{ExperimentalFeatures, GlobalConfigManagerState};
 use crate::screenshot::{capture, shortcut};
-use base64::{engine::general_purpose::STANDARD, Engine};
-use std::path::Path;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::fs;
 use tracing::{debug, error, info};
 
 /// 获取实验室功能配置
@@ -112,18 +109,15 @@ pub async fn save_experimental_config(
 ///
 /// 启动交互式截图，返回截图文件路径
 ///
-/// # 参数
-/// - `app`: Tauri 应用句柄
-///
 /// # 返回
 /// 成功返回截图文件路径，用户取消返回空字符串，失败返回错误信息
 ///
 /// _需求: 3.1_
 #[tauri::command]
-pub async fn start_screenshot(app: AppHandle) -> Result<String, String> {
+pub async fn start_screenshot() -> Result<String, String> {
     info!("启动截图命令");
 
-    match capture::start_capture(&app).await {
+    match capture::start_capture().await {
         Ok(path) => {
             info!("截图成功: {:?}", path);
             Ok(path.to_string_lossy().to_string())
@@ -211,9 +205,6 @@ pub async fn update_screenshot_shortcut(
 ///
 /// 关闭当前打开的截图对话悬浮窗口
 ///
-/// # 参数
-/// - `app`: Tauri 应用句柄
-///
 /// # 返回
 /// 成功返回 Ok(()), 失败返回错误信息
 #[tauri::command]
@@ -254,30 +245,7 @@ pub fn open_input_with_text(app: AppHandle, text: String) -> Result<(), String> 
 /// _需求: 5.1_
 #[tauri::command]
 pub async fn read_image_as_base64(path: String) -> Result<String, String> {
-    debug!("读取图片为 Base64: {}", path);
-
-    let path = Path::new(&path);
-
-    // 检查文件是否存在
-    if !path.exists() {
-        return Err(format!("文件不存在: {}", path.display()));
-    }
-
-    // 读取文件内容
-    let bytes = fs::read(path)
-        .await
-        .map_err(|e| format!("读取文件失败: {e}"))?;
-
-    // 检查文件是否为空
-    if bytes.is_empty() {
-        return Err("文件为空".to_string());
-    }
-
-    // 编码为 Base64
-    let base64 = STANDARD.encode(&bytes);
-
-    debug!("图片读取成功，大小: {} 字节", bytes.len());
-    Ok(base64)
+    proxycast_services::screenshot_image_service::read_image_as_base64(&path).await
 }
 
 /// 截图对话消息结构

@@ -1,5 +1,5 @@
 use crate::models::machine_id::*;
-use crate::services::machine_id_service::MachineIdService;
+use proxycast_services::machine_id_service::MachineIdService;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;

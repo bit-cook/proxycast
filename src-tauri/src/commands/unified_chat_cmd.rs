@@ -14,12 +14,12 @@
 //! - `docs/prd/chat-architecture-redesign.md`
 
 use crate::agent::aster_state::SessionConfigBuilder;
-use crate::agent::event_converter::convert_agent_event;
 use crate::agent::{AsterAgentState, TauriAgentEvent};
 use crate::database::dao::chat::{ChatDao, ChatMessage, ChatMode, ChatSession};
 use crate::database::DbConnection;
 use aster::conversation::message::Message;
 use futures::StreamExt;
+use proxycast_agent::event_converter::convert_agent_event;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 

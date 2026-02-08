@@ -5,17 +5,17 @@
 //! 支持从 ProxyCast 凭证池自动选择凭证
 
 use crate::agent::aster_state::{ProviderConfig, SessionConfigBuilder};
-use crate::agent::event_converter::convert_agent_event;
 use crate::agent::{
     AsterAgentState, AsterAgentWrapper, SessionDetail, SessionInfo, TauriAgentEvent,
 };
 use crate::database::dao::agent::AgentDao;
 use crate::database::DbConnection;
 use crate::mcp::{McpManagerState, McpServerConfig};
-use crate::services::mcp_service::McpService;
 use aster::agents::extension::{Envs, ExtensionConfig};
 use aster::conversation::message::Message;
 use futures::StreamExt;
+use proxycast_agent::event_converter::convert_agent_event;
+use proxycast_services::mcp_service::McpService;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
@@ -651,7 +651,7 @@ async fn ensure_proxycast_mcp_servers_running(
         return (0, 0);
     }
 
-    let candidates: Vec<&crate::models::McpServer> =
+    let candidates: Vec<&crate::models::mcp_model::McpServer> =
         servers.iter().filter(|s| s.enabled_proxycast).collect();
 
     if candidates.is_empty() {

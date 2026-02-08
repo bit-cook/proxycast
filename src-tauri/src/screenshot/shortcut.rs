@@ -252,7 +252,7 @@ fn handle_shortcut_triggered(app: &AppHandle) {
         // 短暂延迟，确保窗口完全最小化
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        match capture::start_capture(&app_clone).await {
+        match capture::start_capture().await {
             Ok(image_path) => {
                 info!("截图成功: {:?}", image_path);
                 // 打开悬浮窗口

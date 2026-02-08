@@ -1,8 +1,8 @@
 //! 处理器模块测试
 
-use super::*;
-use crate::services::provider_pool_service::ProviderPoolService;
 use crate::ProviderType;
+use proxycast_processor::*;
+use proxycast_services::provider_pool_service::ProviderPoolService;
 use std::sync::Arc;
 
 #[test]

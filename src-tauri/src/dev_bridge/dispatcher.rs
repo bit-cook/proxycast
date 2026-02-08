@@ -2,58 +2,9 @@
 //!
 //! 将 HTTP 请求路由到现有的 Tauri 命令函数。
 
-use crate::server::AppState;
-use serde::Deserialize;
+use proxycast_server::AppState;
+use proxycast_server_utils::load_model_registry_provider_ids_from_resources;
 use serde_json::Value as JsonValue;
-
-#[derive(Debug, Deserialize)]
-struct ModelRegistryIndex {
-    providers: Vec<String>,
-}
-
-fn resolve_models_index_path() -> Option<std::path::PathBuf> {
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-
-    if let Ok(current_dir) = std::env::current_dir() {
-        candidates.push(current_dir.join("src-tauri/resources/models/index.json"));
-        candidates.push(current_dir.join("resources/models/index.json"));
-    }
-
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(parent) = exe_path.parent() {
-            candidates.push(parent.join("resources/models/index.json"));
-            candidates.push(parent.join("../../src-tauri/resources/models/index.json"));
-            candidates.push(parent.join("../../../src-tauri/resources/models/index.json"));
-            candidates.push(parent.join("../Resources/resources/models/index.json"));
-            candidates.push(parent.join("../../Resources/resources/models/index.json"));
-            candidates.push(parent.join("../../../Resources/resources/models/index.json"));
-        }
-    }
-
-    candidates.into_iter().find(|path| path.exists())
-}
-
-fn load_model_registry_provider_ids_from_resources() -> Result<Vec<String>, String> {
-    let index_path =
-        resolve_models_index_path().ok_or_else(|| "未找到 models index.json".to_string())?;
-
-    let index_content = std::fs::read_to_string(&index_path)
-        .map_err(|e| format!("读取 models index.json 失败 ({index_path:?}): {e}"))?;
-
-    let index: ModelRegistryIndex = serde_json::from_str(&index_content)
-        .map_err(|e| format!("解析 models index.json 失败: {e}"))?;
-
-    let mut provider_ids: Vec<String> = index
-        .providers
-        .into_iter()
-        .map(|id| id.trim().to_string())
-        .filter(|id| !id.is_empty())
-        .collect();
-
-    provider_ids.sort();
-    provider_ids.dedup();
-    Ok(provider_ids)
-}
 
 fn load_model_registry_provider_ids_from_db(
     state: &AppState,
@@ -88,16 +39,16 @@ pub async fn handle_command(
         // ========== P0 - 核心配置 ==========
         "get_config" => {
             // 从配置文件读取
-            let config_path = crate::config::ConfigManager::default_config_path();
-            let manager = crate::config::ConfigManager::load(&config_path)?;
+            let config_path = proxycast_core::config::ConfigManager::default_config_path();
+            let manager = proxycast_core::config::ConfigManager::load(&config_path)?;
             let config = manager.config();
             Ok(serde_json::to_value(config)?)
         }
 
         "save_config" => {
             // 保存配置到文件
-            let config: crate::config::Config = serde_json::from_value(args.unwrap_or_default())?;
-            crate::config::save_config(&config)?;
+            let config: proxycast_core::config::Config = serde_json::from_value(args.unwrap_or_default())?;
+            proxycast_core::config::save_config(&config)?;
             Ok(serde_json::json!({ "success": true }))
         }
 
@@ -292,7 +243,7 @@ pub async fn handle_command(
             if let Some(db) = &state.db {
                 // 简化版本：直接创建会话，不需要 agent_state
                 use crate::database::dao::agent::AgentDao;
-                use crate::agent::types::AgentSession;
+                use proxycast_core::agent::types::AgentSession;
 
                 let session_id = uuid::Uuid::new_v4().to_string();
                 let model_name = model.clone().unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());

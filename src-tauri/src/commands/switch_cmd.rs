@@ -1,7 +1,8 @@
 use crate::database::DbConnection;
-use crate::models::{AppType, Provider};
-use crate::services::live_sync::{check_config_sync, sync_from_external, SyncCheckResult};
-use crate::services::switch::SwitchService;
+use crate::models::app_type::AppType;
+use crate::models::provider_model::Provider;
+use proxycast_services::live_sync::{check_config_sync, sync_from_external, SyncCheckResult};
+use proxycast_services::switch::SwitchService;
 use serde_json::Value;
 use tauri::State;
 

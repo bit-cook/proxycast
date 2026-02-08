@@ -23,15 +23,15 @@ use uuid::Uuid;
 use aster::conversation::message::Message;
 
 use crate::agent::aster_state::SessionConfigBuilder;
-use crate::agent::event_converter::convert_agent_event;
 use crate::agent::{AsterAgentState, TauriAgentEvent};
 use crate::database::DbConnection;
-use crate::skills::{
+use crate::skills::TauriExecutionCallback;
+use proxycast_agent::event_converter::convert_agent_event;
+use proxycast_skills::{
     find_skill_by_name, get_proxycast_skills_dir, load_skills_from_directory, ExecutionCallback,
-    TauriExecutionCallback,
 };
 #[cfg(test)]
-use crate::skills::{
+use proxycast_skills::{
     load_skill_from_file, parse_allowed_tools, parse_boolean, parse_skill_frontmatter,
 };
 

@@ -18,7 +18,7 @@ use crate::database::DbConnection;
 use crate::models::project_model::{
     Material, MaterialFilter, MaterialUpdate, UploadMaterialRequest,
 };
-use crate::services::material_service::MaterialService;
+use proxycast_services::material_service::MaterialService;
 
 // ============================================================================
 // Tauri 命令

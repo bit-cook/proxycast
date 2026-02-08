@@ -13,6 +13,7 @@ pub struct TauriObserver {
     app_handle: AppHandle,
 }
 
+#[allow(dead_code)]
 impl TauriObserver {
     pub fn new(app_handle: AppHandle) -> Self {
         Self { app_handle }

@@ -24,7 +24,7 @@ use tokio::sync::RwLock;
 #[cfg(debug_assertions)]
 use tower_http::cors::CorsLayer;
 
-use crate::server::AppState;
+use proxycast_server::AppState;
 
 #[cfg(debug_assertions)]
 #[derive(Debug, Deserialize)]

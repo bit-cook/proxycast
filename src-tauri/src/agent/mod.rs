@@ -1,7 +1,7 @@
 //! AI Agent 集成模块
 //!
 //! 纯逻辑部分已迁移到 proxycast-agent crate，
-//! 本模块保留深耦合部分（依赖 database, services, AppHandle）。
+//! 本模块保留深耦合部分（Aster 状态与 Tauri 桥接）。
 
 pub mod aster_agent;
 pub mod aster_state;
@@ -15,6 +15,7 @@ pub use proxycast_agent::prompt;
 
 // types 已迁移到 proxycast-core
 pub use proxycast_core::agent::types;
+pub use proxycast_core::agent::types::*;
 
 pub use aster_agent::{AsterAgentWrapper, SessionDetail, SessionInfo};
 pub use aster_state::AsterAgentState;
@@ -25,4 +26,3 @@ pub use proxycast_agent::{convert_agent_event, convert_to_tauri_message, TauriAg
 pub use subagent_scheduler::{
     ProxyCastScheduler, ProxyCastSubAgentExecutor, SubAgentProgressEvent,
 };
-pub use types::*;

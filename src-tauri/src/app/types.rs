@@ -7,9 +7,9 @@ use tauri::{Emitter, Runtime};
 use tokio::sync::RwLock;
 
 use crate::logger;
-use crate::server;
-use crate::services::token_cache_service::TokenCacheService;
 use crate::tray::TrayManager;
+use proxycast_server as server;
+use proxycast_services::token_cache_service::TokenCacheService;
 
 use proxycast_core::event_emit::EventEmit;
 

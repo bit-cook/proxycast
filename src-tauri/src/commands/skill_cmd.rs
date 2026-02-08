@@ -1,9 +1,10 @@
 use crate::agent::aster_state::AsterAgentState;
 use crate::database::dao::skills::SkillDao;
 use crate::database::DbConnection;
-use crate::models::{AppType, Skill, SkillRepo, SkillState};
-use crate::services::skill_service::SkillService;
+use crate::models::app_type::AppType;
+use crate::models::skill_model::{Skill, SkillRepo, SkillState};
 use chrono::Utc;
+use proxycast_services::skill_service::SkillService;
 use std::path::Path;
 use std::sync::Arc;
 use tauri::State;

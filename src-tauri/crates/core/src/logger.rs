@@ -1,4 +1,5 @@
 //! 日志管理模块
+use crate::config::LoggingConfig;
 use chrono::{Duration, Local, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -237,6 +238,10 @@ impl LogStore {
 }
 
 pub type SharedLogStore = Arc<parking_lot::RwLock<LogStore>>;
+
+pub fn create_log_store_from_config(logging: &LoggingConfig) -> LogStore {
+    LogStore::with_custom_config(logging.retention_days, logging.enabled)
+}
 
 /// P2 安全修复：扩展日志脱敏规则，覆盖更多敏感字段
 pub fn sanitize_log_message(message: &str) -> String {

@@ -6,6 +6,11 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+proxycast-core.workspace = true
+proxycast-providers.workspace = true
+proxycast-services.workspace = true
+proxycast-server-utils.workspace = true
+
 serde.workspace = true
 serde_json.workspace = true
 async-trait.workspace = true

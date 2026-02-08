@@ -21,8 +21,10 @@
 - `backup_service.rs` - 备份服务
 - `live_sync.rs` - 实时同步服务
 - `switch.rs` - 开关服务
-- `sysinfo_service.rs` - 系统信息服务（CPU/内存监控）
-- `file_browser_service.rs` - 文件浏览器服务（目录列表、文件预览）
+- `sysinfo_service.rs` - Tauri 命令桥接（纯逻辑已迁移到 `crates/services/src/sysinfo_service.rs`）
+- `file_browser_service.rs` - Tauri 命令桥接（纯逻辑已迁移到 `crates/services/src/file_browser_service.rs`）
+- `update_check_service.rs` - 兼容导出层（纯逻辑已迁移到 `crates/services/src/update_check_service.rs`）
+- `update_window.rs` - 更新提醒独立窗口管理
 - `general_chat/` - 通用对话服务模块（会话管理、消息存储）
 - `api_key_provider_service.rs` - API Key Provider 服务
 - `kiro_event_service.rs` - Kiro 事件服务
@@ -31,8 +33,20 @@
 - `persona_service.rs` - 人设服务（创建、列表、更新、删除、设置默认、模板）
 - `material_service.rs` - 素材服务（上传、存储、删除、内容读取）
 - `template_service.rs` - 排版模板服务（创建、列表、更新、删除、设置默认）
-- `update_check_service.rs` - 自动更新检查服务（每日检查、系统通知）
-- `update_window.rs` - 更新提醒独立窗口管理
+
+## 已迁移补充
+
+以下语音相关纯逻辑已迁移到 `crates/services/src/`：
+- `voice_asr_service.rs` - ASR 识别与云端失败回退
+- `voice_config_service.rs` - 语音配置、ASR 凭证与指令管理
+- `voice_processor_service.rs` - 文本模板处理与 LLM 润色
+- `voice_output_service.rs` - 文本输出模式与系统输出
+- `voice_command_service.rs` - 转写/润色/输出业务流程
+- `voice_recording_service.rs` - 录音状态封装与设备查询
+
+以下截图相关纯逻辑已迁移到 `crates/services/src/`：
+- `screenshot_capture_service.rs` - 跨平台截图与临时文件清理
+- `screenshot_image_service.rs` - 图片读取与 Base64 编码
 
 ## Aster Agent 集成
 

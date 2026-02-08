@@ -8,6 +8,8 @@ repository.workspace = true
 [dependencies]
 proxycast-core.workspace = true
 proxycast-mcp.workspace = true
+proxycast-services.workspace = true
+proxycast-providers.workspace = true
 aster.workspace = true
 rmcp.workspace = true
 serde.workspace = true
@@ -17,3 +19,8 @@ tokio-util.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
 chrono.workspace = true
+dirs.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -13,10 +13,10 @@
 
 use crate::database::DbConnection;
 use crate::models::project_model::ProjectContext;
-use crate::services::project_context_builder::ProjectContextBuilder;
 use crate::workspace::{
     Workspace, WorkspaceManager, WorkspaceSettings, WorkspaceType, WorkspaceUpdate,
 };
+use proxycast_services::project_context_builder::ProjectContextBuilder;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;

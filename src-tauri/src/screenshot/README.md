@@ -7,7 +7,7 @@
 ```
 screenshot/
 ├── mod.rs          # 模块入口，导出公共接口和初始化函数
-├── capture.rs      # 屏幕截图服务，跨平台截图实现
+├── capture.rs      # 截图桥接层（纯逻辑在 crates/services/src/screenshot_capture_service.rs）
 ├── config.rs       # 实验室功能配置管理
 ├── shortcut.rs     # 全局快捷键注册/注销/更新
 ├── window.rs       # 悬浮对话窗口管理
@@ -36,8 +36,8 @@ screenshot/
 
 ### 4. 截图服务 (capture.rs)
 
-- `start_capture(app)`: 启动交互式截图
-- 支持 macOS (screencapture)、Windows (PowerShell)、Linux (gnome-screenshot/scrot)
+- `start_capture()`: 启动交互式截图
+- 支持 macOS (`screencapture`)、Windows (PowerShell)、Linux (`gnome-screenshot` / `scrot`)
 
 ### 5. 窗口管理 (window.rs)
 

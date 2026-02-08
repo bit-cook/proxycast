@@ -2,7 +2,7 @@
 
 use crate::database::dao::provider_pool::ProviderPoolDao;
 use crate::database::DbConnection;
-use crate::services::model_service::ModelService;
+use proxycast_services::model_service::ModelService;
 use std::collections::HashMap;
 use tauri::State;
 

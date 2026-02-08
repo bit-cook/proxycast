@@ -166,14 +166,6 @@ impl QuotaManager {
         self.exceeded_credentials.len()
     }
 
-    /// 手动设置凭证的冷却结束时间（仅用于测试）
-    #[cfg(test)]
-    pub fn set_cooldown_until(&self, credential_id: &str, until: DateTime<Utc>) {
-        if let Some(mut record) = self.exceeded_credentials.get_mut(credential_id) {
-            record.cooldown_until = until;
-        }
-    }
-
     /// 检查是否为配额超限错误
     pub fn is_quota_exceeded_error(status_code: Option<u16>, error_message: &str) -> bool {
         if let Some(code) = status_code {

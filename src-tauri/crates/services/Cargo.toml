@@ -5,10 +5,15 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+local-whisper = ["voice-core/local-whisper"]
+
 [dependencies]
 # 项目内 crate
 proxycast-core.workspace = true
 proxycast-providers.workspace = true
+voice-core.workspace = true
 
 # 序列化
 serde.workspace = true

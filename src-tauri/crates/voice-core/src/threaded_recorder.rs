@@ -19,13 +19,13 @@
 //! - Tauri 命令通过 channel 发送控制指令
 //! - 录音线程通过 channel 返回结果
 
+use crate::types::AudioData;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
-use crate::types::AudioData;
 
 /// 录音控制命令
 #[derive(Debug)]

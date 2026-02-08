@@ -5,7 +5,7 @@
 use crate::models::model_registry::{
     EnhancedModelMetadata, ModelSyncState, ModelTier, ProviderAliasConfig, UserModelPreference,
 };
-use crate::services::model_registry_service::{FetchModelsResult, ModelRegistryService};
+use proxycast_services::model_registry_service::{FetchModelsResult, ModelRegistryService};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tauri::State;

@@ -2,7 +2,7 @@ use crate::config::{
     Config, ConfigManager, ExportBundle, ExportOptions as ExportServiceOptions, ExportService,
     ImportOptions as ImportServiceOptions, ImportService, ValidationResult,
 };
-use crate::models::AppType;
+use crate::models::app_type::AppType;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};

@@ -2,13 +2,13 @@
 //!
 //! 使用 proptest 进行属性测试
 
-use crate::config::{
+use proptest::prelude::*;
+use proxycast_core::config::{
     collapse_tilde, contains_tilde, expand_tilde, Config, ConfigManager, CustomProviderConfig,
     HotReloadManager, InjectionSettings, LoggingConfig, ProviderConfig, ProvidersConfig,
     ReloadResult, RetrySettings, RoutingConfig, ServerConfig, YamlService,
 };
-use crate::config::{ContentCreatorConfig, NavigationConfig};
-use proptest::prelude::*;
+use proxycast_core::config::{ContentCreatorConfig, NavigationConfig};
 use std::io::Write;
 use tempfile::NamedTempFile;
 
@@ -38,7 +38,7 @@ fn arb_server_config() -> impl Strategy<Value = ServerConfig> {
         host,
         port,
         api_key,
-        tls: crate::config::TlsConfig::default(),
+        tls: proxycast_core::config::TlsConfig::default(),
     })
 }
 
@@ -179,17 +179,17 @@ fn arb_config() -> impl Strategy<Value = Config> {
             logging,
             injection: InjectionSettings::default(),
             auth_dir: "~/.proxycast/auth".to_string(),
-            credential_pool: crate::config::CredentialPoolConfig::default(),
-            remote_management: crate::config::RemoteManagementConfig::default(),
-            quota_exceeded: crate::config::QuotaExceededConfig::default(),
+            credential_pool: proxycast_core::config::CredentialPoolConfig::default(),
+            remote_management: proxycast_core::config::RemoteManagementConfig::default(),
+            quota_exceeded: proxycast_core::config::QuotaExceededConfig::default(),
             proxy_url: None,
-            ampcode: crate::config::AmpConfig::default(),
-            endpoint_providers: crate::config::EndpointProvidersConfig::default(),
+            ampcode: proxycast_core::config::AmpConfig::default(),
+            endpoint_providers: proxycast_core::config::EndpointProvidersConfig::default(),
             minimize_to_tray: true,
-            models: crate::config::ModelsConfig::default(),
-            agent: crate::config::NativeAgentConfig::default(),
+            models: proxycast_core::config::ModelsConfig::default(),
+            agent: proxycast_core::config::NativeAgentConfig::default(),
             language: "zh".to_string(),
-            experimental: crate::config::ExperimentalFeatures::default(),
+            experimental: proxycast_core::config::ExperimentalFeatures::default(),
             content_creator: ContentCreatorConfig::default(),
             navigation: NavigationConfig::default(),
         })
@@ -356,7 +356,7 @@ fn arb_valid_server_config() -> impl Strategy<Value = ServerConfig> {
         host,
         port,
         api_key,
-        tls: crate::config::TlsConfig::default(),
+        tls: proxycast_core::config::TlsConfig::default(),
     })
 }
 
@@ -419,17 +419,17 @@ fn arb_valid_config() -> impl Strategy<Value = Config> {
             logging,
             injection: InjectionSettings::default(),
             auth_dir: "~/.proxycast/auth".to_string(),
-            credential_pool: crate::config::CredentialPoolConfig::default(),
-            remote_management: crate::config::RemoteManagementConfig::default(),
-            quota_exceeded: crate::config::QuotaExceededConfig::default(),
+            credential_pool: proxycast_core::config::CredentialPoolConfig::default(),
+            remote_management: proxycast_core::config::RemoteManagementConfig::default(),
+            quota_exceeded: proxycast_core::config::QuotaExceededConfig::default(),
             proxy_url: None,
-            ampcode: crate::config::AmpConfig::default(),
-            endpoint_providers: crate::config::EndpointProvidersConfig::default(),
+            ampcode: proxycast_core::config::AmpConfig::default(),
+            endpoint_providers: proxycast_core::config::EndpointProvidersConfig::default(),
             minimize_to_tray: true,
-            models: crate::config::ModelsConfig::default(),
-            agent: crate::config::NativeAgentConfig::default(),
+            models: proxycast_core::config::ModelsConfig::default(),
+            agent: proxycast_core::config::NativeAgentConfig::default(),
             language: "zh".to_string(),
-            experimental: crate::config::ExperimentalFeatures::default(),
+            experimental: proxycast_core::config::ExperimentalFeatures::default(),
             content_creator: ContentCreatorConfig::default(),
             navigation: NavigationConfig::default(),
         })
@@ -470,17 +470,17 @@ fn arb_invalid_config() -> impl Strategy<Value = Config> {
                     logging,
                     injection: InjectionSettings::default(),
                     auth_dir: "~/.proxycast/auth".to_string(),
-                    credential_pool: crate::config::CredentialPoolConfig::default(),
-                    remote_management: crate::config::RemoteManagementConfig::default(),
-                    quota_exceeded: crate::config::QuotaExceededConfig::default(),
+                    credential_pool: proxycast_core::config::CredentialPoolConfig::default(),
+                    remote_management: proxycast_core::config::RemoteManagementConfig::default(),
+                    quota_exceeded: proxycast_core::config::QuotaExceededConfig::default(),
                     proxy_url: None,
-                    ampcode: crate::config::AmpConfig::default(),
-                    endpoint_providers: crate::config::EndpointProvidersConfig::default(),
+                    ampcode: proxycast_core::config::AmpConfig::default(),
+                    endpoint_providers: proxycast_core::config::EndpointProvidersConfig::default(),
                     minimize_to_tray: true,
-                    models: crate::config::ModelsConfig::default(),
-                    agent: crate::config::NativeAgentConfig::default(),
+                    models: proxycast_core::config::ModelsConfig::default(),
+                    agent: proxycast_core::config::NativeAgentConfig::default(),
                     language: "zh".to_string(),
-                    experimental: crate::config::ExperimentalFeatures::default(),
+                    experimental: proxycast_core::config::ExperimentalFeatures::default(),
                     content_creator: ContentCreatorConfig::default(),
                     navigation: NavigationConfig::default(),
                 };
@@ -1178,7 +1178,7 @@ providers:
 // Property 4: Export Scope Filtering
 // ============================================================================
 
-use crate::config::{
+use proxycast_core::config::{
     ApiKeyEntry, CredentialEntry, CredentialPoolConfig, ExportOptions, ExportService,
 };
 
@@ -1357,7 +1357,7 @@ proptest! {
 // Property 5: Redaction Completeness
 // ============================================================================
 
-use crate::config::REDACTED_PLACEHOLDER;
+use proxycast_core::config::REDACTED_PLACEHOLDER;
 
 /// 生成包含敏感信息的配置
 fn arb_config_with_secrets() -> impl Strategy<Value = Config> {
@@ -1589,7 +1589,7 @@ proptest! {
 // Property 6: Import Validation
 // ============================================================================
 
-use crate::config::{ExportBundle, ImportService};
+use proxycast_core::config::{ExportBundle, ImportService};
 
 /// 生成有效的导出包
 fn arb_valid_export_bundle() -> impl Strategy<Value = ExportBundle> {
@@ -1761,7 +1761,7 @@ proptest! {
 // Property 7: Import Merge vs Replace
 // ============================================================================
 
-use crate::config::ImportOptions;
+use proxycast_core::config::ImportOptions;
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(100))]
@@ -2176,7 +2176,7 @@ fn arb_oauth_credential_entry() -> impl Strategy<Value = CredentialEntry> {
 }
 
 /// 生成随机的 Gemini API Key 条目
-fn arb_gemini_api_key_entry() -> impl Strategy<Value = crate::config::GeminiApiKeyEntry> {
+fn arb_gemini_api_key_entry() -> impl Strategy<Value = proxycast_core::config::GeminiApiKeyEntry> {
     (
         "[a-z]{3,10}-[0-9]{1,5}".prop_map(|s| s),
         "AIzaSy[a-zA-Z0-9_-]{33}".prop_map(|s| s),
@@ -2187,7 +2187,7 @@ fn arb_gemini_api_key_entry() -> impl Strategy<Value = crate::config::GeminiApiK
     )
         .prop_map(
             |(id, api_key, base_url, proxy_url, excluded_models, disabled)| {
-                crate::config::GeminiApiKeyEntry {
+                proxycast_core::config::GeminiApiKeyEntry {
                     id,
                     api_key,
                     base_url,
@@ -2200,7 +2200,7 @@ fn arb_gemini_api_key_entry() -> impl Strategy<Value = crate::config::GeminiApiK
 }
 
 /// 生成随机的 Vertex AI 条目
-fn arb_vertex_api_key_entry() -> impl Strategy<Value = crate::config::VertexApiKeyEntry> {
+fn arb_vertex_api_key_entry() -> impl Strategy<Value = proxycast_core::config::VertexApiKeyEntry> {
     (
         "[a-z]{3,10}-[0-9]{1,5}".prop_map(|s| s),
         "vk-[a-zA-Z0-9]{20,40}".prop_map(|s| s),
@@ -2216,13 +2216,13 @@ fn arb_vertex_api_key_entry() -> impl Strategy<Value = crate::config::VertexApiK
         any::<bool>(),
     )
         .prop_map(|(id, api_key, base_url, models, proxy_url, disabled)| {
-            crate::config::VertexApiKeyEntry {
+            proxycast_core::config::VertexApiKeyEntry {
                 id,
                 api_key,
                 base_url,
                 models: models
                     .into_iter()
-                    .map(|(name, alias)| crate::config::VertexModelAlias { name, alias })
+                    .map(|(name, alias)| proxycast_core::config::VertexModelAlias { name, alias })
                     .collect(),
                 proxy_url,
                 disabled,
@@ -2346,7 +2346,7 @@ proptest! {
 // Property 3: EndpointProvidersConfig 序列化往返一致性
 // ============================================================================
 
-use crate::config::EndpointProvidersConfig;
+use proxycast_core::config::EndpointProvidersConfig;
 
 /// 生成随机的 Provider 名称
 fn arb_provider_name() -> impl Strategy<Value = String> {

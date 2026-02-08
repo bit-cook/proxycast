@@ -39,8 +39,8 @@ use crate::mcp::{
     McpManagerState, McpPromptDefinition, McpPromptResult, McpResourceContent,
     McpResourceDefinition, McpServerConfig, McpServerInfo, McpToolDefinition, McpToolResult,
 };
-use crate::models::McpServer;
-use crate::services::mcp_service::McpService;
+use crate::models::mcp_model::McpServer;
+use proxycast_services::mcp_service::McpService;
 use tauri::State;
 use tracing::{debug, error, info};
 

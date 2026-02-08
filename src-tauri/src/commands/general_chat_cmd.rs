@@ -14,7 +14,7 @@
 
 use crate::database::dao::general_chat::GeneralChatDao;
 use crate::database::DbConnection;
-use crate::services::general_chat::{
+use proxycast_services::general_chat::{
     ChatMessage, ChatSession, ContentBlock, MessageRole, SessionDetail,
 };
 use serde::{Deserialize, Serialize};

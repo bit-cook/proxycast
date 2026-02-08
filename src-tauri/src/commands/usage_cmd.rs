@@ -5,8 +5,8 @@
 use crate::database::dao::provider_pool::ProviderPoolDao;
 use crate::database::DbConnection;
 use crate::models::provider_pool_model::{CredentialData, PoolProviderType};
-use crate::services::usage_service::{self, UsageInfo};
 use crate::TokenCacheServiceState;
+use proxycast_services::usage_service::{self, UsageInfo};
 use tauri::State;
 
 /// 默认 Kiro 版本号

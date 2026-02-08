@@ -1005,3 +1005,54 @@ mod property_tests {
         }
     }
 }
+
+/// 解析 models index.json 的 provider_id 列表
+pub fn load_model_registry_provider_ids_from_resources() -> Result<Vec<String>, String> {
+    let index_path =
+        resolve_models_index_path().ok_or_else(|| "未找到 models index.json".to_string())?;
+
+    let index_content = std::fs::read_to_string(&index_path)
+        .map_err(|e| format!("读取 models index.json 失败 ({index_path:?}): {e}"))?;
+
+    let index_json = serde_json::from_str::<serde_json::Value>(&index_content)
+        .map_err(|e| format!("解析 models index.json 失败: {e}"))?;
+
+    let providers = index_json
+        .get("providers")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "models index.json 缺少 providers 数组".to_string())?;
+
+    let mut provider_ids: Vec<String> = providers
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .collect();
+
+    provider_ids.sort();
+    provider_ids.dedup();
+    Ok(provider_ids)
+}
+
+/// 定位 models index.json 路径
+pub fn resolve_models_index_path() -> Option<std::path::PathBuf> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(current_dir.join("src-tauri/resources/models/index.json"));
+        candidates.push(current_dir.join("resources/models/index.json"));
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            candidates.push(parent.join("resources/models/index.json"));
+            candidates.push(parent.join("../../src-tauri/resources/models/index.json"));
+            candidates.push(parent.join("../../../src-tauri/resources/models/index.json"));
+            candidates.push(parent.join("../Resources/resources/models/index.json"));
+            candidates.push(parent.join("../../Resources/resources/models/index.json"));
+            candidates.push(parent.join("../../../Resources/resources/models/index.json"));
+        }
+    }
+
+    candidates.into_iter().find(|path| path.exists())
+}

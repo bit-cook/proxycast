@@ -8,10 +8,10 @@
 
 use crate::app::AppState;
 use crate::config;
-use crate::services::update_check_service::{
+use crate::services::update_window;
+use proxycast_services::update_check_service::{
     UpdateCheckService, UpdateCheckServiceState, UpdateInfo,
 };
-use crate::services::update_window;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};

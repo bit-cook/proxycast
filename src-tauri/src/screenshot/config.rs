@@ -2,7 +2,8 @@
 //!
 //! 提供实验室功能配置的加载和检查功能
 
-use crate::config::{ExperimentalFeatures, GlobalConfigManagerState, ScreenshotChatConfig};
+use crate::config::GlobalConfigManagerState;
+use proxycast_core::config::{ExperimentalFeatures, ScreenshotChatConfig};
 use tauri::{AppHandle, Manager};
 use tracing::debug;
 

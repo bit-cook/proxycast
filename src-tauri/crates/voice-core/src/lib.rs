@@ -8,6 +8,7 @@ pub mod device;
 pub mod error;
 pub mod output;
 pub mod recorder;
+pub mod text_polish;
 pub mod threaded_recorder;
 #[cfg(feature = "local-whisper")]
 pub mod transcriber;

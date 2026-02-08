@@ -1,6 +1,6 @@
 use crate::database::DbConnection;
-use crate::models::Prompt;
-use crate::services::prompt_service::PromptService;
+use crate::models::prompt_model::Prompt;
+use proxycast_services::prompt_service::PromptService;
 use std::collections::HashMap;
 use tauri::State;
 

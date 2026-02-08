@@ -7,7 +7,7 @@ use crate::app::TokenCacheServiceState;
 use crate::commands::provider_pool_cmd::ProviderPoolServiceState;
 use crate::commands::telemetry_cmd::TelemetryState;
 use crate::database;
-use crate::server;
+use proxycast_server as server;
 
 /// 启动服务器
 #[tauri::command]

@@ -11,7 +11,7 @@
 //! - `connection_get_raw_config` - 获取原始配置内容
 //! - `connection_save_raw_config` - 保存原始配置内容
 
-use crate::terminal::connections::{
+use proxycast_terminal::connections::{
     ConnectionConfig, ConnectionConfigManager, ConnectionConfigType, ConnectionListEntry,
 };
 use serde::{Deserialize, Serialize};

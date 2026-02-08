@@ -15,20 +15,21 @@ use crate::commands::provider_pool_cmd::{CredentialSyncServiceState, ProviderPoo
 use crate::commands::resilience_cmd::ResilienceConfigState;
 use crate::commands::skill_cmd::SkillServiceState;
 use crate::commands::tool_hooks::ToolHooksServiceState;
-use crate::config::{Config, ConfigManager, GlobalConfigManager, GlobalConfigManagerState};
+use crate::config::{GlobalConfigManager, GlobalConfigManagerState};
 use crate::database;
 use crate::plugin;
-use crate::services::api_key_provider_service::ApiKeyProviderService;
-use crate::services::context_memory_service::{ContextMemoryConfig, ContextMemoryService};
-use crate::services::provider_pool_service::ProviderPoolService;
-use crate::services::skill_service::SkillService;
-use crate::services::token_cache_service::TokenCacheService;
-use crate::services::tool_hooks_service::ToolHooksService;
 use crate::telemetry;
+use proxycast_core::config::{Config, ConfigManager};
+use proxycast_services::api_key_provider_service::ApiKeyProviderService;
+use proxycast_services::context_memory_service::{ContextMemoryConfig, ContextMemoryService};
+use proxycast_services::provider_pool_service::ProviderPoolService;
+use proxycast_services::skill_service::SkillService;
+use proxycast_services::token_cache_service::TokenCacheService;
+use proxycast_services::tool_hooks_service::ToolHooksService;
 
 use super::types::{AppState, LogState, TokenCacheServiceState};
 use crate::logger;
-use crate::server;
+use proxycast_server as server;
 
 /// 初始化核心应用状态
 pub fn init_core_state(config: Config) -> (AppState, LogState) {
@@ -85,7 +86,7 @@ pub fn init_service_states() -> ServiceStates {
     let token_cache_service_state = TokenCacheServiceState(Arc::new(token_cache_service));
 
     // Initialize MachineIdService
-    let machine_id_service = crate::services::machine_id_service::MachineIdService::new()
+    let machine_id_service = proxycast_services::machine_id_service::MachineIdService::new()
         .expect("Failed to initialize MachineIdService");
     let machine_id_service_state: MachineIdState = Arc::new(RwLock::new(machine_id_service));
 

@@ -3,6 +3,7 @@
 //! 包含纯数据类型、基础模块和无外部业务依赖的独立模块。
 //!
 //! ## 模块结构
+//! - `app_utils`: 应用通用工具函数
 //! - `models`: 核心数据模型定义
 //! - `data`: 静态数据
 //! - `logger`: 日志配置
@@ -16,9 +17,14 @@
 //! - `session`: 会话管理（限速、粘性路由）
 //! - `session_files`: 会话文件存储
 
+pub mod app_bootstrap;
+pub mod app_utils;
 pub mod data;
 pub mod logger;
 pub mod models;
+pub mod tray_format;
+pub mod tray_menu_meta;
+pub mod tray_state;
 
 // 独立业务模块（无主 crate 依赖）
 pub mod backends;

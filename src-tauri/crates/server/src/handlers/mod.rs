@@ -13,7 +13,12 @@ pub mod websocket;
 pub use api::*;
 pub use credentials_api::*;
 pub use image_handler::*;
-pub use kiro_credential::*;
+// 避免 SelectCredentialRequest 歧义 glob re-export（credentials_api 和 kiro_credential 都定义了同名类型）
+pub use kiro_credential::{
+    get_available_credentials, get_credential_status, refresh_credential, select_credential,
+    AvailableCredential, AvailableCredentialsResponse, RefreshCredentialResponse,
+    SelectCredentialResponse,
+};
 pub use management::*;
 pub use provider_calls::*;
 pub use websocket::*;

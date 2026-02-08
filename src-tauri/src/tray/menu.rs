@@ -9,59 +9,8 @@ use tauri::{
     AppHandle, Runtime,
 };
 
-/// 菜单项 ID 常量
-pub mod menu_ids {
-    /// 状态信息
-    pub const STATUS_INFO: &str = "status_info";
-    /// 凭证信息
-    pub const CREDENTIAL_INFO: &str = "credential_info";
-    /// 请求信息
-    pub const REQUEST_INFO: &str = "request_info";
-    /// 分隔符 1
-    pub const SEPARATOR_1: &str = "sep_1";
-    /// 启动服务器
-    pub const START_SERVER: &str = "start_server";
-    /// 停止服务器
-    pub const STOP_SERVER: &str = "stop_server";
-    /// 刷新所有 Token
-    pub const REFRESH_TOKENS: &str = "refresh_tokens";
-    /// 健康检查
-    pub const HEALTH_CHECK: &str = "health_check";
-    /// 分隔符 2
-    pub const SEPARATOR_2: &str = "sep_2";
-    /// 打开主窗口
-    pub const OPEN_WINDOW: &str = "open_window";
-    /// 复制 API 地址
-    pub const COPY_API_ADDRESS: &str = "copy_api_address";
-    /// 打开日志目录
-    pub const OPEN_LOG_DIR: &str = "open_log_dir";
-    /// 分隔符 3
-    pub const SEPARATOR_3: &str = "sep_3";
-    /// 开机自启
-    pub const AUTO_START: &str = "auto_start";
-    /// 分隔符 4
-    pub const SEPARATOR_4: &str = "sep_4";
-    /// 退出
-    pub const QUIT: &str = "quit";
-
-    /// 获取所有必需的菜单项 ID 列表
-    pub fn all_required_ids() -> Vec<&'static str> {
-        vec![
-            STATUS_INFO,
-            CREDENTIAL_INFO,
-            REQUEST_INFO,
-            START_SERVER,
-            STOP_SERVER,
-            REFRESH_TOKENS,
-            HEALTH_CHECK,
-            OPEN_WINDOW,
-            COPY_API_ADDRESS,
-            OPEN_LOG_DIR,
-            AUTO_START,
-            QUIT,
-        ]
-    }
-}
+pub use proxycast_core::tray_menu_meta::menu_ids;
+pub use proxycast_core::tray_menu_meta::{get_menu_item_ids, parse_server_address};
 
 /// 托盘菜单构建错误
 #[derive(Debug, thiserror::Error)]
@@ -251,33 +200,6 @@ pub fn build_tray_menu<R: Runtime>(
         ],
     )
     .map_err(|e| MenuBuildError::MenuError(e.to_string()))
-}
-
-/// 解析服务器地址字符串为 host 和 port
-///
-/// 支持格式：
-/// - "host:port" -> (host, port)
-/// - "host" -> (host, 8080)
-/// - "" -> ("127.0.0.1", 8080)
-fn parse_server_address(address: &str) -> (String, u16) {
-    if address.is_empty() {
-        return ("127.0.0.1".to_string(), 8080);
-    }
-
-    if let Some((host, port_str)) = address.rsplit_once(':') {
-        if let Ok(port) = port_str.parse::<u16>() {
-            return (host.to_string(), port);
-        }
-    }
-
-    (address.to_string(), 8080)
-}
-
-/// 获取菜单中包含的所有菜单项 ID
-///
-/// 用于验证菜单构建的完整性
-pub fn get_menu_item_ids() -> Vec<&'static str> {
-    menu_ids::all_required_ids()
 }
 
 #[cfg(test)]

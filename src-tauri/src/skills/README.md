@@ -7,8 +7,8 @@
 | 文件 | 说明 |
 |------|------|
 | `mod.rs` | 模块导出 |
-| `llm_provider.rs` | ProxyCastLlmProvider 实现 |
-| `execution_callback.rs` | TauriExecutionCallback 实现 |
+| `llm_provider.rs` | 桥接层（纯逻辑已迁移到 `crates/skills/src/proxycast_llm_provider.rs`） |
+| `execution_callback.rs` | TauriExecutionCallback 实现（保留在主 crate） |
 
 ## Skills 集成架构
 
@@ -77,9 +77,10 @@ agent/aster_state.rs
 └── reload_proxycast_skills()
 
 skills/
-├── llm_provider.rs
-│   ├── ProviderPoolService (凭证池管理)
-│   └── ApiKeyProviderService (API Key 服务)
+├── llm_provider.rs (桥接)
+│   └── crates/skills/src/proxycast_llm_provider.rs
+│       ├── ProviderPoolService (凭证池管理)
+│       └── ApiKeyProviderService (API Key 服务)
 └── execution_callback.rs
     └── tauri::AppHandle (事件发送)
 

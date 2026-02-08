@@ -10,7 +10,7 @@ use crate::database::dao::api_key_provider::{
 };
 use crate::database::system_providers::get_system_providers;
 use crate::database::DbConnection;
-use crate::services::api_key_provider_service::{
+use proxycast_services::api_key_provider_service::{
     ApiKeyProviderService, ChatTestResult, ConnectionTestResult, ImportResult,
 };
 use serde::{Deserialize, Serialize};
