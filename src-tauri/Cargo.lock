@@ -6675,6 +6675,7 @@ dependencies = [
  "proxycast-infra",
  "proxycast-processor",
  "proxycast-providers",
+ "proxycast-server-utils",
  "proxycast-services",
  "proxycast-terminal",
  "proxycast-websocket",
@@ -6864,6 +6865,21 @@ dependencies = [
  "tracing",
  "url",
  "urlencoding",
+ "uuid",
+]
+
+[[package]]
+name = "proxycast-server-utils"
+version = "0.60.0"
+dependencies = [
+ "axum 0.7.9",
+ "futures",
+ "proptest",
+ "proxycast-core",
+ "regex",
+ "serde_json",
+ "tokio",
+ "tracing",
  "uuid",
 ]
 
