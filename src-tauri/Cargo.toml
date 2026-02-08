@@ -17,6 +17,7 @@ proxycast-infra = { path = "crates/infra" }
 proxycast-providers = { path = "crates/providers" }
 proxycast-services = { path = "crates/services" }
 proxycast-terminal = { path = "crates/terminal" }
+proxycast-credential = { path = "crates/credential" }
 proxycast-websocket = { path = "crates/websocket" }
 voice-core = { path = "crates/voice-core" }
 
@@ -194,6 +195,7 @@ proxycast-infra.workspace = true
 proxycast-providers.workspace = true
 proxycast-services.workspace = true
 proxycast-terminal.workspace = true
+proxycast-credential.workspace = true
 proxycast-websocket.workspace = true
 voice-core.workspace = true
 

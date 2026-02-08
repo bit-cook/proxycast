@@ -2,13 +2,13 @@
 //!
 //! 提供轮询负载均衡策略，支持凭证冷却和自动恢复
 
-use crate::proxy::ProxyClientFactory;
-use crate::ProviderType;
 use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
 use proxycast_core::credential::health::{HealthCheckConfig, HealthChecker};
 use proxycast_core::credential::pool::{CredentialPool, PoolError};
 use proxycast_core::credential::types::Credential;
+use proxycast_core::ProviderType;
+use proxycast_infra::ProxyClientFactory;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -143,16 +143,9 @@ impl LoadBalancer {
     }
 
     /// 选择下一个可用凭证（使用当前策略）
-    ///
-    /// # 错误
-    /// - 如果 Provider 未注册，返回 `PoolError::EmptyPool`
-    /// - 如果没有可用凭证，返回 `PoolError::NoAvailableCredential`
     pub fn select(&self, provider: ProviderType) -> Result<Credential, PoolError> {
         let pool = self.pools.get(&provider).ok_or(PoolError::EmptyPool)?;
-
-        // 先刷新冷却状态
         pool.refresh_cooldowns();
-
         match self.strategy {
             BalanceStrategy::RoundRobin => self.select_round_robin(&pool, provider),
             BalanceStrategy::LeastUsed => self.select_least_used(&pool),
@@ -161,39 +154,19 @@ impl LoadBalancer {
     }
 
     /// 选择下一个可用凭证并创建配置了代理的 HTTP 客户端
-    ///
-    /// 代理选择逻辑：
-    /// 1. 如果凭证有 proxy_url，使用 Per-Key 代理
-    /// 2. 否则，使用全局代理（如果配置了）
-    /// 3. 否则，不使用代理
-    ///
-    /// # 错误
-    /// - 如果 Provider 未注册，返回 `PoolError::EmptyPool`
-    /// - 如果没有可用凭证，返回 `PoolError::NoAvailableCredential`
-    /// - 如果代理配置无效，返回 `PoolError::CredentialNotFound`（包含错误信息）
     pub fn select_with_client(
         &self,
         provider: ProviderType,
     ) -> Result<CredentialSelection, PoolError> {
         let credential = self.select(provider)?;
-
-        // 使用凭证的 proxy_url 或回退到全局代理
         let client = self
             .proxy_factory
             .create_client(credential.proxy_url())
             .map_err(|e| PoolError::CredentialNotFound(format!("代理配置错误: {e}")))?;
-
         Ok(CredentialSelection { credential, client })
     }
 
     /// 为指定凭证创建配置了代理的 HTTP 客户端
-    ///
-    /// # 参数
-    /// - `credential`: 凭证引用
-    ///
-    /// # 返回
-    /// - `Ok(Client)`: 配置了代理的 HTTP 客户端
-    /// - `Err(PoolError)`: 代理配置错误
     pub fn create_client_for_credential(
         &self,
         credential: &Credential,
@@ -204,17 +177,6 @@ impl LoadBalancer {
     }
 
     /// 选择下一个可用凭证，支持代理失败时的故障转移
-    ///
-    /// 当代理连接失败时，自动尝试下一个可用凭证。
-    /// 最多尝试 `max_attempts` 次（默认为池中凭证数量）。
-    ///
-    /// # 参数
-    /// - `provider`: Provider 类型
-    /// - `max_attempts`: 最大尝试次数（None 表示尝试所有可用凭证）
-    ///
-    /// # 返回
-    /// - `Ok(CredentialSelection)`: 成功选择的凭证和客户端
-    /// - `Err(PoolError)`: 所有凭证都失败
     pub fn select_with_failover(
         &self,
         provider: ProviderType,
@@ -233,7 +195,6 @@ impl LoadBalancer {
         let mut tried_ids = std::collections::HashSet::new();
 
         for _ in 0..attempts {
-            // 选择下一个凭证
             let credential = match self.select(provider) {
                 Ok(cred) => cred,
                 Err(e) => {
@@ -242,19 +203,16 @@ impl LoadBalancer {
                 }
             };
 
-            // 避免重复尝试同一个凭证
             if tried_ids.contains(&credential.id) {
                 continue;
             }
             tried_ids.insert(credential.id.clone());
 
-            // 尝试创建客户端
             match self.proxy_factory.create_client(credential.proxy_url()) {
                 Ok(client) => {
                     return Ok(CredentialSelection { credential, client });
                 }
                 Err(e) => {
-                    // 记录警告并继续尝试下一个凭证
                     tracing::warn!(
                         credential_id = %credential.id,
                         proxy_url = ?credential.proxy_url(),
@@ -273,33 +231,17 @@ impl LoadBalancer {
     }
 
     /// 报告代理连接失败并尝试故障转移
-    ///
-    /// 当代理连接失败时调用此方法，它会：
-    /// 1. 记录失败
-    /// 2. 尝试选择下一个可用凭证
-    ///
-    /// # 参数
-    /// - `provider`: Provider 类型
-    /// - `failed_credential_id`: 失败的凭证 ID
-    ///
-    /// # 返回
-    /// - `Ok(CredentialSelection)`: 故障转移成功，返回新的凭证和客户端
-    /// - `Err(PoolError)`: 故障转移失败
     pub fn failover_on_proxy_error(
         &self,
         provider: ProviderType,
         failed_credential_id: &str,
     ) -> Result<CredentialSelection, PoolError> {
-        // 记录失败
         let _ = self.report(provider, failed_credential_id, false, 0);
-
         tracing::warn!(
             credential_id = %failed_credential_id,
             provider = %provider,
             "代理连接失败，执行故障转移"
         );
-
-        // 尝试选择下一个凭证
         self.select_with_client(provider)
     }
 
@@ -309,7 +251,6 @@ impl LoadBalancer {
         pool: &CredentialPool,
         provider: ProviderType,
     ) -> Result<Credential, PoolError> {
-        // 收集所有活跃凭证
         let active_creds: Vec<Credential> = pool
             .all()
             .into_iter()
@@ -320,13 +261,11 @@ impl LoadBalancer {
             return Err(PoolError::NoAvailableCredential);
         }
 
-        // 获取或创建轮询索引
         let index_entry = self
             .round_robin_indices
             .entry(provider)
             .or_insert_with(|| AtomicUsize::new(0));
 
-        // 原子递增并取模
         let index = index_entry.fetch_add(1, Ordering::SeqCst) % active_creds.len();
         Ok(active_creds[index].clone())
     }
@@ -352,21 +291,12 @@ impl LoadBalancer {
             return Err(PoolError::NoAvailableCredential);
         }
 
-        // 使用简单的伪随机（基于时间戳）
         let now = Utc::now().timestamp_nanos_opt().unwrap_or(0) as usize;
         let index = now % active_creds.len();
         Ok(active_creds[index].clone())
     }
 
     /// 标记凭证为冷却状态
-    ///
-    /// # 参数
-    /// - `provider`: Provider 类型
-    /// - `credential_id`: 凭证 ID
-    /// - `duration`: 冷却时长
-    ///
-    /// # 错误
-    /// - 如果 Provider 未注册或凭证不存在
     pub fn mark_cooldown(
         &self,
         provider: ProviderType,
@@ -374,7 +304,6 @@ impl LoadBalancer {
         duration: Duration,
     ) -> Result<(), PoolError> {
         let pool = self.pools.get(&provider).ok_or(PoolError::EmptyPool)?;
-
         pool.mark_cooldown(credential_id, duration)
     }
 
@@ -385,7 +314,6 @@ impl LoadBalancer {
         credential_id: &str,
     ) -> Result<(), PoolError> {
         let pool = self.pools.get(&provider).ok_or(PoolError::EmptyPool)?;
-
         pool.mark_active(credential_id)
     }
 
@@ -397,20 +325,6 @@ impl LoadBalancer {
     }
 
     /// 报告凭证使用结果
-    ///
-    /// 自动更新健康状态：
-    /// - 成功时：如果凭证之前不健康，恢复为健康
-    /// - 失败时：如果连续失败达到阈值（默认 3 次），标记为不健康
-    ///
-    /// # 参数
-    /// - `provider`: Provider 类型
-    /// - `credential_id`: 凭证 ID
-    /// - `success`: 是否成功
-    /// - `latency_ms`: 延迟（毫秒）
-    ///
-    /// # 返回
-    /// - `Ok(true)` 如果健康状态发生变化
-    /// - `Ok(false)` 如果健康状态未变化
     pub fn report(
         &self,
         provider: ProviderType,
@@ -419,7 +333,6 @@ impl LoadBalancer {
         latency_ms: u64,
     ) -> Result<bool, PoolError> {
         let pool = self.pools.get(&provider).ok_or(PoolError::EmptyPool)?;
-
         if success {
             self.health_checker
                 .record_success(&pool, credential_id, latency_ms)
@@ -461,7 +374,7 @@ impl Default for LoadBalancer {
 #[cfg(test)]
 mod balancer_tests {
     use super::*;
-    use crate::credential::CredentialData;
+    use proxycast_core::credential::types::CredentialData;
 
     fn create_test_credential(id: &str, provider: ProviderType) -> Credential {
         Credential::new(
@@ -487,9 +400,7 @@ mod balancer_tests {
         let pool = Arc::new(CredentialPool::new(ProviderType::Kiro));
         pool.add(create_test_credential("cred-1", ProviderType::Kiro))
             .unwrap();
-
         lb.register_pool(pool.clone());
-
         assert!(lb.providers().contains(&ProviderType::Kiro));
         assert!(lb.get_pool(ProviderType::Kiro).is_some());
     }
@@ -498,22 +409,17 @@ mod balancer_tests {
     fn test_load_balancer_select_round_robin() {
         let lb = LoadBalancer::round_robin();
         let pool = Arc::new(CredentialPool::new(ProviderType::Kiro));
-
         pool.add(create_test_credential("cred-1", ProviderType::Kiro))
             .unwrap();
         pool.add(create_test_credential("cred-2", ProviderType::Kiro))
             .unwrap();
         pool.add(create_test_credential("cred-3", ProviderType::Kiro))
             .unwrap();
-
         lb.register_pool(pool);
 
-        // 轮询应该依次返回不同的凭证
         let c1 = lb.select(ProviderType::Kiro).unwrap();
         let c2 = lb.select(ProviderType::Kiro).unwrap();
         let c3 = lb.select(ProviderType::Kiro).unwrap();
-
-        // 三次选择应该返回三个不同的凭证
         let ids: std::collections::HashSet<_> = [c1.id, c2.id, c3.id].into_iter().collect();
         assert_eq!(ids.len(), 3);
     }
@@ -529,22 +435,16 @@ mod balancer_tests {
     fn test_load_balancer_cooldown() {
         let lb = LoadBalancer::round_robin();
         let pool = Arc::new(CredentialPool::new(ProviderType::Kiro));
-
         pool.add(create_test_credential("cred-1", ProviderType::Kiro))
             .unwrap();
         pool.add(create_test_credential("cred-2", ProviderType::Kiro))
             .unwrap();
-
         lb.register_pool(pool);
 
-        // 标记 cred-1 为冷却
         lb.mark_cooldown(ProviderType::Kiro, "cred-1", Duration::hours(1))
             .unwrap();
-
-        // 现在只有 cred-2 可用
         assert_eq!(lb.active_count(ProviderType::Kiro), 1);
 
-        // 选择应该只返回 cred-2
         let selected = lb.select(ProviderType::Kiro).unwrap();
         assert_eq!(selected.id, "cred-2");
     }
@@ -553,24 +453,18 @@ mod balancer_tests {
     fn test_load_balancer_report() {
         let lb = LoadBalancer::round_robin();
         let pool = Arc::new(CredentialPool::new(ProviderType::Kiro));
-
         pool.add(create_test_credential("cred-1", ProviderType::Kiro))
             .unwrap();
-
         lb.register_pool(pool.clone());
 
-        // 报告成功
         let changed = lb.report(ProviderType::Kiro, "cred-1", true, 100).unwrap();
-        assert!(!changed); // 状态未变化
-
+        assert!(!changed);
         let cred = pool.get("cred-1").unwrap();
         assert_eq!(cred.stats.total_requests, 1);
         assert_eq!(cred.stats.successful_requests, 1);
 
-        // 报告失败
         let changed = lb.report(ProviderType::Kiro, "cred-1", false, 0).unwrap();
-        assert!(!changed); // 第一次失败，状态未变化
-
+        assert!(!changed);
         let cred = pool.get("cred-1").unwrap();
         assert_eq!(cred.stats.total_requests, 2);
         assert_eq!(cred.stats.consecutive_failures, 1);
@@ -578,20 +472,17 @@ mod balancer_tests {
 
     #[test]
     fn test_load_balancer_auto_unhealthy() {
-        use crate::credential::CredentialStatus;
+        use proxycast_core::credential::types::CredentialStatus;
 
         let lb = LoadBalancer::round_robin();
         let pool = Arc::new(CredentialPool::new(ProviderType::Kiro));
-
         pool.add(create_test_credential("cred-1", ProviderType::Kiro))
             .unwrap();
-
         lb.register_pool(pool.clone());
 
-        // 连续 3 次失败应标记为不健康
         assert!(!lb.report(ProviderType::Kiro, "cred-1", false, 0).unwrap());
         assert!(!lb.report(ProviderType::Kiro, "cred-1", false, 0).unwrap());
-        assert!(lb.report(ProviderType::Kiro, "cred-1", false, 0).unwrap()); // 第 3 次应返回 true
+        assert!(lb.report(ProviderType::Kiro, "cred-1", false, 0).unwrap());
 
         let cred = pool.get("cred-1").unwrap();
         assert!(matches!(cred.status, CredentialStatus::Unhealthy { .. }));
@@ -599,20 +490,15 @@ mod balancer_tests {
 
     #[test]
     fn test_load_balancer_auto_recovery() {
-        use crate::credential::CredentialStatus;
+        use proxycast_core::credential::types::CredentialStatus;
 
         let lb = LoadBalancer::round_robin();
         let pool = Arc::new(CredentialPool::new(ProviderType::Kiro));
-
         pool.add(create_test_credential("cred-1", ProviderType::Kiro))
             .unwrap();
-
         lb.register_pool(pool.clone());
 
-        // 先标记为不健康
         pool.mark_unhealthy("cred-1", "test".to_string()).unwrap();
-
-        // 成功后应恢复
         let recovered = lb.report(ProviderType::Kiro, "cred-1", true, 100).unwrap();
         assert!(recovered);
 
@@ -624,37 +510,30 @@ mod balancer_tests {
     fn test_load_balancer_cooldown_recovery() {
         let lb = LoadBalancer::round_robin();
         let pool = Arc::new(CredentialPool::new(ProviderType::Kiro));
-
         pool.add(create_test_credential("cred-1", ProviderType::Kiro))
             .unwrap();
-
         lb.register_pool(pool.clone());
 
-        // 标记为已过期的冷却（使用负时长模拟过期）
-        // 直接设置状态为过去的时间
         {
             let mut entry = pool.credentials.get_mut("cred-1").unwrap();
-            entry.status = crate::credential::CredentialStatus::Cooldown {
+            entry.status = proxycast_core::credential::types::CredentialStatus::Cooldown {
                 until: Utc::now() - Duration::seconds(1),
             };
         }
 
-        // 此时凭证应该处于冷却状态
         let cred = pool.get("cred-1").unwrap();
         assert!(matches!(
             cred.status,
-            crate::credential::CredentialStatus::Cooldown { .. }
+            proxycast_core::credential::types::CredentialStatus::Cooldown { .. }
         ));
 
-        // 调用 select 会触发 refresh_cooldowns，应该自动恢复
         let selected = lb.select(ProviderType::Kiro).unwrap();
         assert_eq!(selected.id, "cred-1");
 
-        // 验证状态已恢复为 Active
         let cred = pool.get("cred-1").unwrap();
         assert!(matches!(
             cred.status,
-            crate::credential::CredentialStatus::Active
+            proxycast_core::credential::types::CredentialStatus::Active
         ));
     }
 
@@ -662,28 +541,22 @@ mod balancer_tests {
     fn test_load_balancer_earliest_recovery() {
         let lb = LoadBalancer::round_robin();
         let pool = Arc::new(CredentialPool::new(ProviderType::Kiro));
-
         pool.add(create_test_credential("cred-1", ProviderType::Kiro))
             .unwrap();
         pool.add(create_test_credential("cred-2", ProviderType::Kiro))
             .unwrap();
-
         lb.register_pool(pool);
 
-        // 没有冷却时应返回 None
         assert!(lb.earliest_recovery(ProviderType::Kiro).is_none());
 
-        // 标记两个凭证为不同的冷却时间
         lb.mark_cooldown(ProviderType::Kiro, "cred-1", Duration::hours(2))
             .unwrap();
         lb.mark_cooldown(ProviderType::Kiro, "cred-2", Duration::hours(1))
             .unwrap();
 
-        // 应返回最早的恢复时间（cred-2 的 1 小时后）
         let recovery = lb.earliest_recovery(ProviderType::Kiro);
         assert!(recovery.is_some());
 
-        // 验证恢复时间大约在 1 小时后（允许几秒误差）
         let expected = Utc::now() + Duration::hours(1);
         let diff = (recovery.unwrap() - expected).num_seconds().abs();
         assert!(

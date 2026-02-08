@@ -6671,6 +6671,7 @@ dependencies = [
  "proptest",
  "proxycast-config",
  "proxycast-core",
+ "proxycast-credential",
  "proxycast-infra",
  "proxycast-providers",
  "proxycast-services",
@@ -6772,6 +6773,24 @@ dependencies = [
  "urlencoding",
  "uuid",
  "zip",
+]
+
+[[package]]
+name = "proxycast-credential"
+version = "0.60.0"
+dependencies = [
+ "axum 0.7.9",
+ "chrono",
+ "dashmap 5.5.3",
+ "proptest",
+ "proxycast-core",
+ "proxycast-infra",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
