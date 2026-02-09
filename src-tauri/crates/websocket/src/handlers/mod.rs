@@ -4,6 +4,4 @@
 
 pub mod rpc_handler;
 
-pub use rpc_handler::{
-    parse_rpc_request, serialize_rpc_response, RpcHandler, RpcHandlerState,
-};
+pub use rpc_handler::{parse_rpc_request, serialize_rpc_response, RpcHandler, RpcHandlerState};

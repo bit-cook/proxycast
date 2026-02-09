@@ -948,11 +948,17 @@ async fn run_server(
         .route("/api/batch/tasks", post(handlers::create_batch_task))
         .route("/api/batch/tasks", get(handlers::list_batch_tasks))
         .route("/api/batch/tasks/:id", get(handlers::get_batch_task))
-        .route("/api/batch/tasks/:id", axum::routing::delete(handlers::cancel_batch_task))
+        .route(
+            "/api/batch/tasks/:id",
+            axum::routing::delete(handlers::cancel_batch_task),
+        )
         .route("/api/batch/templates", post(handlers::create_template))
         .route("/api/batch/templates", get(handlers::list_templates))
         .route("/api/batch/templates/:id", get(handlers::get_template))
-        .route("/api/batch/templates/:id", axum::routing::delete(handlers::delete_template));
+        .route(
+            "/api/batch/templates/:id",
+            axum::routing::delete(handlers::delete_template),
+        );
 
     let app = Router::new()
         .route("/health", get(health))

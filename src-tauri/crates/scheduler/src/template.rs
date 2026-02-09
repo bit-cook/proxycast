@@ -42,11 +42,7 @@ pub struct TaskTemplate {
 
 impl TaskTemplate {
     /// 创建新的任务模板
-    pub fn new(
-        name: String,
-        model: String,
-        user_message_template: String,
-    ) -> Self {
+    pub fn new(name: String, model: String, user_message_template: String) -> Self {
         let now = chrono::Utc::now();
         Self {
             id: Uuid::new_v4(),

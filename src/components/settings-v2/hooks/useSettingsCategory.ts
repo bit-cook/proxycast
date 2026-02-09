@@ -5,48 +5,48 @@
  * 参考 LobeHub 的 useCategory 设计
  */
 
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
-    User,
-    BarChart3,
-    Palette,
-    MessageSquare,
-    Keyboard,
-    Brain,
-    Bot,
-    Blocks,
-    BrainCircuit,
-    Image,
-    Mic,
-    Globe,
-    Database,
-    Shield,
-    Wrench,
-    FlaskConical,
-    Code,
-    Info,
-    LucideIcon,
-} from 'lucide-react';
-import { SettingsGroupKey, SettingsTabs } from '@/types/settings';
+  User,
+  BarChart3,
+  Palette,
+  MessageSquare,
+  Keyboard,
+  Brain,
+  Bot,
+  Blocks,
+  BrainCircuit,
+  Image,
+  Mic,
+  Globe,
+  Database,
+  Shield,
+  Wrench,
+  FlaskConical,
+  Code,
+  Info,
+  LucideIcon,
+} from "lucide-react";
+import { SettingsGroupKey, SettingsTabs } from "@/types/settings";
 
 /**
  * 分类项定义
  */
 export interface CategoryItem {
-    key: SettingsTabs;
-    label: string;
-    icon: LucideIcon;
-    experimental?: boolean;
+  key: SettingsTabs;
+  label: string;
+  icon: LucideIcon;
+  experimental?: boolean;
 }
 
 /**
  * 分类组定义
  */
 export interface CategoryGroup {
-    key: SettingsGroupKey;
-    title: string;
-    items: CategoryItem[];
+  key: SettingsGroupKey;
+  title: string;
+  items: CategoryItem[];
 }
 
 /**
@@ -55,134 +55,134 @@ export interface CategoryGroup {
  * 返回按分组组织的设置导航项
  */
 export function useSettingsCategory(): CategoryGroup[] {
-    const { t } = useTranslation();
+  const { t } = useTranslation();
 
-    return useMemo(() => {
-        const groups: CategoryGroup[] = [];
+  return useMemo(() => {
+    const groups: CategoryGroup[] = [];
 
-        // 账号组
-        groups.push({
-            key: SettingsGroupKey.Account,
-            title: t('settings.group.account', '账号'),
-            items: [
-                {
-                    key: SettingsTabs.Profile,
-                    label: t('settings.tab.profile', '个人资料'),
-                    icon: User,
-                },
-                {
-                    key: SettingsTabs.Stats,
-                    label: t('settings.tab.stats', '数据统计'),
-                    icon: BarChart3,
-                },
-            ],
-        });
+    // 账号组
+    groups.push({
+      key: SettingsGroupKey.Account,
+      title: t("settings.group.account", "账号"),
+      items: [
+        {
+          key: SettingsTabs.Profile,
+          label: t("settings.tab.profile", "个人资料"),
+          icon: User,
+        },
+        {
+          key: SettingsTabs.Stats,
+          label: t("settings.tab.stats", "数据统计"),
+          icon: BarChart3,
+        },
+      ],
+    });
 
-        // 通用组
-        groups.push({
-            key: SettingsGroupKey.General,
-            title: t('settings.group.general', '通用'),
-            items: [
-                {
-                    key: SettingsTabs.Appearance,
-                    label: t('settings.tab.appearance', '外观'),
-                    icon: Palette,
-                },
-                {
-                    key: SettingsTabs.ChatAppearance,
-                    label: t('settings.tab.chatAppearance', '聊天外观'),
-                    icon: MessageSquare,
-                },
-                {
-                    key: SettingsTabs.Hotkeys,
-                    label: t('settings.tab.hotkeys', '快捷键'),
-                    icon: Keyboard,
-                },
-            ],
-        });
+    // 通用组
+    groups.push({
+      key: SettingsGroupKey.General,
+      title: t("settings.group.general", "通用"),
+      items: [
+        {
+          key: SettingsTabs.Appearance,
+          label: t("settings.tab.appearance", "外观"),
+          icon: Palette,
+        },
+        {
+          key: SettingsTabs.ChatAppearance,
+          label: t("settings.tab.chatAppearance", "聊天外观"),
+          icon: MessageSquare,
+        },
+        {
+          key: SettingsTabs.Hotkeys,
+          label: t("settings.tab.hotkeys", "快捷键"),
+          icon: Keyboard,
+        },
+      ],
+    });
 
-        // 智能体组
-        groups.push({
-            key: SettingsGroupKey.Agent,
-            title: t('settings.group.agent', '智能体'),
-            items: [
-                {
-                    key: SettingsTabs.Providers,
-                    label: t('settings.tab.providers', 'AI 服务商'),
-                    icon: Brain,
-                },
-                {
-                    key: SettingsTabs.Assistant,
-                    label: t('settings.tab.assistant', '助理服务'),
-                    icon: Bot,
-                },
-                {
-                    key: SettingsTabs.Skills,
-                    label: t('settings.tab.skills', '技能管理'),
-                    icon: Blocks,
-                },
-                {
-                    key: SettingsTabs.Memory,
-                    label: t('settings.tab.memory', '记忆设置'),
-                    icon: BrainCircuit,
-                },
-                {
-                    key: SettingsTabs.ImageGen,
-                    label: t('settings.tab.imageGen', '绘画服务'),
-                    icon: Image,
-                },
-                {
-                    key: SettingsTabs.Voice,
-                    label: t('settings.tab.voice', '语音服务'),
-                    icon: Mic,
-                },
-            ],
-        });
+    // 智能体组
+    groups.push({
+      key: SettingsGroupKey.Agent,
+      title: t("settings.group.agent", "智能体"),
+      items: [
+        {
+          key: SettingsTabs.Providers,
+          label: t("settings.tab.providers", "AI 服务商"),
+          icon: Brain,
+        },
+        {
+          key: SettingsTabs.Assistant,
+          label: t("settings.tab.assistant", "助理服务"),
+          icon: Bot,
+        },
+        {
+          key: SettingsTabs.Skills,
+          label: t("settings.tab.skills", "技能管理"),
+          icon: Blocks,
+        },
+        {
+          key: SettingsTabs.Memory,
+          label: t("settings.tab.memory", "记忆设置"),
+          icon: BrainCircuit,
+        },
+        {
+          key: SettingsTabs.ImageGen,
+          label: t("settings.tab.imageGen", "绘画服务"),
+          icon: Image,
+        },
+        {
+          key: SettingsTabs.Voice,
+          label: t("settings.tab.voice", "语音服务"),
+          icon: Mic,
+        },
+      ],
+    });
 
-        // 系统组
-        groups.push({
-            key: SettingsGroupKey.System,
-            title: t('settings.group.system', '系统'),
-            items: [
-                {
-                    key: SettingsTabs.Proxy,
-                    label: t('settings.tab.proxy', '网络代理'),
-                    icon: Globe,
-                },
-                {
-                    key: SettingsTabs.Storage,
-                    label: t('settings.tab.storage', '数据存储'),
-                    icon: Database,
-                },
-                {
-                    key: SettingsTabs.Security,
-                    label: t('settings.tab.security', '安全设置'),
-                    icon: Shield,
-                },
-                {
-                    key: SettingsTabs.ExternalTools,
-                    label: t('settings.tab.externalTools', '外部工具'),
-                    icon: Wrench,
-                },
-                {
-                    key: SettingsTabs.Experimental,
-                    label: t('settings.tab.experimental', '实验功能'),
-                    icon: FlaskConical,
-                    experimental: true,
-                },
-                {
-                    key: SettingsTabs.Developer,
-                    label: t('settings.tab.developer', '开发者'),
-                    icon: Code,
-                },
-                {
-                    key: SettingsTabs.About,
-                    label: t('settings.tab.about', '关于'),
-                    icon: Info,
-                },
-            ],
-        });
+    // 系统组
+    groups.push({
+      key: SettingsGroupKey.System,
+      title: t("settings.group.system", "系统"),
+      items: [
+        {
+          key: SettingsTabs.Proxy,
+          label: t("settings.tab.proxy", "网络代理"),
+          icon: Globe,
+        },
+        {
+          key: SettingsTabs.Storage,
+          label: t("settings.tab.storage", "数据存储"),
+          icon: Database,
+        },
+        {
+          key: SettingsTabs.Security,
+          label: t("settings.tab.security", "安全设置"),
+          icon: Shield,
+        },
+        {
+          key: SettingsTabs.ExternalTools,
+          label: t("settings.tab.externalTools", "外部工具"),
+          icon: Wrench,
+        },
+        {
+          key: SettingsTabs.Experimental,
+          label: t("settings.tab.experimental", "实验功能"),
+          icon: FlaskConical,
+          experimental: true,
+        },
+        {
+          key: SettingsTabs.Developer,
+          label: t("settings.tab.developer", "开发者"),
+          icon: Code,
+        },
+        {
+          key: SettingsTabs.About,
+          label: t("settings.tab.about", "关于"),
+          icon: Info,
+        },
+      ],
+    });
 
-        return groups;
-    }, [t]);
+    return groups;
+  }, [t]);
 }

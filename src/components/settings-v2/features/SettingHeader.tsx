@@ -4,8 +4,8 @@
  * 显示设置页面标题和可选的额外操作
  */
 
-import styled from 'styled-components';
-import { ReactNode } from 'react';
+import styled from "styled-components";
+import { ReactNode } from "react";
 
 const HeaderContainer = styled.div`
   display: flex;
@@ -33,23 +33,23 @@ const Divider = styled.div`
 `;
 
 interface SettingHeaderProps {
-    /** 页面标题 */
-    title: ReactNode;
-    /** 额外的操作区域 */
-    extra?: ReactNode;
+  /** 页面标题 */
+  title: ReactNode;
+  /** 额外的操作区域 */
+  extra?: ReactNode;
 }
 
 /**
  * 设置页头组件
  */
 export function SettingHeader({ title, extra }: SettingHeaderProps) {
-    return (
-        <HeaderContainer>
-            <TitleRow>
-                <Title>{title}</Title>
-                {extra}
-            </TitleRow>
-            <Divider />
-        </HeaderContainer>
-    );
+  return (
+    <HeaderContainer>
+      <TitleRow>
+        <Title>{title}</Title>
+        {extra}
+      </TitleRow>
+      <Divider />
+    </HeaderContainer>
+  );
 }

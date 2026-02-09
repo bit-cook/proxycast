@@ -173,14 +173,14 @@ export function GuideStep({
   onComplete,
 }: GuideStepProps) {
   const [platform, setPlatform] = useState<"taobao" | "jd" | "pinduoduo">(
-    "taobao"
+    "taobao",
   );
   const [credType, setCredType] = useState<"cookie" | "password">("cookie");
   const [credValue, setCredValue] = useState("");
   const [primaryModel, setPrimaryModel] = useState("claude-sonnet-4-5");
   const [fallbackModel, setFallbackModel] = useState("");
   const [tone, setTone] = useState<"polite" | "sincere" | "professional">(
-    "sincere"
+    "sincere",
   );
   const [length, setLength] = useState<"short" | "medium" | "long">("medium");
   const [template, setTemplate] = useState("");
@@ -226,9 +226,7 @@ export function GuideStep({
               <Label>电商平台</Label>
               <Select
                 value={platform}
-                onChange={(e) =>
-                  setPlatform(e.target.value as typeof platform)
-                }
+                onChange={(e) => setPlatform(e.target.value as typeof platform)}
               >
                 <option value="taobao">淘宝/天猫</option>
                 <option value="jd">京东</option>
@@ -254,16 +252,12 @@ export function GuideStep({
               </Select>
             </FormGroup>
             <FormGroup>
-              <Label>
-                {credType === "cookie" ? "Cookie 值" : "账号密码"}
-              </Label>
+              <Label>{credType === "cookie" ? "Cookie 值" : "账号密码"}</Label>
               <TextArea
                 value={credValue}
                 onChange={(e) => setCredValue(e.target.value)}
                 placeholder={
-                  credType === "cookie"
-                    ? "粘贴浏览器 Cookie..."
-                    : "账号:密码"
+                  credType === "cookie" ? "粘贴浏览器 Cookie..." : "账号:密码"
                 }
               />
               <Hint>
@@ -351,10 +345,7 @@ export function GuideStep({
             <StepTitle>步骤 5: 测试运行</StepTitle>
             <FormGroup>
               <Label>测试差评链接</Label>
-              <Input
-                type="url"
-                placeholder="粘贴差评链接进行测试..."
-              />
+              <Input type="url" placeholder="粘贴差评链接进行测试..." />
               <Hint>输入一个差评链接测试配置是否正常工作</Hint>
             </FormGroup>
             <FormGroup>
@@ -367,11 +358,32 @@ export function GuideStep({
                   fontSize: "14px",
                 }}
               >
-                <p>平台: {platform === "taobao" ? "淘宝" : platform === "jd" ? "京东" : "拼多多"}</p>
+                <p>
+                  平台:{" "}
+                  {platform === "taobao"
+                    ? "淘宝"
+                    : platform === "jd"
+                      ? "京东"
+                      : "拼多多"}
+                </p>
                 <p>凭证类型: {credType === "cookie" ? "Cookie" : "账号密码"}</p>
                 <p>主模型: {primaryModel}</p>
-                <p>回复语气: {tone === "polite" ? "礼貌" : tone === "sincere" ? "真诚" : "专业"}</p>
-                <p>回复长度: {length === "short" ? "简短" : length === "medium" ? "中等" : "详细"}</p>
+                <p>
+                  回复语气:{" "}
+                  {tone === "polite"
+                    ? "礼貌"
+                    : tone === "sincere"
+                      ? "真诚"
+                      : "专业"}
+                </p>
+                <p>
+                  回复长度:{" "}
+                  {length === "short"
+                    ? "简短"
+                    : length === "medium"
+                      ? "中等"
+                      : "详细"}
+                </p>
               </div>
             </FormGroup>
           </>
@@ -399,9 +411,7 @@ export function GuideStep({
       {renderStep()}
 
       <ButtonGroup>
-        {currentStep > 0 && (
-          <Button onClick={handleBack}>上一步</Button>
-        )}
+        {currentStep > 0 && <Button onClick={handleBack}>上一步</Button>}
         <Button variant="primary" onClick={handleNext}>
           {currentStep === 4 ? "完成配置" : "下一步"}
         </Button>

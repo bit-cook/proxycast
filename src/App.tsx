@@ -13,7 +13,7 @@ import styled from "styled-components";
 import { withI18nPatch } from "./i18n/withI18nPatch";
 import { SplashScreen } from "./components/SplashScreen";
 import { AppSidebar } from "./components/AppSidebar";
-import { SettingsPage } from "./components/settings";
+// import { SettingsPage } from "./components/settings";
 import { SettingsPageV2 } from "./components/settings-v2";
 import { ApiServerPage } from "./components/api-server/ApiServerPage";
 import { ProviderPoolPage } from "./components/provider-pool";

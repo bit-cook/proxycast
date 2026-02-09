@@ -161,34 +161,9 @@ pub async fn create_batch_task(
     )
         .into_response()
 }
-        "info",
-        &format!(
-            "[BATCH] 创建批量任务: id={}, name={}, task_count={}",
-            batch_id, request.name, task_count
-        ),
-    );
-
-    // TODO: 启动异步执行任务
-    // 这里需要集成 BatchTaskExecutor
-
-    // 返回响应
-    (
-        StatusCode::CREATED,
-        Json(CreateBatchTaskResponse {
-            id: batch_id,
-            name: request.name,
-            task_count,
-            created_at,
-        }),
-    )
-        .into_response()
-}
 
 /// GET /api/batch/tasks/:id - 获取批量任务详情
-pub async fn get_batch_task(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Response {
+pub async fn get_batch_task(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
     let db = match &state.db {
         Some(db) => db,
         None => {
@@ -280,15 +255,13 @@ pub async fn list_batch_tasks(State(state): State<AppState>) -> Response {
 }
 
 /// DELETE /api/batch/tasks/:id - 取消批量任务
-pub async fn cancel_batch_task(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Response {
+pub async fn cancel_batch_task(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
     // TODO: 取消批量任务
-    state.logs.write().await.add(
-        "info",
-        &format!("[BATCH] 取消批量任务: id={}", id),
-    );
+    state
+        .logs
+        .write()
+        .await
+        .add("info", &format!("[BATCH] 取消批量任务: id={}", id));
 
     (
         StatusCode::NOT_FOUND,
@@ -307,10 +280,41 @@ pub async fn create_template(
     State(state): State<AppState>,
     Json(template): Json<TaskTemplate>,
 ) -> Response {
-    // TODO: 保存模板到数据库
+    let db = match &state.db {
+        Some(db) => db,
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": {
+                        "message": "数据库未初始化",
+                        "type": "database_error"
+                    }
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err(e) = TemplateDao::save(db, &template) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": {
+                    "message": format!("保存模板失败: {}", e),
+                    "type": "database_error"
+                }
+            })),
+        )
+            .into_response();
+    }
+
     state.logs.write().await.add(
         "info",
-        &format!("[BATCH] 创建任务模板: id={}, name={}", template.id, template.name),
+        &format!(
+            "[BATCH] 创建任务模板: id={}, name={}",
+            template.id, template.name
+        ),
     );
 
     (StatusCode::CREATED, Json(template)).into_response()
@@ -318,51 +322,132 @@ pub async fn create_template(
 
 /// GET /api/batch/templates - 获取模板列表
 pub async fn list_templates(State(state): State<AppState>) -> Response {
-    // TODO: 从数据库查询模板列表
-    state
-        .logs
-        .write()
-        .await
-        .add("info", "[BATCH] 查询模板列表");
+    let db = match &state.db {
+        Some(db) => db,
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": {
+                        "message": "数据库未初始化",
+                        "type": "database_error"
+                    }
+                })),
+            )
+                .into_response();
+        }
+    };
 
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "templates": []
-        })),
-    )
-        .into_response()
+    match TemplateDao::list_all(db) {
+        Ok(templates) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "templates": templates
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": {
+                    "message": format!("查询模板列表失败: {}", e),
+                    "type": "database_error"
+                }
+            })),
+        )
+            .into_response(),
+    }
 }
 
 /// GET /api/batch/templates/:id - 获取模板详情
 pub async fn get_template(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
-    // TODO: 从数据库查询模板
-    state
-        .logs
-        .write()
-        .await
-        .add("info", &format!("[BATCH] 查询模板: id={}", id));
+    let db = match &state.db {
+        Some(db) => db,
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": {
+                        "message": "数据库未初始化",
+                        "type": "database_error"
+                    }
+                })),
+            )
+                .into_response();
+        }
+    };
 
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({
-            "error": {
-                "message": format!("模板不存在: {}", id),
-                "type": "not_found"
-            }
-        })),
-    )
-        .into_response()
+    match TemplateDao::get_by_id(db, &id) {
+        Ok(Some(template)) => (StatusCode::OK, Json(template)).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": {
+                    "message": format!("模板不存在: {}", id),
+                    "type": "not_found"
+                }
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": {
+                    "message": format!("查询模板失败: {}", e),
+                    "type": "database_error"
+                }
+            })),
+        )
+            .into_response(),
+    }
 }
 
 /// DELETE /api/batch/templates/:id - 删除模板
 pub async fn delete_template(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
-    // TODO: 从数据库删除模板
-    state
-        .logs
-        .write()
-        .await
-        .add("info", &format!("[BATCH] 删除模板: id={}", id));
+    let db = match &state.db {
+        Some(db) => db,
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": {
+                        "message": "数据库未初始化",
+                        "type": "database_error"
+                    }
+                })),
+            )
+                .into_response();
+        }
+    };
 
-    (StatusCode::NO_CONTENT, ()).into_response()
+    match TemplateDao::delete(db, &id) {
+        Ok(true) => {
+            state
+                .logs
+                .write()
+                .await
+                .add("info", &format!("[BATCH] 删除模板: id={}", id));
+            (StatusCode::NO_CONTENT, ()).into_response()
+        }
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": {
+                    "message": format!("模板不存在: {}", id),
+                    "type": "not_found"
+                }
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": {
+                    "message": format!("删除模板失败: {}", e),
+                    "type": "database_error"
+                }
+            })),
+        )
+            .into_response(),
+    }
 }

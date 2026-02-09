@@ -143,7 +143,9 @@ impl SchedulerDao {
         }
 
         if filter.only_due {
-            query.push_str(&format!(" AND status = 'pending' AND scheduled_at <= datetime('now')"));
+            query.push_str(&format!(
+                " AND status = 'pending' AND scheduled_at <= datetime('now')"
+            ));
         }
 
         query.push_str(" ORDER BY scheduled_at ASC");
@@ -154,7 +156,8 @@ impl SchedulerDao {
 
         let mut stmt = conn.prepare(&query)?;
 
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
 
         let tasks = stmt.query_map(param_refs.as_slice(), |row| Self::row_to_task(row))?;
 
@@ -210,7 +213,10 @@ impl SchedulerDao {
     }
 
     /// 获取到期任务
-    pub fn get_due_tasks(conn: &Connection, limit: usize) -> Result<Vec<ScheduledTask>, rusqlite::Error> {
+    pub fn get_due_tasks(
+        conn: &Connection,
+        limit: usize,
+    ) -> Result<Vec<ScheduledTask>, rusqlite::Error> {
         let mut stmt = conn.prepare(
             "SELECT id, name, description, task_type, params, provider_type, model,
                     status, scheduled_at, started_at, completed_at, result, error_message,
@@ -231,11 +237,7 @@ impl SchedulerDao {
         let params_json: String = row.get(4)?;
         let params: serde_json::Value = serde_json::from_str(&params_json).map_err(|e| {
             warn!("Failed to parse params JSON: {}", e);
-            rusqlite::Error::FromSqlConversionFailure(
-                4,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
+            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
         let result_json: Option<String> = row.get(11)?;

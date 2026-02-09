@@ -3,8 +3,8 @@
 //! 定义 Agent 模块使用的核心类型
 //! 参考 aster 项目的 Conversation 设计，支持连续对话和工具调用
 
-use serde::{Deserialize, Serialize};
 use crate::models::provider_type::is_custom_provider_id;
+use serde::{Deserialize, Serialize};
 
 /// Provider 类型枚举
 ///

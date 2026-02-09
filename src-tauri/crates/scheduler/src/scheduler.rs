@@ -71,8 +71,7 @@ impl SchedulerTrait for AgentScheduler {
     async fn create_task(&self, task: ScheduledTask) -> Result<String, String> {
         let conn = proxycast_core::database::lock_db(&self.db)?;
         let task_id = task.id.clone();
-        SchedulerDao::create_task(&conn, &task)
-            .map_err(|e| format!("创建任务失败: {e}"))?;
+        SchedulerDao::create_task(&conn, &task).map_err(|e| format!("创建任务失败: {e}"))?;
         tracing::info!("[AgentScheduler] 创建任务: {} ({})", task.name, task_id);
         Ok(task_id)
     }
@@ -94,8 +93,8 @@ impl SchedulerTrait for AgentScheduler {
 
     async fn delete_task(&self, id: &str) -> Result<bool, String> {
         let conn = proxycast_core::database::lock_db(&self.db)?;
-        let deleted = SchedulerDao::delete_task(&conn, id)
-            .map_err(|e| format!("删除任务失败: {e}"))?;
+        let deleted =
+            SchedulerDao::delete_task(&conn, id).map_err(|e| format!("删除任务失败: {e}"))?;
         if deleted {
             tracing::info!("[AgentScheduler] 删除任务: {}", id);
         }

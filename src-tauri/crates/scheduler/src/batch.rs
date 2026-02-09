@@ -247,15 +247,15 @@ impl BatchTask {
             .iter()
             .filter(|r| r.status == TaskStatus::Running)
             .count();
-        let total_tokens: TokenUsage = self
-            .results
-            .iter()
-            .fold(TokenUsage::default(), |mut acc, r| {
-                acc.prompt_tokens += r.usage.prompt_tokens;
-                acc.completion_tokens += r.usage.completion_tokens;
-                acc.total_tokens += r.usage.total_tokens;
-                acc
-            });
+        let total_tokens: TokenUsage =
+            self.results
+                .iter()
+                .fold(TokenUsage::default(), |mut acc, r| {
+                    acc.prompt_tokens += r.usage.prompt_tokens;
+                    acc.completion_tokens += r.usage.completion_tokens;
+                    acc.total_tokens += r.usage.total_tokens;
+                    acc
+                });
 
         BatchTaskStatistics {
             total_tasks: total,

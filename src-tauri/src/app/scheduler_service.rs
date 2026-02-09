@@ -130,7 +130,11 @@ impl SchedulerService {
             let task_id = task.id.clone();
             let task_name = task.name.clone();
 
-            tracing::info!("[SchedulerService] 开始执行任务: {} ({})", task_name, task_id);
+            tracing::info!(
+                "[SchedulerService] 开始执行任务: {} ({})",
+                task_name,
+                task_id
+            );
 
             // 标记为运行中
             if let Err(e) = scheduler.mark_task_running(&task_id).await {
@@ -143,11 +147,7 @@ impl SchedulerService {
                 Ok(result) => {
                     // 标记为完成
                     if let Err(e) = scheduler.mark_task_completed(&task_id, Some(result)).await {
-                        tracing::error!(
-                            "[SchedulerService] 标记任务完成失败: {} - {}",
-                            task_id,
-                            e
-                        );
+                        tracing::error!("[SchedulerService] 标记任务完成失败: {} - {}", task_id, e);
                     }
                 }
                 Err(e) => {

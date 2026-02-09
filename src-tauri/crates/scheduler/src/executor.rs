@@ -104,10 +104,11 @@ impl TaskExecutor for AgentExecutor {
         };
 
         // 3. 标记凭证为健康
-        if let Err(e) = self
-            .credential_bridge
-            .mark_healthy(db, &aster_config.credential_uuid, Some(&task.model))
-        {
+        if let Err(e) = self.credential_bridge.mark_healthy(
+            db,
+            &aster_config.credential_uuid,
+            Some(&task.model),
+        ) {
             tracing::warn!("[AgentExecutor] 标记凭证健康失败: {}", e);
         }
 
@@ -247,8 +248,6 @@ mod tests {
 
         let result = executor.execute(&task, &db).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("不支持的任务类型"));
+        assert!(result.unwrap_err().contains("不支持的任务类型"));
     }
 }

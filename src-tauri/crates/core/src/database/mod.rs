@@ -121,7 +121,10 @@ pub fn init_database() -> Result<DbConnection, String> {
         Ok(result) => {
             if result.executed {
                 if let Some(server_id) = result.server_id {
-                    tracing::info!("[数据库] Playwright MCP Server 迁移完成: server_id={}", server_id);
+                    tracing::info!(
+                        "[数据库] Playwright MCP Server 迁移完成: server_id={}",
+                        server_id
+                    );
                 }
             }
         }

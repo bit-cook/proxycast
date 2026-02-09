@@ -57,9 +57,7 @@ async fn select_credential_for_request(
     };
 
     if let Some(explicit_provider_id) = explicit_provider_id {
-        eprintln!(
-            "[{log_prefix}] 使用 X-Provider-Id 指定的 provider: {explicit_provider_id}"
-        );
+        eprintln!("[{log_prefix}] 使用 X-Provider-Id 指定的 provider: {explicit_provider_id}");
         let cred = state
             .pool_service
             .select_credential_with_client_check(

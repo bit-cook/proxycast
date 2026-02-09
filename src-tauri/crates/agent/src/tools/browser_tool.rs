@@ -69,10 +69,7 @@ impl BrowserTool {
     }
 
     /// 设置 MCP 客户端
-    pub async fn set_mcp_client(
-        &self,
-        client: Box<dyn aster::agents::mcp_client::McpClientTrait>,
-    ) {
+    pub async fn set_mcp_client(&self, client: Box<dyn aster::agents::mcp_client::McpClientTrait>) {
         let mut guard = self.mcp_client.lock().await;
         *guard = Some(client);
     }
@@ -96,16 +93,24 @@ impl BrowserTool {
         // 根据动作类型调用对应的 MCP 工具
         match action {
             BrowserAction::Navigate { url } => {
-                self.call_mcp_tool(client, "browser_navigate", serde_json::json!({ "url": url }))
-                    .await
+                self.call_mcp_tool(
+                    client,
+                    "browser_navigate",
+                    serde_json::json!({ "url": url }),
+                )
+                .await
             }
             BrowserAction::Snapshot => {
                 self.call_mcp_tool(client, "browser_snapshot", serde_json::json!({}))
                     .await
             }
             BrowserAction::Click { ref_id } => {
-                self.call_mcp_tool(client, "browser_click", serde_json::json!({ "ref": ref_id }))
-                    .await
+                self.call_mcp_tool(
+                    client,
+                    "browser_click",
+                    serde_json::json!({ "ref": ref_id }),
+                )
+                .await
             }
             BrowserAction::Type { ref_id, text } => {
                 self.call_mcp_tool(

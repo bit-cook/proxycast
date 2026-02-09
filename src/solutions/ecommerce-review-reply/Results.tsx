@@ -175,7 +175,7 @@ interface ResultsProps {
 export function Results({ tasks }: ResultsProps) {
   const completedTasks = tasks.filter((t) => t.status === "completed");
   const failedTasks = tasks.filter((t) => t.status === "failed");
-  const processingTasks = tasks.filter((t) => t.status === "processing");
+  const _processingTasks = tasks.filter((t) => t.status === "processing");
 
   const handleCopyReply = (reply: string) => {
     navigator.clipboard.writeText(reply);

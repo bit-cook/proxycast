@@ -219,7 +219,9 @@ impl RpcHandler {
     ) -> Result<serde_json::Value, RpcError> {
         let params: CronRunParams = params
             .and_then(|v| serde_json::from_value(v).ok())
-            .ok_or_else(|| RpcError::invalid_params("Missing or invalid parameters for cron.run"))?;
+            .ok_or_else(|| {
+                RpcError::invalid_params("Missing or invalid parameters for cron.run")
+            })?;
 
         // TODO: 实现定时任务运行逻辑
         // 1. 查找任务

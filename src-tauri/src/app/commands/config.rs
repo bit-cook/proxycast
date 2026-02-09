@@ -331,7 +331,10 @@ fn build_provider_env_vars(
         }
         // Google Vertex AI 类型
         "vertexai" => {
-            let mut vars = vec![("ANTHROPIC_VERTEX_BASE_URL".to_string(), api_host.to_string())];
+            let mut vars = vec![(
+                "ANTHROPIC_VERTEX_BASE_URL".to_string(),
+                api_host.to_string(),
+            )];
             push_if_key(&mut vars, "GOOGLE_APPLICATION_CREDENTIALS");
             vars
         }
@@ -339,7 +342,10 @@ fn build_provider_env_vars(
         "aws-bedrock" => {
             // Bedrock 通常使用 AWS 凭证，不需要单独的 API Key
             vec![
-                ("ANTHROPIC_BEDROCK_BASE_URL".to_string(), api_host.to_string()),
+                (
+                    "ANTHROPIC_BEDROCK_BASE_URL".to_string(),
+                    api_host.to_string(),
+                ),
                 ("CLAUDE_CODE_USE_BEDROCK".to_string(), "1".to_string()),
             ]
         }

@@ -2,9 +2,7 @@
 //!
 //! 统一 provider_id 候选映射和鉴权请求头构建，避免各 handler 规则漂移。
 
-use proxycast_core::database::dao::api_key_provider::{
-    ApiProviderType, ProviderProtocolFamily,
-};
+use proxycast_core::database::dao::api_key_provider::{ApiProviderType, ProviderProtocolFamily};
 
 /// 收集 API Key Provider ID 候选列表（按优先级）
 ///

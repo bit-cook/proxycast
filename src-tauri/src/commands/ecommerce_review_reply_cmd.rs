@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::agent::AsterAgentState;
-use crate::database::DbConnection;
 use crate::commands::skill_exec_cmd::{execute_skill, SkillExecutionResult};
+use crate::database::DbConnection;
 
 /// 电商差评回复请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,8 +100,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&request).unwrap();
-        let deserialized: EcommerceReviewReplyRequest =
-            serde_json::from_str(&json).unwrap();
+        let deserialized: EcommerceReviewReplyRequest = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.platform, "taobao");
         assert_eq!(deserialized.tone, "sincere");

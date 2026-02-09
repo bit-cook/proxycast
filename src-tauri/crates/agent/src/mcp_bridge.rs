@@ -284,4 +284,3 @@ impl McpClientTrait for McpBridgeClient {
         self.server_info.as_ref()
     }
 }
-

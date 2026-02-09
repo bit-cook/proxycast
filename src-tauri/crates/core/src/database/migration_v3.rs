@@ -43,9 +43,7 @@ pub fn migrate_playwright_mcp_server(conn: &Connection) -> Result<MigrationResul
 
     // 检查是否已存在 playwright 服务器
     if server_exists(conn, PLAYWRIGHT_SERVER_NAME) {
-        tracing::info!(
-            "[迁移] Playwright MCP Server 已存在，跳过创建并标记迁移完成"
-        );
+        tracing::info!("[迁移] Playwright MCP Server 已存在，跳过创建并标记迁移完成");
         mark_migration_completed(conn, MIGRATION_KEY_PLAYWRIGHT_SERVER)?;
         return Ok(MigrationResult {
             executed: false,
@@ -69,7 +67,10 @@ pub fn migrate_playwright_mcp_server(conn: &Connection) -> Result<MigrationResul
             conn.execute("COMMIT", [])
                 .map_err(|e| format!("提交事务失败: {e}"))?;
 
-            tracing::info!("[迁移] Playwright MCP Server 迁移完成: server_id={}", server_id);
+            tracing::info!(
+                "[迁移] Playwright MCP Server 迁移完成: server_id={}",
+                server_id
+            );
 
             Ok(MigrationResult {
                 executed: true,
@@ -136,16 +137,15 @@ fn server_exists(conn: &Connection, name: &str) -> bool {
         [name],
         |row| row.get::<_, i32>(0),
     )
-    .unwrap_or(0) > 0
+    .unwrap_or(0)
+        > 0
 }
 
 /// 检查迁移是否已完成
 fn is_migration_completed(conn: &Connection, key: &str) -> bool {
-    conn.query_row(
-        "SELECT value FROM settings WHERE key = ?1",
-        [key],
-        |row| row.get::<_, String>(0),
-    )
+    conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+        row.get::<_, String>(0)
+    })
     .is_ok()
 }
 

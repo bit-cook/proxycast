@@ -181,7 +181,10 @@ mod tests {
     #[test]
     fn test_runtime_spec_openai_defaults() {
         let spec = ApiProviderType::Openai.runtime_spec();
-        assert_eq!(spec.protocol_family, ProviderProtocolFamily::OpenAiCompatible);
+        assert_eq!(
+            spec.protocol_family,
+            ProviderProtocolFamily::OpenAiCompatible
+        );
         assert_eq!(spec.auth_header, "Authorization");
         assert_eq!(spec.auth_prefix, Some("Bearer"));
         assert_eq!(spec.default_api_host, "https://api.openai.com");

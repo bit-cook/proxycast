@@ -113,8 +113,8 @@ export default function EcommerceReviewReply() {
     // 更新任务状态为处理中
     setTasks(
       tasks.map((t) =>
-        t.id === taskId ? { ...t, status: "processing" as const } : t
-      )
+        t.id === taskId ? { ...t, status: "processing" as const } : t,
+      ),
     );
 
     try {
@@ -138,12 +138,14 @@ export default function EcommerceReviewReply() {
           t.id === taskId
             ? {
                 ...t,
-                status: result.success ? ("completed" as const) : ("failed" as const),
+                status: result.success
+                  ? ("completed" as const)
+                  : ("failed" as const),
                 reply: result.output,
                 error: result.error,
               }
-            : t
-        )
+            : t,
+        ),
       );
     } catch (error) {
       // 处理错误
@@ -155,8 +157,8 @@ export default function EcommerceReviewReply() {
                 status: "failed" as const,
                 error: error instanceof Error ? error.message : "执行失败",
               }
-            : t
-        )
+            : t,
+        ),
       );
     }
   };

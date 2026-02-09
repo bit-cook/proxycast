@@ -5,14 +5,14 @@
  * 参考 LobeHub 的 SettingsSidebar 设计
  */
 
-import styled from 'styled-components';
-import { ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import styled from "styled-components";
+import { ChevronDown } from "lucide-react";
+import { useState } from "react";
 import {
-    useSettingsCategory,
-    CategoryGroup,
-} from '../hooks/useSettingsCategory';
-import { SettingsTabs, SettingsGroupKey } from '@/types/settings';
+  useSettingsCategory,
+  // CategoryGroup,
+} from "../hooks/useSettingsCategory";
+import { SettingsTabs, SettingsGroupKey } from "@/types/settings";
 
 const SidebarContainer = styled.aside`
   width: 240px;
@@ -60,7 +60,7 @@ const GroupHeader = styled.button<{ $expanded: boolean }>`
     width: 14px;
     height: 14px;
     transition: transform 0.2s;
-    transform: rotate(${({ $expanded }) => ($expanded ? '0deg' : '-90deg')});
+    transform: rotate(${({ $expanded }) => ($expanded ? "0deg" : "-90deg")});
   }
 
   &:hover {
@@ -69,7 +69,7 @@ const GroupHeader = styled.button<{ $expanded: boolean }>`
 `;
 
 const GroupItems = styled.div<{ $expanded: boolean }>`
-  display: ${({ $expanded }) => ($expanded ? 'flex' : 'none')};
+  display: ${({ $expanded }) => ($expanded ? "flex" : "none")};
   flex-direction: column;
   gap: 2px;
   padding: 4px 0;
@@ -84,11 +84,11 @@ const NavItem = styled.button<{ $active: boolean }>`
   border: none;
   border-radius: 8px;
   background: ${({ $active }) =>
-        $active ? 'hsl(var(--accent))' : 'transparent'};
+    $active ? "hsl(var(--accent))" : "transparent"};
   cursor: pointer;
   font-size: 14px;
   color: ${({ $active }) =>
-        $active ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))'};
+    $active ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))"};
   transition: all 0.15s;
   text-align: left;
 
@@ -121,61 +121,61 @@ const ExperimentalBadge = styled.span`
 `;
 
 interface SettingsSidebarProps {
-    activeTab: SettingsTabs;
-    onTabChange: (tab: SettingsTabs) => void;
+  activeTab: SettingsTabs;
+  onTabChange: (tab: SettingsTabs) => void;
 }
 
 export function SettingsSidebar({
-    activeTab,
-    onTabChange,
+  activeTab,
+  onTabChange,
 }: SettingsSidebarProps) {
-    const categoryGroups = useSettingsCategory();
+  const categoryGroups = useSettingsCategory();
 
-    // 默认展开所有分组
-    const [expandedGroups, setExpandedGroups] = useState<
-        Record<SettingsGroupKey, boolean>
-    >({
-        [SettingsGroupKey.Account]: true,
-        [SettingsGroupKey.General]: true,
-        [SettingsGroupKey.Agent]: true,
-        [SettingsGroupKey.System]: true,
-    });
+  // 默认展开所有分组
+  const [expandedGroups, setExpandedGroups] = useState<
+    Record<SettingsGroupKey, boolean>
+  >({
+    [SettingsGroupKey.Account]: true,
+    [SettingsGroupKey.General]: true,
+    [SettingsGroupKey.Agent]: true,
+    [SettingsGroupKey.System]: true,
+  });
 
-    const toggleGroup = (key: SettingsGroupKey) => {
-        setExpandedGroups((prev) => ({
-            ...prev,
-            [key]: !prev[key],
-        }));
-    };
+  const toggleGroup = (key: SettingsGroupKey) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
-    return (
-        <SidebarContainer>
-            {categoryGroups.map((group) => (
-                <GroupContainer key={group.key}>
-                    <GroupHeader
-                        $expanded={expandedGroups[group.key] ?? true}
-                        onClick={() => toggleGroup(group.key)}
-                    >
-                        {group.title}
-                        <ChevronDown />
-                    </GroupHeader>
-                    <GroupItems $expanded={expandedGroups[group.key] ?? true}>
-                        {group.items.map((item) => (
-                            <NavItem
-                                key={item.key}
-                                $active={activeTab === item.key}
-                                onClick={() => onTabChange(item.key)}
-                            >
-                                <item.icon />
-                                <ItemLabel>{item.label}</ItemLabel>
-                                {item.experimental && (
-                                    <ExperimentalBadge>实验</ExperimentalBadge>
-                                )}
-                            </NavItem>
-                        ))}
-                    </GroupItems>
-                </GroupContainer>
+  return (
+    <SidebarContainer>
+      {categoryGroups.map((group) => (
+        <GroupContainer key={group.key}>
+          <GroupHeader
+            $expanded={expandedGroups[group.key] ?? true}
+            onClick={() => toggleGroup(group.key)}
+          >
+            {group.title}
+            <ChevronDown />
+          </GroupHeader>
+          <GroupItems $expanded={expandedGroups[group.key] ?? true}>
+            {group.items.map((item) => (
+              <NavItem
+                key={item.key}
+                $active={activeTab === item.key}
+                onClick={() => onTabChange(item.key)}
+              >
+                <item.icon />
+                <ItemLabel>{item.label}</ItemLabel>
+                {item.experimental && (
+                  <ExperimentalBadge>实验</ExperimentalBadge>
+                )}
+              </NavItem>
             ))}
-        </SidebarContainer>
-    );
+          </GroupItems>
+        </GroupContainer>
+      ))}
+    </SidebarContainer>
+  );
 }

@@ -57,11 +57,11 @@ export const ecommerceReviewReplyApi = {
    * @returns 执行结果
    */
   async executeReviewReply(
-    request: EcommerceReviewReplyRequest
+    request: EcommerceReviewReplyRequest,
   ): Promise<SkillExecutionResult> {
     return safeInvoke(
       "execute_ecommerce_review_reply",
-      request as unknown as Record<string, unknown>
+      request as unknown as Record<string, unknown>,
     );
   },
 };

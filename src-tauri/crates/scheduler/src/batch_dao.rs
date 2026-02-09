@@ -272,11 +272,7 @@ impl BatchTaskDao {
     }
 
     /// 更新批量任务状态
-    pub fn update_status(
-        db: &DbConnection,
-        id: &Uuid,
-        status: BatchTaskStatus,
-    ) -> Result<()> {
+    pub fn update_status(db: &DbConnection, id: &Uuid, status: BatchTaskStatus) -> Result<()> {
         let conn = db.lock().unwrap();
 
         conn.execute(

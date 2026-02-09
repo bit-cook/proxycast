@@ -3,6 +3,7 @@
 //! 从内嵌资源加载模型数据，管理本地缓存，提供模型搜索等功能
 //! 模型数据在构建时从 aiclientproxy/models 仓库打包进应用
 
+use proxycast_core::database::dao::api_key_provider::ApiProviderType;
 use proxycast_core::database::DbConnection;
 use proxycast_core::models::model_registry::{
     EnhancedModelMetadata, ModelCapabilities, ModelLimits, ModelPricing, ModelSource, ModelStatus,
@@ -10,7 +11,7 @@ use proxycast_core::models::model_registry::{
 };
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -836,6 +837,24 @@ impl ModelRegistryService {
         api_host: &str,
         api_key: &str,
     ) -> Result<FetchModelsResult, String> {
+        self.fetch_models_from_api_with_hints(provider_id, api_host, api_key, None, &[])
+            .await
+    }
+
+    /// 从 Provider API 获取模型列表（带兜底提示）
+    ///
+    /// 优先使用 API 实时结果；当 API 不可用时，按以下顺序进行本地兜底：
+    /// 1. 精确匹配 custom_models
+    /// 2. 按 provider_id / provider_type / api_host 推断候选 provider
+    /// 3. 使用本地资源中的候选 provider 模型列表
+    pub async fn fetch_models_from_api_with_hints(
+        &self,
+        provider_id: &str,
+        api_host: &str,
+        api_key: &str,
+        provider_type: Option<ApiProviderType>,
+        custom_models: &[String],
+    ) -> Result<FetchModelsResult, String> {
         tracing::info!(
             "[ModelRegistry] 从 API 获取模型: provider={}, host={}",
             provider_id,
@@ -870,8 +889,15 @@ impl ModelRegistryService {
                     api_error
                 );
 
-                // 回退到本地 JSON 文件
-                let local_models = self.get_models_by_provider(provider_id).await;
+                // 回退到本地资源模型（多级匹配）
+                let local_models = self
+                    .resolve_local_fallback_models(
+                        provider_id,
+                        api_host,
+                        provider_type,
+                        custom_models,
+                    )
+                    .await;
 
                 if local_models.is_empty() {
                     Ok(FetchModelsResult {
@@ -887,6 +913,181 @@ impl ModelRegistryService {
                     })
                 }
             }
+        }
+    }
+
+    async fn resolve_local_fallback_models(
+        &self,
+        provider_id: &str,
+        api_host: &str,
+        provider_type: Option<ApiProviderType>,
+        custom_models: &[String],
+    ) -> Vec<EnhancedModelMetadata> {
+        // 优先精确匹配 custom_models（最贴近用户配置）
+        let matched_custom_models = self.match_local_models_by_ids(custom_models).await;
+        if !matched_custom_models.is_empty() {
+            tracing::info!(
+                "[ModelRegistry] 本地兜底命中 custom_models: provider={}, matched={}",
+                provider_id,
+                matched_custom_models.len()
+            );
+            return matched_custom_models;
+        }
+
+        let candidate_provider_ids = self
+            .collect_fallback_provider_ids(provider_id, api_host, provider_type, custom_models)
+            .await;
+
+        tracing::info!(
+            "[ModelRegistry] 本地兜底候选 provider: provider={}, candidates={:?}",
+            provider_id,
+            candidate_provider_ids
+        );
+
+        let cache = self.models_cache.read().await;
+        let mut models = Vec::new();
+        let mut seen_ids = HashSet::new();
+
+        for candidate in &candidate_provider_ids {
+            for model in cache.iter().filter(|m| m.provider_id == *candidate) {
+                if seen_ids.insert(model.id.clone()) {
+                    models.push(model.clone());
+                }
+            }
+        }
+
+        models
+    }
+
+    async fn match_local_models_by_ids(&self, model_ids: &[String]) -> Vec<EnhancedModelMetadata> {
+        if model_ids.is_empty() {
+            return Vec::new();
+        }
+
+        let target_ids: HashSet<String> = model_ids
+            .iter()
+            .map(|id| id.trim().to_lowercase())
+            .filter(|id| !id.is_empty())
+            .collect();
+
+        if target_ids.is_empty() {
+            return Vec::new();
+        }
+
+        let cache = self.models_cache.read().await;
+        cache
+            .iter()
+            .filter(|m| target_ids.contains(&m.id.to_lowercase()))
+            .cloned()
+            .collect()
+    }
+
+    async fn collect_fallback_provider_ids(
+        &self,
+        provider_id: &str,
+        api_host: &str,
+        provider_type: Option<ApiProviderType>,
+        custom_models: &[String],
+    ) -> Vec<String> {
+        let mut candidates = Vec::new();
+
+        Self::push_unique_candidate(&mut candidates, provider_id);
+
+        if let Some(stripped) = provider_id.strip_suffix("_api_key") {
+            Self::push_unique_candidate(&mut candidates, stripped);
+        }
+
+        // 根据 custom_models 反推 provider（可覆盖 custom-* 场景）
+        if !custom_models.is_empty() {
+            let target_ids: HashSet<String> = custom_models
+                .iter()
+                .map(|id| id.trim().to_lowercase())
+                .filter(|id| !id.is_empty())
+                .collect();
+
+            if !target_ids.is_empty() {
+                let cache = self.models_cache.read().await;
+                for model in cache.iter() {
+                    if target_ids.contains(&model.id.to_lowercase()) {
+                        Self::push_unique_candidate(&mut candidates, &model.provider_id);
+                    }
+                }
+            }
+        }
+
+        for inferred_id in Self::infer_provider_ids_from_api_host(api_host) {
+            Self::push_unique_candidate(&mut candidates, inferred_id);
+        }
+
+        if let Some(provider_type) = provider_type {
+            for mapped_id in Self::map_provider_type_to_registry_ids(provider_type) {
+                Self::push_unique_candidate(&mut candidates, mapped_id);
+            }
+        }
+
+        candidates
+    }
+
+    fn push_unique_candidate(candidates: &mut Vec<String>, candidate: &str) {
+        if candidate.trim().is_empty() {
+            return;
+        }
+
+        let normalized = candidate.trim().to_lowercase();
+        if !candidates.iter().any(|existing| existing == &normalized) {
+            candidates.push(normalized);
+        }
+    }
+
+    fn infer_provider_ids_from_api_host(api_host: &str) -> &'static [&'static str] {
+        let host = api_host.to_lowercase();
+
+        if host.contains("bigmodel.cn") {
+            return &["zhipuai"];
+        }
+
+        if host.contains("z.ai") || host.contains("zai") {
+            return &["zai"];
+        }
+
+        if host.contains("anthropic.com") {
+            return &["anthropic"];
+        }
+
+        if host.contains("openai.com") {
+            return &["openai"];
+        }
+
+        if host.contains("googleapis.com") {
+            return &["google"];
+        }
+
+        if host.contains("bedrock") {
+            return &["amazon-bedrock"];
+        }
+
+        if host.contains("ollama") {
+            return &["ollama-cloud"];
+        }
+
+        &[]
+    }
+
+    fn map_provider_type_to_registry_ids(
+        provider_type: ApiProviderType,
+    ) -> &'static [&'static str] {
+        match provider_type {
+            ApiProviderType::Openai
+            | ApiProviderType::OpenaiResponse
+            | ApiProviderType::NewApi
+            | ApiProviderType::Gateway
+            | ApiProviderType::AzureOpenai => &["openai"],
+            ApiProviderType::Anthropic | ApiProviderType::AnthropicCompatible => &["anthropic"],
+            ApiProviderType::Gemini => &["google"],
+            ApiProviderType::Vertexai => &["google-vertex", "google"],
+            ApiProviderType::AwsBedrock => &["amazon-bedrock"],
+            ApiProviderType::Ollama => &["ollama-cloud"],
+            ApiProviderType::Codex => &["codex"],
         }
     }
 
@@ -1031,4 +1232,54 @@ pub struct FetchModelsResult {
     pub source: ModelFetchSource,
     /// 错误信息（如果有）
     pub error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModelRegistryService;
+    use proxycast_core::database::dao::api_key_provider::ApiProviderType;
+
+    #[test]
+    fn test_build_models_api_url() {
+        assert_eq!(
+            ModelRegistryService::build_models_api_url("https://api.openai.com"),
+            "https://api.openai.com/v1/models"
+        );
+        assert_eq!(
+            ModelRegistryService::build_models_api_url("https://api.openai.com/v1"),
+            "https://api.openai.com/v1/models"
+        );
+        assert_eq!(
+            ModelRegistryService::build_models_api_url("https://open.bigmodel.cn/api/anthropic"),
+            "https://open.bigmodel.cn/api/anthropic/v1/models"
+        );
+    }
+
+    #[test]
+    fn test_infer_provider_ids_from_api_host() {
+        assert_eq!(
+            ModelRegistryService::infer_provider_ids_from_api_host(
+                "https://open.bigmodel.cn/api/anthropic"
+            ),
+            ["zhipuai"]
+        );
+        assert_eq!(
+            ModelRegistryService::infer_provider_ids_from_api_host("https://api.openai.com/v1"),
+            ["openai"]
+        );
+    }
+
+    #[test]
+    fn test_map_provider_type_to_registry_ids() {
+        assert_eq!(
+            ModelRegistryService::map_provider_type_to_registry_ids(
+                ApiProviderType::AnthropicCompatible
+            ),
+            ["anthropic"]
+        );
+        assert_eq!(
+            ModelRegistryService::map_provider_type_to_registry_ids(ApiProviderType::Gemini),
+            ["google"]
+        );
+    }
 }
