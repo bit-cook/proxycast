@@ -7007,6 +7007,8 @@ dependencies = [
  "uuid",
  "voice-core",
  "whoami",
+ "winapi",
+ "winreg 0.52.0",
  "zip",
 ]
 
