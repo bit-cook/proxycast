@@ -117,7 +117,8 @@ enigo = "0.3"
 # 开发时使用本地 aster-rust，CI/CD 使用远程 GitHub 仓库
 # 本地开发: path = "../../../astercloud/aster-rust/crates/aster" (相对 src-tauri/)
 # CI/CD: git = "https://github.com/astercloud/aster-rust", tag = "v0.11.0"
-aster = { path = "../../../astercloud/aster-rust/crates/aster" }
+# aster = { path = "../../../astercloud/aster-rust/crates/aster" }
+aster = { git = "https://github.com/astercloud/aster-rust", tag = "v0.11.0" }
 
 # MCP (Model Context Protocol)
 rmcp = { version = "0.12.0", features = ["client", "transport-io", "transport-child-process"] }
