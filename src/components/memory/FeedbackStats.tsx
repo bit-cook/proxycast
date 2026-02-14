@@ -1,15 +1,37 @@
-import { useQuery } from '@tanstack/react-query';
-import { getFeedbackStats } from '@/lib/api/memoryFeedback';
+import { useEffect, useState } from 'react';
+import { getFeedbackStats, type FeedbackStats as FeedbackStatsData } from '@/lib/api/memoryFeedback';
 
 interface FeedbackStatsProps {
     sessionId: string;
 }
 
 export function FeedbackStats({ sessionId }: FeedbackStatsProps) {
-    const { data: stats } = useQuery({
-        queryKey: ['feedback-stats', sessionId],
-        queryFn: () => getFeedbackStats(sessionId),
-    });
+    const [stats, setStats] = useState<FeedbackStatsData | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        if (!sessionId) {
+            setStats(null);
+            return;
+        }
+
+        getFeedbackStats(sessionId)
+            .then((result) => {
+                if (!cancelled) {
+                    setStats(result);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setStats(null);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [sessionId]);
 
     if (!stats) return null;
 
