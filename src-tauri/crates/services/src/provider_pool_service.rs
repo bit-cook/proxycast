@@ -259,10 +259,7 @@ impl ProviderPoolService {
         client_type: Option<&proxycast_core::models::client_type::ClientType>,
     ) -> Result<Option<ProviderCredential>, String> {
         if is_custom_provider_id(provider_type) {
-            eprintln!(
-                "[SELECT_CREDENTIAL] custom provider '{}' 使用智能降级路径",
-                provider_type
-            );
+            eprintln!("[SELECT_CREDENTIAL] custom provider '{provider_type}' 使用智能降级路径");
             return Ok(None);
         }
 
@@ -462,17 +459,12 @@ impl ProviderPoolService {
                 }
                 Ok(None) => {
                     eprintln!(
-                        "[select_credential_with_fallback] custom provider '{}' 不存在，继续使用解析类型 {:?}",
-                        custom_provider_id,
-                        pt
+                        "[select_credential_with_fallback] custom provider '{custom_provider_id}' 不存在，继续使用解析类型 {pt:?}"
                     );
                 }
                 Err(e) => {
                     eprintln!(
-                        "[select_credential_with_fallback] 查询 custom provider '{}' 失败: {}，继续使用解析类型 {:?}",
-                        custom_provider_id,
-                        e,
-                        pt
+                        "[select_credential_with_fallback] 查询 custom provider '{custom_provider_id}' 失败: {e}，继续使用解析类型 {pt:?}"
                     );
                 }
             }

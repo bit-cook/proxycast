@@ -140,7 +140,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::observer::events::{ConfigChangeSource, FullReloadEvent};
 
     struct TestObserver {
         name: String,

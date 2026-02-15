@@ -163,7 +163,7 @@ impl PublishConfigDao {
         )?;
 
         let configs: Vec<PublishConfig> = stmt
-            .query_map([project_id], |row| Self::map_row(row))?
+            .query_map([project_id], Self::map_row)?
             .filter_map(|r| r.ok())
             .collect();
 

@@ -78,7 +78,7 @@ impl WorkflowService {
         let mut workflows = self.workflows.write().await;
         let workflow = workflows
             .get_mut(workflow_id)
-            .ok_or_else(|| anyhow::anyhow!("工作流不存在: {}", workflow_id))?;
+            .ok_or_else(|| anyhow::anyhow!("工作流不存在: {workflow_id}"))?;
 
         let current_index = workflow.current_step_index;
         if current_index >= workflow.steps.len() {
@@ -113,7 +113,7 @@ impl WorkflowService {
         let mut workflows = self.workflows.write().await;
         let workflow = workflows
             .get_mut(workflow_id)
-            .ok_or_else(|| anyhow::anyhow!("工作流不存在: {}", workflow_id))?;
+            .ok_or_else(|| anyhow::anyhow!("工作流不存在: {workflow_id}"))?;
 
         let current_index = workflow.current_step_index;
         if current_index >= workflow.steps.len() {
@@ -146,7 +146,7 @@ impl WorkflowService {
         let mut workflows = self.workflows.write().await;
         let workflow = workflows
             .get_mut(workflow_id)
-            .ok_or_else(|| anyhow::anyhow!("工作流不存在: {}", workflow_id))?;
+            .ok_or_else(|| anyhow::anyhow!("工作流不存在: {workflow_id}"))?;
 
         if step_index >= workflow.steps.len() {
             return Err(anyhow::anyhow!("步骤索引无效"));
@@ -179,7 +179,7 @@ impl WorkflowService {
         let mut workflows = self.workflows.write().await;
         let workflow = workflows
             .get_mut(workflow_id)
-            .ok_or_else(|| anyhow::anyhow!("工作流不存在: {}", workflow_id))?;
+            .ok_or_else(|| anyhow::anyhow!("工作流不存在: {workflow_id}"))?;
 
         if step_index >= workflow.steps.len() {
             return Err(anyhow::anyhow!("步骤索引无效"));
@@ -221,12 +221,11 @@ impl WorkflowService {
             .enumerate()
             .map(|(i, mut step)| {
                 // 根据模式调整可跳过性
-                if *mode == CreationMode::Fast {
-                    if step.definition.step_type == StepType::Research
-                        || step.definition.step_type == StepType::Polish
-                    {
-                        step.definition.behavior.skippable = true;
-                    }
+                if *mode == CreationMode::Fast
+                    && (step.definition.step_type == StepType::Research
+                        || step.definition.step_type == StepType::Polish)
+                {
+                    step.definition.behavior.skippable = true;
                 }
 
                 // 第一个步骤设为 Active

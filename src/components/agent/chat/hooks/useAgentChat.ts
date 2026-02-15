@@ -155,6 +155,106 @@ const setTitleManuallyEdited = (sessionId: string, edited: boolean) => {
   savePersisted(`${TITLE_EDITED_KEY_PREFIX}${sessionId}`, edited);
 };
 
+const DEFAULT_AGENT_PROVIDER = "claude";
+const DEFAULT_AGENT_MODEL = PROVIDER_CONFIG["claude"]?.models[0] || "";
+const GLOBAL_PROVIDER_PREF_KEY = "agent_pref_provider_global";
+const GLOBAL_MODEL_PREF_KEY = "agent_pref_model_global";
+const GLOBAL_MIGRATED_PREF_KEY = "agent_pref_migrated_global";
+
+const loadPersistedString = (key: string): string | null => {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === null) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(stored);
+      return typeof parsed === "string" ? parsed : stored;
+    } catch {
+      return stored;
+    }
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+};
+
+interface AgentPreferences {
+  providerType: string;
+  model: string;
+}
+
+interface AgentPreferenceKeys {
+  providerKey: string;
+  modelKey: string;
+  migratedKey: string;
+}
+
+const getAgentPreferenceKeys = (
+  workspaceId?: string | null,
+): AgentPreferenceKeys => {
+  const resolvedWorkspaceId = workspaceId?.trim();
+  if (!resolvedWorkspaceId) {
+    return {
+      providerKey: GLOBAL_PROVIDER_PREF_KEY,
+      modelKey: GLOBAL_MODEL_PREF_KEY,
+      migratedKey: GLOBAL_MIGRATED_PREF_KEY,
+    };
+  }
+
+  return {
+    providerKey: `agent_pref_provider_${resolvedWorkspaceId}`,
+    modelKey: `agent_pref_model_${resolvedWorkspaceId}`,
+    migratedKey: `agent_pref_migrated_${resolvedWorkspaceId}`,
+  };
+};
+
+const resolveWorkspaceAgentPreferences = (
+  workspaceId?: string | null,
+): AgentPreferences => {
+  const { providerKey, modelKey, migratedKey } =
+    getAgentPreferenceKeys(workspaceId);
+
+  const scopedProvider = loadPersistedString(providerKey);
+  const scopedModel = loadPersistedString(modelKey);
+  if (scopedProvider || scopedModel) {
+    return {
+      providerType: scopedProvider || DEFAULT_AGENT_PROVIDER,
+      model: scopedModel || DEFAULT_AGENT_MODEL,
+    };
+  }
+
+  const migrated = loadPersisted<boolean>(migratedKey, false);
+  if (!migrated) {
+    const legacyProvider =
+      loadPersistedString("agent_pref_provider") ||
+      loadPersistedString(GLOBAL_PROVIDER_PREF_KEY);
+    const legacyModel =
+      loadPersistedString("agent_pref_model") ||
+      loadPersistedString(GLOBAL_MODEL_PREF_KEY);
+
+    if (legacyProvider) {
+      savePersisted(providerKey, legacyProvider);
+    }
+    if (legacyModel) {
+      savePersisted(modelKey, legacyModel);
+    }
+
+    savePersisted(migratedKey, true);
+
+    return {
+      providerType: legacyProvider || DEFAULT_AGENT_PROVIDER,
+      model: legacyModel || DEFAULT_AGENT_MODEL,
+    };
+  }
+
+  return {
+    providerType: DEFAULT_AGENT_PROVIDER,
+    model: DEFAULT_AGENT_MODEL,
+  };
+};
+
 /** useAgentChat 的配置选项 */
 interface UseAgentChatOptions {
   /** 系统提示词（用于内容创作等场景） */
@@ -198,16 +298,15 @@ export function useAgentChat(options: UseAgentChatOptions) {
     useState<ProviderConfigMap>(PROVIDER_CONFIG);
   const [isConfigLoading, setIsConfigLoading] = useState(true);
 
-  // Configuration State (Persistent)
-  const defaultProvider = "claude";
-  const defaultModel = PROVIDER_CONFIG["claude"]?.models[0] || "";
+  const initialPreferencesRef = useRef<AgentPreferences>(
+    resolveWorkspaceAgentPreferences(workspaceId),
+  );
 
-  const [providerType, setProviderType] = useState(() =>
-    loadPersisted("agent_pref_provider", defaultProvider),
+  // Provider/Model（按工作区保存）
+  const [providerType, setProviderType] = useState(
+    () => initialPreferencesRef.current.providerType,
   );
-  const [model, setModel] = useState(() =>
-    loadPersisted("agent_pref_model", defaultModel),
-  );
+  const [model, setModel] = useState(() => initialPreferencesRef.current.model);
 
   // Session State
   const [sessionId, setSessionId] = useState<string | null>(() => {
@@ -277,6 +376,12 @@ export function useAgentChat(options: UseAgentChatOptions) {
   const hydratedSessionRef = useRef<string | null>(null);
   const skipAutoRestoreRef = useRef(false);
   const sessionResetVersionRef = useRef(0);
+  const scopedProviderPrefKeyRef = useRef<string>(
+    getAgentPreferenceKeys(workspaceId).providerKey,
+  );
+  const scopedModelPrefKeyRef = useRef<string>(
+    getAgentPreferenceKeys(workspaceId).modelKey,
+  );
 
   // Artifact 解析器 - 用于流式解析 AI 响应中的 artifact
   const {
@@ -303,12 +408,28 @@ export function useAgentChat(options: UseAgentChatOptions) {
     loadConfig();
   }, []);
 
-  // Persistence Effects
+  // workspace 变化时恢复 Provider/Model 偏好
   useEffect(() => {
-    savePersisted("agent_pref_provider", providerType);
+    const { providerKey, modelKey } = getAgentPreferenceKeys(workspaceId);
+
+    scopedProviderPrefKeyRef.current = providerKey;
+    scopedModelPrefKeyRef.current = modelKey;
+
+    const scopedPreferences = resolveWorkspaceAgentPreferences(workspaceId);
+    setProviderType(scopedPreferences.providerType);
+    setModel(scopedPreferences.model);
+
+    savePersisted(providerKey, scopedPreferences.providerType);
+    savePersisted(modelKey, scopedPreferences.model);
+  }, [workspaceId]);
+
+  // 持久化 provider/model（仅写当前工作区）
+  useEffect(() => {
+    savePersisted(scopedProviderPrefKeyRef.current, providerType);
   }, [providerType]);
+
   useEffect(() => {
-    savePersisted("agent_pref_model", model);
+    savePersisted(scopedModelPrefKeyRef.current, model);
   }, [model]);
 
   // 当 provider 改变时，检查当前模型是否兼容

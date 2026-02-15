@@ -9,7 +9,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import styled from "styled-components";
-import { useAgentChat } from "./hooks/useAgentChat";
+import { useAgentChatUnified } from "./hooks";
 import { useSessionFiles } from "./hooks/useSessionFiles";
 import { useContentSync } from "./hooks/useContentSync";
 import { ChatNavbar } from "./components/ChatNavbar";
@@ -213,6 +213,8 @@ export function AgentChatPage({
   onBackToProjectManagement,
   hideInlineStepProgress = false,
   onWorkflowProgressChange,
+  initialUserPrompt,
+  onInitialUserPromptConsumed,
   newChatAt,
   onRecommendationClick: _onRecommendationClick,
   onHasMessagesChange,
@@ -231,6 +233,8 @@ export function AgentChatPage({
   onWorkflowProgressChange?: (
     snapshot: WorkflowProgressSnapshot | null,
   ) => void;
+  initialUserPrompt?: string;
+  onInitialUserPromptConsumed?: () => void;
   newChatAt?: number;
   onRecommendationClick?: (shortLabel: string, fullPrompt: string) => void;
   onHasMessagesChange?: (hasMessages: boolean) => void;
@@ -421,7 +425,7 @@ export function AgentChatPage({
     switchTopic: originalSwitchTopic,
     deleteTopic,
     renameTopic,
-  } = useAgentChat({
+  } = useAgentChatUnified({
     systemPrompt,
     onWriteFile: (content, fileName) => {
       // 使用 ref 调用最新的 handleWriteFile
@@ -1527,6 +1531,7 @@ export function AgentChatPage({
     // - 画布内容为空（canvasState 没有实际内容）
     // - 尚未触发过引导
     const canvasEmpty = isCanvasStateEmpty(canvasState);
+    const pendingInitialPrompt = (initialUserPrompt || "").trim();
 
     if (
       contentId &&
@@ -1537,8 +1542,18 @@ export function AgentChatPage({
       canvasEmpty &&
       !hasTriggeredGuide.current
     ) {
-      console.log("[AgentChatPage] 自动触发 AI 创作引导");
       hasTriggeredGuide.current = true;
+
+      if (pendingInitialPrompt) {
+        console.log("[AgentChatPage] 自动发送首条创作意图消息");
+        void (async () => {
+          await handleSend([], false, false, pendingInitialPrompt);
+          onInitialUserPromptConsumed?.();
+        })();
+        return;
+      }
+
+      console.log("[AgentChatPage] 自动触发 AI 创作引导");
       triggerAIGuideRef.current();
     }
   }, [
@@ -1548,6 +1563,9 @@ export function AgentChatPage({
     systemPrompt,
     isSending,
     canvasState,
+    initialUserPrompt,
+    handleSend,
+    onInitialUserPromptConsumed,
   ]);
 
   // 当 contentId 变化时重置引导状态

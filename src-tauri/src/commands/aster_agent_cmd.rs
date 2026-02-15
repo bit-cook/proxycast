@@ -235,7 +235,7 @@ impl WorkspaceSandboxedBashTool {
         }
 
         let sandbox_type = detect_best_sandbox();
-        let sandbox_type_name = format!("{:?}", sandbox_type);
+        let sandbox_type_name = format!("{sandbox_type:?}");
         if sandbox_type_name == "None" {
             return Err(
                 "未检测到可用本地 sandbox 执行器（macOS 需 sandbox-exec，Linux 需 bwrap/firejail）"
@@ -371,7 +371,7 @@ impl WorkspaceSandboxedBashTool {
         }
 
         if exit_code != 0 && output.is_empty() {
-            output = format!("Command exited with code {}", exit_code);
+            output = format!("Command exited with code {exit_code}");
         }
 
         if output.len() <= MAX_OUTPUT_LENGTH {
@@ -623,8 +623,7 @@ async fn apply_workspace_sandbox_permissions(
     ];
 
     let allow_shell_pattern = format!(
-        r"^\s*(?:cd\s+({}|\.|\./|\.\./)|pwd|ls(?:\s+[^;&|]+)?|find\s+({}|\.|\./|\.\./)[^;&|]*|rg\b[^;&|]*|grep\b[^;&|]*|cat\s+({}|\.|\./|\.\./)[^;&|]*)\s*$",
-        escaped_root, escaped_root, escaped_root
+        r"^\s*(?:cd\s+({escaped_root}|\.|\./|\.\./)|pwd|ls(?:\s+[^;&|]+)?|find\s+({escaped_root}|\.|\./|\.\./)[^;&|]*|rg\b[^;&|]*|grep\b[^;&|]*|cat\s+({escaped_root}|\.|\./|\.\./)[^;&|]*)\s*$"
     );
 
     permissions.push(ToolPermission {
@@ -905,8 +904,7 @@ pub async fn aster_agent_chat_stream(
                     workspace_root
                 );
                 return Err(format!(
-                    "workspace_mismatch|会话工作目录与 workspace 不匹配: session={}, workspace={}",
-                    session_dir, workspace_root
+                    "workspace_mismatch|会话工作目录与 workspace 不匹配: session={session_dir}, workspace={workspace_root}"
                 ));
             }
         }
@@ -1147,6 +1145,27 @@ pub async fn aster_session_get(
 ) -> Result<SessionDetail, String> {
     tracing::info!("[AsterAgent] 获取会话: {}", session_id);
     AsterAgentWrapper::get_session_sync(&db, &session_id)
+}
+
+/// 重命名会话
+#[tauri::command]
+pub async fn aster_session_rename(
+    db: State<'_, DbConnection>,
+    session_id: String,
+    name: String,
+) -> Result<(), String> {
+    tracing::info!("[AsterAgent] 重命名会话: {}", session_id);
+    AsterAgentWrapper::rename_session_sync(&db, &session_id, &name)
+}
+
+/// 删除会话
+#[tauri::command]
+pub async fn aster_session_delete(
+    db: State<'_, DbConnection>,
+    session_id: String,
+) -> Result<(), String> {
+    tracing::info!("[AsterAgent] 删除会话: {}", session_id);
+    AsterAgentWrapper::delete_session_sync(&db, &session_id)
 }
 
 /// 确认权限请求

@@ -5,7 +5,8 @@
  * @requirements 7.1, 7.2
  */
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   Dialog,
   DialogContent,
@@ -24,23 +25,74 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UploadIcon, FileIcon, Loader2Icon, XIcon } from "lucide-react";
+import {
+  UploadIcon,
+  FileIcon,
+  Loader2Icon,
+  XIcon,
+  FolderOpenIcon,
+} from "lucide-react";
 import type { MaterialType, UploadMaterialRequest } from "@/types/material";
 
 export interface MaterialUploadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
-  onUpload: (data: UploadMaterialRequest, file?: File) => Promise<void>;
+  onUpload: (data: UploadMaterialRequest) => Promise<void>;
 }
 
 const TYPE_OPTIONS: { value: MaterialType; label: string }[] = [
   { value: "document", label: "文档" },
   { value: "image", label: "图片" },
+  { value: "audio", label: "语音" },
+  { value: "video", label: "视频" },
   { value: "text", label: "文本" },
   { value: "data", label: "数据" },
   { value: "link", label: "链接" },
 ];
+
+const IMAGE_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "svg",
+  "bmp",
+]);
+const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "aac", "m4a", "ogg", "flac"]);
+const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "avi", "mkv", "webm", "flv"]);
+const DATA_EXTENSIONS = new Set(["csv", "json", "xml", "xlsx", "xls"]);
+const TEXT_EXTENSIONS = new Set(["txt", "md"]);
+
+const extractFileNameFromPath = (filePath: string): string => {
+  const normalized = filePath.replace(/\\/g, "/");
+  const name = normalized.split("/").pop();
+  return name && name.trim() ? name : "未命名文件";
+};
+
+const inferMaterialTypeFromPath = (filePath: string): MaterialType => {
+  const extension = filePath.split(".").pop()?.toLowerCase();
+  if (!extension) {
+    return "document";
+  }
+  if (IMAGE_EXTENSIONS.has(extension)) {
+    return "image";
+  }
+  if (AUDIO_EXTENSIONS.has(extension)) {
+    return "audio";
+  }
+  if (VIDEO_EXTENSIONS.has(extension)) {
+    return "video";
+  }
+  if (DATA_EXTENSIONS.has(extension)) {
+    return "data";
+  }
+  if (TEXT_EXTENSIONS.has(extension)) {
+    return "text";
+  }
+  return "document";
+};
 
 export function MaterialUploadDialog({
   open,
@@ -54,8 +106,7 @@ export function MaterialUploadDialog({
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
   const [content, setContent] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
 
   const resetForm = () => {
     setName("");
@@ -63,24 +114,33 @@ export function MaterialUploadDialog({
     setDescription("");
     setTags("");
     setContent("");
-    setSelectedFile(null);
+    setSelectedFilePath(null);
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      if (!name) setName(file.name);
-      // 根据文件类型自动设置素材类型
-      if (file.type.startsWith("image/")) setType("image");
-      else if (file.type.includes("json") || file.type.includes("csv"))
-        setType("data");
-      else setType("document");
+  const handleFileSelect = async () => {
+    const selected = await openDialog({
+      title: "选择素材文件",
+      directory: false,
+      multiple: false,
+    });
+    if (!selected || Array.isArray(selected)) {
+      return;
     }
+
+    setSelectedFilePath(selected);
+    if (!name.trim()) {
+      setName(extractFileNameFromPath(selected));
+    }
+    setType(inferMaterialTypeFromPath(selected));
   };
 
   const handleUpload = async () => {
     if (!name.trim()) return;
+    const requiresFile = !["text", "link"].includes(type);
+    if (requiresFile && !selectedFilePath) {
+      return;
+    }
+
     setUploading(true);
     try {
       await onUpload(
@@ -97,8 +157,8 @@ export function MaterialUploadDialog({
             : [],
           content:
             type === "text" || type === "link" ? content.trim() : undefined,
+          filePath: selectedFilePath ?? undefined,
         },
-        selectedFile || undefined,
       );
       resetForm();
       onOpenChange(false);
@@ -124,22 +184,19 @@ export function MaterialUploadDialog({
           {/* 文件选择区域 */}
           <div
             className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => {
+              void handleFileSelect();
+            }}
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={handleFileSelect}
-              accept="image/*,.pdf,.doc,.docx,.txt,.md,.json,.csv"
-            />
-            {selectedFile ? (
+            {selectedFilePath ? (
               <div className="flex items-center justify-center gap-2">
                 <FileIcon className="h-8 w-8 text-primary" />
                 <div className="text-left">
-                  <p className="font-medium">{selectedFile.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(selectedFile.size / 1024).toFixed(1)} KB
+                  <p className="font-medium">
+                    {extractFileNameFromPath(selectedFilePath)}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate max-w-[280px]">
+                    {selectedFilePath}
                   </p>
                 </div>
                 <Button
@@ -148,7 +205,7 @@ export function MaterialUploadDialog({
                   className="h-6 w-6"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedFile(null);
+                    setSelectedFilePath(null);
                   }}
                 >
                   <XIcon className="h-4 w-4" />
@@ -158,13 +215,26 @@ export function MaterialUploadDialog({
               <>
                 <UploadIcon className="h-10 w-10 mx-auto mb-2 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                  点击或拖拽文件到此处
+                  点击选择本地文件
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  支持图片、文档、数据文件
+                  支持图片、文档、音视频、数据文件
                 </p>
               </>
             )}
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void handleFileSelect();
+              }}
+            >
+              <FolderOpenIcon className="h-4 w-4 mr-1" />
+              重新选择文件
+            </Button>
           </div>
 
           {/* 素材名称 */}
@@ -241,7 +311,14 @@ export function MaterialUploadDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          <Button onClick={handleUpload} disabled={uploading || !name.trim()}>
+          <Button
+            onClick={handleUpload}
+            disabled={
+              uploading ||
+              !name.trim() ||
+              (!selectedFilePath && !["text", "link"].includes(type))
+            }
+          >
             {uploading ? (
               <Loader2Icon className="h-4 w-4 mr-1 animate-spin" />
             ) : (

@@ -143,6 +143,31 @@ pub fn get_session_sync(db: &DbConnection, session_id: &str) -> Result<SessionDe
     })
 }
 
+/// 重命名会话
+pub fn rename_session_sync(db: &DbConnection, session_id: &str, name: &str) -> Result<(), String> {
+    let trimmed_name = name.trim();
+    if trimmed_name.is_empty() {
+        return Err("会话名称不能为空".to_string());
+    }
+
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+    AgentDao::update_title(&conn, session_id, trimmed_name)
+        .map_err(|e| format!("更新会话标题失败: {e}"))?;
+
+    let now = Utc::now().to_rfc3339();
+    AgentDao::update_session_time(&conn, session_id, &now)
+        .map_err(|e| format!("更新会话时间失败: {e}"))?;
+
+    Ok(())
+}
+
+/// 删除会话
+pub fn delete_session_sync(db: &DbConnection, session_id: &str) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+    AgentDao::delete_session(&conn, session_id).map_err(|e| format!("删除会话失败: {e}"))?;
+    Ok(())
+}
+
 /// 将 AgentMessage 转换为 TauriMessage
 fn convert_agent_message(message: &AgentMessage) -> TauriMessage {
     let content = match &message.content {

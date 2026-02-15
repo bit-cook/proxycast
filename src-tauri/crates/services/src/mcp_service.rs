@@ -29,7 +29,7 @@ impl McpService {
         let servers = McpDao::get_all(&conn).map_err(|e| e.to_string())?;
         Ok(servers
             .iter()
-            .any(|s| s.name == name && exclude_id.map_or(true, |id| s.id != id)))
+            .any(|s| s.name == name && exclude_id.is_none_or(|id| s.id != id)))
     }
 
     /// 验证服务器配置

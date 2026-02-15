@@ -458,7 +458,7 @@ fn build_markdown_entry(
     let category = infer_category(file_type, &tags, title, &summary);
 
     Some(MemoryEntryPreview {
-        id: format!("{}:{}:{}", session_id, file_type, index),
+        id: format!("{session_id}:{file_type}:{index}"),
         session_id: session_id.to_string(),
         file_type: file_type.to_string(),
         category,
@@ -553,7 +553,7 @@ fn parse_error_entries(session_id: &str, content: &str) -> Vec<MemoryEntryPrevie
 
             MemoryEntryPreview {
                 id: if record.id.is_empty() {
-                    format!("{}:error_log:{}", session_id, index)
+                    format!("{session_id}:error_log:{index}")
                 } else {
                     record.id
                 },
@@ -592,7 +592,7 @@ fn infer_category(file_type: &str, tags: &[String], title: &str, summary: &str) 
         }
     }
 
-    let text = format!("{} {}", title, summary).to_lowercase();
+    let text = format!("{title} {summary}").to_lowercase();
 
     if contains_any(&text, &["我是", "我叫", "my name", "i am", "身份", "职业"]) {
         return "identity".to_string();
@@ -700,7 +700,7 @@ fn truncate_text(input: &str, max_chars: usize) -> String {
     let mut chars = input.chars();
     let prefix: String = chars.by_ref().take(max_chars).collect();
     if chars.next().is_some() {
-        format!("{}…", prefix)
+        format!("{prefix}…")
     } else {
         prefix
     }
@@ -920,7 +920,7 @@ fn build_fingerprint(content: &str) -> String {
         .filter(|ch| !ch.is_whitespace())
         .take(120)
         .collect::<String>();
-    format!("fp:{}", compact)
+    format!("fp:{compact}")
 }
 
 fn is_duplicate_memory(existing_entries: &[MemoryEntry], fingerprint: &str, summary: &str) -> bool {

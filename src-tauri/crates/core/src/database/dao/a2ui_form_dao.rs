@@ -161,7 +161,7 @@ impl A2UIFormDao {
         )?;
 
         let forms: Vec<A2UIForm> = stmt
-            .query_map([message_id], |row| Self::map_row(row))?
+            .query_map([message_id], Self::map_row)?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -180,7 +180,7 @@ impl A2UIFormDao {
         )?;
 
         let forms: Vec<A2UIForm> = stmt
-            .query_map([session_id], |row| Self::map_row(row))?
+            .query_map([session_id], Self::map_row)?
             .filter_map(|r| r.ok())
             .collect();
 

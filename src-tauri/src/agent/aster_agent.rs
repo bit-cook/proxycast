@@ -117,6 +117,20 @@ impl AsterAgentWrapper {
     pub fn get_session_sync(db: &DbConnection, session_id: &str) -> Result<SessionDetail, String> {
         proxycast_agent::session_store::get_session_sync(db, session_id)
     }
+
+    /// 重命名会话
+    pub fn rename_session_sync(
+        db: &DbConnection,
+        session_id: &str,
+        name: &str,
+    ) -> Result<(), String> {
+        proxycast_agent::session_store::rename_session_sync(db, session_id, name)
+    }
+
+    /// 删除会话
+    pub fn delete_session_sync(db: &DbConnection, session_id: &str) -> Result<(), String> {
+        proxycast_agent::session_store::delete_session_sync(db, session_id)
+    }
 }
 
 #[cfg(test)]

@@ -196,11 +196,11 @@ impl PosterMaterialDao {
         let mut stmt = conn.prepare(sql)?;
 
         let results: Vec<PosterMaterial> = if let Some(cat) = category {
-            stmt.query_map(params![project_id, cat], |row| Self::map_joined_row(row))?
+            stmt.query_map(params![project_id, cat], Self::map_joined_row)?
                 .filter_map(|r| r.ok())
                 .collect()
         } else {
-            stmt.query_map([project_id], |row| Self::map_joined_row(row))?
+            stmt.query_map([project_id], Self::map_joined_row)?
                 .filter_map(|r| r.ok())
                 .collect()
         };
@@ -241,11 +241,11 @@ impl PosterMaterialDao {
         let mut stmt = conn.prepare(sql)?;
 
         let results: Vec<PosterMaterial> = if let Some(cat) = category {
-            stmt.query_map(params![project_id, cat], |row| Self::map_joined_row(row))?
+            stmt.query_map(params![project_id, cat], Self::map_joined_row)?
                 .filter_map(|r| r.ok())
                 .collect()
         } else {
-            stmt.query_map([project_id], |row| Self::map_joined_row(row))?
+            stmt.query_map([project_id], Self::map_joined_row)?
                 .filter_map(|r| r.ok())
                 .collect()
         };
@@ -286,11 +286,11 @@ impl PosterMaterialDao {
         let mut stmt = conn.prepare(sql)?;
 
         let results: Vec<PosterMaterial> = if let Some(m) = mood {
-            stmt.query_map(params![project_id, m], |row| Self::map_joined_row(row))?
+            stmt.query_map(params![project_id, m], Self::map_joined_row)?
                 .filter_map(|r| r.ok())
                 .collect()
         } else {
-            stmt.query_map([project_id], |row| Self::map_joined_row(row))?
+            stmt.query_map([project_id], Self::map_joined_row)?
                 .filter_map(|r| r.ok())
                 .collect()
         };

@@ -21,6 +21,7 @@ use super::types::{AppState, LogState, TrayManagerState};
 /// Tauri setup hook
 ///
 /// 在应用启动时执行初始化逻辑
+#[allow(clippy::too_many_arguments)]
 pub fn setup_app(
     app: &mut App,
     state: AppState,
@@ -116,6 +117,7 @@ pub fn setup_app(
 }
 
 /// 异步启动服务器
+#[allow(clippy::too_many_arguments)]
 async fn start_server_async(
     state: AppState,
     logs: LogState,

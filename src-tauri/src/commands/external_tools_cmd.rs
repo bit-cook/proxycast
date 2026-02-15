@@ -8,7 +8,7 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 /// Codex CLI 状态
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CodexCliStatus {
     /// CLI 是否已安装
     pub installed: bool,
@@ -22,19 +22,6 @@ pub struct CodexCliStatus {
     pub api_key_prefix: Option<String>,
     /// 错误信息
     pub error: Option<String>,
-}
-
-impl Default for CodexCliStatus {
-    fn default() -> Self {
-        Self {
-            installed: false,
-            version: None,
-            logged_in: false,
-            auth_type: None,
-            api_key_prefix: None,
-            error: None,
-        }
-    }
 }
 
 /// 检查 Codex CLI 状态
@@ -64,8 +51,7 @@ pub async fn check_codex_cli_status() -> Result<CodexCliStatus, String> {
         }
         Err(e) => {
             status.error = Some(format!(
-                "Codex CLI 未安装。请运行: npm i -g @openai/codex\n错误: {}",
-                e
+                "Codex CLI 未安装。请运行: npm i -g @openai/codex\n错误: {e}"
             ));
             return Ok(status);
         }
@@ -83,7 +69,7 @@ pub async fn check_codex_cli_status() -> Result<CodexCliStatus, String> {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let combined = format!("{}{}", stdout, stderr);
+            let combined = format!("{stdout}{stderr}");
 
             tracing::debug!("[CodexCli] login status output: {}", combined);
 
@@ -96,7 +82,7 @@ pub async fn check_codex_cli_status() -> Result<CodexCliStatus, String> {
                 if combined.contains("API key") || combined.contains("api key") {
                     status.auth_type = Some("api_key".to_string());
                     // 提取 API Key 前缀
-                    if let Some(key_part) = combined.split('-').last() {
+                    if let Some(key_part) = combined.split('-').next_back() {
                         let key = key_part.trim();
                         if !key.is_empty() {
                             status.api_key_prefix = Some(key.to_string());

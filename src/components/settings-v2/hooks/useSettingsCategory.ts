@@ -142,7 +142,7 @@ export function useSettingsCategory(): CategoryGroup[] {
       items: [
         {
           key: SettingsTabs.ApiServer,
-          label: t("settings.tab.apiServer", "API Server"),
+          label: t("settings.tab.apiServer", "团队共享网关"),
           icon: Server,
         },
         {

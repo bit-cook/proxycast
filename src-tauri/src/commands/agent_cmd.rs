@@ -25,7 +25,7 @@ fn truncate_string(s: &str, max_chars: usize) -> String {
         s.to_string()
     } else {
         let truncated: String = s.chars().take(max_chars).collect();
-        format!("{}...", truncated)
+        format!("{truncated}...")
     }
 }
 
@@ -74,7 +74,7 @@ pub async fn agent_start_process(
 ) -> Result<AgentProcessStatus, String> {
     tracing::info!("[Agent] 初始化 Aster Agent");
 
-    let (host, port, running) = {
+    let (host, port, gateway_running) = {
         let state = app_state.read().await;
         (
             state.config.server.host.clone(),
@@ -83,18 +83,18 @@ pub async fn agent_start_process(
         )
     };
 
-    if !running {
-        return Err("ProxyCast API Server 未运行，请先启动服务器".to_string());
-    }
-
     agent_state.init_agent_with_db(&db).await?;
-
-    let base_url = format!("http://{host}:{port}");
+    let base_url = if gateway_running {
+        Some(format!("http://{host}:{port}"))
+    } else {
+        None
+    };
+    let exposed_port = if gateway_running { Some(port) } else { None };
 
     Ok(AgentProcessStatus {
         running: true,
-        base_url: Some(base_url),
-        port: Some(port),
+        base_url,
+        port: exposed_port,
     })
 }
 
@@ -116,14 +116,23 @@ pub async fn agent_get_process_status(
 
     if initialized {
         let state = app_state.read().await;
-        let base_url = format!(
-            "http://{}:{}",
-            state.config.server.host, state.config.server.port
-        );
+        let gateway_running = state.running;
+        let base_url = if gateway_running {
+            Some(format!(
+                "http://{}:{}",
+                state.config.server.host, state.config.server.port
+            ))
+        } else {
+            None
+        };
         Ok(AgentProcessStatus {
             running: true,
-            base_url: Some(base_url),
-            port: Some(state.config.server.port),
+            base_url,
+            port: if gateway_running {
+                Some(state.config.server.port)
+            } else {
+                None
+            },
         })
     } else {
         Ok(AgentProcessStatus {

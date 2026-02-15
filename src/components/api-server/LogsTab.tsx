@@ -112,7 +112,7 @@ export function LogsTab() {
         >
           {logs.length === 0 ? (
             <p className="text-center text-muted-foreground">
-              暂无日志，软件运行时将显示系统日志
+              暂无日志，软件运行时将显示网关与系统日志
             </p>
           ) : (
             logs.map((log, i) => (

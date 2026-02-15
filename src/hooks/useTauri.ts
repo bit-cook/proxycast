@@ -363,7 +363,7 @@ export async function setDefaultProvider(provider: string): Promise<string> {
 /**
  * 更新 Provider 的环境变量
  *
- * 当用户在 API Server 页面选择一个 API Key Provider 时调用
+ * 当用户在团队共享网关页面选择一个 API Key Provider 时调用
  * 会更新 ~/.claude/settings.json 和 shell 配置文件中的环境变量
  *
  * @param providerType Provider 类型（如 "anthropic", "openai", "gemini"）

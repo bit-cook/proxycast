@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useProjects } from "@/hooks/useProjects";
+import { getAvailableProjects } from "./projectSelectorUtils";
 import { FolderIcon, StarIcon } from "lucide-react";
 
 export interface ProjectSelectorProps {
@@ -56,21 +57,7 @@ export function ProjectSelector({
 
   // 过滤项目：排除归档 + 按主题类型筛选
   const availableProjects = useMemo(() => {
-    let filtered = projects.filter((p) => !p.isArchived);
-
-    // 按主题类型筛选（默认项目始终显示）
-    if (workspaceType && workspaceType !== "general") {
-      filtered = filtered.filter(
-        (p) => p.isDefault || p.workspaceType === workspaceType,
-      );
-    }
-
-    // 默认项目排在最前面
-    return filtered.sort((a, b) => {
-      if (a.isDefault && !b.isDefault) return -1;
-      if (!a.isDefault && b.isDefault) return 1;
-      return 0;
-    });
+    return getAvailableProjects(projects, workspaceType);
   }, [projects, workspaceType]);
 
   // 查找当前选中的项目

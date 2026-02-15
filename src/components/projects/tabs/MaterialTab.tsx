@@ -18,6 +18,8 @@ import {
   FileTextIcon,
   DatabaseIcon,
   LinkIcon,
+  Music2Icon,
+  VideoIcon,
   TrashIcon,
   EyeIcon,
   PaletteIcon,
@@ -39,6 +41,8 @@ export interface MaterialTabProps {
 const MaterialTypeIcons: Record<MaterialType, typeof FileIcon> = {
   document: FileIcon,
   image: ImageIcon,
+  audio: Music2Icon,
+  video: VideoIcon,
   text: FileTextIcon,
   data: DatabaseIcon,
   link: LinkIcon,
@@ -71,9 +75,7 @@ export function MaterialTab({ projectId }: MaterialTabProps) {
     setFilter({ ...filter, searchQuery: query });
   };
 
-  const handleUpload = async (data: UploadMaterialRequest, _file?: File) => {
-    // TODO: 文件上传需要使用 Tauri 文件对话框获取路径
-    // 目前仅支持文本/链接类型的素材
+  const handleUpload = async (data: UploadMaterialRequest) => {
     await upload(data);
   };
 

@@ -15,6 +15,8 @@ import {
   createAsterSession,
   listAsterSessions,
   getAsterSession,
+  renameAsterSession,
+  deleteAsterSession,
   stopAsterSession,
   confirmAsterAction,
   submitAsterElicitationResponse,
@@ -151,6 +153,106 @@ const saveTransient = (key: string, value: unknown) => {
   }
 };
 
+const DEFAULT_AGENT_PROVIDER = "claude";
+const DEFAULT_AGENT_MODEL = "claude-sonnet-4-5";
+const GLOBAL_PROVIDER_PREF_KEY = "agent_pref_provider_global";
+const GLOBAL_MODEL_PREF_KEY = "agent_pref_model_global";
+const GLOBAL_MIGRATED_PREF_KEY = "agent_pref_migrated_global";
+
+const loadPersistedString = (key: string): string | null => {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === null) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(stored);
+      return typeof parsed === "string" ? parsed : stored;
+    } catch {
+      return stored;
+    }
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+};
+
+interface AgentPreferences {
+  providerType: string;
+  model: string;
+}
+
+interface AgentPreferenceKeys {
+  providerKey: string;
+  modelKey: string;
+  migratedKey: string;
+}
+
+const getAgentPreferenceKeys = (
+  workspaceId?: string | null,
+): AgentPreferenceKeys => {
+  const resolvedWorkspaceId = workspaceId?.trim();
+  if (!resolvedWorkspaceId) {
+    return {
+      providerKey: GLOBAL_PROVIDER_PREF_KEY,
+      modelKey: GLOBAL_MODEL_PREF_KEY,
+      migratedKey: GLOBAL_MIGRATED_PREF_KEY,
+    };
+  }
+
+  return {
+    providerKey: `agent_pref_provider_${resolvedWorkspaceId}`,
+    modelKey: `agent_pref_model_${resolvedWorkspaceId}`,
+    migratedKey: `agent_pref_migrated_${resolvedWorkspaceId}`,
+  };
+};
+
+const resolveWorkspaceAgentPreferences = (
+  workspaceId?: string | null,
+): AgentPreferences => {
+  const { providerKey, modelKey, migratedKey } =
+    getAgentPreferenceKeys(workspaceId);
+
+  const scopedProvider = loadPersistedString(providerKey);
+  const scopedModel = loadPersistedString(modelKey);
+  if (scopedProvider || scopedModel) {
+    return {
+      providerType: scopedProvider || DEFAULT_AGENT_PROVIDER,
+      model: scopedModel || DEFAULT_AGENT_MODEL,
+    };
+  }
+
+  const migrated = loadPersisted<boolean>(migratedKey, false);
+  if (!migrated) {
+    const legacyProvider =
+      loadPersistedString("agent_pref_provider") ||
+      loadPersistedString(GLOBAL_PROVIDER_PREF_KEY);
+    const legacyModel =
+      loadPersistedString("agent_pref_model") ||
+      loadPersistedString(GLOBAL_MODEL_PREF_KEY);
+
+    if (legacyProvider) {
+      savePersisted(providerKey, legacyProvider);
+    }
+    if (legacyModel) {
+      savePersisted(modelKey, legacyModel);
+    }
+
+    savePersisted(migratedKey, true);
+
+    return {
+      providerType: legacyProvider || DEFAULT_AGENT_PROVIDER,
+      model: legacyModel || DEFAULT_AGENT_MODEL,
+    };
+  }
+
+  return {
+    providerType: DEFAULT_AGENT_PROVIDER,
+    model: DEFAULT_AGENT_MODEL,
+  };
+};
+
 /**
  * 将前端 Provider 类型映射到 Aster Provider 名称
  */
@@ -243,13 +345,15 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
   const [isSending, setIsSending] = useState(false);
   const [pendingActions, setPendingActions] = useState<ActionRequired[]>([]);
 
-  // Provider/Model（本地状态）
+  const initialPreferencesRef = useRef<AgentPreferences>(
+    resolveWorkspaceAgentPreferences(workspaceId),
+  );
+
+  // Provider/Model（按工作区保存）
   const [providerType, setProviderType] = useState(
-    () => localStorage.getItem("agent_pref_provider") || "claude",
+    () => initialPreferencesRef.current.providerType,
   );
-  const [model, setModel] = useState(
-    () => localStorage.getItem("agent_pref_model") || "claude-sonnet-4-5",
-  );
+  const [model, setModel] = useState(() => initialPreferencesRef.current.model);
 
   // Refs
   const unlistenRef = useRef<UnlistenFn | null>(null);
@@ -257,14 +361,35 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
   const restoredWorkspaceRef = useRef<string | null>(null);
   const hydratedSessionRef = useRef<string | null>(null);
   const skipAutoRestoreRef = useRef(false);
+  const scopedProviderPrefKeyRef = useRef<string>(
+    getAgentPreferenceKeys(workspaceId).providerKey,
+  );
+  const scopedModelPrefKeyRef = useRef<string>(
+    getAgentPreferenceKeys(workspaceId).modelKey,
+  );
 
-  // 持久化 provider/model
+  // workspace 变化时恢复 Provider/Model 偏好
   useEffect(() => {
-    localStorage.setItem("agent_pref_provider", providerType);
+    const { providerKey, modelKey } = getAgentPreferenceKeys(workspaceId);
+
+    scopedProviderPrefKeyRef.current = providerKey;
+    scopedModelPrefKeyRef.current = modelKey;
+
+    const scopedPreferences = resolveWorkspaceAgentPreferences(workspaceId);
+    setProviderType(scopedPreferences.providerType);
+    setModel(scopedPreferences.model);
+
+    savePersisted(providerKey, scopedPreferences.providerType);
+    savePersisted(modelKey, scopedPreferences.model);
+  }, [workspaceId]);
+
+  // 持久化 provider/model（仅写当前工作区）
+  useEffect(() => {
+    savePersisted(scopedProviderPrefKeyRef.current, providerType);
   }, [providerType]);
 
   useEffect(() => {
-    localStorage.setItem("agent_pref_model", model);
+    savePersisted(scopedModelPrefKeyRef.current, model);
   }, [model]);
 
   useEffect(() => {
@@ -443,16 +568,8 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
       images: MessageImage[],
       _webSearch?: boolean,
       _thinking?: boolean,
+      skipUserMessage = false,
     ) => {
-      // 用户消息
-      const userMsg: Message = {
-        id: crypto.randomUUID(),
-        role: "user",
-        content,
-        images: images.length > 0 ? images : undefined,
-        timestamp: new Date(),
-      };
-
       // 助手消息占位符
       const assistantMsgId = crypto.randomUUID();
       const assistantMsg: Message = {
@@ -465,7 +582,19 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
         contentParts: [],
       };
 
-      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      if (skipUserMessage) {
+        setMessages((prev) => [...prev, assistantMsg]);
+      } else {
+        // 用户消息
+        const userMsg: Message = {
+          id: crypto.randomUUID(),
+          role: "user",
+          content,
+          images: images.length > 0 ? images : undefined,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      }
       setIsSending(true);
       currentAssistantMsgIdRef.current = assistantMsgId;
 
@@ -794,6 +923,19 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
     [pendingActions, sessionId],
   );
 
+  // 兼容 Native 接口：权限响应处理
+  const handlePermissionResponse = useCallback(
+    async (response: ConfirmResponse) => {
+      await confirmAction(response);
+    },
+    [confirmAction],
+  );
+
+  // 兼容 Native 接口：触发 AI 引导（仅生成助手消息，不注入用户气泡）
+  const triggerAIGuide = useCallback(async () => {
+    await sendMessage("", [], false, false, true);
+  }, [sendMessage]);
+
   // 清空消息
   const clearMessages = useCallback(() => {
     setMessages([]);
@@ -945,16 +1087,50 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
   // 删除话题
   const deleteTopic = useCallback(
     async (topicId: string) => {
-      // TODO: 实现后端删除
-      setTopics((prev) => prev.filter((t) => t.id !== topicId));
-      if (topicId === sessionId) {
-        setSessionId(null);
-        setMessages([]);
+      try {
+        await deleteAsterSession(topicId);
+        await loadTopics();
+
+        if (topicId === sessionId) {
+          setSessionId(null);
+          setMessages([]);
+          setPendingActions([]);
+          hydratedSessionRef.current = null;
+          restoredWorkspaceRef.current = null;
+          saveTransient(getScopedSessionKey(), null);
+          savePersisted(getScopedPersistedSessionKey(), null);
+        }
+
+        toast.success("话题已删除");
+      } catch (error) {
+        console.error("[AsterChat] 删除话题失败:", error);
+        toast.error("删除话题失败");
       }
-      toast.success("话题已删除");
     },
-    [sessionId],
+    [
+      getScopedPersistedSessionKey,
+      getScopedSessionKey,
+      loadTopics,
+      sessionId,
+    ],
   );
+
+  // 重命名话题（持久化）
+  const renameTopic = useCallback(async (topicId: string, newTitle: string) => {
+    const normalizedTitle = newTitle.trim();
+    if (!normalizedTitle) {
+      return;
+    }
+
+    try {
+      await renameAsterSession(topicId, normalizedTitle);
+      await loadTopics();
+      toast.success("话题已重命名");
+    } catch (error) {
+      console.error("[AsterChat] 重命名话题失败:", error);
+      toast.error("重命名失败");
+    }
+  }, [loadTopics]);
 
   // 兼容接口
   const handleStartProcess = useCallback(async () => {
@@ -989,11 +1165,14 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
     clearMessages,
     deleteMessage,
     editMessage,
+    handlePermissionResponse,
+    triggerAIGuide,
 
     topics,
     sessionId,
     switchTopic,
     deleteTopic,
+    renameTopic,
     loadTopics,
 
     // Aster 特有功能

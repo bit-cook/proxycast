@@ -150,7 +150,7 @@ impl PersonaDao {
         )?;
 
         let personas: Vec<Persona> = stmt
-            .query_map([project_id], |row| Self::map_row(row))?
+            .query_map([project_id], Self::map_row)?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -471,7 +471,7 @@ mod tests {
         for i in 1..=2 {
             let req = CreatePersonaRequest {
                 project_id: "project-1".to_string(),
-                name: format!("人设{}", i),
+                name: format!("人设{i}"),
                 description: None,
                 style: "测试".to_string(),
                 tone: None,

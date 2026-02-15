@@ -141,7 +141,7 @@ impl TemplateDao {
         )?;
 
         let templates: Vec<Template> = stmt
-            .query_map([project_id], |row| Self::map_row(row))?
+            .query_map([project_id], Self::map_row)?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -496,7 +496,7 @@ mod tests {
         for i in 1..=2 {
             let req = CreateTemplateRequest {
                 project_id: "project-1".to_string(),
-                name: format!("模板{}", i),
+                name: format!("模板{i}"),
                 platform: "xiaohongshu".to_string(),
                 title_style: None,
                 paragraph_style: None,
@@ -771,7 +771,7 @@ mod tests {
         for i in 1..=3 {
             let req = CreateTemplateRequest {
                 project_id: "project-1".to_string(),
-                name: format!("模板{}", i),
+                name: format!("模板{i}"),
                 platform: "markdown".to_string(),
                 title_style: None,
                 paragraph_style: None,
@@ -798,7 +798,7 @@ mod tests {
         for i in 1..=2 {
             let req = CreateTemplateRequest {
                 project_id: "project-1".to_string(),
-                name: format!("模板{}", i),
+                name: format!("模板{i}"),
                 platform: "xiaohongshu".to_string(),
                 title_style: None,
                 paragraph_style: None,
@@ -851,7 +851,7 @@ mod tests {
         for i in 1..=3 {
             let req = CreateTemplateRequest {
                 project_id: "project-a".to_string(),
-                name: format!("A模板{}", i),
+                name: format!("A模板{i}"),
                 platform: "xiaohongshu".to_string(),
                 title_style: None,
                 paragraph_style: None,
@@ -866,7 +866,7 @@ mod tests {
         for i in 1..=2 {
             let req = CreateTemplateRequest {
                 project_id: "project-b".to_string(),
-                name: format!("B模板{}", i),
+                name: format!("B模板{i}"),
                 platform: "wechat".to_string(),
                 title_style: None,
                 paragraph_style: None,
@@ -905,7 +905,7 @@ mod tests {
         for i in 1..=3 {
             let req = CreateTemplateRequest {
                 project_id: "project-1".to_string(),
-                name: format!("模板{}", i),
+                name: format!("模板{i}"),
                 platform: "markdown".to_string(),
                 title_style: None,
                 paragraph_style: None,

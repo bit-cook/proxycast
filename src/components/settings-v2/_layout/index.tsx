@@ -226,7 +226,7 @@ function renderSettingsContent(tab: SettingsTabs): ReactNode {
     case SettingsTabs.ApiServer:
       return (
         <>
-          <SettingHeader title="API Server" />
+          <SettingHeader title="团队共享网关（内网）" />
           <ApiServerPage hideHeader />
         </>
       );

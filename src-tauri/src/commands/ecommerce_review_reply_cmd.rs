@@ -64,7 +64,7 @@ pub async fn execute_ecommerce_review_reply(
         request
             .template
             .as_ref()
-            .map(|t| format!("\n自定义模板: {}", t))
+            .map(|t| format!("\n自定义模板: {t}"))
             .unwrap_or_default()
     );
 

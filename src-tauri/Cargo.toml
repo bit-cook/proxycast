@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.66.0"
+version = "0.67.0"
 edition = "2021"
 authors = ["you"]
 repository = "https://github.com/aiclientproxy/proxycast"
@@ -183,7 +183,7 @@ version = "2.4"
 
 [package]
 name = "proxycast"
-version = "0.66.0"
+version = "0.67.0"
 description = "AI API Proxy Desktop App"
 authors = ["you"]
 edition = "2021"

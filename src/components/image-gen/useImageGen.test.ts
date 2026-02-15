@@ -6,6 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __imageGenFalTestUtils } from "./useImageGen";
+import { silenceConsole } from "./test-utils";
 
 const { requestImageFromFal, resolveFalEndpointModelCandidates } =
   __imageGenFalTestUtils;
@@ -27,6 +28,7 @@ describe("useImageGen Fal 调用链路", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+    silenceConsole();
   });
 
   afterEach(() => {

@@ -182,7 +182,7 @@ pub async fn mcp_start_server(
     let server = servers
         .iter()
         .find(|s| s.name == name)
-        .ok_or_else(|| format!("服务器配置不存在: {}", name))?;
+        .ok_or_else(|| format!("服务器配置不存在: {name}"))?;
 
     // 2. 解析服务器配置
     let config = parse_server_config(&server.server_config);

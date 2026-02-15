@@ -26,7 +26,7 @@ interface SidebarProps {
 
 const navItems = [
   { id: "agent" as Page, label: "AI Agent", icon: Bot },
-  { id: "api-server" as Page, label: "API Server", icon: Globe },
+  { id: "api-server" as Page, label: "团队共享网关", icon: Globe },
   { id: "provider-pool" as Page, label: "凭证池", icon: Database },
   { id: "tools" as Page, label: "工具", icon: Wrench },
   { id: "plugins" as Page, label: "插件中心", icon: Puzzle },
@@ -38,7 +38,7 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
     <div className="w-56 border-r bg-card p-4">
       <div className="mb-8">
         <h1 className="text-xl font-bold">ProxyCast</h1>
-        <p className="text-xs text-muted-foreground">AI API Proxy</p>
+        <p className="text-xs text-muted-foreground">AI Agent + 团队网关</p>
       </div>
       <nav className="space-y-1">
         {navItems.map((item) => (

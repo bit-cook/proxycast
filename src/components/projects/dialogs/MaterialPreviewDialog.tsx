@@ -21,6 +21,8 @@ import {
   FileTextIcon,
   DatabaseIcon,
   LinkIcon,
+  Music2Icon,
+  VideoIcon,
   ExternalLinkIcon,
   PaletteIcon,
   LayoutIcon,
@@ -37,6 +39,8 @@ export interface MaterialPreviewDialogProps {
 const MaterialTypeIcons: Record<MaterialType, typeof FileIcon> = {
   document: FileIcon,
   image: ImageIcon,
+  audio: Music2Icon,
+  video: VideoIcon,
   text: FileTextIcon,
   data: DatabaseIcon,
   link: LinkIcon,
@@ -66,7 +70,12 @@ export function MaterialPreviewDialog({
     }
 
     // 处理图片类型
-    if (material.type === "image" && material.filePath) {
+    if (
+      (material.type === "image" ||
+        material.type === "audio" ||
+        material.type === "video") &&
+      material.filePath
+    ) {
       const src = convertFileSrc(material.filePath);
       setImageSrc(src);
     }
@@ -106,6 +115,32 @@ export function MaterialPreviewDialog({
         ) : (
           <div className="flex items-center justify-center h-48 bg-muted/30 rounded-lg">
             <p className="text-muted-foreground">无文本内容</p>
+          </div>
+        );
+
+      case "audio":
+        return imageSrc ? (
+          <div className="p-4 bg-muted/30 rounded-lg">
+            <audio controls className="w-full" src={imageSrc}>
+              当前浏览器不支持音频预览
+            </audio>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-48 bg-muted/30 rounded-lg">
+            <p className="text-muted-foreground">无法加载音频</p>
+          </div>
+        );
+
+      case "video":
+        return imageSrc ? (
+          <div className="p-4 bg-muted/30 rounded-lg">
+            <video controls className="max-h-[420px] w-full rounded" src={imageSrc}>
+              当前浏览器不支持视频预览
+            </video>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-48 bg-muted/30 rounded-lg">
+            <p className="text-muted-foreground">无法加载视频</p>
           </div>
         );
 

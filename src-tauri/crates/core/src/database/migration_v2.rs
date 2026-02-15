@@ -214,8 +214,7 @@ fn verify_migration(conn: &Connection) -> Result<(), String> {
 
     if null_count > 0 {
         return Err(format!(
-            "迁移验证失败: 仍有 {} 条内容的 project_id 为空",
-            null_count
+            "迁移验证失败: 仍有 {null_count} 条内容的 project_id 为空"
         ));
     }
 

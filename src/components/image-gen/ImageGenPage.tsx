@@ -19,8 +19,15 @@ import {
   ExternalLink,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useImageGen } from "./useImageGen";
 import type { GeneratedImage } from "./types";
+import { useProjects } from "@/hooks/useProjects";
+import {
+  getStoredResourceProjectId,
+  onResourceProjectChange,
+  setStoredResourceProjectId,
+} from "@/lib/resourceProjectSelection";
 import type { Page } from "@/types/page";
 
 interface ImageGenPageProps {
@@ -289,6 +296,25 @@ const Select = styled.select`
   &:focus {
     outline: none;
     border-color: hsl(var(--primary));
+  }
+`;
+
+const FullButton = styled.button<{ $disabled?: boolean }>`
+  width: 100%;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-size: 13px;
+  cursor: ${({ $disabled }) => ($disabled ? "not-allowed" : "pointer")};
+  opacity: ${({ $disabled }) => ($disabled ? 0.65 : 1)};
+
+  &:hover {
+    border-color: ${({ $disabled }) =>
+      $disabled ? "hsl(var(--border))" : "hsl(var(--primary) / 0.4)"};
+    background: ${({ $disabled }) =>
+      $disabled ? "hsl(var(--background))" : "hsl(var(--accent) / 0.4)"};
   }
 `;
 
@@ -624,6 +650,52 @@ const GenerateButton = styled.button<{ $disabled: boolean }>`
   justify-content: center;
 `;
 
+const PromptHistoryDock = styled.div`
+  width: 78%;
+  max-width: 860px;
+  min-width: 520px;
+  margin: 8px auto 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+
+  @media (max-width: 1100px) {
+    width: 90%;
+    min-width: 0;
+  }
+`;
+
+const PromptHistoryLabel = styled.div`
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+`;
+
+const PromptHistoryChip = styled.button<{ $active: boolean }>`
+  flex: 1;
+  max-width: 100%;
+  border: 1px solid
+    ${({ $active }) => ($active ? "hsl(var(--primary))" : "hsl(var(--border))")};
+  border-radius: 999px;
+  background: ${({ $active }) =>
+    $active ? "hsl(var(--primary) / 0.14)" : "hsl(var(--muted) / 0.35)"};
+  color: ${({ $active }) =>
+    $active ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))"};
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+
+  &:hover {
+    border-color: hsl(var(--primary));
+    color: hsl(var(--primary));
+  }
+`;
+
 const Status = styled.div`
   margin-top: 8px;
   font-size: 12px;
@@ -752,10 +824,14 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
     selectedImageId,
     setSelectedImageId,
     generating,
+    savingToResource,
     generateImage,
+    backfillImagesToResource,
     deleteImage,
     newImage,
   } = useImageGen();
+
+  const { projects, defaultProject, loading: projectsLoading } = useProjects();
 
   const [prompt, setPrompt] = useState("");
   const [resolutionPreset, setResolutionPreset] =
@@ -768,8 +844,19 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
     [],
   );
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+  const [targetProjectId, setTargetProjectId] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const availableProjects = useMemo(
+    () => projects.filter((project) => !project.isArchived),
+    [projects],
+  );
+
+  const selectedTargetProject = useMemo(
+    () => availableProjects.find((project) => project.id === targetProjectId),
+    [availableProjects, targetProjectId],
+  );
 
   const supportedSizes = useMemo(() => {
     return selectedModel?.supportedSizes || FALLBACK_SUPPORTED_SIZES;
@@ -785,12 +872,72 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
     }
   }, [resolvedSize, selectedSize, setSelectedSize]);
 
+  useEffect(() => {
+    if (projectsLoading) {
+      return;
+    }
+
+    setTargetProjectId((current) => {
+      if (current && availableProjects.some((project) => project.id === current)) {
+        return current;
+      }
+
+      const storedProjectId = getStoredResourceProjectId({ includeLegacy: true });
+      if (
+        storedProjectId &&
+        availableProjects.some((project) => project.id === storedProjectId)
+      ) {
+        return storedProjectId;
+      }
+
+      const preferredProject =
+        (defaultProject && !defaultProject.isArchived ? defaultProject : null) ??
+        availableProjects[0];
+
+      return preferredProject?.id || "";
+    });
+  }, [projectsLoading, availableProjects, defaultProject]);
+
+  useEffect(() => {
+    setStoredResourceProjectId(targetProjectId, {
+      source: "image-gen-target",
+      syncLegacy: true,
+      emitEvent: true,
+    });
+  }, [targetProjectId]);
+
+  useEffect(() => {
+    return onResourceProjectChange((detail) => {
+      if (detail.source !== "resources") {
+        return;
+      }
+
+      const nextProjectId = detail.projectId;
+      if (!nextProjectId || nextProjectId === targetProjectId) {
+        return;
+      }
+
+      if (!availableProjects.some((project) => project.id === nextProjectId)) {
+        return;
+      }
+
+      setTargetProjectId(nextProjectId);
+    });
+  }, [availableProjects, targetProjectId]);
+
   const canGenerate =
     !!prompt.trim() && !!selectedProvider && !!selectedModelId && !generating;
 
   const selectedBatchImages = useMemo(() => {
     return resolveBatchImages(images, selectedImageId);
   }, [images, selectedImageId]);
+
+  const selectedPromptHistory = useMemo(() => {
+    return selectedImage?.prompt.trim() || "";
+  }, [selectedImage]);
+
+  const isFalProvider =
+    selectedProvider?.id === "fal" || selectedProvider?.type === "fal";
 
   const shouldShowBatchGrid = selectedBatchImages.length > 1;
 
@@ -846,10 +993,34 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
         imageCount,
         referenceImages: referenceImages.map((item) => item.url),
         size: resolvedSize,
+        targetProjectId: targetProjectId || undefined,
       });
       setPrompt("");
     } catch (error) {
       console.error("图片生成失败:", error);
+    }
+  };
+
+  const handleBackfillToResource = async () => {
+    if (!targetProjectId) {
+      toast.error("请先选择目标资源库");
+      return;
+    }
+
+    try {
+      const result = await backfillImagesToResource(targetProjectId);
+      if (result.failed > 0) {
+        toast.error(`补录完成：成功 ${result.saved}，失败 ${result.failed}`);
+      } else {
+        toast.success(`补录完成：新增 ${result.saved}，跳过 ${result.skipped}`);
+      }
+
+      if (result.errors.length > 0) {
+        console.warn("[ImageGen] 历史补录失败详情:", result.errors);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(`补录失败: ${message}`);
     }
   };
 
@@ -920,6 +1091,37 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
           </Section>
 
           <Section>
+            <SectionTitle>目标资源库</SectionTitle>
+            <Select
+              value={targetProjectId}
+              onChange={(event) => setTargetProjectId(event.target.value)}
+              disabled={projectsLoading}
+            >
+              <option value="">不自动入库</option>
+              {availableProjects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </Select>
+            <Hint>
+              {targetProjectId
+                ? `生成成功后会自动写入「${selectedTargetProject?.name || "已选项目"}」资源库`
+                : "未启用自动入库，生成结果仅保存在当前页面历史"}
+            </Hint>
+            <FullButton
+              type="button"
+              onClick={() => {
+                void handleBackfillToResource();
+              }}
+              $disabled={savingToResource || !targetProjectId || images.length === 0}
+              disabled={savingToResource || !targetProjectId || images.length === 0}
+            >
+              {savingToResource ? "补录中..." : "补录历史到资源库"}
+            </FullButton>
+          </Section>
+
+          <Section>
             <SectionTitle>参考图</SectionTitle>
             {referenceImages.length > 0 ? (
               <Thumbs>
@@ -971,6 +1173,11 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
               hidden
               onChange={handleUploadChange}
             />
+            <Hint>
+              {isFalProvider
+                ? "Fal 上传参考图会启用图片编辑参数；Nano Banana 会优先尝试 /edit 接口。"
+                : "上传参考图会随请求发送给模型，是否执行编辑由模型能力决定。"}
+            </Hint>
           </Section>
 
           <Section>
@@ -1045,6 +1252,18 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
           </Section>
 
           <Status>实际输出尺寸：{resolvedSize}</Status>
+          {selectedImage?.status === "complete" && targetProjectId && (
+            <Status>
+              {selectedImage.resourceMaterialId &&
+              selectedImage.resourceProjectId === targetProjectId
+                ? "当前图片已同步到资源库"
+                : selectedImage.resourceSaveError
+                  ? `当前图片入库失败：${selectedImage.resourceSaveError}`
+                  : savingToResource
+                    ? "当前图片正在同步到资源库..."
+                    : "当前图片尚未同步到资源库"}
+            </Status>
+          )}
         </ControlPanel>
 
         <Workspace>
@@ -1170,6 +1389,18 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
               )}
             </GenerateButton>
           </PromptDock>
+          {selectedPromptHistory && (
+            <PromptHistoryDock>
+              <PromptHistoryLabel>当前图片提示词</PromptHistoryLabel>
+              <PromptHistoryChip
+                $active={selectedPromptHistory === prompt.trim()}
+                title={selectedPromptHistory}
+                onClick={() => setPrompt(selectedPromptHistory)}
+              >
+                {selectedPromptHistory}
+              </PromptHistoryChip>
+            </PromptHistoryDock>
+          )}
 
           {!selectedProvider && (
             <Status>
@@ -1195,6 +1426,7 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
                 $active={image.id === selectedImageId}
                 role="button"
                 tabIndex={0}
+                title={image.prompt || "历史图片"}
                 onClick={() => setSelectedImageId(image.id)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {

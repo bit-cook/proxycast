@@ -85,7 +85,7 @@ pub async fn get_embedding(
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
 
     let model = model.unwrap_or("text-embedding-3-small");
 
@@ -100,11 +100,11 @@ pub async fn get_embedding(
 
     let resp = client
         .post(url)
-        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Authorization", format!("Bearer {api_key}"))
         .json(&req)
         .send()
         .await
-        .map_err(|e| format!("请求失败: {}", e))?;
+        .map_err(|e| format!("请求失败: {e}"))?;
 
     tracing::debug!("[嵌入服务] 响应状态: {}", resp.status());
 
@@ -113,22 +113,22 @@ pub async fn get_embedding(
         let error_text = resp
             .text()
             .await
-            .unwrap_or_else(|e| format!("读取错误响应失败: {}", e));
+            .unwrap_or_else(|e| format!("读取错误响应失败: {e}"));
 
         tracing::error!("[嵌入服务] API 错误: {} - {}", status, error_text);
 
-        return Err(format!("API 错误: {} - {}", status, error_text));
+        return Err(format!("API 错误: {status} - {error_text}"));
     }
 
     let body = resp
         .text()
         .await
-        .map_err(|e| format!("读取响应体失败: {}", e))?;
+        .map_err(|e| format!("读取响应体失败: {e}"))?;
 
     tracing::debug!("[嵌入服务] 响应体长度: {} bytes", body.len());
 
     let response: EmbeddingResponse =
-        serde_json::from_str(&body).map_err(|e| format!("JSON 解析失败: {}", e))?;
+        serde_json::from_str(&body).map_err(|e| format!("JSON 解析失败: {e}"))?;
 
     if response.data.is_empty() {
         return Err("API 返回数据为空".to_string());
@@ -182,7 +182,7 @@ pub async fn get_embeddings_batch(
     let mut errors = Vec::new();
 
     for task in tasks {
-        match task.await.map_err(|e| format!("任务失败: {}", e))? {
+        match task.await.map_err(|e| format!("任务失败: {e}"))? {
             Ok(embedding) => results.push(embedding),
             Err(e) => {
                 tracing::warn!("[嵌入服务] 批量中单个失败: {}", e);
@@ -221,7 +221,7 @@ mod tests {
                 println!("向量前 5 维: {:?}", &embedding[..5]);
             }
             Err(e) => {
-                eprintln!("测试失败: {}", e);
+                eprintln!("测试失败: {e}");
             }
         }
     }

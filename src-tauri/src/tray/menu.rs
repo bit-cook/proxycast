@@ -86,7 +86,7 @@ pub fn build_tray_menu<R: Runtime>(
     let start_server = MenuItem::with_id(
         app,
         menu_ids::START_SERVER,
-        "▶️ 启动服务器",
+        "▶️ 开启团队共享",
         !state.server_running,
         None::<&str>,
     )
@@ -96,7 +96,7 @@ pub fn build_tray_menu<R: Runtime>(
     let stop_server = MenuItem::with_id(
         app,
         menu_ids::STOP_SERVER,
-        "⏹️ 停止服务器",
+        "⏹️ 关闭团队共享",
         state.server_running,
         None::<&str>,
     )

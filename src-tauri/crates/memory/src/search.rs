@@ -62,7 +62,7 @@ pub fn semantic_search(
         AND archived = 0";
 
     let sql = if let Some(_cat) = category {
-        format!("{} AND category = ?", sql)
+        format!("{sql} AND category = ?")
     } else {
         sql.to_string()
     };
@@ -79,7 +79,7 @@ pub fn semantic_search(
     };
 
     while let Ok(Some(row)) = rows.next() {
-        let memory = parse_memory_from_row(&row)?;
+        let memory = parse_memory_from_row(row)?;
         memories.push(memory);
     }
 
@@ -131,14 +131,14 @@ fn parse_memory_from_row(
     let archived: i64 = row.get(16)?;
 
     // Parse JSON fields
-    let memory_type: crate::models::MemoryType = serde_json::from_str(&memory_type_json)
-        .map_err(|e| format!("Invalid memory type: {}", e))?;
+    let memory_type: crate::models::MemoryType =
+        serde_json::from_str(&memory_type_json).map_err(|e| format!("Invalid memory type: {e}"))?;
     let category: crate::models::MemoryCategory =
-        serde_json::from_str(&category_json).map_err(|e| format!("Invalid category: {}", e))?;
+        serde_json::from_str(&category_json).map_err(|e| format!("Invalid category: {e}"))?;
     let tags: Vec<String> =
-        serde_json::from_str(&tags_json).map_err(|e| format!("Invalid tags: {}", e))?;
+        serde_json::from_str(&tags_json).map_err(|e| format!("Invalid tags: {e}"))?;
     let source: crate::models::MemorySource =
-        serde_json::from_str(&source_json).map_err(|e| format!("Invalid source: {}", e))?;
+        serde_json::from_str(&source_json).map_err(|e| format!("Invalid source: {e}"))?;
 
     // Parse embedding from BLOB (f32 array)
     let embedding = if let Some(blob) = embedding_blob {

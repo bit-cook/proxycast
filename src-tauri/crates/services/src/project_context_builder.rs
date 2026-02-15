@@ -151,7 +151,7 @@ impl ProjectContextBuilder {
                     created_at, updated_at, icon, color, is_favorite, is_archived, tags_json
              FROM workspaces WHERE id = ?",
             rusqlite::params![project_id],
-            |row| Self::row_to_workspace(row),
+            Self::row_to_workspace,
         );
 
         match result {
@@ -273,7 +273,7 @@ impl ProjectContextBuilder {
 
         // 添加描述
         if let Some(ref desc) = persona.description {
-            lines.push(format!("描述: {}", desc));
+            lines.push(format!("描述: {desc}"));
         }
 
         // 添加写作风格
@@ -281,12 +281,12 @@ impl ProjectContextBuilder {
 
         // 添加语气
         if let Some(ref tone) = persona.tone {
-            lines.push(format!("语气: {}", tone));
+            lines.push(format!("语气: {tone}"));
         }
 
         // 添加目标读者
         if let Some(ref audience) = persona.target_audience {
-            lines.push(format!("目标读者: {}", audience));
+            lines.push(format!("目标读者: {audience}"));
         }
 
         // 添加禁用词
@@ -339,7 +339,7 @@ impl ProjectContextBuilder {
 
             // 添加描述
             if let Some(ref desc) = material.description {
-                lines.push(format!("描述: {}", desc));
+                lines.push(format!("描述: {desc}"));
             }
 
             // 添加标签
@@ -350,7 +350,7 @@ impl ProjectContextBuilder {
             // 添加内容摘要（仅文本类型）
             if let Some(ref content) = material.content {
                 let summary = Self::truncate_content(content, 500);
-                lines.push(format!("内容:\n{}", summary));
+                lines.push(format!("内容:\n{summary}"));
             }
 
             lines.push(String::new());
@@ -364,6 +364,8 @@ impl ProjectContextBuilder {
         match material_type {
             "document" => "文档",
             "image" => "图片",
+            "audio" => "语音",
+            "video" => "视频",
             "text" => "文本",
             "data" => "数据",
             "link" => "链接",
@@ -377,7 +379,7 @@ impl ProjectContextBuilder {
             content.to_string()
         } else {
             let truncated: String = content.chars().take(max_len).collect();
-            format!("{}...", truncated)
+            format!("{truncated}...")
         }
     }
 
@@ -397,17 +399,17 @@ impl ProjectContextBuilder {
 
         // 添加标题风格
         if let Some(ref title_style) = template.title_style {
-            lines.push(format!("**标题风格**: {}", title_style));
+            lines.push(format!("**标题风格**: {title_style}"));
         }
 
         // 添加段落风格
         if let Some(ref paragraph_style) = template.paragraph_style {
-            lines.push(format!("**段落风格**: {}", paragraph_style));
+            lines.push(format!("**段落风格**: {paragraph_style}"));
         }
 
         // 添加结尾风格
         if let Some(ref ending_style) = template.ending_style {
-            lines.push(format!("**结尾风格**: {}", ending_style));
+            lines.push(format!("**结尾风格**: {ending_style}"));
         }
 
         // 添加 Emoji 使用规则
@@ -417,16 +419,16 @@ impl ProjectContextBuilder {
             "minimal" => "少量或不使用 emoji 表情，保持简洁",
             _ => "适度使用 emoji 表情",
         };
-        lines.push(format!("**Emoji 使用**: {}", emoji_desc));
+        lines.push(format!("**Emoji 使用**: {emoji_desc}"));
 
         // 添加话题标签规则
         if let Some(ref hashtag_rules) = template.hashtag_rules {
-            lines.push(format!("**话题标签**: {}", hashtag_rules));
+            lines.push(format!("**话题标签**: {hashtag_rules}"));
         }
 
         // 添加图片规则
         if let Some(ref image_rules) = template.image_rules {
-            lines.push(format!("**配图建议**: {}", image_rules));
+            lines.push(format!("**配图建议**: {image_rules}"));
         }
 
         lines.join("\n")
@@ -726,6 +728,8 @@ mod tests {
             "文档"
         );
         assert_eq!(ProjectContextBuilder::format_material_type("image"), "图片");
+        assert_eq!(ProjectContextBuilder::format_material_type("audio"), "语音");
+        assert_eq!(ProjectContextBuilder::format_material_type("video"), "视频");
         assert_eq!(ProjectContextBuilder::format_material_type("text"), "文本");
         assert_eq!(ProjectContextBuilder::format_material_type("data"), "数据");
         assert_eq!(ProjectContextBuilder::format_material_type("link"), "链接");

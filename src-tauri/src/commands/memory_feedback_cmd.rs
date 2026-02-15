@@ -29,7 +29,7 @@ pub async fn unified_memory_feedback(
     };
 
     let conn = db.lock().unwrap();
-    record_feedback(&*conn, &feedback)?;
+    record_feedback(&conn, &feedback)?;
 
     Ok(())
 }
@@ -40,7 +40,7 @@ pub async fn get_memory_feedback_stats(
     session_id: String,
 ) -> Result<FeedbackStats, String> {
     let conn = db.lock().unwrap();
-    let feedbacks = get_recent_feedbacks(&*conn, &session_id, 50)?;
+    let feedbacks = get_recent_feedbacks(&conn, &session_id, 50)?;
 
     let approval_rate = calculate_approval_rate(&feedbacks);
     let total = feedbacks.len();

@@ -22,6 +22,10 @@ export interface GeneratedImage {
   createdAt: number;
   status: "pending" | "generating" | "complete" | "error";
   error?: string;
+  resourceMaterialId?: string;
+  resourceProjectId?: string;
+  resourceSavedAt?: number;
+  resourceSaveError?: string;
 }
 
 /** 图片生成请求 */

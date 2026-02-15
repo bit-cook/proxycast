@@ -37,7 +37,7 @@ pub struct UnifiedMemory {
 }
 
 /// 记忆类型
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryType {
     /// 从对话历史自动提取
@@ -47,7 +47,7 @@ pub enum MemoryType {
 }
 
 /// 记忆分类（参考 LobeHub 的 5 层架构）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MemoryCategory {
     /// 身份信息：关于你是谁的稳定信息

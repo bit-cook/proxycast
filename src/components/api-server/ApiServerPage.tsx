@@ -61,6 +61,21 @@ interface ApiServerPageProps {
   hideHeader?: boolean;
 }
 
+type GatewayMode = "local" | "lan";
+
+const getGatewayModeByHost = (host?: string | null): GatewayMode => {
+  const normalized = (host || "").trim().toLowerCase();
+  if (!normalized) return "local";
+  if (
+    normalized === "127.0.0.1" ||
+    normalized === "localhost" ||
+    normalized === "::1"
+  ) {
+    return "local";
+  }
+  return "lan";
+};
+
 // Provider 到 API 类型的映射
 type ApiType = "openai" | "anthropic" | "gemini";
 const getProviderApiType = (provider: string): ApiType => {
@@ -429,11 +444,11 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
       await reloadCredentials();
       await startServer();
       await fetchStatus();
-      setMessage({ type: "success", text: "服务已启动" });
+      setMessage({ type: "success", text: "共享网关已开启" });
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);
       setError(errMsg);
-      setMessage({ type: "error", text: `启动失败: ${errMsg}` });
+      setMessage({ type: "error", text: `开启失败: ${errMsg}` });
     }
     setLoading(false);
   };
@@ -443,17 +458,17 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
     try {
       await stopServer();
       await fetchStatus();
-      setMessage({ type: "success", text: "服务已停止" });
+      setMessage({ type: "success", text: "共享网关已关闭" });
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);
       setError(errMsg);
-      setMessage({ type: "error", text: `停止失败: ${errMsg}` });
+      setMessage({ type: "error", text: `关闭失败: ${errMsg}` });
     }
     setLoading(false);
   };
 
   // 自动保存监听地址
-  const handleHostChange = async (newHost: string) => {
+  const handleHostChange = async (newHost: string): Promise<boolean> => {
     setEditHost(newHost);
 
     // 如果配置已加载，自动保存
@@ -469,12 +484,15 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
         await saveConfig(newConfig);
         setConfig(newConfig);
         console.log("[DEBUG] handleHostChange - 自动保存地址:", newHost);
+        return true;
       } catch (e: unknown) {
         const errMsg = e instanceof Error ? e.message : String(e);
         console.error("[DEBUG] handleHostChange - 保存失败:", errMsg);
         setMessage({ type: "error", text: `保存地址失败: ${errMsg}` });
+        return false;
       }
     }
+    return true;
   };
 
   const handleSaveServerConfig = async () => {
@@ -508,7 +526,7 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
       console.log("[DEBUG] handleSaveServerConfig - saveConfig completed");
 
       await fetchConfig();
-      setMessage({ type: "success", text: "服务器配置已保存" });
+      setMessage({ type: "success", text: "网关配置已保存" });
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);
       console.error("[DEBUG] handleSaveServerConfig - error:", errMsg);
@@ -877,6 +895,25 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
     return Array.from(options);
   }, [networkInfo, editHost, status]);
 
+  const gatewayMode = useMemo(
+    () =>
+      getGatewayModeByHost(
+        status?.running ? status.host : editHost || "127.0.0.1",
+      ),
+    [status, editHost],
+  );
+
+  const handleGatewayModeChange = async (mode: GatewayMode) => {
+    const nextHost = mode === "local" ? "127.0.0.1" : "0.0.0.0";
+    if (nextHost === editHost) return;
+    const saved = await handleHostChange(nextHost);
+    if (!saved) return;
+    setMessage({
+      type: "success",
+      text: mode === "local" ? "已切换为仅本机模式" : "已切换为内网共享模式",
+    });
+  };
+
   // 动态生成测试端点
   const testEndpoints = useMemo(() => {
     if (!testModel) return [];
@@ -1048,7 +1085,7 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <div className="flex items-end gap-3">
-              <h2 className="text-2xl font-bold">API Server</h2>
+              <h2 className="text-2xl font-bold">团队共享网关（内网）</h2>
               <div className="flex items-center gap-2 text-sm text-muted-foreground pb-0.5">
                 <span className="flex items-center gap-1.5">
                   <span
@@ -1063,7 +1100,7 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
               </div>
             </div>
             <p className="text-muted-foreground text-sm mt-1">
-              本地代理服务器，支持 OpenAI/Anthropic 格式
+              Agent 默认直连 Provider；需要给内网同事接入时再开启共享网关
             </p>
           </div>
         </div>
@@ -1089,8 +1126,8 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
       {/* Tabs */}
       <div className="flex gap-2 border-b overflow-x-auto">
         {[
-          { id: "server" as TabId, name: "服务器控制" },
-          { id: "logs" as TabId, name: "系统日志" },
+          { id: "server" as TabId, name: "网关控制" },
+          { id: "logs" as TabId, name: "网关日志" },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -1111,9 +1148,9 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
         <div className="space-y-4">
           {/* Server Control - 紧凑版 */}
           <div className="rounded-lg border bg-card p-4">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-4">
               <button
-                className={`rounded-lg px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50 ${
+                className={`shrink-0 whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-medium leading-none text-white disabled:opacity-50 ${
                   status?.running
                     ? "bg-red-600 hover:bg-red-700"
                     : "bg-green-600 hover:bg-green-700"
@@ -1124,12 +1161,43 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
                 {loading
                   ? "处理中..."
                   : status?.running
-                    ? "停止服务"
-                    : "启动服务"}
+                    ? "关闭共享"
+                    : "开启共享"}
               </button>
               <div className="flex items-center gap-3 text-sm flex-wrap">
                 <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">监听地址:</span>
+                  <span className="text-muted-foreground">共享模式:</span>
+                  <div className="inline-flex rounded-md border border-input p-0.5">
+                    <button
+                      onClick={() => {
+                        void handleGatewayModeChange("local");
+                      }}
+                      disabled={status?.running}
+                      className={`whitespace-nowrap rounded px-2 py-1 text-xs transition-colors ${
+                        gatewayMode === "local"
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:text-foreground"
+                      } disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      仅本机
+                    </button>
+                    <button
+                      onClick={() => {
+                        void handleGatewayModeChange("lan");
+                      }}
+                      disabled={status?.running}
+                      className={`whitespace-nowrap rounded px-2 py-1 text-xs transition-colors ${
+                        gatewayMode === "lan"
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:text-foreground"
+                      } disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      内网共享
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">共享地址:</span>
                   <Select.Root
                     value={
                       status?.running ? status.host : editHost || "127.0.0.1"
@@ -1211,24 +1279,35 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
                   onClick={handleSaveServerConfig}
                   disabled={loading || status?.running}
                   className="rounded-md border border-input bg-background px-4 py-1.5 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                  title={status?.running ? "请先停止服务再修改配置" : ""}
+                  title={status?.running ? "请先关闭共享再修改配置" : ""}
                 >
                   保存
                 </button>
               </div>
             </div>
+            {!status?.running && (
+              <div className="mt-3 flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                <span>ℹ️</span>
+                <span>
+                  仅本机模式仅允许当前设备访问；内网共享模式会对同网段设备开放
+                </span>
+              </div>
+            )}
             {status?.running && (
               <div className="mt-3 flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
                 <span>ℹ️</span>
-                <span>修改配置需要先停止服务</span>
+                <span>
+                  当前处于{gatewayMode === "local" ? "仅本机" : "内网共享"}
+                  模式。修改配置需要先关闭共享
+                </span>
               </div>
             )}
             {hostMismatch && (
               <div className="mt-3 flex items-center gap-2 rounded-md bg-blue-50 dark:bg-blue-950/20 px-3 py-2 text-xs text-blue-700 dark:text-blue-400">
                 <span>ℹ️</span>
                 <span>
-                  配置的地址 {config?.server.host} 不可用，已自动切换到{" "}
-                  {status?.host}。 停止服务后可更新配置。
+                  配置的共享地址 {config?.server.host} 不可用，已自动切换到{" "}
+                  {status?.host}。关闭共享后可更新配置。
                 </span>
               </div>
             )}
@@ -1403,7 +1482,7 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
           {/* API Testing */}
           <div className="rounded-lg border bg-card p-6">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-semibold">API 测试</h3>
+              <h3 className="font-semibold">网关 API 测试</h3>
               <button
                 onClick={runAllTests}
                 disabled={!status?.running || testEndpoints.length === 0}

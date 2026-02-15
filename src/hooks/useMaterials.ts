@@ -68,8 +68,15 @@ export function useMaterials(projectId: string | null): UseMaterialsReturn {
       setError(null);
 
       const [list, total] = await Promise.all([
-        invoke<Material[]>("list_materials", { projectId, filter: null }),
-        invoke<number>("get_material_count", { projectId }),
+        invoke<Material[]>("list_materials", {
+          projectId,
+          project_id: projectId,
+          filter: null,
+        }),
+        invoke<number>("get_material_count", {
+          projectId,
+          project_id: projectId,
+        }),
       ]);
 
       setMaterials(list);

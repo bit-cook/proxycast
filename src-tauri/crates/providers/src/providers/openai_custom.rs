@@ -47,8 +47,7 @@ impl OpenAICustomProvider {
             && url.contains("/api/anthropic")
         {
             eprintln!(
-                "[OPENAI_CUSTOM] 提示: URL '{}' 返回 {}，疑似协议不匹配。若上游是 Anthropic 兼容网关，请改用 /v1/messages + x-api-key。",
-                url, status
+                "[OPENAI_CUSTOM] 提示: URL '{url}' 返回 {status}，疑似协议不匹配。若上游是 Anthropic 兼容网关，请改用 /v1/messages + x-api-key。"
             );
         }
     }

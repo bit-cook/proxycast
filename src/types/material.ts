@@ -17,6 +17,8 @@
 export type MaterialType =
   | "document"
   | "image"
+  | "audio"
+  | "video"
   | "text"
   | "data"
   | "link"
@@ -30,6 +32,8 @@ export type MaterialType =
 export const MaterialTypeLabels: Record<MaterialType, string> = {
   document: "文档",
   image: "图片",
+  audio: "语音",
+  video: "视频",
   text: "文本",
   data: "数据",
   link: "链接",

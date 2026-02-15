@@ -249,7 +249,7 @@ impl SwitchService {
         // Step 2: 执行文件 I/O（在后台线程，不持有锁）
         if ctx.app_type_enum != AppType::ProxyCast {
             let current_for_backfill = ctx.current_provider.clone();
-            let app_type_for_sync = ctx.app_type_enum.clone();
+            let app_type_for_sync = ctx.app_type_enum;
             let target_id = id.to_string();
 
             // 使用 spawn_blocking 将文件 I/O 移到后台线程
@@ -293,7 +293,7 @@ impl SwitchService {
             // Step 2b: 同步新配置（在后台线程）
             let target_for_sync = ctx.target_provider.clone();
             let current_for_restore = ctx.current_provider.clone();
-            let app_type_for_sync = ctx.app_type_enum.clone();
+            let app_type_for_sync = ctx.app_type_enum;
 
             tokio::task::spawn_blocking(move || {
                 info!("验证目标配置可同步性");
@@ -333,7 +333,7 @@ impl SwitchService {
                     if let Some(ref current) = ctx.current_provider {
                         warn!("数据库更新失败，尝试恢复原配置文件");
                         let current_clone = current.clone();
-                        let app_type_clone = ctx.app_type_enum.clone();
+                        let app_type_clone = ctx.app_type_enum;
                         // 在后台线程恢复
                         let _ = tokio::task::spawn_blocking(move || {
                             if let Err(restore_error) =

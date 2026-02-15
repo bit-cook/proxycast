@@ -4,9 +4,11 @@
  * @module components/image-gen/useImageGen
  */
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useApiKeyProvider } from "@/hooks/useApiKeyProvider";
 import { apiKeyProviderApi } from "@/lib/api/apiKeyProvider";
+import { setStoredResourceProjectId } from "@/lib/resourceProjectSelection";
 import type {
   GeneratedImage,
   ImageGenRequest,
@@ -21,6 +23,7 @@ interface GenerateImageOptions {
   imageCount?: number;
   referenceImages?: string[];
   size?: string;
+  targetProjectId?: string;
 }
 
 interface EndpointAttemptResult {
@@ -33,11 +36,64 @@ interface EndpointRequestOptions {
   timeoutMs?: number;
 }
 
+interface ImportMaterialFromUrlRequest {
+  projectId: string;
+  name: string;
+  type: "image";
+  url: string;
+  tags?: string[];
+  description?: string;
+}
+
+interface BackfillImagesResult {
+  total: number;
+  saved: number;
+  failed: number;
+  skipped: number;
+  errors: string[];
+}
+
+interface SaveImageToResourceResult {
+  saved: boolean;
+  skipped: boolean;
+  error?: string;
+}
+
 const IMAGE_REQUEST_TIMEOUT_MS = 180_000;
 const FAL_DEFAULT_API_HOST = "https://fal.run";
 const FAL_QUEUE_API_HOST = "https://queue.fal.run";
 const FAL_QUEUE_POLL_INTERVAL_MS = 1500;
 const FAL_QUEUE_TIMEOUT_MS = 180_000;
+const IMAGE_GEN_MATERIAL_TAG = "image-gen";
+const IMAGE_MATERIAL_NAME_MAX_LENGTH = 48;
+
+function sanitizeMaterialName(value: string): string {
+  return value
+    .replace(/[\\/:*?"<>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatDateForMaterialName(timestamp: number): string {
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  const hour = `${date.getHours()}`.padStart(2, "0");
+  const minute = `${date.getMinutes()}`.padStart(2, "0");
+  const second = `${date.getSeconds()}`.padStart(2, "0");
+  return `${year}${month}${day}-${hour}${minute}${second}`;
+}
+
+function buildGeneratedImageMaterialName(image: GeneratedImage): string {
+  const promptHead = sanitizeMaterialName(image.prompt || "").slice(
+    0,
+    IMAGE_MATERIAL_NAME_MAX_LENGTH,
+  );
+  const prefix = promptHead || "生成图片";
+  const timestamp = formatDateForMaterialName(image.createdAt);
+  return `${prefix}-${timestamp}.png`;
+}
 
 function buildProviderEndpoint(apiHost: string, endpointPath: string): string {
   const trimmedHost = (apiHost || "").trim().replace(/\/+$/, "");
@@ -1496,6 +1552,8 @@ export function useImageGen() {
   const [images, setImages] = useState<GeneratedImage[]>([]);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [resourceSavingCount, setResourceSavingCount] = useState(0);
+  const imagesRef = useRef<GeneratedImage[]>([]);
 
   // 过滤出支持图片生成、启用且有 API Key 的 Provider
   const availableProviders = useMemo(() => {
@@ -1542,6 +1600,10 @@ export function useImageGen() {
     }
   }, []);
 
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
   // 自动选择第一个可用的 Provider
   useEffect(() => {
     if (!selectedProviderId && availableProviders.length > 0) {
@@ -1563,6 +1625,91 @@ export function useImageGen() {
   const saveHistory = useCallback((newImages: GeneratedImage[]) => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(newImages.slice(0, 50)));
   }, []);
+
+  const savingToResource = resourceSavingCount > 0;
+
+  const saveImageToResource = useCallback(
+    async (
+      image: GeneratedImage,
+      targetProjectId: string,
+    ): Promise<SaveImageToResourceResult> => {
+      const normalizedTargetProjectId = targetProjectId.trim();
+      if (!normalizedTargetProjectId) {
+        return { saved: false, skipped: true, error: "未指定目标资源库" };
+      }
+
+      if (image.status !== "complete" || !image.url) {
+        return { saved: false, skipped: true };
+      }
+
+      const existing = imagesRef.current.find((item) => item.id === image.id);
+      if (
+        existing?.resourceMaterialId &&
+        existing.resourceProjectId === normalizedTargetProjectId
+      ) {
+        return { saved: false, skipped: true };
+      }
+
+      const request: ImportMaterialFromUrlRequest = {
+        projectId: normalizedTargetProjectId,
+        name: buildGeneratedImageMaterialName(image),
+        type: "image",
+        url: image.url,
+        tags: [IMAGE_GEN_MATERIAL_TAG],
+        description: `图片生成自动入库（模型：${image.model}，尺寸：${image.size}）`,
+      };
+
+      setResourceSavingCount((count) => count + 1);
+      try {
+        const savedMaterial = await invoke<{ id: string }>(
+          "import_material_from_url",
+          { req: request },
+        );
+
+        const savedAt = Date.now();
+        setImages((prev) => {
+          const updated = prev.map((item) =>
+            item.id === image.id
+              ? {
+                  ...item,
+                  resourceMaterialId: savedMaterial.id,
+                  resourceProjectId: normalizedTargetProjectId,
+                  resourceSavedAt: savedAt,
+                  resourceSaveError: undefined,
+                }
+              : item,
+          );
+          saveHistory(updated);
+          return updated;
+        });
+        setStoredResourceProjectId(normalizedTargetProjectId, {
+          source: "image-gen-save",
+          syncLegacy: true,
+          emitEvent: true,
+        });
+
+        return { saved: true, skipped: false };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+
+        setImages((prev) => {
+          const updated = prev.map((item) =>
+            item.id === image.id
+              ? { ...item, resourceSaveError: errorMessage }
+              : item,
+          );
+          saveHistory(updated);
+          return updated;
+        });
+
+        return { saved: false, skipped: false, error: errorMessage };
+      } finally {
+        setResourceSavingCount((count) => Math.max(0, count - 1));
+      }
+    },
+    [saveHistory],
+  );
 
   // 获取当前选中的 Provider
   const selectedProvider = useMemo(() => {
@@ -1621,6 +1768,7 @@ export function useImageGen() {
       );
       const requestSize = options?.size || selectedSize;
       const referenceImages = options?.referenceImages || [];
+      const targetProjectId = options?.targetProjectId?.trim() || "";
 
       const baseId = Date.now();
       const generationItems: GeneratedImage[] = Array.from(
@@ -1676,15 +1824,31 @@ export function useImageGen() {
                 requestSize,
               );
 
+              const completedImage: GeneratedImage = {
+                ...item,
+                url: imageUrl,
+                status: "complete",
+                error: undefined,
+              };
+
               setImages((prev) => {
                 const updated = prev.map((img) =>
                   img.id === item.id
-                    ? { ...img, url: imageUrl, status: "complete" as const }
+                    ? {
+                        ...img,
+                        url: imageUrl,
+                        status: "complete" as const,
+                        error: undefined,
+                      }
                     : img,
                 );
                 saveHistory(updated);
                 return updated;
               });
+
+              if (targetProjectId) {
+                await saveImageToResource(completedImage, targetProjectId);
+              }
             } catch (error) {
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
@@ -1721,15 +1885,31 @@ export function useImageGen() {
                 requestSize,
               );
 
+              const completedImage: GeneratedImage = {
+                ...item,
+                url: imageUrl,
+                status: "complete",
+                error: undefined,
+              };
+
               setImages((prev) => {
                 const updated = prev.map((img) =>
                   img.id === item.id
-                    ? { ...img, url: imageUrl, status: "complete" as const }
+                    ? {
+                        ...img,
+                        url: imageUrl,
+                        status: "complete" as const,
+                        error: undefined,
+                      }
                     : img,
                 );
                 saveHistory(updated);
                 return updated;
               });
+
+              if (targetProjectId) {
+                await saveImageToResource(completedImage, targetProjectId);
+              }
             } catch (error) {
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
@@ -1826,6 +2006,23 @@ export function useImageGen() {
             throw new Error("未返回图片 URL（响应中未检测到可解析图片字段）");
           }
 
+          const completedImages: GeneratedImage[] = generationItems.flatMap(
+            (item, index) => {
+              const imageUrl = urls[index];
+              if (!imageUrl) {
+                return [];
+              }
+              return [
+                {
+                  ...item,
+                  url: imageUrl,
+                  status: "complete" as const,
+                  error: undefined,
+                },
+              ];
+            },
+          );
+
           setImages((prev) => {
             const updated = prev.map((img) => {
               const index = generationItems.findIndex(
@@ -1836,7 +2033,12 @@ export function useImageGen() {
 
               const imageUrl = urls[index];
               if (imageUrl) {
-                return { ...img, url: imageUrl, status: "complete" as const };
+                return {
+                  ...img,
+                  url: imageUrl,
+                  status: "complete" as const,
+                  error: undefined,
+                };
               }
 
               return {
@@ -1849,6 +2051,12 @@ export function useImageGen() {
             saveHistory(updated);
             return updated;
           });
+
+          if (targetProjectId) {
+            for (const image of completedImages) {
+              await saveImageToResource(image, targetProjectId);
+            }
+          }
         }
       } catch (error) {
         const errorMessage =
@@ -1869,7 +2077,70 @@ export function useImageGen() {
         setGenerating(false);
       }
     },
-    [selectedProvider, selectedModelId, selectedSize, saveHistory],
+    [
+      selectedProvider,
+      selectedModelId,
+      selectedSize,
+      saveHistory,
+      saveImageToResource,
+    ],
+  );
+
+  const backfillImagesToResource = useCallback(
+    async (targetProjectId: string): Promise<BackfillImagesResult> => {
+      const normalizedTargetProjectId = targetProjectId.trim();
+      const completedImages = imagesRef.current.filter(
+        (image) => image.status === "complete" && !!image.url,
+      );
+      const result: BackfillImagesResult = {
+        total: completedImages.length,
+        saved: 0,
+        failed: 0,
+        skipped: 0,
+        errors: [],
+      };
+
+      if (!normalizedTargetProjectId) {
+        if (completedImages.length > 0) {
+          result.failed = completedImages.length;
+          result.errors.push("未指定目标资源库");
+        }
+        return result;
+      }
+
+      for (const image of completedImages) {
+        if (
+          image.resourceMaterialId &&
+          image.resourceProjectId === normalizedTargetProjectId
+        ) {
+          result.skipped += 1;
+          continue;
+        }
+
+        const saveResult = await saveImageToResource(
+          image,
+          normalizedTargetProjectId,
+        );
+
+        if (saveResult.skipped) {
+          result.skipped += 1;
+          continue;
+        }
+
+        if (saveResult.saved) {
+          result.saved += 1;
+          continue;
+        }
+
+        result.failed += 1;
+        if (saveResult.error) {
+          result.errors.push(`${image.id}: ${saveResult.error}`);
+        }
+      }
+
+      return result;
+    },
+    [saveImageToResource],
   );
 
   // 删除图片
@@ -1941,9 +2212,11 @@ export function useImageGen() {
     selectedImageId,
     setSelectedImageId,
     generating,
+    savingToResource,
 
     // 操作
     generateImage,
+    backfillImagesToResource,
     deleteImage,
     newImage,
   };

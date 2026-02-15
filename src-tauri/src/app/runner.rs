@@ -961,6 +961,8 @@ pub fn run() {
             commands::aster_agent_cmd::aster_session_create,
             commands::aster_agent_cmd::aster_session_list,
             commands::aster_agent_cmd::aster_session_get,
+            commands::aster_agent_cmd::aster_session_rename,
+            commands::aster_agent_cmd::aster_session_delete,
             commands::aster_agent_cmd::aster_agent_confirm,
             commands::aster_agent_cmd::aster_agent_submit_elicitation_response,
             // Models config commands
@@ -1160,6 +1162,7 @@ pub fn run() {
             commands::persona_cmd::list_brand_persona_templates,
             // Material commands
             commands::material_cmd::upload_material,
+            commands::material_cmd::import_material_from_url,
             commands::material_cmd::list_materials,
             commands::material_cmd::get_material,
             commands::material_cmd::update_material,
@@ -1245,6 +1248,8 @@ pub fn run() {
             commands::unified_memory_cmd::unified_memory_analyze,
             commands::memory_search_cmd::unified_memory_semantic_search,
             commands::memory_search_cmd::unified_memory_hybrid_search,
+            commands::memory_feedback_cmd::unified_memory_feedback,
+            commands::memory_feedback_cmd::get_memory_feedback_stats,
             // Voice Test commands
             commands::voice_test_cmd::test_tts,
             commands::voice_test_cmd::get_available_voices,

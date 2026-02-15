@@ -86,9 +86,7 @@ pub fn build_extraction_prompt(context: &ExtractionContext) -> String {
 ]
 ```
 
-只提取真正重要的信息。如果没有新信息，返回空数组 []。"#,
-        existing_summary = existing_summary,
-        messages_text = messages_text
+只提取真正重要的信息。如果没有新信息，返回空数组 []。"#
     )
 }
 
@@ -138,18 +136,18 @@ pub async fn call_claude_api(api_key: &str, prompt: &str, model: &str) -> Result
         .json(&request)
         .send()
         .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .map_err(|e| format!("Request failed: {e}"))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        return Err(format!("API error {status}: {body}"));
     }
 
     let body: ClaudeResponse = response
         .json()
         .await
-        .map_err(|e| format!("JSON parse failed: {}", e))?;
+        .map_err(|e| format!("JSON parse failed: {e}"))?;
 
     Ok(body
         .content
@@ -184,7 +182,7 @@ fn parse_extraction_response(response: &str) -> Result<Vec<ExtractedMemory>, Str
     let json_end = response.rfind(']').ok_or("No JSON array end found")?;
     let json_str = &response[json_start..=json_end];
 
-    serde_json::from_str(json_str).map_err(|e| format!("JSON parse failed: {}", e))
+    serde_json::from_str(json_str).map_err(|e| format!("JSON parse failed: {e}"))
 }
 
 fn validate_memories(memories: Vec<ExtractedMemory>) -> Result<Vec<ExtractedMemory>, String> {
@@ -205,7 +203,7 @@ fn convert_to_unified_memory(extracted: ExtractedMemory, session_id: &str) -> Un
         .as_secs() as i64;
 
     UnifiedMemory {
-        id: format!("mem_{}", now),
+        id: format!("mem_{now}"),
         session_id: session_id.to_string(),
         memory_type: MemoryType::Conversation,
         category: extracted.category,

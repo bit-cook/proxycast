@@ -179,7 +179,7 @@ impl MaterialDao {
             // 按搜索关键词筛选（名称或描述）
             if let Some(ref query) = f.search_query {
                 sql.push_str(" AND (name LIKE ? OR description LIKE ?)");
-                let pattern = format!("%{}%", query);
+                let pattern = format!("%{query}%");
                 params_vec.push(Box::new(pattern.clone()));
                 params_vec.push(Box::new(pattern));
             }
@@ -188,7 +188,7 @@ impl MaterialDao {
             if let Some(ref tags) = f.tags {
                 for tag in tags {
                     sql.push_str(" AND tags_json LIKE ?");
-                    params_vec.push(Box::new(format!("%\"{}%", tag)));
+                    params_vec.push(Box::new(format!("%\"{tag}%")));
                 }
             }
         }
@@ -202,7 +202,7 @@ impl MaterialDao {
             params_vec.iter().map(|p| p.as_ref()).collect();
 
         let materials: Vec<Material> = stmt
-            .query_map(params_refs.as_slice(), |row| Self::map_row(row))?
+            .query_map(params_refs.as_slice(), Self::map_row)?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -480,7 +480,7 @@ mod tests {
         for i in 1..=3 {
             let req = UploadMaterialRequest {
                 project_id: "project-1".to_string(),
-                name: format!("素材{}", i),
+                name: format!("素材{i}"),
                 material_type: "document".to_string(),
                 file_path: None,
                 content: None,
@@ -517,11 +517,11 @@ mod tests {
         create_test_project(&conn, "project-1");
 
         // 创建不同类型的素材
-        let types = vec!["document", "image", "document", "text"];
+        let types = ["document", "image", "document", "text"];
         for (i, t) in types.iter().enumerate() {
             let req = UploadMaterialRequest {
                 project_id: "project-1".to_string(),
-                name: format!("素材{}", i),
+                name: format!("素材{i}"),
                 material_type: t.to_string(),
                 file_path: None,
                 content: None,
@@ -743,7 +743,7 @@ mod tests {
         for i in 1..=3 {
             let req = UploadMaterialRequest {
                 project_id: "project-1".to_string(),
-                name: format!("素材{}", i),
+                name: format!("素材{i}"),
                 material_type: "document".to_string(),
                 file_path: None,
                 content: None,
@@ -768,9 +768,9 @@ mod tests {
         for i in 1..=2 {
             let req = UploadMaterialRequest {
                 project_id: "project-1".to_string(),
-                name: format!("素材{}", i),
+                name: format!("素材{i}"),
                 material_type: "document".to_string(),
-                file_path: Some(format!("/path/to/file{}.pdf", i)),
+                file_path: Some(format!("/path/to/file{i}.pdf")),
                 content: None,
                 tags: None,
                 description: None,
@@ -817,7 +817,7 @@ mod tests {
         for i in 1..=3 {
             let req = UploadMaterialRequest {
                 project_id: "project-a".to_string(),
-                name: format!("A素材{}", i),
+                name: format!("A素材{i}"),
                 material_type: "document".to_string(),
                 file_path: None,
                 content: None,
@@ -830,7 +830,7 @@ mod tests {
         for i in 1..=2 {
             let req = UploadMaterialRequest {
                 project_id: "project-b".to_string(),
-                name: format!("B素材{}", i),
+                name: format!("B素材{i}"),
                 material_type: "image".to_string(),
                 file_path: None,
                 content: None,

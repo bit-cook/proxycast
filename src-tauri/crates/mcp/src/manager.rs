@@ -453,7 +453,7 @@ impl McpClientManager {
         let (transport, mut stderr_opt) = match spawn_result {
             Ok(result) => result,
             Err(e) => {
-                let error_msg = format!("无法启动服务器进程: {}", e);
+                let error_msg = format!("无法启动服务器进程: {e}");
                 error!(server_name = %name, error = %e, "启动 MCP 服务器进程失败");
                 self.emit_server_error(name, &error_msg);
                 return Err(McpError::ProcessSpawnFailed(error_msg));
@@ -461,15 +461,13 @@ impl McpClientManager {
         };
 
         // 启动 stderr 读取任务（用于错误诊断）
-        let stderr_task = if let Some(mut stderr) = stderr_opt.take() {
-            Some(tokio::spawn(async move {
+        let stderr_task = stderr_opt.take().map(|mut stderr| {
+            tokio::spawn(async move {
                 let mut all_stderr = Vec::new();
                 let _ = stderr.read_to_end(&mut all_stderr).await;
                 String::from_utf8_lossy(&all_stderr).into_owned()
-            }))
-        } else {
-            None
-        };
+            })
+        });
 
         // 4. 初始化 MCP 客户端
         let client_handler =
@@ -491,9 +489,9 @@ impl McpClientManager {
                 };
 
                 let error_msg = if stderr_content.is_empty() {
-                    format!("MCP 连接失败: {}", e)
+                    format!("MCP 连接失败: {e}")
                 } else {
-                    format!("MCP 连接失败: {}. Stderr: {}", e, stderr_content)
+                    format!("MCP 连接失败: {e}. Stderr: {stderr_content}")
                 };
 
                 error!(
@@ -506,7 +504,7 @@ impl McpClientManager {
                 return Err(McpError::ConnectionFailed(error_msg));
             }
             Err(_) => {
-                let error_msg = format!("MCP 连接超时（{}秒）", timeout_secs);
+                let error_msg = format!("MCP 连接超时（{timeout_secs}秒）");
                 error!(server_name = %name, timeout = timeout_secs, "MCP 连接超时");
                 self.emit_server_error(name, &error_msg);
                 return Err(McpError::Timeout);
@@ -872,7 +870,7 @@ impl McpClientManager {
                 error = %e,
                 "工具调用失败"
             );
-            McpError::ToolCallFailed(format!("{}", e))
+            McpError::ToolCallFailed(format!("{e}"))
         })?;
 
         // 5. 转换结果为 McpToolResult
@@ -939,7 +937,7 @@ impl McpClientManager {
         let content: Vec<McpContent> = result
             .content
             .into_iter()
-            .map(|c| Self::convert_content(c))
+            .map(Self::convert_content)
             .collect();
 
         McpToolResult {
@@ -1135,7 +1133,7 @@ impl McpClientManager {
         };
 
         let get_prompt_param = rmcp::model::GetPromptRequestParam {
-            name: actual_prompt_name.clone().into(),
+            name: actual_prompt_name.clone(),
             arguments: args,
         };
 
@@ -1147,7 +1145,7 @@ impl McpClientManager {
                 error = %e,
                 "获取提示词失败"
             );
-            McpError::ToolCallFailed(format!("获取提示词失败: {}", e))
+            McpError::ToolCallFailed(format!("获取提示词失败: {e}"))
         })?;
 
         // 5. 转换结果为 McpPromptResult
@@ -1200,8 +1198,7 @@ impl McpClientManager {
 
         // 提示词未找到
         Err(McpError::ToolNotFound(format!(
-            "提示词不存在: {}",
-            prompt_name
+            "提示词不存在: {prompt_name}"
         )))
     }
 
@@ -1210,7 +1207,7 @@ impl McpClientManager {
         let messages: Vec<McpPromptMessage> = result
             .messages
             .into_iter()
-            .map(|msg| Self::convert_prompt_message(msg))
+            .map(Self::convert_prompt_message)
             .collect();
 
         McpPromptResult {
@@ -1396,7 +1393,7 @@ impl McpClientManager {
                 error = %e,
                 "读取资源失败"
             );
-            McpError::ToolCallFailed(format!("读取资源失败: {}", e))
+            McpError::ToolCallFailed(format!("读取资源失败: {e}"))
         })?;
 
         // 5. 转换结果为 McpResourceContent
@@ -1447,7 +1444,7 @@ impl McpClientManager {
         }
 
         // 资源未找到
-        Err(McpError::ToolNotFound(format!("资源不存在: {}", uri)))
+        Err(McpError::ToolNotFound(format!("资源不存在: {uri}")))
     }
 
     /// 转换 rmcp ReadResourceResult 为 McpResourceContent

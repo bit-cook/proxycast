@@ -158,6 +158,10 @@ pub enum MaterialType {
     Document,
     /// 图片
     Image,
+    /// 音频
+    Audio,
+    /// 视频
+    Video,
     /// 纯文本
     Text,
     /// 数据文件（CSV、JSON 等）
@@ -184,6 +188,8 @@ impl MaterialType {
         match self {
             MaterialType::Document => "document",
             MaterialType::Image => "image",
+            MaterialType::Audio => "audio",
+            MaterialType::Video => "video",
             MaterialType::Text => "text",
             MaterialType::Data => "data",
             MaterialType::Link => "link",
@@ -197,6 +203,8 @@ impl MaterialType {
         match s.to_lowercase().as_str() {
             "document" => MaterialType::Document,
             "image" => MaterialType::Image,
+            "audio" => MaterialType::Audio,
+            "video" => MaterialType::Video,
             "text" => MaterialType::Text,
             "data" => MaterialType::Data,
             "link" => MaterialType::Link,
@@ -1139,6 +1147,7 @@ impl Default for DesignConfig {
 /// 视觉规范配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct VisualConfig {
     /// Logo 图片 URL
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1152,18 +1161,6 @@ pub struct VisualConfig {
     /// 装饰元素列表
     #[serde(default)]
     pub decorations: Vec<String>,
-}
-
-impl Default for VisualConfig {
-    fn default() -> Self {
-        Self {
-            logo_url: None,
-            logo_placement: LogoPlacement::default(),
-            image_style: ImageStyle::default(),
-            icon_style: IconStyle::default(),
-            decorations: vec![],
-        }
-    }
 }
 
 /// 品牌人设扩展
@@ -1269,6 +1266,8 @@ mod tests {
     fn test_material_type_conversion() {
         assert_eq!(MaterialType::Document.as_str(), "document");
         assert_eq!(MaterialType::Image.as_str(), "image");
+        assert_eq!(MaterialType::Audio.as_str(), "audio");
+        assert_eq!(MaterialType::Video.as_str(), "video");
         assert_eq!(MaterialType::Text.as_str(), "text");
         assert_eq!(MaterialType::Data.as_str(), "data");
         assert_eq!(MaterialType::Link.as_str(), "link");
@@ -1278,6 +1277,8 @@ mod tests {
 
         assert_eq!(MaterialType::from_str("document"), MaterialType::Document);
         assert_eq!(MaterialType::from_str("IMAGE"), MaterialType::Image);
+        assert_eq!(MaterialType::from_str("audio"), MaterialType::Audio);
+        assert_eq!(MaterialType::from_str("VIDEO"), MaterialType::Video);
         assert_eq!(MaterialType::from_str("icon"), MaterialType::Icon);
         assert_eq!(MaterialType::from_str("color"), MaterialType::Color);
         assert_eq!(MaterialType::from_str("layout"), MaterialType::Layout);
@@ -1291,6 +1292,8 @@ mod tests {
         assert!(MaterialType::Color.is_poster_material());
         assert!(MaterialType::Layout.is_poster_material());
         assert!(!MaterialType::Document.is_poster_material());
+        assert!(!MaterialType::Audio.is_poster_material());
+        assert!(!MaterialType::Video.is_poster_material());
         assert!(!MaterialType::Text.is_poster_material());
         assert!(!MaterialType::Data.is_poster_material());
         assert!(!MaterialType::Link.is_poster_material());

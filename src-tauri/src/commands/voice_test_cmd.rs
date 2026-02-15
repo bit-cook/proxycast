@@ -55,7 +55,7 @@ pub async fn test_tts(
         _ => {
             return Ok(TtsTestResult {
                 success: false,
-                error: Some(format!("不支持的 TTS 服务: {}", service)),
+                error: Some(format!("不支持的 TTS 服务: {service}")),
                 audio_path: None,
             });
         }

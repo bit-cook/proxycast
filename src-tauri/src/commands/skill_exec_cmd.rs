@@ -149,6 +149,7 @@ pub struct SkillExecutionResult {
 /// - 3.3: 使用 Aster Agent 执行（支持工具调用）
 /// - 3.5: 返回 SkillExecutionResult
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_skill(
     app_handle: tauri::AppHandle,
     db: State<'_, DbConnection>,
@@ -180,7 +181,7 @@ pub async fn execute_skill(
     if skill.disable_model_invocation {
         return Err(format_skill_error(
             SKILL_ERR_EXECUTE_FAILED,
-            format!("Skill '{}' 已禁用模型调用，无法执行", skill_name),
+            format!("Skill '{skill_name}' 已禁用模型调用，无法执行"),
         ));
     }
 
@@ -329,7 +330,7 @@ async fn execute_skill_prompt(
     let mut final_output = String::new();
     let mut has_error = false;
     let mut error_message: Option<String> = None;
-    let event_name = format!("skill-exec-{}", execution_id);
+    let event_name = format!("skill-exec-{execution_id}");
 
     match stream_result {
         Ok(mut stream) => {
@@ -423,7 +424,7 @@ async fn execute_skill_workflow(
 ) -> Result<SkillExecutionResult, String> {
     let steps = &skill.workflow_steps;
     let total_steps = steps.len();
-    let event_name = format!("skill-exec-{}", execution_id);
+    let event_name = format!("skill-exec-{execution_id}");
     let mut steps_completed = Vec::new();
     let mut accumulated_context = user_input.to_string();
     let mut final_output = String::new();
@@ -463,10 +464,7 @@ async fn execute_skill_workflow(
         let step_input = if idx == 0 {
             accumulated_context.clone()
         } else {
-            format!(
-                "原始需求：{}\n\n前序步骤输出：\n{}",
-                user_input, accumulated_context
-            )
+            format!("原始需求：{user_input}\n\n前序步骤输出：\n{accumulated_context}")
         };
 
         let user_message = Message::user().with_text(&step_input);

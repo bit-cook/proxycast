@@ -78,6 +78,13 @@ pub struct AppStates {
     pub shared_logger: Arc<telemetry::RequestLogger>,
 }
 
+type TelemetryInit = (
+    crate::commands::telemetry_cmd::TelemetryState,
+    Arc<parking_lot::RwLock<telemetry::StatsAggregator>>,
+    Arc<parking_lot::RwLock<telemetry::TokenTracker>>,
+    Arc<telemetry::RequestLogger>,
+);
+
 /// 初始化所有应用状态
 pub fn init_states(config: &Config) -> Result<AppStates, String> {
     // 核心状态
@@ -277,17 +284,7 @@ fn init_plugin_installer() -> Result<PluginInstallerState, String> {
 }
 
 /// 初始化遥测系统
-fn init_telemetry(
-    config: &Config,
-) -> Result<
-    (
-        crate::commands::telemetry_cmd::TelemetryState,
-        Arc<parking_lot::RwLock<telemetry::StatsAggregator>>,
-        Arc<parking_lot::RwLock<telemetry::TokenTracker>>,
-        Arc<telemetry::RequestLogger>,
-    ),
-    String,
-> {
+fn init_telemetry(config: &Config) -> Result<TelemetryInit, String> {
     let shared_stats = Arc::new(parking_lot::RwLock::new(
         telemetry::StatsAggregator::with_defaults(),
     ));

@@ -39,9 +39,26 @@ const IMAGE_EXTENSIONS = new Set([
   "bmp",
 ]);
 
+const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "aac", "m4a", "ogg", "flac"]);
+
+const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "avi", "mkv", "webm", "flv"]);
+
 const DATA_EXTENSIONS = new Set(["csv", "json", "xml", "xlsx", "xls"]);
 
 const TEXT_EXTENSIONS = new Set(["txt", "md"]);
+
+const KNOWN_MATERIAL_TYPES = new Set<MaterialType>([
+  "document",
+  "image",
+  "audio",
+  "video",
+  "text",
+  "data",
+  "link",
+  "icon",
+  "color",
+  "layout",
+]);
 
 const toTimestampMs = (value: number | undefined): number => {
   if (!value || Number.isNaN(value)) {
@@ -71,6 +88,75 @@ const parseResourceMetadata = (value: unknown): ResourceMetadata => {
   };
 };
 
+const getPathExtension = (value: string | undefined): string => {
+  if (!value) {
+    return "";
+  }
+
+  const normalized = value.replace(/\\/g, "/");
+  const fileName = normalized.split("/").pop() || normalized;
+  const dotIndex = fileName.lastIndexOf(".");
+  if (dotIndex < 0 || dotIndex === fileName.length - 1) {
+    return "";
+  }
+
+  return fileName.slice(dotIndex + 1).toLowerCase();
+};
+
+const inferMaterialTypeFromMime = (
+  mimeType: string | undefined,
+): MaterialType | null => {
+  const normalized = mimeType?.toLowerCase().trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith("image/")) return "image";
+  if (normalized.startsWith("audio/")) return "audio";
+  if (normalized.startsWith("video/")) return "video";
+  if (normalized.startsWith("text/")) return "text";
+  if (
+    normalized.includes("json") ||
+    normalized.includes("xml") ||
+    normalized.includes("spreadsheet")
+  ) {
+    return "data";
+  }
+
+  return null;
+};
+
+const normalizeMaterialType = (
+  rawMaterialType: string | undefined,
+  mimeType: string | undefined,
+  filePath: string | undefined,
+  fileName: string,
+): MaterialType => {
+  const normalizedRaw = rawMaterialType?.toLowerCase().trim();
+  if (normalizedRaw && KNOWN_MATERIAL_TYPES.has(normalizedRaw as MaterialType)) {
+    return normalizedRaw as MaterialType;
+  }
+
+  const mimeInferred = inferMaterialTypeFromMime(mimeType);
+  if (mimeInferred) {
+    return mimeInferred;
+  }
+
+  const extension =
+    getPathExtension(filePath) || getPathExtension(fileName) || "";
+  if (!extension) {
+    return "document";
+  }
+
+  if (IMAGE_EXTENSIONS.has(extension)) return "image";
+  if (AUDIO_EXTENSIONS.has(extension)) return "audio";
+  if (VIDEO_EXTENSIONS.has(extension)) return "video";
+  if (DATA_EXTENSIONS.has(extension)) return "data";
+  if (TEXT_EXTENSIONS.has(extension)) return "text";
+
+  return "document";
+};
+
 const mapContentToResource = (item: ContentListItem): ResourceItem | null => {
   const metadata = parseResourceMetadata(item.metadata);
 
@@ -92,13 +178,21 @@ const mapMaterialToResource = (
   item: RawMaterial,
   fallbackProjectId: string,
 ): ResourceItem => {
-  const materialType = (item.type ?? item.material_type ?? "document").toString();
+  const name = item.name ?? "未命名文件";
+  const filePath = item.filePath ?? item.file_path;
+  const mimeType = item.mimeType ?? item.mime_type;
+  const materialType = normalizeMaterialType(
+    (item.type ?? item.material_type)?.toString(),
+    mimeType,
+    filePath,
+    name,
+  );
   const projectId = (item.projectId ?? item.project_id ?? fallbackProjectId).toString();
 
   return {
     id: item.id,
     projectId,
-    name: item.name ?? "未命名文件",
+    name,
     kind: "file",
     sourceType: "material",
     parentId: null,
@@ -106,8 +200,8 @@ const mapMaterialToResource = (
     updatedAt: toTimestampMs(item.createdAt ?? item.created_at),
     size: item.fileSize ?? item.file_size,
     fileType: materialType,
-    mimeType: item.mimeType ?? item.mime_type,
-    filePath: item.filePath ?? item.file_path,
+    mimeType,
+    filePath,
     description: item.description,
     tags: item.tags ?? [],
   };
@@ -120,12 +214,18 @@ const extractFileName = (filePath: string): string => {
 };
 
 const inferMaterialType = (filePath: string): MaterialType => {
-  const extension = filePath.split(".").pop()?.toLowerCase();
+  const extension = getPathExtension(filePath);
   if (!extension) {
     return "document";
   }
   if (IMAGE_EXTENSIONS.has(extension)) {
     return "image";
+  }
+  if (AUDIO_EXTENSIONS.has(extension)) {
+    return "audio";
+  }
+  if (VIDEO_EXTENSIONS.has(extension)) {
+    return "video";
   }
   if (DATA_EXTENSIONS.has(extension)) {
     return "data";
@@ -144,7 +244,11 @@ export const fetchProjectResources = async (
       sort_by: "updated_at",
       sort_order: "desc",
     }),
-    invoke<RawMaterial[]>("list_materials", { projectId, filter: null }),
+    invoke<RawMaterial[]>("list_materials", {
+      projectId,
+      project_id: projectId,
+      filter: null,
+    }),
   ]);
 
   const contentResources = contents

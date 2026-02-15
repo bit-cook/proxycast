@@ -349,7 +349,7 @@ pub async fn generate_persona(
 3. 偏好词是创作时优先使用的词汇
 4. 直接返回 JSON，不要任何额外文字"#;
 
-    let user_prompt = format!("{}\n\n请为以下描述生成人设配置：{}", system_prompt, prompt);
+    let user_prompt = format!("{system_prompt}\n\n请为以下描述生成人设配置：{prompt}");
 
     let cancel_token = agent_state.create_cancel_token(&session_id).await;
 

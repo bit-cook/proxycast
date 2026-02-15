@@ -9,7 +9,6 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { ProviderIcon } from "@/icons/providers";
-import { getDefaultProvider } from "@/hooks/useTauri";
 import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
 import { useProviderModels } from "@/hooks/useProviderModels";
 import { isAliasProvider } from "@/lib/constants/providerMappings";
@@ -39,28 +38,11 @@ export const ChatModelSelector: React.FC<ChatModelSelectorProps> = ({
   popoverSide = "top",
 }) => {
   const [open, setOpen] = useState(false);
-  const [serverDefaultProvider, setServerDefaultProvider] = useState<
-    string | null
-  >(null);
   const hasInitialized = useRef(false);
   const modelRef = useRef(model);
   modelRef.current = model;
 
   const { providers: configuredProviders } = useConfiguredProviders();
-
-  useEffect(() => {
-    const loadDefaultProvider = async () => {
-      try {
-        const defaultProvider = await getDefaultProvider();
-        setServerDefaultProvider(defaultProvider);
-      } catch (error) {
-        console.error("[ChatModelSelector] 获取默认 Provider 失败:", error);
-        setServerDefaultProvider("");
-      }
-    };
-
-    void loadDefaultProvider();
-  }, []);
 
   const selectedProvider = useMemo(() => {
     return configuredProviders.find(
@@ -74,31 +56,13 @@ export const ChatModelSelector: React.FC<ChatModelSelectorProps> = ({
   useEffect(() => {
     if (hasInitialized.current) return;
     if (configuredProviders.length === 0) return;
-    if (serverDefaultProvider === null) return;
-
-    const serverDefaultInList = configuredProviders.find(
-      (provider) => provider.key === serverDefaultProvider,
-    );
 
     hasInitialized.current = true;
-
-    if (serverDefaultInList) {
-      if (providerType !== serverDefaultProvider) {
-        setProviderType(serverDefaultProvider);
-      }
-      return;
-    }
 
     if (!selectedProvider) {
       setProviderType(configuredProviders[0].key);
     }
-  }, [
-    configuredProviders,
-    providerType,
-    selectedProvider,
-    serverDefaultProvider,
-    setProviderType,
-  ]);
+  }, [configuredProviders, selectedProvider, setProviderType]);
 
   useEffect(() => {
     if (
@@ -213,8 +177,6 @@ export const ChatModelSelector: React.FC<ChatModelSelectorProps> = ({
                 </div>
               ) : (
                 configuredProviders.map((provider) => {
-                  const isServerDefault =
-                    serverDefaultProvider === provider.key;
                   const isSelected = providerType === provider.key;
 
                   return (
@@ -225,9 +187,7 @@ export const ChatModelSelector: React.FC<ChatModelSelectorProps> = ({
                         "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-md transition-colors text-left",
                         isSelected
                           ? "bg-primary/10 text-primary font-medium"
-                          : isServerDefault
-                            ? "hover:bg-muted text-foreground hover:text-foreground"
-                            : "hover:bg-muted text-muted-foreground/50 hover:text-muted-foreground",
+                          : "hover:bg-muted text-muted-foreground hover:text-foreground",
                       )}
                     >
                       <span className="flex items-center gap-2 min-w-0">

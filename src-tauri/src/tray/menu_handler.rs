@@ -73,7 +73,7 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, menu_id: &str) {
 ///
 /// # Requirements
 /// - 3.1: WHEN API 服务器已停止且用户点击托盘菜单中的"启动服务器"
-///        THEN 系统托盘 SHALL 启动 API 服务器并更新托盘图标以反映运行状态
+///   THEN 系统托盘 SHALL 启动 API 服务器并更新托盘图标以反映运行状态
 fn handle_start_server<R: Runtime>(app: &AppHandle<R>) {
     info!("[托盘] 用户请求启动服务器");
 
@@ -87,7 +87,7 @@ fn handle_start_server<R: Runtime>(app: &AppHandle<R>) {
 ///
 /// # Requirements
 /// - 3.2: WHEN API 服务器正在运行且用户点击托盘菜单中的"停止服务器"
-///        THEN 系统托盘 SHALL 停止 API 服务器并更新托盘图标以反映停止状态
+///   THEN 系统托盘 SHALL 停止 API 服务器并更新托盘图标以反映停止状态
 fn handle_stop_server<R: Runtime>(app: &AppHandle<R>) {
     info!("[托盘] 用户请求停止服务器");
 
@@ -101,7 +101,7 @@ fn handle_stop_server<R: Runtime>(app: &AppHandle<R>) {
 ///
 /// # Requirements
 /// - 3.3: WHEN 用户点击托盘菜单中的"刷新所有 Token"
-///        THEN 系统托盘 SHALL 触发凭证池中所有凭证的 Token 刷新
+///   THEN 系统托盘 SHALL 触发凭证池中所有凭证的 Token 刷新
 fn handle_refresh_tokens<R: Runtime>(app: &AppHandle<R>) {
     info!("[托盘] 用户请求刷新所有 Token");
 
@@ -115,7 +115,7 @@ fn handle_refresh_tokens<R: Runtime>(app: &AppHandle<R>) {
 ///
 /// # Requirements
 /// - 3.4: WHEN 用户点击托盘菜单中的"健康检查"
-///        THEN 系统托盘 SHALL 对所有凭证执行健康检查并更新健康状态
+///   THEN 系统托盘 SHALL 对所有凭证执行健康检查并更新健康状态
 fn handle_health_check<R: Runtime>(app: &AppHandle<R>) {
     info!("[托盘] 用户请求执行健康检查");
 
@@ -129,7 +129,7 @@ fn handle_health_check<R: Runtime>(app: &AppHandle<R>) {
 ///
 /// # Requirements
 /// - 4.1: WHEN 用户点击托盘菜单中的"打开主窗口"
-///        THEN 系统托盘 SHALL 显示并聚焦主应用程序窗口
+///   THEN 系统托盘 SHALL 显示并聚焦主应用程序窗口
 fn handle_open_window<R: Runtime>(app: &AppHandle<R>) {
     info!("[托盘] 用户请求打开主窗口");
 
@@ -159,7 +159,7 @@ fn handle_open_window<R: Runtime>(app: &AppHandle<R>) {
 ///
 /// # Requirements
 /// - 4.2: WHEN 用户点击托盘菜单中的"复制 API 地址"
-///        THEN 系统托盘 SHALL 将当前 API 服务器地址复制到系统剪贴板
+///   THEN 系统托盘 SHALL 将当前 API 服务器地址复制到系统剪贴板
 fn handle_copy_api_address<R: Runtime>(app: &AppHandle<R>) {
     info!("[托盘] 用户请求复制 API 地址");
 
@@ -226,7 +226,7 @@ fn handle_copy_api_address<R: Runtime>(app: &AppHandle<R>) {
 ///
 /// # Requirements
 /// - 4.3: WHEN 用户点击托盘菜单中的"打开日志目录"
-///        THEN 系统托盘 SHALL 在系统文件管理器中打开应用程序日志目录
+///   THEN 系统托盘 SHALL 在系统文件管理器中打开应用程序日志目录
 fn handle_open_log_dir<R: Runtime>(app: &AppHandle<R>) {
     info!("[托盘] 用户请求打开日志目录");
 
@@ -260,7 +260,7 @@ fn handle_open_log_dir<R: Runtime>(app: &AppHandle<R>) {
 ///
 /// # Requirements
 /// - 4.4: WHEN 用户点击托盘菜单中的"退出"
-///        THEN 系统托盘 SHALL 优雅地停止 API 服务器并终止应用程序
+///   THEN 系统托盘 SHALL 优雅地停止 API 服务器并终止应用程序
 fn handle_quit<R: Runtime>(app: &AppHandle<R>) {
     info!("[托盘] 用户请求退出应用");
 
@@ -277,9 +277,9 @@ fn handle_quit<R: Runtime>(app: &AppHandle<R>) {
 ///
 /// # Requirements
 /// - 5.1: WHEN 用户在托盘菜单中切换"开机自启"
-///        THEN 系统托盘 SHALL 启用或禁用应用程序的登录时启动设置
+///   THEN 系统托盘 SHALL 启用或禁用应用程序的登录时启动设置
 /// - 5.2: WHEN 托盘菜单显示时
-///        THEN 系统托盘 SHALL 使用勾选标记显示"开机自启"切换的当前状态
+///   THEN 系统托盘 SHALL 使用勾选标记显示"开机自启"切换的当前状态
 fn handle_auto_start_toggle<R: Runtime>(app: &AppHandle<R>) {
     info!("[托盘] 用户请求切换开机自启状态");
 

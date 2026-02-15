@@ -2178,6 +2178,7 @@ proptest! {
 // ============================================================================
 
 /// 生成随机的 OAuth 凭证条目（用于 Codex/iFlow）
+#[allow(dead_code)]
 fn arb_oauth_credential_entry() -> impl Strategy<Value = CredentialEntry> {
     (
         "[a-z]{3,10}-[0-9]{1,5}".prop_map(|s| s),

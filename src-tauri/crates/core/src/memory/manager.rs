@@ -517,7 +517,7 @@ impl MemoryManager {
             .map_err(|e| format!("准备查询失败: {e}"))?;
 
         let nodes = stmt
-            .query_map(params![project_id], |row| Self::row_to_outline_node(row))
+            .query_map(params![project_id], Self::row_to_outline_node)
             .map_err(|e| format!("查询失败: {e}"))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("解析结果失败: {e}"))?;

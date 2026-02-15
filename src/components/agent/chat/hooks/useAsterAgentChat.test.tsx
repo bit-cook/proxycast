@@ -8,6 +8,8 @@ const {
   mockCreateAsterSession,
   mockListAsterSessions,
   mockGetAsterSession,
+  mockRenameAsterSession,
+  mockDeleteAsterSession,
   mockStopAsterSession,
   mockConfirmAsterAction,
   mockSubmitAsterElicitationResponse,
@@ -20,6 +22,8 @@ const {
   mockCreateAsterSession: vi.fn(),
   mockListAsterSessions: vi.fn(),
   mockGetAsterSession: vi.fn(),
+  mockRenameAsterSession: vi.fn(),
+  mockDeleteAsterSession: vi.fn(),
   mockStopAsterSession: vi.fn(),
   mockConfirmAsterAction: vi.fn(),
   mockSubmitAsterElicitationResponse: vi.fn(),
@@ -38,6 +42,8 @@ vi.mock("@/lib/api/agent", () => ({
   createAsterSession: mockCreateAsterSession,
   listAsterSessions: mockListAsterSessions,
   getAsterSession: mockGetAsterSession,
+  renameAsterSession: mockRenameAsterSession,
+  deleteAsterSession: mockDeleteAsterSession,
   stopAsterSession: mockStopAsterSession,
   confirmAsterAction: mockConfirmAsterAction,
   submitAsterElicitationResponse: mockSubmitAsterElicitationResponse,
@@ -134,6 +140,8 @@ beforeEach(() => {
     id: "session-from-api",
     messages: [],
   });
+  mockRenameAsterSession.mockResolvedValue(undefined);
+  mockDeleteAsterSession.mockResolvedValue(undefined);
   mockStopAsterSession.mockResolvedValue(undefined);
   mockConfirmAsterAction.mockResolvedValue(undefined);
   mockSubmitAsterElicitationResponse.mockResolvedValue(undefined);
@@ -224,6 +232,199 @@ describe("useAsterAgentChat.confirmAction", () => {
         "req-ask-user-1",
         { answer: "选项A" },
       );
+    } finally {
+      harness.unmount();
+    }
+  });
+});
+
+describe("useAsterAgentChat 偏好持久化", () => {
+  it("应将旧全局偏好迁移到当前工作区", async () => {
+    localStorage.setItem("agent_pref_provider", JSON.stringify("gemini"));
+    localStorage.setItem("agent_pref_model", JSON.stringify("gemini-2.5-pro"));
+
+    const workspaceId = "ws-migrate";
+    const harness = mountHook(workspaceId);
+
+    try {
+      await flushEffects();
+
+      const value = harness.getValue();
+      expect(value.providerType).toBe("gemini");
+      expect(value.model).toBe("gemini-2.5-pro");
+      expect(
+        JSON.parse(
+          localStorage.getItem(`agent_pref_provider_${workspaceId}`) || "null",
+        ),
+      ).toBe("gemini");
+      expect(
+        JSON.parse(
+          localStorage.getItem(`agent_pref_model_${workspaceId}`) || "null",
+        ),
+      ).toBe("gemini-2.5-pro");
+      expect(
+        JSON.parse(
+          localStorage.getItem(`agent_pref_migrated_${workspaceId}`) ||
+            "false",
+        ),
+      ).toBe(true);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  it("应优先使用工作区偏好而不是旧全局偏好", async () => {
+    localStorage.setItem("agent_pref_provider", JSON.stringify("claude"));
+    localStorage.setItem("agent_pref_model", JSON.stringify("claude-legacy"));
+    localStorage.setItem(
+      "agent_pref_provider_ws-prefer-scoped",
+      JSON.stringify("deepseek"),
+    );
+    localStorage.setItem(
+      "agent_pref_model_ws-prefer-scoped",
+      JSON.stringify("deepseek-reasoner"),
+    );
+
+    const harness = mountHook("ws-prefer-scoped");
+
+    try {
+      await flushEffects();
+
+      const value = harness.getValue();
+      expect(value.providerType).toBe("deepseek");
+      expect(value.model).toBe("deepseek-reasoner");
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  it("无工作区时应保留全局模型偏好（切主题不丢失）", async () => {
+    const firstMount = mountHook("");
+
+    try {
+      await flushEffects();
+      act(() => {
+        firstMount.getValue().setProviderType("gemini");
+        firstMount.getValue().setModel("gemini-2.5-pro");
+      });
+      await flushEffects();
+    } finally {
+      firstMount.unmount();
+    }
+
+    const secondMount = mountHook("");
+    try {
+      await flushEffects();
+      const value = secondMount.getValue();
+      expect(value.providerType).toBe("gemini");
+      expect(value.model).toBe("gemini-2.5-pro");
+      expect(JSON.parse(localStorage.getItem("agent_pref_provider_global") || "null")).toBe(
+        "gemini",
+      );
+      expect(JSON.parse(localStorage.getItem("agent_pref_model_global") || "null")).toBe(
+        "gemini-2.5-pro",
+      );
+    } finally {
+      secondMount.unmount();
+    }
+  });
+});
+
+describe("useAsterAgentChat 兼容接口", () => {
+  it("triggerAIGuide 应仅生成 assistant 占位消息", async () => {
+    const harness = mountHook("ws-guide");
+
+    try {
+      await flushEffects();
+      await act(async () => {
+        await harness.getValue().triggerAIGuide();
+      });
+
+      const value = harness.getValue();
+      expect(value.messages).toHaveLength(1);
+      expect(value.messages[0]?.role).toBe("assistant");
+      expect(mockSendAsterMessageStream).toHaveBeenCalledTimes(1);
+      expect(mockSendAsterMessageStream.mock.calls[0]?.[0]).toBe("");
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  it("renameTopic 应调用后端并刷新话题标题", async () => {
+    const createdAt = Math.floor(Date.now() / 1000);
+    mockListAsterSessions
+      .mockResolvedValue([
+        {
+          id: "topic-1",
+          name: "新标题",
+          created_at: createdAt,
+          messages_count: 2,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "topic-1",
+          name: "旧标题",
+          created_at: createdAt,
+          messages_count: 2,
+        },
+      ]);
+
+    const harness = mountHook("ws-rename");
+
+    try {
+      await flushEffects();
+      await flushEffects();
+
+      await act(async () => {
+        await harness.getValue().renameTopic("topic-1", "新标题");
+      });
+
+      expect(mockRenameAsterSession).toHaveBeenCalledTimes(1);
+      expect(mockRenameAsterSession).toHaveBeenCalledWith("topic-1", "新标题");
+
+      const renamedTopic = harness
+        .getValue()
+        .topics.find((topic) => topic.id === "topic-1");
+      expect(renamedTopic?.title).toBe("新标题");
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  it("deleteTopic 应调用后端并刷新话题列表", async () => {
+    const createdAt = Math.floor(Date.now() / 1000);
+    let currentSessions = [
+      {
+        id: "topic-1",
+        name: "旧标题",
+        created_at: createdAt,
+        messages_count: 2,
+      },
+    ];
+
+    mockListAsterSessions.mockImplementation(async () => currentSessions);
+    mockDeleteAsterSession.mockImplementation(async () => {
+      currentSessions = [];
+    });
+
+    const harness = mountHook("ws-delete");
+
+    try {
+      await flushEffects();
+      await flushEffects();
+
+      await act(async () => {
+        await harness.getValue().deleteTopic("topic-1");
+      });
+
+      expect(mockDeleteAsterSession).toHaveBeenCalledTimes(1);
+      expect(mockDeleteAsterSession).toHaveBeenCalledWith("topic-1");
+
+      const deletedTopic = harness
+        .getValue()
+        .topics.find((topic) => topic.id === "topic-1");
+      expect(deletedTopic).toBeUndefined();
     } finally {
       harness.unmount();
     }

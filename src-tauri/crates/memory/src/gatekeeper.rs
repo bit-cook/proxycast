@@ -150,11 +150,11 @@ async fn check_recent_memories(
     let sql = "SELECT COUNT(*) FROM unified_memory WHERE session_id = ?1 AND archived = 0";
     let mut stmt = db
         .prepare(sql)
-        .map_err(|e| format!("Prepare failed: {}", e))?;
+        .map_err(|e| format!("Prepare failed: {e}"))?;
 
     let count: i64 = stmt
         .query_row(params![session_id], |row| row.get(0))
-        .map_err(|e| format!("Query failed: {}", e))?;
+        .map_err(|e| format!("Query failed: {e}"))?;
 
     Ok(CheckResult {
         should_proceed: (count as usize) < limit,
@@ -184,14 +184,14 @@ async fn check_time_interval(
     let sql = "SELECT MAX(created_at) FROM unified_memory WHERE session_id = ?1 AND archived = 0";
     let mut stmt = db
         .prepare(sql)
-        .map_err(|e| format!("Prepare failed: {}", e))?;
+        .map_err(|e| format!("Prepare failed: {e}"))?;
 
     let max_time: Option<i64> = stmt.query_row(params![session_id], |row| row.get(0)).ok();
 
     if let Some(last_time) = max_time {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| format!("Time error: {}", e))?
+            .map_err(|e| format!("Time error: {e}"))?
             .as_secs() as i64;
 
         let hours_since = (now - last_time) / 3600;

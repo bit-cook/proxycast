@@ -807,6 +807,23 @@ export async function getAsterSession(
 }
 
 /**
+ * 重命名 Aster 会话
+ */
+export async function renameAsterSession(
+  sessionId: string,
+  name: string,
+): Promise<void> {
+  return await safeInvoke("aster_session_rename", { sessionId, name });
+}
+
+/**
+ * 删除 Aster 会话
+ */
+export async function deleteAsterSession(sessionId: string): Promise<void> {
+  return await safeInvoke("aster_session_delete", { sessionId });
+}
+
+/**
  * 确认 Aster Agent 权限请求
  */
 export async function confirmAsterAction(

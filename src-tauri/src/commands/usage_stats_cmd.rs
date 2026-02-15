@@ -19,7 +19,7 @@ pub async fn get_usage_stats(
 ) -> Result<UsageStatsResponse, String> {
     tracing::info!("[使用统计] 获取统计数据，时间范围: {}", time_range);
 
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     conversation_statistics_service::get_usage_stats_from_db(&time_range, &conn)
 }
@@ -32,7 +32,7 @@ pub async fn get_model_usage_ranking(
 ) -> Result<Vec<ModelUsage>, String> {
     tracing::info!("[使用统计] 获取模型使用排行，时间范围: {}", time_range);
 
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     conversation_statistics_service::get_model_usage_ranking_from_db(&time_range, &conn)
 }
@@ -45,7 +45,7 @@ pub async fn get_daily_usage_trends(
 ) -> Result<Vec<DailyUsage>, String> {
     tracing::info!("[使用统计] 获取每日使用趋势，时间范围: {}", time_range);
 
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     conversation_statistics_service::get_daily_usage_trends_from_db(&time_range, &conn)
 }

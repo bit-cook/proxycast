@@ -39,6 +39,12 @@ const SUPPORTED_DOCUMENT_TYPES: &[&str] = &["pdf", "doc", "docx", "txt", "md", "
 /// 支持的图片类型
 const SUPPORTED_IMAGE_TYPES: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp"];
 
+/// 支持的音频类型
+const SUPPORTED_AUDIO_TYPES: &[&str] = &["mp3", "wav", "aac", "m4a", "ogg", "flac"];
+
+/// 支持的视频类型
+const SUPPORTED_VIDEO_TYPES: &[&str] = &["mp4", "mov", "avi", "mkv", "webm", "flv"];
+
 /// 支持的数据类型
 const SUPPORTED_DATA_TYPES: &[&str] = &["csv", "json", "xml", "xlsx", "xls"];
 
@@ -289,7 +295,7 @@ impl MaterialService {
     /// - 失败返回 MaterialError
     ///
     /// # 注意
-    /// 对于二进制文件（如图片、PDF），返回文件描述而非内容。
+    /// 对于二进制文件（如图片、音视频、PDF），返回文件描述而非内容。
     pub fn get_material_content(conn: &Connection, id: &str) -> Result<String, MaterialError> {
         let material =
             MaterialDao::get(conn, id)?.ok_or_else(|| MaterialError::NotFound(id.to_string()))?;
@@ -356,8 +362,7 @@ impl MaterialService {
         // 验证源文件存在
         if !source.exists() {
             return Err(MaterialError::FileReadError(format!(
-                "文件不存在: {}",
-                source_path
+                "文件不存在: {source_path}"
             )));
         }
 
@@ -465,6 +470,8 @@ impl MaterialService {
         let is_valid = match material_type {
             "document" => SUPPORTED_DOCUMENT_TYPES.contains(&extension),
             "image" => SUPPORTED_IMAGE_TYPES.contains(&extension),
+            "audio" => SUPPORTED_AUDIO_TYPES.contains(&extension),
+            "video" => SUPPORTED_VIDEO_TYPES.contains(&extension),
             "data" => SUPPORTED_DATA_TYPES.contains(&extension),
             "text" => extension == "txt" || extension == "md",
             "link" => true, // 链接类型不需要文件
@@ -473,8 +480,7 @@ impl MaterialService {
 
         if !is_valid {
             return Err(MaterialError::UnsupportedFileType(format!(
-                ".{} (类型: {})",
-                extension, material_type
+                ".{extension} (类型: {material_type})"
             )));
         }
 
@@ -499,6 +505,20 @@ impl MaterialService {
             "webp" => "image/webp",
             "svg" => "image/svg+xml",
             "bmp" => "image/bmp",
+            // 音频
+            "mp3" => "audio/mpeg",
+            "wav" => "audio/wav",
+            "aac" => "audio/aac",
+            "m4a" => "audio/mp4",
+            "ogg" => "audio/ogg",
+            "flac" => "audio/flac",
+            // 视频
+            "mp4" => "video/mp4",
+            "mov" => "video/quicktime",
+            "avi" => "video/x-msvideo",
+            "mkv" => "video/x-matroska",
+            "webm" => "video/webm",
+            "flv" => "video/x-flv",
             // 数据
             "csv" => "text/csv",
             "json" => "application/json",
@@ -558,6 +578,14 @@ impl MaterialService {
                 // 图片类型：返回描述
                 Ok(Self::format_material_description(material))
             }
+            "audio" => {
+                // 音频类型：返回描述
+                Ok(Self::format_material_description(material))
+            }
+            "video" => {
+                // 视频类型：返回描述
+                Ok(Self::format_material_description(material))
+            }
             "data" => {
                 // 数据类型：尝试读取 CSV/JSON
                 if let Some(ref file_path) = material.file_path {
@@ -587,9 +615,8 @@ impl MaterialService {
 
     /// 读取文本文件
     fn read_text_file(file_path: &str) -> Result<String, MaterialError> {
-        fs::read_to_string(file_path).map_err(|e| {
-            MaterialError::FileReadError(format!("读取文件失败: {} - {}", file_path, e))
-        })
+        fs::read_to_string(file_path)
+            .map_err(|e| MaterialError::FileReadError(format!("读取文件失败: {file_path} - {e}")))
     }
 
     /// 格式化素材描述
@@ -597,7 +624,7 @@ impl MaterialService {
         let mut desc = format!("[素材: {}]", material.name);
 
         if let Some(ref description) = material.description {
-            desc.push_str(&format!("\n描述: {}", description));
+            desc.push_str(&format!("\n描述: {description}"));
         }
 
         if !material.tags.is_empty() {
@@ -711,10 +738,10 @@ mod tests {
         for i in 1..=3 {
             let req = UploadMaterialRequest {
                 project_id: "project-1".to_string(),
-                name: format!("素材{}", i),
+                name: format!("素材{i}"),
                 material_type: "text".to_string(),
                 file_path: None,
-                content: Some(format!("内容{}", i)),
+                content: Some(format!("内容{i}")),
                 tags: None,
                 description: None,
             };
@@ -731,11 +758,11 @@ mod tests {
         create_test_project(&conn, "project-1");
 
         // 创建不同类型的素材
-        let types = vec!["document", "image", "text"];
+        let types = ["document", "image", "text"];
         for (i, t) in types.iter().enumerate() {
             let req = UploadMaterialRequest {
                 project_id: "project-1".to_string(),
-                name: format!("素材{}", i),
+                name: format!("素材{i}"),
                 material_type: t.to_string(),
                 file_path: None,
                 content: Some("内容".to_string()),
@@ -881,10 +908,10 @@ mod tests {
         for i in 1..=3 {
             let req = UploadMaterialRequest {
                 project_id: "project-1".to_string(),
-                name: format!("素材{}", i),
+                name: format!("素材{i}"),
                 material_type: "text".to_string(),
                 file_path: None,
-                content: Some(format!("内容{}", i)),
+                content: Some(format!("内容{i}")),
                 tags: None,
                 description: None,
             };
@@ -913,6 +940,16 @@ mod tests {
         assert!(MaterialService::validate_file_type("png", "image").is_ok());
         assert!(MaterialService::validate_file_type("pdf", "image").is_err());
 
+        // 音频类型
+        assert!(MaterialService::validate_file_type("mp3", "audio").is_ok());
+        assert!(MaterialService::validate_file_type("wav", "audio").is_ok());
+        assert!(MaterialService::validate_file_type("jpg", "audio").is_err());
+
+        // 视频类型
+        assert!(MaterialService::validate_file_type("mp4", "video").is_ok());
+        assert!(MaterialService::validate_file_type("webm", "video").is_ok());
+        assert!(MaterialService::validate_file_type("mp3", "video").is_err());
+
         // 数据类型
         assert!(MaterialService::validate_file_type("csv", "data").is_ok());
         assert!(MaterialService::validate_file_type("json", "data").is_ok());
@@ -937,6 +974,14 @@ mod tests {
         assert_eq!(
             MaterialService::infer_mime_type("json"),
             Some("application/json".to_string())
+        );
+        assert_eq!(
+            MaterialService::infer_mime_type("mp3"),
+            Some("audio/mpeg".to_string())
+        );
+        assert_eq!(
+            MaterialService::infer_mime_type("mp4"),
+            Some("video/mp4".to_string())
         );
         assert_eq!(MaterialService::infer_mime_type("unknown"), None);
     }
@@ -1010,7 +1055,7 @@ mod tests {
         for i in 1..=3 {
             let req = UploadMaterialRequest {
                 project_id: "project-1".to_string(),
-                name: format!("素材{}", i),
+                name: format!("素材{i}"),
                 material_type: "text".to_string(),
                 file_path: None,
                 content: Some("内容".to_string()),

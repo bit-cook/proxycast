@@ -79,7 +79,7 @@ mod xunfei {
                 println!("   识别结果: {:?}", r.text);
             }
             Err(e) => {
-                panic!("❌ 讯飞连接失败: {:?}", e);
+                panic!("❌ 讯飞连接失败: {e:?}");
             }
         }
     }
@@ -104,7 +104,7 @@ mod xunfei {
                 println!("   语言: {:?}", r.language);
             }
             Err(e) => {
-                panic!("❌ 讯飞识别失败: {:?}", e);
+                panic!("❌ 讯飞识别失败: {e:?}");
             }
         }
     }
@@ -140,7 +140,7 @@ mod xunfei {
 
         // 仍然尝试发送，看服务端如何处理
         let result = client.transcribe(&audio).await;
-        println!("短音频测试结果: {:?}", result);
+        println!("短音频测试结果: {result:?}");
     }
 
     #[tokio::test]
@@ -162,7 +162,7 @@ mod xunfei {
                 println!("   识别结果: {:?}", r.text);
             }
             Err(e) => {
-                panic!("❌ 讯飞长音频测试失败: {:?}", e);
+                panic!("❌ 讯飞长音频测试失败: {e:?}");
             }
         }
     }
@@ -196,7 +196,7 @@ mod baidu {
                 println!("   识别结果: {:?}", r.text);
             }
             Err(e) => {
-                panic!("❌ 百度连接失败: {:?}", e);
+                panic!("❌ 百度连接失败: {e:?}");
             }
         }
     }
@@ -233,7 +233,7 @@ mod openai {
                 println!("   识别结果: {:?}", r.text);
             }
             Err(e) => {
-                panic!("❌ OpenAI 连接失败: {:?}", e);
+                panic!("❌ OpenAI 连接失败: {e:?}");
             }
         }
     }
@@ -261,7 +261,7 @@ async fn test_all_configured_asr_services() {
                 println!("✅ 讯飞: 连接正常");
                 passed += 1;
             }
-            Err(e) => println!("❌ 讯飞: {:?}", e),
+            Err(e) => println!("❌ 讯飞: {e:?}"),
         }
     } else {
         println!("⏭️  讯飞: 未配置");
@@ -280,7 +280,7 @@ async fn test_all_configured_asr_services() {
                 println!("✅ 百度: 连接正常");
                 passed += 1;
             }
-            Err(e) => println!("❌ 百度: {:?}", e),
+            Err(e) => println!("❌ 百度: {e:?}"),
         }
     } else {
         println!("⏭️  百度: 未配置");
@@ -297,7 +297,7 @@ async fn test_all_configured_asr_services() {
                     println!("✅ OpenAI: 连接正常");
                     passed += 1;
                 }
-                Err(e) => println!("❌ OpenAI: {:?}", e),
+                Err(e) => println!("❌ OpenAI: {e:?}"),
             }
         } else {
             println!("⏭️  OpenAI: 未配置");
@@ -307,7 +307,7 @@ async fn test_all_configured_asr_services() {
     }
 
     println!("\n========== 测试结果 ==========");
-    println!("测试: {}/{} 通过", passed, tested);
+    println!("测试: {passed}/{tested} 通过");
 
     if tested > 0 {
         assert_eq!(passed, tested, "部分 ASR 服务测试失败");

@@ -356,13 +356,11 @@ pub async fn get_local_kiro_credential_uuid(
                             let refresh_token = creds.get("refreshToken").and_then(|v| v.as_str());
 
                             // 比较 token
-                            let matches = match (local_access_token, access_token) {
-                                (Some(l), Some(r)) if l == r => true,
-                                _ => match (local_refresh_token, refresh_token) {
-                                    (Some(l), Some(r)) if l == r => true,
-                                    _ => false,
-                                },
-                            };
+                            let matches = matches!((local_access_token, access_token), (Some(l), Some(r)) if l == r)
+                                || matches!(
+                                    (local_refresh_token, refresh_token),
+                                    (Some(l), Some(r)) if l == r
+                                );
 
                             if matches {
                                 return Ok(Some(cred_display.uuid.clone()));

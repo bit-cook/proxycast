@@ -31,6 +31,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -69,6 +77,16 @@ import type { WorkflowProgressSnapshot } from "@/components/agent/chat";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import { ProjectDetailPage } from "@/components/projects/ProjectDetailPage";
 import type { CreationMode } from "@/components/content-creator/types";
+import {
+  buildCreationIntentMetadata,
+  buildCreationIntentPrompt,
+  createInitialCreationIntentValues,
+  getCreationIntentFields,
+  type CreationIntentFieldKey,
+  type CreationIntentFormValues,
+  type CreationIntentInput,
+  validateCreationIntent,
+} from "@/components/workspace/utils/creationIntentPrompt";
 
 export interface WorkbenchPageProps {
   onNavigate?: (page: Page, params?: PageParams) => void;
@@ -80,8 +98,10 @@ export interface WorkbenchPageProps {
 }
 
 type WorkspaceMode = WorkspaceViewMode;
+type CreateContentDialogStep = "mode" | "intent";
 
 const DEFAULT_CREATION_MODE: CreationMode = "guided";
+const MIN_CREATION_INTENT_LENGTH = 10;
 
 const CREATION_MODE_OPTIONS: Array<{
   value: CreationMode;
@@ -177,12 +197,19 @@ export function WorkbenchPage({
 
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false);
   const [createContentDialogOpen, setCreateContentDialogOpen] = useState(false);
+  const [createContentDialogStep, setCreateContentDialogStep] =
+    useState<CreateContentDialogStep>("mode");
   const [newProjectName, setNewProjectName] = useState("");
   const [workspaceProjectsRoot, setWorkspaceProjectsRoot] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
   const [creatingContent, setCreatingContent] = useState(false);
   const [selectedCreationMode, setSelectedCreationMode] =
     useState<CreationMode>(DEFAULT_CREATION_MODE);
+  const [creationIntentValues, setCreationIntentValues] =
+    useState<CreationIntentFormValues>(() => createInitialCreationIntentValues());
+  const [creationIntentError, setCreationIntentError] = useState("");
+  const [pendingInitialPromptsByContentId, setPendingInitialPromptsByContentId] =
+    useState<Record<string, string>>({});
   const [contentCreationModes, setContentCreationModes] = useState<
     Record<string, CreationMode>
   >({});
@@ -219,11 +246,35 @@ export function WorkbenchPage({
     );
   }, [contents, contentQuery]);
 
+  const creationIntentInput = useMemo<CreationIntentInput>(
+    () => ({
+      creationMode: selectedCreationMode,
+      values: creationIntentValues,
+    }),
+    [selectedCreationMode, creationIntentValues],
+  );
+
+  const currentCreationIntentFields = useMemo(
+    () => getCreationIntentFields(selectedCreationMode),
+    [selectedCreationMode],
+  );
+
+  const currentIntentLength = useMemo(
+    () => validateCreationIntent(creationIntentInput, MIN_CREATION_INTENT_LENGTH)
+      .length,
+    [creationIntentInput],
+  );
+
   const handleEnterWorkspace = useCallback(
-    (contentId: string) => {
+    (
+      contentId: string,
+      options?: {
+        showChatPanel?: boolean;
+      },
+    ) => {
       setSelectedContentId(contentId);
       setWorkspaceMode("workspace");
-      setShowChatPanel(false);
+      setShowChatPanel(options?.showChatPanel ?? false);
       setActiveRightDrawer(null);
       setLeftSidebarCollapsed(true);
     },
@@ -237,7 +288,8 @@ export function WorkbenchPage({
 
     setWorkspaceMode("project-detail");
     setActiveRightDrawer(null);
-  }, [selectedProjectId]);
+    setLeftSidebarCollapsed(false);
+  }, [selectedProjectId, setLeftSidebarCollapsed]);
 
   const loadProjects = useCallback(async () => {
     setProjectsLoading(true);
@@ -348,20 +400,59 @@ export function WorkbenchPage({
     }
   }, [loadProjects, newProjectName, theme]);
 
+  const resetCreateContentDialogState = useCallback(() => {
+    setCreateContentDialogStep("mode");
+    setSelectedCreationMode(DEFAULT_CREATION_MODE);
+    setCreationIntentValues(createInitialCreationIntentValues());
+    setCreationIntentError("");
+  }, []);
+
   const handleOpenCreateContentDialog = useCallback(() => {
     if (!selectedProjectId) {
       return;
     }
 
-    setSelectedCreationMode(DEFAULT_CREATION_MODE);
+    resetCreateContentDialogState();
     setCreateContentDialogOpen(true);
-  }, [selectedProjectId]);
+  }, [resetCreateContentDialogState, selectedProjectId]);
+
+  const handleCreationIntentValueChange = useCallback(
+    (key: CreationIntentFieldKey, value: string) => {
+      setCreationIntentValues((previous) => ({
+        ...previous,
+        [key]: value,
+      }));
+      if (creationIntentError) {
+        setCreationIntentError("");
+      }
+    },
+    [creationIntentError],
+  );
+
+  const handleGoToIntentStep = useCallback(() => {
+    setCreateContentDialogStep("intent");
+    setCreationIntentError("");
+  }, []);
 
   const handleCreateContent = useCallback(
-    async (creationMode: CreationMode) => {
+    async () => {
       if (!selectedProjectId) {
         return;
       }
+
+      const validation = validateCreationIntent(
+        creationIntentInput,
+        MIN_CREATION_INTENT_LENGTH,
+      );
+      if (!validation.valid) {
+        setCreationIntentError(validation.message || "请完善创作意图");
+        return;
+      }
+
+      const initialUserPrompt = buildCreationIntentPrompt(creationIntentInput);
+      const creationIntentMetadata = buildCreationIntentMetadata(
+        creationIntentInput,
+      );
 
       setCreatingContent(true);
       try {
@@ -373,17 +464,23 @@ export function WorkbenchPage({
           title: `新${getContentTypeLabel(defaultType)}`,
           content_type: defaultType,
           metadata: {
-            creationMode,
+            creationMode: selectedCreationMode,
+            creationIntent: creationIntentMetadata,
           },
         });
 
         setContentCreationModes((previous) => ({
           ...previous,
-          [created.id]: creationMode,
+          [created.id]: selectedCreationMode,
+        }));
+        setPendingInitialPromptsByContentId((previous) => ({
+          ...previous,
+          [created.id]: initialUserPrompt,
         }));
         setCreateContentDialogOpen(false);
+        resetCreateContentDialogState();
         await loadContents(selectedProjectId);
-        handleEnterWorkspace(created.id);
+        handleEnterWorkspace(created.id, { showChatPanel: true });
         toast.success("已创建新文稿");
       } catch (error) {
         console.error("创建文稿失败:", error);
@@ -392,8 +489,27 @@ export function WorkbenchPage({
         setCreatingContent(false);
       }
     },
-    [handleEnterWorkspace, loadContents, selectedProjectId, theme],
+    [
+      creationIntentInput,
+      handleEnterWorkspace,
+      loadContents,
+      resetCreateContentDialogState,
+      selectedCreationMode,
+      selectedProjectId,
+      theme,
+    ],
   );
+
+  const consumePendingInitialPrompt = useCallback((contentId: string) => {
+    setPendingInitialPromptsByContentId((previous) => {
+      if (!previous[contentId]) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[contentId];
+      return next;
+    });
+  }, []);
 
   const handleQuickSaveCurrent = useCallback(async () => {
     if (!selectedContentId || !selectedProjectId) {
@@ -427,9 +543,7 @@ export function WorkbenchPage({
     setWorkspaceMode(nextMode);
     const isWorkspaceMode = nextMode === "workspace";
     setShowChatPanel(!isWorkspaceMode);
-    if (isWorkspaceMode) {
-      setLeftSidebarCollapsed(true);
-    }
+    setLeftSidebarCollapsed(isWorkspaceMode);
     setActiveRightDrawer(null);
     setContents([]);
     void loadProjects();
@@ -599,7 +713,8 @@ export function WorkbenchPage({
     setWorkspaceMode("project-management");
     setShowChatPanel(true);
     setActiveRightDrawer(null);
-  }, []);
+    setLeftSidebarCollapsed(false);
+  }, [setLeftSidebarCollapsed]);
 
   useEffect(() => {
     if (workspaceMode !== "workspace") {
@@ -986,6 +1101,17 @@ export function WorkbenchPage({
                 projectId={selectedProjectId}
                 contentId={selectedContentId}
                 theme={theme}
+                initialUserPrompt={
+                  selectedContentId
+                    ? pendingInitialPromptsByContentId[selectedContentId]
+                    : undefined
+                }
+                onInitialUserPromptConsumed={() => {
+                  if (!selectedContentId) {
+                    return;
+                  }
+                  consumePendingInitialPrompt(selectedContentId);
+                }}
                 initialCreationMode={
                   (selectedContentId &&
                     contentCreationModes[selectedContentId]) ||
@@ -1255,6 +1381,9 @@ export function WorkbenchPage({
         onOpenChange={(open) => {
           if (!creatingContent) {
             setCreateContentDialogOpen(open);
+            if (!open) {
+              resetCreateContentDialogState();
+            }
           }
         }}
       >
@@ -1262,56 +1391,187 @@ export function WorkbenchPage({
           <DialogHeader>
             <DialogTitle>新建文稿</DialogTitle>
             <DialogDescription>
-              请选择本次创作模式，创建后将直接进入作业界面。
+              {createContentDialogStep === "mode"
+                ? "先选择创作模式，再填写创作意图。"
+                : "填写创作意图后将进入 AI 对话，并按所选模式自动开始写稿。"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-2 py-2">
-            {CREATION_MODE_OPTIONS.map((modeOption) => (
-              <Button
-                key={modeOption.value}
-                type="button"
-                variant={
-                  selectedCreationMode === modeOption.value
-                    ? "default"
-                    : "outline"
-                }
-                className="h-auto justify-start py-3"
-                onClick={() => setSelectedCreationMode(modeOption.value)}
-                disabled={creatingContent}
-              >
-                <div className="text-left">
-                  <div className="text-sm font-medium">{modeOption.label}</div>
-                  <div
-                    className={cn(
-                      "text-xs mt-1",
+          <div className="py-2 space-y-3">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                步骤 {createContentDialogStep === "mode" ? "1/2" : "2/2"}
+              </span>
+              <span>
+                {createContentDialogStep === "mode"
+                  ? "选择创作模式"
+                  : "填写创作意图"}
+              </span>
+            </div>
+
+            {createContentDialogStep === "mode" ? (
+              <div className="grid gap-2">
+                {CREATION_MODE_OPTIONS.map((modeOption) => (
+                  <Button
+                    key={modeOption.value}
+                    type="button"
+                    variant={
                       selectedCreationMode === modeOption.value
-                        ? "text-primary-foreground/80"
+                        ? "default"
+                        : "outline"
+                    }
+                    className="h-auto justify-start py-3"
+                    onClick={() => setSelectedCreationMode(modeOption.value)}
+                    disabled={creatingContent}
+                  >
+                    <div className="text-left">
+                      <div className="text-sm font-medium">
+                        {modeOption.label}
+                      </div>
+                      <div
+                        className={cn(
+                          "text-xs mt-1",
+                          selectedCreationMode === modeOption.value
+                            ? "text-primary-foreground/80"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {modeOption.description}
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {currentCreationIntentFields.map((field) => (
+                  <div key={field.key} className="grid gap-2">
+                    <Label>{field.label}</Label>
+                    {field.options && field.options.length > 0 ? (
+                      <Select
+                        value={creationIntentValues[field.key] || undefined}
+                        onValueChange={(value) =>
+                          handleCreationIntentValueChange(field.key, value)
+                        }
+                        disabled={creatingContent}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={field.placeholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {field.options.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : field.multiline ? (
+                      <Textarea
+                        id={`creation-intent-${field.key}`}
+                        value={creationIntentValues[field.key]}
+                        onChange={(event) =>
+                          handleCreationIntentValueChange(
+                            field.key,
+                            event.target.value,
+                          )
+                        }
+                        placeholder={field.placeholder}
+                        className="min-h-[84px] resize-y"
+                        disabled={creatingContent}
+                      />
+                    ) : (
+                      <Input
+                        id={`creation-intent-${field.key}`}
+                        value={creationIntentValues[field.key]}
+                        onChange={(event) =>
+                          handleCreationIntentValueChange(
+                            field.key,
+                            event.target.value,
+                          )
+                        }
+                        placeholder={field.placeholder}
+                        disabled={creatingContent}
+                      />
+                    )}
+                  </div>
+                ))}
+
+                <div className="grid gap-2">
+                  <Label htmlFor="creation-intent-extra">补充要求</Label>
+                  <Textarea
+                    id="creation-intent-extra"
+                    value={creationIntentValues.extraRequirements}
+                    onChange={(event) =>
+                      handleCreationIntentValueChange(
+                        "extraRequirements",
+                        event.target.value,
+                      )
+                    }
+                    placeholder="可补充风格、禁忌词、信息来源、输出格式等"
+                    className="min-h-[96px] resize-y"
+                    disabled={creatingContent}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <p
+                    className={cn(
+                      "text-xs",
+                      currentIntentLength < MIN_CREATION_INTENT_LENGTH
+                        ? "text-destructive"
                         : "text-muted-foreground",
                     )}
                   >
-                    {modeOption.description}
-                  </div>
+                    创作意图字数：{currentIntentLength}/
+                    {MIN_CREATION_INTENT_LENGTH}
+                  </p>
+                  {creationIntentError && (
+                    <p className="text-xs text-destructive">
+                      {creationIntentError}
+                    </p>
+                  )}
                 </div>
-              </Button>
-            ))}
+              </div>
+            )}
           </div>
 
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setCreateContentDialogOpen(false)}
+              onClick={() => {
+                if (createContentDialogStep === "intent") {
+                  setCreateContentDialogStep("mode");
+                  setCreationIntentError("");
+                  return;
+                }
+                setCreateContentDialogOpen(false);
+                resetCreateContentDialogState();
+              }}
               disabled={creatingContent}
             >
-              取消
+              {createContentDialogStep === "mode" ? "取消" : "上一步"}
             </Button>
             <Button
               onClick={() => {
-                void handleCreateContent(selectedCreationMode);
+                if (createContentDialogStep === "mode") {
+                  handleGoToIntentStep();
+                  return;
+                }
+                void handleCreateContent();
               }}
-              disabled={!selectedProjectId || creatingContent}
+              disabled={
+                !selectedProjectId ||
+                creatingContent ||
+                (createContentDialogStep === "intent" &&
+                  currentIntentLength < MIN_CREATION_INTENT_LENGTH)
+              }
             >
-              {creatingContent ? "创建中..." : "创建并进入作业"}
+              {createContentDialogStep === "mode"
+                ? "下一步"
+                : creatingContent
+                  ? "创建中..."
+                  : "创建并进入作业"}
             </Button>
           </DialogFooter>
         </DialogContent>

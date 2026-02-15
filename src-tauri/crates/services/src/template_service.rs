@@ -298,7 +298,7 @@ mod tests {
         for i in 1..=2 {
             let req = CreateTemplateRequest {
                 project_id: "project-1".to_string(),
-                name: format!("模板{}", i),
+                name: format!("模板{i}"),
                 platform: "xiaohongshu".to_string(),
                 title_style: None,
                 paragraph_style: None,

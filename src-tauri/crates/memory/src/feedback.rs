@@ -30,7 +30,7 @@ pub struct UserFeedback {
 /// Record user feedback
 pub fn record_feedback(db: &Connection, feedback: &UserFeedback) -> Result<(), String> {
     let action_json = serde_json::to_string(&feedback.action)
-        .map_err(|e| format!("JSON serialization failed: {}", e))?;
+        .map_err(|e| format!("JSON serialization failed: {e}"))?;
 
     let sql = r#"
         INSERT INTO memory_feedback (id, memory_id, action, session_id, created_at)
@@ -47,7 +47,7 @@ pub fn record_feedback(db: &Connection, feedback: &UserFeedback) -> Result<(), S
             feedback.created_at,
         ],
     )
-    .map_err(|e| format!("Insert failed: {}", e))?;
+    .map_err(|e| format!("Insert failed: {e}"))?;
 
     tracing::info!("[Feedback] Recorded: {:?}", feedback.action);
     Ok(())
@@ -69,7 +69,7 @@ pub fn get_recent_feedbacks(
 
     let mut stmt = db
         .prepare(sql)
-        .map_err(|e| format!("Prepare failed: {}", e))?;
+        .map_err(|e| format!("Prepare failed: {e}"))?;
 
     let feedbacks = stmt
         .query_map(params![session_id, limit as i64], |row| {
@@ -90,9 +90,9 @@ pub fn get_recent_feedbacks(
                 created_at,
             })
         })
-        .map_err(|e| format!("Query failed: {}", e))?
+        .map_err(|e| format!("Query failed: {e}"))?
         .collect::<Result<Vec<_>, rusqlite::Error>>()
-        .map_err(|e| format!("Collection failed: {}", e))?;
+        .map_err(|e| format!("Collection failed: {e}"))?;
 
     Ok(feedbacks)
 }
@@ -176,7 +176,7 @@ pub fn generate_feedback_id() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    format!("feedback_{}", now)
+    format!("feedback_{now}")
 }
 
 /// Get current timestamp

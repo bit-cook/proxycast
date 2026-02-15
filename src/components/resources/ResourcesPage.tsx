@@ -54,6 +54,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useProjects } from "@/hooks/useProjects";
+import {
+  getStoredResourceProjectId,
+  onResourceProjectChange,
+  setStoredResourceProjectId,
+} from "@/lib/resourceProjectSelection";
 import { cn } from "@/lib/utils";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import type { Page, PageParams } from "@/types/page";
@@ -93,6 +98,12 @@ const resourceCategoryItems: Array<{
 const resourceCategoryLabelMap: Record<ResourceViewCategory, string> = {
   all: "全部",
   document: "文档",
+  image: "图片",
+  audio: "语音",
+  video: "视频",
+};
+
+const mediaCategoryLabelMap: Record<"image" | "audio" | "video", string> = {
   image: "图片",
   audio: "语音",
   video: "视频",
@@ -140,22 +151,39 @@ const getFileExtension = (filename: string): string => {
   return filename.slice(index + 1).toLowerCase();
 };
 
+const getResourceMediaType = (
+  item: ResourceItem,
+): "image" | "audio" | "video" | null => {
+  if (item.kind !== "file") return null;
+
+  const normalizedMimeType = item.mimeType?.toLowerCase() ?? "";
+  if (normalizedMimeType.startsWith("image/")) return "image";
+  if (normalizedMimeType.startsWith("audio/")) return "audio";
+  if (normalizedMimeType.startsWith("video/")) return "video";
+
+  const normalizedFileType = item.fileType?.toLowerCase() ?? "";
+  if (normalizedFileType === "image") return "image";
+  if (normalizedFileType === "audio") return "audio";
+  if (normalizedFileType === "video") return "video";
+
+  const extension = getFileExtension(item.filePath || item.name);
+  if (imageExtensions.has(extension)) return "image";
+  if (audioExtensions.has(extension)) return "audio";
+  if (videoExtensions.has(extension)) return "video";
+
+  return null;
+};
+
 const isImageResource = (item: ResourceItem): boolean => {
-  if (item.kind !== "file") return false;
-  const fileType = (item.fileType || getFileExtension(item.name)).toLowerCase();
-  return item.mimeType?.toLowerCase().startsWith("image/") ?? imageExtensions.has(fileType);
+  return getResourceMediaType(item) === "image";
 };
 
 const isAudioResource = (item: ResourceItem): boolean => {
-  if (item.kind !== "file") return false;
-  const fileType = (item.fileType || getFileExtension(item.name)).toLowerCase();
-  return item.mimeType?.toLowerCase().startsWith("audio/") ?? audioExtensions.has(fileType);
+  return getResourceMediaType(item) === "audio";
 };
 
 const isVideoResource = (item: ResourceItem): boolean => {
-  if (item.kind !== "file") return false;
-  const fileType = (item.fileType || getFileExtension(item.name)).toLowerCase();
-  return item.mimeType?.toLowerCase().startsWith("video/") ?? videoExtensions.has(fileType);
+  return getResourceMediaType(item) === "video";
 };
 
 const matchResourceCategory = (
@@ -163,7 +191,11 @@ const matchResourceCategory = (
   category: ResourceViewCategory,
 ): boolean => {
   if (category === "all") return true;
-  if (category === "document") return item.kind === "document";
+  if (category === "document") {
+    if (item.kind === "document") return true;
+    if (item.kind !== "file") return false;
+    return !isImageResource(item) && !isAudioResource(item) && !isVideoResource(item);
+  }
   if (category === "image") return isImageResource(item);
   if (category === "audio") return isAudioResource(item);
   return isVideoResource(item);
@@ -258,6 +290,12 @@ export function ResourcesPage({ onNavigate }: ResourcesPageProps) {
   const [previewTitle, setPreviewTitle] = useState("");
   const [previewContent, setPreviewContent] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [crossProjectMediaHint, setCrossProjectMediaHint] = useState<{
+    projectId: string;
+    projectName: string;
+    count: number;
+    category: "image" | "audio" | "video";
+  } | null>(null);
 
   const availableProjects = useMemo(
     () => projects.filter((project) => !project.isArchived),
@@ -308,6 +346,15 @@ export function ResourcesPage({ onNavigate }: ResourcesPageProps) {
   useEffect(() => {
     if (projectId || projectsLoading) return;
 
+    const storedProjectId = getStoredResourceProjectId({ includeLegacy: true });
+    if (
+      storedProjectId &&
+      availableProjects.some((project) => project.id === storedProjectId)
+    ) {
+      setProjectId(storedProjectId);
+      return;
+    }
+
     const preferredProject =
       (defaultProject && !defaultProject.isArchived ? defaultProject : null) ??
       availableProjects[0];
@@ -323,9 +370,108 @@ export function ResourcesPage({ onNavigate }: ResourcesPageProps) {
   ]);
 
   useEffect(() => {
+    setStoredResourceProjectId(projectId, {
+      source: "resources",
+      emitEvent: true,
+    });
+  }, [projectId]);
+
+  useEffect(() => {
+    return onResourceProjectChange((detail) => {
+      if (
+        detail.source !== "image-gen-target" &&
+        detail.source !== "image-gen-save"
+      ) {
+        return;
+      }
+
+      if (!detail.projectId || detail.projectId === projectId) {
+        return;
+      }
+
+      if (!availableProjects.some((project) => project.id === detail.projectId)) {
+        return;
+      }
+
+      setProjectId(detail.projectId);
+    });
+  }, [availableProjects, projectId, setProjectId]);
+
+  useEffect(() => {
     if (!projectId) return;
     void loadResources();
   }, [projectId, loadResources]);
+
+  useEffect(() => {
+    if (
+      loading ||
+      !projectId ||
+      (viewCategory !== "image" &&
+        viewCategory !== "audio" &&
+        viewCategory !== "video")
+    ) {
+      setCrossProjectMediaHint(null);
+      return;
+    }
+
+    if (categoryCounts[viewCategory] > 0) {
+      setCrossProjectMediaHint(null);
+      return;
+    }
+
+    const candidateProjects = availableProjects.filter(
+      (project) => project.id !== projectId,
+    );
+    if (candidateProjects.length === 0) {
+      setCrossProjectMediaHint(null);
+      return;
+    }
+
+    let disposed = false;
+    void (async () => {
+      const results = await Promise.all(
+        candidateProjects.map(async (project) => {
+          try {
+            const materials = await invoke<unknown[]>("list_materials", {
+              projectId: project.id,
+              project_id: project.id,
+              filter: { type: viewCategory },
+            });
+            return {
+              projectId: project.id,
+              projectName: project.name,
+              count: materials.length,
+            };
+          } catch {
+            return {
+              projectId: project.id,
+              projectName: project.name,
+              count: 0,
+            };
+          }
+        }),
+      );
+
+      if (disposed) {
+        return;
+      }
+
+      const matched = results.find((item) => item.count > 0);
+      if (!matched) {
+        setCrossProjectMediaHint(null);
+        return;
+      }
+
+      setCrossProjectMediaHint({
+        ...matched,
+        category: viewCategory,
+      });
+    })();
+
+    return () => {
+      disposed = true;
+    };
+  }, [availableProjects, categoryCounts, loading, projectId, viewCategory]);
 
   const handleCreateFolder = useCallback(async () => {
     const name = window.prompt("请输入文件夹名称");
@@ -716,6 +862,23 @@ export function ResourcesPage({ onNavigate }: ResourcesPageProps) {
               ) : (
                 <div className="mt-3 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
                   当前为「{resourceCategoryLabelMap[viewCategory]}」分类视图，展示整个资源库内该分类内容
+                </div>
+              )}
+              {crossProjectMediaHint && (
+                <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <span className="truncate">
+                    当前资源库暂无{mediaCategoryLabelMap[crossProjectMediaHint.category]}，检测到「
+                    {crossProjectMediaHint.projectName}」包含 {crossProjectMediaHint.count} 个
+                    {mediaCategoryLabelMap[crossProjectMediaHint.category]}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setProjectId(crossProjectMediaHint.projectId)}
+                  >
+                    切换查看
+                  </Button>
                 </div>
               )}
             </div>

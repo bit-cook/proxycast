@@ -1043,7 +1043,7 @@ fn infer_importance(candidate: &MemorySourceCandidate) -> u8 {
 }
 
 fn infer_category_from_text(title: &str, summary: &str, content: &str) -> MemoryCategory {
-    let combined = format!("{} {} {}", title, summary, content).to_lowercase();
+    let combined = format!("{title} {summary} {content}").to_lowercase();
 
     if contains_any(&combined, &["我是", "我叫", "my name", "i am", "身份"]) {
         return MemoryCategory::Identity;
@@ -1105,7 +1105,7 @@ fn is_duplicate(
 fn build_fingerprint(content: &str) -> String {
     let normalized = normalize_text(content);
     let compact = normalized.chars().take(120).collect::<String>();
-    format!("fp:{}", compact)
+    format!("fp:{compact}")
 }
 
 fn normalize_tags(tags: Vec<String>) -> Vec<String> {
@@ -1148,7 +1148,7 @@ fn truncate_text(input: &str, max_chars: usize) -> String {
     let mut chars = input.chars();
     let prefix: String = chars.by_ref().take(max_chars).collect();
     if chars.next().is_some() {
-        format!("{}…", prefix)
+        format!("{prefix}…")
     } else {
         prefix
     }

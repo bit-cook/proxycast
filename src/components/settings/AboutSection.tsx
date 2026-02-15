@@ -270,11 +270,11 @@ export function AboutSection() {
         <div className="space-y-2">
           <QAItem
             question="ProxyCast 是什么？"
-            answer="ProxyCast 是一个本地 AI API 代理服务，可以将 Kiro、Gemini CLI 等工具的凭证转换为标准的 OpenAI/Anthropic API，供 Claude Code、Cherry Studio、Cursor 等工具使用。"
+            answer="ProxyCast 是一个 AI Agent 工作台，并提供可选的内网团队共享网关。你可以本机直连使用，也可以把统一的 OpenAI/Anthropic 兼容接口分发给同网段同事。"
           />
           <QAItem
             question="如何开始使用？"
-            answer="1. 在「凭证池」添加你的凭证（如 Kiro 凭证文件或 Claude API Key）；2. 在「API Server」启动服务并选择默认 Provider；3. 在你的 AI 工具中配置 API 地址为 http://localhost:8999"
+            answer="1. 在「凭证池」添加你的凭证（如 Kiro 凭证文件或 Claude API Key）；2. 直接在「AI Agent」开始使用（默认推荐）；3. 如需给团队共享，在「团队共享网关（内网）」开启共享并选择默认 Provider；4. 在内网工具中配置 API 地址（如 http://localhost:8999）"
           />
           <QAItem
             question="什么是配置切换？"

@@ -138,7 +138,7 @@ pub async fn unified_memory_semantic_search(
                 "No available OpenAI credential. Please add OpenAI API Key in settings.",
             ))
         }
-        Err(e) => return Err(format!("Failed to get credential: {}", e)),
+        Err(e) => return Err(format!("Failed to get credential: {e}")),
     };
 
     let api_key = match credential.credential {
@@ -158,17 +158,17 @@ pub async fn unified_memory_semantic_search(
 
     let query_embedding = proxycast_embedding::get_embedding(&options.query, &api_key, None)
         .await
-        .map_err(|e| format!("Failed to get embedding: {}", e))?;
+        .map_err(|e| format!("Failed to get embedding: {e}"))?;
 
     let results = {
         let conn = db.lock().unwrap();
         search::semantic_search(
-            &*conn,
+            &conn,
             &query_embedding,
             options.category.as_ref(),
             options.min_similarity,
         )
-        .map_err(|e| format!("Semantic search failed: {}", e).to_string())
+        .map_err(|e| format!("Semantic search failed: {e}").to_string())
     }?;
 
     tracing::info!("[Semantic Search] Returning {} results", results.len());
@@ -210,7 +210,7 @@ pub async fn unified_memory_hybrid_search(
                 "No available OpenAI credential. Please add OpenAI API Key in settings.",
             ))
         }
-        Err(e) => return Err(format!("Failed to get credential: {}", e)),
+        Err(e) => return Err(format!("Failed to get credential: {e}")),
     };
 
     // Extract API key from credential
@@ -234,7 +234,7 @@ pub async fn unified_memory_hybrid_search(
     // Get query embedding
     let query_embedding = proxycast_embedding::get_embedding(&options.query, &api_key, None)
         .await
-        .map_err(|e| format!("Failed to get embedding: {}", e))?;
+        .map_err(|e| format!("Failed to get embedding: {e}"))?;
 
     // Calculate keyword weight (1.0 - semantic_weight)
     let keyword_weight = 1.0 - options.semantic_weight;
@@ -248,12 +248,12 @@ pub async fn unified_memory_hybrid_search(
     let semantic_results = {
         let conn = db.lock().unwrap();
         search::semantic_search(
-            &*conn,
+            &conn,
             &query_embedding,
             options.category.as_ref(),
             options.min_similarity,
         )
-        .map_err(|e| format!("Hybrid semantic search failed: {}", e).to_string())
+        .map_err(|e| format!("Hybrid semantic search failed: {e}").to_string())
     }?;
 
     tracing::info!(
@@ -265,25 +265,25 @@ pub async fn unified_memory_hybrid_search(
     let keyword_results: Vec<UnifiedMemory> = {
         let conn = db.lock().unwrap();
         let query_clean = options.query.replace('%', "\\%").replace('_', "\\_");
-        let search_pattern = format!("%{}%", query_clean);
+        let search_pattern = format!("%{query_clean}%");
         let limit = options.limit.unwrap_or(50) as i64;
         let sql = "SELECT id, session_id, memory_type, category, title, content, summary, tags, confidence, importance, access_count, last_accessed_at, source, created_at, updated_at, archived FROM unified_memory WHERE archived = 0 AND (title LIKE ?1 OR summary LIKE ?1) ORDER BY updated_at DESC LIMIT ?";
 
-        let mut stmt = conn.prepare(&sql)
-            .map_err(|e| format!("Failed to prepare statement: {}", e))?;
+        let mut stmt = conn.prepare(sql)
+            .map_err(|e| format!("Failed to prepare statement: {e}"))?;
 
         let memories = stmt
             .query_map(params![search_pattern, limit], |row| {
                 parse_memory_row(row)
             })
-            .map_err(|e| format!("Query execution failed: {}", e))?
+            .map_err(|e| format!("Query execution failed: {e}"))?
             .collect::<Result<Vec<_>, rusqlite::Error>>()
-            .map_err(|e| format!("Result collection failed: {}", e))?;
+            .map_err(|e| format!("Result collection failed: {e}"))?;
 
         tracing::info!("[Hybrid Search] Keyword: {} results", memories.len());
 
         Ok(memories)
-    }.map_err(|e: std::io::Error| format!("Hybrid keyword search failed: {}", e).to_string())?;
+    }.map_err(|e: std::io::Error| format!("Hybrid keyword search failed: {e}").to_string())?;
 
     // Merge and deduplicate results
     let mut merged = std::collections::HashMap::new();
@@ -291,20 +291,21 @@ pub async fn unified_memory_hybrid_search(
     // Add semantic results with weighted scores
     for memory in semantic_results {
         let id = memory.id.clone();
-        if !merged.contains_key(&id) {
-            merged.insert(id, (memory, options.semantic_weight));
+        if let std::collections::hash_map::Entry::Vacant(e) = merged.entry(id) {
+            e.insert((memory, options.semantic_weight));
         }
     }
 
     // Add keyword results with weighted scores
     for memory in keyword_results {
         let id = memory.id.clone();
-        if !merged.contains_key(&id) {
-            merged.insert(id, (memory, keyword_weight));
-        } else {
-            // Memory already in semantic results, add keyword weight to existing score
-            if let Some((existing_mem, existing_score)) = merged.get_mut(&id) {
-                *existing_score += keyword_weight;
+        match merged.entry(id) {
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert((memory, keyword_weight));
+            }
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                // Memory already in semantic results, add keyword weight to existing score
+                e.get_mut().1 += keyword_weight;
             }
         }
     }
@@ -312,7 +313,7 @@ pub async fn unified_memory_hybrid_search(
     // Convert to Vec and sort by combined score
     let mut results: Vec<(UnifiedMemory, f32)> = merged
         .into_iter()
-        .map(|(id, (memory, score))| (memory, score))
+        .map(|(_, (memory, score))| (memory, score))
         .collect();
 
     // Sort by combined score (descending)
