@@ -121,8 +121,8 @@ enigo = "0.3"
 # CI/CD: git = "https://github.com/astercloud/aster-rust", tag = "v0.11.0"
 # aster = { path = "../../../astercloud/aster-rust/crates/aster" }
 aster = { git = "https://github.com/astercloud/aster-rust", tag = "v0.11.0" }
-# CI/CD: aster-models = { git = "https://github.com/astercloud/aster-rust", tag = "v0.12.0" }
-aster-models = { path = "../../../astercloud/aster-rust/crates/aster-models" }
+# 本地开发: aster-models = { path = "../../../astercloud/aster-rust/crates/aster-models" }
+aster-models = { git = "https://github.com/astercloud/aster-rust", tag = "v0.12.0" }
 
 # MCP (Model Context Protocol)
 rmcp = { version = "0.12.0", features = ["client", "transport-io", "transport-child-process"] }

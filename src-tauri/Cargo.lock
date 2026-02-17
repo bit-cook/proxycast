@@ -295,6 +295,7 @@ dependencies = [
 [[package]]
 name = "aster-models"
 version = "0.12.0"
+source = "git+https://github.com/astercloud/aster-rust?tag=v0.12.0#f6c1ad342eb58accb61524985fa78ea7f4b8be2b"
 dependencies = [
  "serde",
  "serde_json",
@@ -12124,7 +12125,3 @@ dependencies = [
  "syn 2.0.114",
  "winnow 0.7.14",
 ]
-
-[[patch.unused]]
-name = "aster-core"
-version = "0.12.0"
