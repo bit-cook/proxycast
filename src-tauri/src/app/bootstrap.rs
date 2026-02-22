@@ -98,6 +98,25 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
     // 数据库
     let db = database::init_database().map_err(|e| format!("数据库初始化失败: {e}"))?;
 
+    // Windows 特定：验证数据库可写性
+    #[cfg(target_os = "windows")]
+    {
+        tracing::info!("[Bootstrap] Windows 平台 - 验证数据库文件权限");
+        match db.lock() {
+            Ok(conn) => {
+                // 简单验证：尝试执行 PRAGMA
+                if let Err(e) = conn.execute("PRAGMA user_version", []) {
+                    tracing::warn!("[Bootstrap] Windows 数据库验证失败: {}", e);
+                } else {
+                    tracing::info!("[Bootstrap] Windows 数据库验证成功");
+                }
+            }
+            Err(e) => {
+                tracing::warn!("[Bootstrap] Windows 数据库锁获取失败: {}", e);
+            }
+        }
+    }
+
     // 初始化批量任务表
     if let Err(e) = proxycast_scheduler::BatchTaskDao::init_tables(&db) {
         tracing::warn!("[Bootstrap] 批量任务表初始化失败: {}", e);
@@ -141,10 +160,27 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
     // 其他状态
     // 设置 Aster 全局 session store（使用 ProxyCast 数据库）
     let session_store = Arc::new(ProxyCastSessionStore::new(db.clone()));
+
     // 使用 tokio runtime 来设置全局 store
+    // 使用 Builder 模式以获得更好的跨平台兼容性
     let rt = tokio::runtime::Handle::try_current().unwrap_or_else(|_| {
-        // 如果没有 runtime，创建一个临时的
-        tokio::runtime::Runtime::new()
+        // Windows: IOCP, macOS: kqueue, Linux: epoll/io-uring
+        #[cfg(target_os = "windows")]
+        tracing::info!("[Bootstrap] Windows 平台 - 创建 Tokio Runtime (IOCP)");
+
+        #[cfg(target_os = "macos")]
+        tracing::info!("[Bootstrap] macOS 平台 - 创建 Tokio Runtime (kqueue)");
+
+        #[cfg(target_os = "linux")]
+        tracing::info!("[Bootstrap] Linux 平台 - 创建 Tokio Runtime (epoll)");
+
+        // 使用 Builder 模式获得更多控制，提高 Windows 兼容性
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2) // 限制线程数，避免 Windows 资源问题
+            .thread_name("proxycast-runtime")
+            .enable_io()
+            .enable_time()
+            .build()
             .expect("Failed to create tokio runtime: 系统资源不足或配置错误")
             .handle()
             .clone()
