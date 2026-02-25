@@ -49,6 +49,7 @@ import { ProfileSettings } from "../account/profile";
 import { ProviderPoolPage } from "@/components/provider-pool";
 import { ApiServerPage } from "@/components/api-server/ApiServerPage";
 import { McpPanel } from "@/components/mcp";
+import { ChannelsSettings } from "../system/channels";
 
 import { SettingHeader } from "../features/SettingHeader";
 
@@ -237,6 +238,14 @@ function renderSettingsContent(tab: SettingsTabs): ReactNode {
         </>
       );
 
+    case SettingsTabs.Channels:
+      return (
+        <>
+          <SettingHeader title="渠道管理" />
+          <ChannelsSettings />
+        </>
+      );
+
     case SettingsTabs.Proxy:
       return (
         <>
@@ -321,6 +330,7 @@ const WIDE_CONTENT_TABS = new Set<SettingsTabs>([
   SettingsTabs.Providers,
   SettingsTabs.ApiServer,
   SettingsTabs.McpServer,
+  SettingsTabs.Channels,
   SettingsTabs.ExecutionTracker,
 ]);
 

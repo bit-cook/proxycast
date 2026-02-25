@@ -37,6 +37,7 @@ export enum SettingsTabs {
   // 系统
   ApiServer = "api-server",
   McpServer = "mcp-server",
+  Channels = "channels",
   Proxy = "proxy",
   SecurityPerformance = "security-performance",
   Heartbeat = "heartbeat",
@@ -85,6 +86,7 @@ export const SETTINGS_GROUPS: Record<SettingsGroupKey, SettingsTabs[]> = {
   [SettingsGroupKey.System]: [
     SettingsTabs.ApiServer,
     SettingsTabs.McpServer,
+    SettingsTabs.Channels,
     SettingsTabs.Proxy,
     SettingsTabs.SecurityPerformance,
     SettingsTabs.Heartbeat,

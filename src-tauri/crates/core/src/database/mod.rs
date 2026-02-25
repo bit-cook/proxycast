@@ -2,6 +2,7 @@ pub mod dao;
 pub mod migration;
 pub mod migration_v2;
 pub mod migration_v3;
+pub mod migration_v4;
 pub mod schema;
 pub mod system_providers;
 
@@ -141,6 +142,23 @@ pub fn init_database() -> Result<DbConnection, String> {
         }
         Err(e) => {
             tracing::warn!("[数据库] Playwright MCP Server 迁移失败（非致命）: {}", e);
+        }
+    }
+
+    // 修复 [object Promise] 路径污染问题（历史 bug 遗留数据）
+    match migration_v4::migrate_fix_promise_paths(&conn) {
+        Ok(result) => {
+            if result.executed {
+                tracing::info!(
+                    "[数据库] 路径修复和会话统一完成: workspaces={}, sessions={}, unified={}",
+                    result.fixed_workspaces,
+                    result.fixed_sessions,
+                    result.unified_sessions
+                );
+            }
+        }
+        Err(e) => {
+            tracing::warn!("[数据库] 路径修复和会话统一失败（非致命）: {}", e);
         }
     }
 

@@ -806,6 +806,19 @@ pub fn run() {
             // MCP 资源管理命令
             commands::mcp_cmd::mcp_list_resources,
             commands::mcp_cmd::mcp_read_resource,
+            // Channel commands
+            commands::channels_cmd::get_ai_channels,
+            commands::channels_cmd::get_ai_channel,
+            commands::channels_cmd::create_ai_channel,
+            commands::channels_cmd::update_ai_channel,
+            commands::channels_cmd::delete_ai_channel,
+            commands::channels_cmd::test_ai_channel,
+            commands::channels_cmd::get_notification_channels,
+            commands::channels_cmd::get_notification_channel,
+            commands::channels_cmd::create_notification_channel,
+            commands::channels_cmd::update_notification_channel,
+            commands::channels_cmd::delete_notification_channel,
+            commands::channels_cmd::test_notification_channel,
             // Prompt commands
             commands::prompt_cmd::get_prompts,
             commands::prompt_cmd::upsert_prompt,

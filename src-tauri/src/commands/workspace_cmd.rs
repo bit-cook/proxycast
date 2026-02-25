@@ -132,6 +132,14 @@ pub async fn workspace_create(
     db: State<'_, DbConnection>,
     request: CreateWorkspaceRequest,
 ) -> Result<WorkspaceListItem, String> {
+    // 验证 root_path 不是 Promise 对象
+    if request.root_path.contains("[object Promise]") {
+        return Err(format!(
+            "无效的 root_path: {}。请确保前端正确 await 了 Promise。",
+            request.root_path
+        ));
+    }
+
     let manager = WorkspaceManager::new(db.inner().clone());
 
     let workspace_type = request

@@ -1,5 +1,6 @@
 pub mod a2ui_form_cmd;
 pub mod agent_cmd;
+pub mod channels_cmd;
 pub mod api_key_provider_cmd;
 pub mod asr_cmd;
 pub mod aster_agent_cmd;

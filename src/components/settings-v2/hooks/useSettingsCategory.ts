@@ -20,6 +20,7 @@ import {
   Mic,
   Server,
   Plug,
+  Route,
   Globe,
   ShieldCheck,
   HeartPulse,
@@ -150,6 +151,11 @@ export function useSettingsCategory(): CategoryGroup[] {
           key: SettingsTabs.McpServer,
           label: t("settings.tab.mcpServer", "MCP 服务器"),
           icon: Plug,
+        },
+        {
+          key: SettingsTabs.Channels,
+          label: t("settings.tab.channels", "渠道管理"),
+          icon: Route,
         },
         {
           key: SettingsTabs.Proxy,
