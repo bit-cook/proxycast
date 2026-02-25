@@ -50,6 +50,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -83,6 +85,50 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           save-if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Sync version from tag to tauri.conf.json
+        shell: bash
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          echo "Syncing version to $VERSION"
+          cd src-tauri
+          node -e "
+            const fs = require('fs');
+            const conf = JSON.parse(fs.readFileSync('tauri.conf.json', 'utf8'));
+            conf.version = '$VERSION';
+            fs.writeFileSync('tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
+          "
+          echo "tauri.conf.json version is now: $(node -e "console.log(JSON.parse(require('fs').readFileSync('tauri.conf.json','utf8')).version)")"
+
+      - name: Load release notes
+        shell: bash
+        run: |
+          if [ -f RELEASE_NOTES.md ]; then
+            {
+              echo "RELEASE_BODY<<RELEASE_BODY_EOF"
+              cat RELEASE_NOTES.md
+              echo ""
+              echo "RELEASE_BODY_EOF"
+            } >> "$GITHUB_ENV"
+          else
+            # fallback: 从 git log 生成简单 changelog
+            TAG="${{ github.event.inputs.version || github.ref_name }}"
+            PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${TAG}$" | head -n 1)
+            if [ -z "$PREV_TAG" ]; then
+              CHANGELOG=$(git log --pretty=format:"- %s (%h)" ${TAG} 2>/dev/null || git log --pretty=format:"- %s (%h)")
+            else
+              CHANGELOG=$(git log --pretty=format:"- %s (%h)" ${PREV_TAG}..${TAG} 2>/dev/null || git log --pretty=format:"- %s (%h)" ${PREV_TAG}..HEAD)
+            fi
+            {
+              echo "RELEASE_BODY<<RELEASE_BODY_EOF"
+              echo "## ProxyCast ${TAG}"
+              echo ""
+              echo "### Changes"
+              echo "${CHANGELOG}"
+              echo "RELEASE_BODY_EOF"
+            } >> "$GITHUB_ENV"
+          fi
 
       - name: Install frontend dependencies
         run: pnpm install --no-frozen-lockfile
@@ -128,25 +174,7 @@ jobs:
           tauriScript: npx tauri
           tagName: ${{ github.event.inputs.version || github.ref_name }}
           releaseName: 'ProxyCast ${{ github.event.inputs.version || github.ref_name }}'
-          releaseBody: |
-            ## ProxyCast Release
-
-            ### Features
-            - AI API 代理服务
-            - Kiro OAuth 凭证管理
-            - OpenAI/Anthropic 兼容 API
-            - 自动检测凭证文件变化
-            - 多 Provider 支持
-
-            ### Downloads
-            - **macOS (Apple Silicon)**: `proxycast_*_aarch64.dmg`
-            - **macOS (Intel)**: `proxycast_*_x64.dmg`
-            - **Windows (64-bit)**: `proxycast_*_x64-setup.exe`
-            - **Linux x64**: `proxycast_*_amd64.deb` / `proxycast_*_amd64.AppImage`
-
-            ### 默认配置
-            - **端口**: 8999
-            - **API Key**: 首次启动自动生成，可在设置页查看/修改
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
           # 默认不启用 voice feature（包含 whisper-rs，编译很慢）
@@ -168,25 +196,7 @@ jobs:
           tauriScript: npx tauri
           tagName: ${{ github.event.inputs.version || github.ref_name }}
           releaseName: 'ProxyCast ${{ github.event.inputs.version || github.ref_name }}'
-          releaseBody: |
-            ## ProxyCast Release
-
-            ### Features
-            - AI API 代理服务
-            - Kiro OAuth 凭证管理
-            - OpenAI/Anthropic 兼容 API
-            - 自动检测凭证文件变化
-            - 多 Provider 支持
-
-            ### Downloads
-            - **macOS (Apple Silicon)**: `proxycast_*_aarch64.dmg`
-            - **macOS (Intel)**: `proxycast_*_x64.dmg`
-            - **Windows (64-bit)**: `proxycast_*_x64-setup.exe`
-            - **Linux x64**: `proxycast_*_amd64.deb` / `proxycast_*_amd64.AppImage`
-
-            ### 默认配置
-            - **端口**: 8999
-            - **API Key**: 首次启动自动生成，可在设置页查看/修改
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
           # 默认不启用 voice feature（包含 whisper-rs，编译很慢）
@@ -218,25 +228,7 @@ jobs:
           tauriScript: npx tauri
           tagName: ${{ github.event.inputs.version || github.ref_name }}
           releaseName: 'ProxyCast ${{ github.event.inputs.version || github.ref_name }}'
-          releaseBody: |
-            ## ProxyCast Release
-
-            ### Features
-            - AI API 代理服务
-            - Kiro OAuth 凭证管理
-            - OpenAI/Anthropic 兼容 API
-            - 自动检测凭证文件变化
-            - 多 Provider 支持
-
-            ### Downloads
-            - **macOS (Apple Silicon)**: `proxycast_*_aarch64.dmg`
-            - **macOS (Intel)**: `proxycast_*_x64.dmg`
-            - **Windows (64-bit)**: `proxycast_*_x64-setup.exe`
-            - **Linux x64**: `proxycast_*_amd64.deb` / `proxycast_*_amd64.AppImage`
-
-            ### 默认配置
-            - **端口**: 8999
-            - **API Key**: 首次启动自动生成，可在设置页查看/修改
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
           # 默认不启用 voice feature（包含 whisper-rs，编译很慢）
@@ -264,25 +256,7 @@ jobs:
           tauriScript: npx tauri
           tagName: ${{ github.event.inputs.version || github.ref_name }}
           releaseName: 'ProxyCast ${{ github.event.inputs.version || github.ref_name }}'
-          releaseBody: |
-            ## ProxyCast Release
-
-            ### Features
-            - AI API 代理服务
-            - Kiro OAuth 凭证管理
-            - OpenAI/Anthropic 兼容 API
-            - 自动检测凭证文件变化
-            - 多 Provider 支持
-
-            ### Downloads
-            - **macOS (Apple Silicon)**: `proxycast_*_aarch64.dmg`
-            - **macOS (Intel)**: `proxycast_*_x64.dmg`
-            - **Windows (64-bit)**: `proxycast_*_x64-setup.exe`
-            - **Linux x64**: `proxycast_*_amd64.deb` / `proxycast_*_amd64.AppImage`
-
-            ### 默认配置
-            - **端口**: 8999
-            - **API Key**: 首次启动自动生成，可在设置页查看/修改
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
@@ -304,25 +278,7 @@ jobs:
           tauriScript: npx tauri
           tagName: ${{ github.event.inputs.version || github.ref_name }}
           releaseName: 'ProxyCast ${{ github.event.inputs.version || github.ref_name }}'
-          releaseBody: |
-            ## ProxyCast Release
-
-            ### Features
-            - AI API 代理服务
-            - Kiro OAuth 凭证管理
-            - OpenAI/Anthropic 兼容 API
-            - 自动检测凭证文件变化
-            - 多 Provider 支持
-
-            ### Downloads
-            - **macOS (Apple Silicon)**: `proxycast_*_aarch64.dmg`
-            - **macOS (Intel)**: `proxycast_*_x64.dmg`
-            - **Windows (64-bit)**: `proxycast_*_x64-setup.exe`
-            - **Linux x64**: `proxycast_*_amd64.deb` / `proxycast_*_amd64.AppImage`
-
-            ### 默认配置
-            - **端口**: 8999
-            - **API Key**: 首次启动自动生成，可在设置页查看/修改
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
