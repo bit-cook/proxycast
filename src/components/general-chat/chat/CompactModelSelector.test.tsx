@@ -128,14 +128,37 @@ describe("CompactModelSelector", () => {
     expect(props.disabled).toBe(true);
   });
 
-  it("无可用 Provider 且未加载时应显示提示并不渲染 ModelSelector", () => {
+  it("无可用 Provider 且未加载时应显示引导并不渲染 ModelSelector", () => {
     const { container } = renderCompactModelSelector({
       hasAvailableProvider: false,
       isLoading: false,
     });
 
-    expect(container.textContent).toContain("请先配置 Provider 凭证");
+    expect(container.textContent).toContain("工具模型未配置");
     expect(mockModelSelector).not.toHaveBeenCalled();
+  });
+
+  it("无可用 Provider 时点击配置应触发回调", () => {
+    const onManageProviders = vi.fn();
+    const { container } = renderCompactModelSelector({
+      hasAvailableProvider: false,
+      isLoading: false,
+      onManageProviders,
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (node) => node.textContent?.includes("配置"),
+    ) as HTMLButtonElement | undefined;
+
+    if (!button) {
+      throw new Error("未找到配置按钮");
+    }
+
+    act(() => {
+      button.click();
+    });
+
+    expect(onManageProviders).toHaveBeenCalledTimes(1);
   });
 
   it("错误状态应展示异常提示文案", () => {

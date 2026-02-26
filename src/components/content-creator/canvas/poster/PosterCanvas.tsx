@@ -10,6 +10,7 @@ import { PosterToolbar } from "./PosterToolbar";
 import { ElementToolbar } from "./ElementToolbar";
 import { LayerPanel } from "./LayerPanel";
 import { PageList } from "./PageList";
+import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
 import {
   useFabricCanvas,
   useElementOperations,
@@ -31,7 +32,10 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  width: 100%;
   padding: 16px;
+  gap: 8px;
 `;
 
 const InnerContainer = styled.div`
@@ -98,7 +102,7 @@ const GridOverlay = styled.div<{
  * @returns 海报画布组件
  */
 export const PosterCanvas: React.FC<PosterCanvasProps> = memo(
-  ({ state, onStateChange, onClose }) => {
+  ({ state, onStateChange, onBackHome, onClose }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -345,6 +349,8 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = memo(
 
     return (
       <Container>
+        <CanvasBreadcrumbHeader label="海报" onBackHome={onBackHome} />
+
         <InnerContainer>
           <PosterToolbar
             zoom={zoom}

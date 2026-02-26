@@ -9,6 +9,8 @@
  * @requirements 1.1, 2.1, 4.1
  */
 
+import type { Page, PageParams } from "@/types/page";
+
 // ============================================================================
 // 会话相关类型
 // ============================================================================
@@ -409,7 +411,7 @@ export interface GeneralChatPageProps {
   /** 初始会话 ID (可选) */
   initialSessionId?: string;
   /** 页面导航回调 */
-  onNavigate?: (page: string) => void;
+  onNavigate?: (page: Page, params?: PageParams) => void;
 }
 
 /**
@@ -421,7 +423,7 @@ export interface ChatPanelProps {
   /** 打开画布回调 */
   onOpenCanvas: (content: CanvasState) => void;
   /** 页面导航回调 */
-  onNavigate?: (page: string) => void;
+  onNavigate?: (page: Page, params?: PageParams) => void;
 }
 
 /**

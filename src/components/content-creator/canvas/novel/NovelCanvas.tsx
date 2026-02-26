@@ -19,12 +19,16 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { NotionEditor } from "@/components/content-creator/canvas/document/editor";
 import type { NovelCanvasState, Chapter } from "./types";
 import { countWords } from "./types";
+import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
 
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  width: 100%;
   padding: 16px;
+  gap: 8px;
 `;
 
 const InnerContainer = styled.div`
@@ -172,6 +176,7 @@ const EmptyEditorState = styled.div`
 interface NovelCanvasProps {
   state: NovelCanvasState;
   onStateChange: (state: NovelCanvasState) => void;
+  onBackHome?: () => void;
   onClose: () => void;
   useExternalToolbar?: boolean;
   chapterListCollapsed?: boolean;
@@ -225,6 +230,7 @@ export const NovelCanvas: React.FC<NovelCanvasProps> = memo(
   ({
     state,
     onStateChange,
+    onBackHome,
     onClose,
     useExternalToolbar = false,
     chapterListCollapsed,
@@ -352,6 +358,8 @@ export const NovelCanvas: React.FC<NovelCanvasProps> = memo(
 
     return (
       <Container>
+        <CanvasBreadcrumbHeader label="小说" onBackHome={onBackHome} />
+
         <InnerContainer>
           {!useExternalToolbar && (
             <Header>

@@ -462,6 +462,68 @@ describe("AgentChatPage 话题切换项目恢复", () => {
   });
 });
 
+describe("AgentChatPage 侧栏显示控制", () => {
+  it("有消息时手动展开侧栏后不应被自动收起", async () => {
+    mockUseAgentChatUnified.mockImplementation(
+      ({ workspaceId }: { workspaceId: string }) => {
+        observedWorkspaceIds.push(workspaceId);
+        return {
+          providerType: "kiro",
+          setProviderType: vi.fn(),
+          model: "mock-model",
+          setModel: vi.fn(),
+          executionStrategy: "auto",
+          setExecutionStrategy: vi.fn(),
+          messages: [{ id: "msg-1", role: "user", content: "你好" }],
+          isSending: false,
+          sendMessage: sharedSendMessageMock,
+          stopSending: vi.fn(async () => undefined),
+          clearMessages: vi.fn(),
+          deleteMessage: vi.fn(),
+          editMessage: vi.fn(),
+          handlePermissionResponse: vi.fn(),
+          triggerAIGuide: sharedTriggerAIGuideMock,
+          topics: [
+            {
+              id: "topic-a",
+              title: "话题 A",
+              updatedAt: Date.now(),
+            },
+          ],
+          sessionId: "session-1",
+          switchTopic: sharedSwitchTopicMock,
+          deleteTopic: vi.fn(),
+          renameTopic: vi.fn(),
+        };
+      },
+    );
+
+    const container = renderPage();
+    await flushEffects();
+
+    expect(container.querySelector('[data-testid="chat-sidebar"]')).toBeNull();
+
+    clickButton(container, "toggle-history");
+    await flushEffects();
+    expect(container.querySelector('[data-testid="chat-sidebar"]')).not.toBeNull();
+
+    clickButton(container, "set-project");
+    await flushEffects();
+    expect(container.querySelector('[data-testid="chat-sidebar"]')).not.toBeNull();
+  });
+
+  it("showChatPanel=false 时应保持侧栏隐藏", async () => {
+    const container = renderPage({ showChatPanel: false });
+    await flushEffects();
+
+    expect(container.querySelector('[data-testid="chat-sidebar"]')).toBeNull();
+
+    clickButton(container, "toggle-history");
+    await flushEffects();
+    expect(container.querySelector('[data-testid="chat-sidebar"]')).toBeNull();
+  });
+});
+
 describe("AgentChatPage 自动引导", () => {
   it("社媒空文稿应预填引导词且不自动发送", async () => {
     mockIsContentCreationTheme.mockReturnValue(true);

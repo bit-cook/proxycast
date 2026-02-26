@@ -168,6 +168,8 @@ export interface PosterCanvasProps {
   state: PosterCanvasState;
   /** 状态变更回调 */
   onStateChange: (state: PosterCanvasState) => void;
+  /** 返回首页回调 */
+  onBackHome?: () => void;
   /** 关闭画布回调 */
   onClose: () => void;
 }

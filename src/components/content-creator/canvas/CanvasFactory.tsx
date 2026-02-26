@@ -32,6 +32,8 @@ interface CanvasFactoryProps {
   onStateChange: (state: CanvasStateUnion) => void;
   /** 关闭回调 */
   onClose: () => void;
+  /** 返回首页回调 */
+  onBackHome?: () => void;
   /** 是否正在流式输出（仅文档画布使用） */
   isStreaming?: boolean;
   /** 小说画布控制配置（可选） */
@@ -59,10 +61,13 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
     state,
     onStateChange,
     onClose,
+    onBackHome,
     isStreaming,
     novelControls,
     onSelectionTextChange,
   }) => {
+    const resolvedBackHome = onBackHome ?? onClose;
+
     // 优先根据 state.type 渲染，这样 general 主题也能显示文档画布
     // 只有当 state.type 与 theme 对应的 canvasType 不匹配时才检查 theme
     const canvasType = useMemo(() => {
@@ -80,6 +85,7 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
         <DocumentCanvas
           state={state}
           onStateChange={onStateChange as (s: DocumentCanvasState) => void}
+          onBackHome={resolvedBackHome}
           onClose={onClose}
           isStreaming={isStreaming}
           onSelectionTextChange={onSelectionTextChange}
@@ -92,6 +98,7 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
         <PosterCanvas
           state={state}
           onStateChange={onStateChange as (s: PosterCanvasState) => void}
+          onBackHome={resolvedBackHome}
           onClose={onClose}
         />
       );
@@ -102,6 +109,7 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
         <MusicCanvas
           state={state}
           onStateChange={onStateChange as (s: MusicCanvasState) => void}
+          onBackHome={resolvedBackHome}
           onClose={onClose}
           isStreaming={isStreaming}
         />
@@ -113,6 +121,7 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
         <ScriptCanvas
           state={state}
           onStateChange={onStateChange as (s: ScriptCanvasState) => void}
+          onBackHome={resolvedBackHome}
           onClose={onClose}
         />
       );
@@ -123,6 +132,7 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
         <NovelCanvas
           state={state}
           onStateChange={onStateChange as (s: NovelCanvasState) => void}
+          onBackHome={resolvedBackHome}
           onClose={onClose}
           useExternalToolbar={novelControls?.useExternalToolbar}
           chapterListCollapsed={novelControls?.chapterListCollapsed}
@@ -139,6 +149,7 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
         <VideoCanvas
           state={state}
           onStateChange={onStateChange as (s: VideoCanvasState) => void}
+          onBackHome={resolvedBackHome}
           onClose={onClose}
         />
       );

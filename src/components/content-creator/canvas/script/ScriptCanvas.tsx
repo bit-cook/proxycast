@@ -12,12 +12,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ScriptCanvasState, Scene, Dialogue } from "./types";
+import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
 
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  width: 100%;
   padding: 16px;
+  gap: 8px;
 `;
 
 const InnerContainer = styled.div`
@@ -131,11 +135,12 @@ const _CharacterName = styled.div`
 interface ScriptCanvasProps {
   state: ScriptCanvasState;
   onStateChange: (state: ScriptCanvasState) => void;
+  onBackHome?: () => void;
   onClose: () => void;
 }
 
 export const ScriptCanvas: React.FC<ScriptCanvasProps> = memo(
-  ({ state, onStateChange, onClose }) => {
+  ({ state, onStateChange, onBackHome, onClose }) => {
     const currentScene = state.scenes.find(
       (s) => s.id === state.currentSceneId,
     );
@@ -210,6 +215,8 @@ export const ScriptCanvas: React.FC<ScriptCanvasProps> = memo(
 
     return (
       <Container>
+        <CanvasBreadcrumbHeader label="剧本" onBackHome={onBackHome} />
+
         <InnerContainer>
           <Header>
             <Title>剧本</Title>

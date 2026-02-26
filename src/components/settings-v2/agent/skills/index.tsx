@@ -1,4 +1,4 @@
-import { SkillsPage } from "../skills/SkillsPage";
+import { SkillsPage } from "@/components/skills/SkillsPage";
 
 export function ExtensionsSettings() {
   return (

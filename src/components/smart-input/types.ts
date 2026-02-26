@@ -1,3 +1,5 @@
+import type { Skill } from "@/lib/api/skills";
+
 /**
  * @file types.ts
  * @description 截图对话模块类型定义
@@ -119,14 +121,16 @@ export interface ChatInputProps {
   value: string;
   /** 值变化回调 */
   onChange: (value: string) => void;
-  /** 发送消息回调 */
-  onSend: () => void;
+  /** 发送消息回调（可接受 textOverride） */
+  onSend: (textOverride?: string) => void;
   /** 是否禁用 */
   disabled?: boolean;
   /** 是否正在加载 */
   isLoading?: boolean;
   /** 占位符文本 */
   placeholder?: string;
+  /** 技能列表 */
+  skills?: Skill[];
 }
 
 /**

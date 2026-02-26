@@ -4,8 +4,11 @@
  * @module components/smart-input/ChatInput
  */
 
-import React from "react";
+import React, { useRef } from "react";
 import { BaseComposer } from "@/components/input-kit";
+import { CharacterMention } from "@/components/agent/chat/components/Inputbar/components/CharacterMention";
+import { SkillBadge } from "@/components/agent/chat/components/Inputbar/components/SkillBadge";
+import { useActiveSkill } from "@/components/agent/chat/components/Inputbar/hooks/useActiveSkill";
 import type { ChatInputProps } from "./types";
 
 /**
@@ -24,20 +27,47 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   disabled = false,
   isLoading = false,
   placeholder = "输入问题...",
+  skills = [],
 }) => {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { activeSkill, setActiveSkill, wrapTextWithSkill, clearActiveSkill } =
+    useActiveSkill();
+
+  const handleSend = () => {
+    const text = activeSkill ? wrapTextWithSkill(value) : undefined;
+    onSend(text);
+    clearActiveSkill();
+  };
+
   return (
     <BaseComposer
       text={value}
       setText={onChange}
-      onSend={onSend}
+      onSend={handleSend}
       disabled={disabled || isLoading}
       placeholder={placeholder}
+      textareaRef={textareaRef}
       autoFocus
       maxAutoHeight={80}
       rows={1}
     >
-      {({ textareaRef, textareaProps, onPrimaryAction, isPrimaryDisabled }) => (
+      {({ textareaProps, onPrimaryAction, isPrimaryDisabled }) => (
         <div className="smart-input-input-area">
+          {/* CharacterMention */}
+          {skills.length > 0 && (
+            <CharacterMention
+              characters={[]}
+              skills={skills}
+              inputRef={textareaRef}
+              value={value}
+              onChange={onChange}
+              onSelectSkill={setActiveSkill}
+            />
+          )}
+          {/* Skill Badge */}
+          {activeSkill && (
+            <SkillBadge skill={activeSkill} onClear={clearActiveSkill} />
+          )}
           <textarea
             ref={textareaRef}
             {...textareaProps}

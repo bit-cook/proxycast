@@ -141,6 +141,39 @@ export interface TestMessageResult {
 }
 
 // ============================================================================
+// Bot 渠道配置类型（用于 settings-v2 渠道管理页面）
+// ============================================================================
+
+export interface TelegramBotConfig {
+  enabled: boolean;
+  bot_token: string;
+  allowed_user_ids: string[];
+  default_model?: string;
+}
+
+export interface DiscordBotConfig {
+  enabled: boolean;
+  bot_token: string;
+  allowed_server_ids: string[];
+  default_model?: string;
+}
+
+export interface FeishuBotConfig {
+  enabled: boolean;
+  app_id: string;
+  app_secret: string;
+  verification_token?: string;
+  encrypt_key?: string;
+  default_model?: string;
+}
+
+export interface ChannelsConfig {
+  telegram: TelegramBotConfig;
+  discord: DiscordBotConfig;
+  feishu: FeishuBotConfig;
+}
+
+// ============================================================================
 // AI 渠道 API
 // ============================================================================
 

@@ -11,6 +11,7 @@ import { ChatInput } from "./ChatInput";
 import { ChatMessages } from "./ChatMessages";
 import { useSmartInput } from "./useSmartInput";
 import type { SmartInputWindowProps } from "./types";
+import { skillsApi, type Skill } from "@/lib/api/skills";
 import "./smart-input.css";
 
 /**
@@ -28,6 +29,7 @@ export const SmartInputWindow: React.FC<SmartInputWindowProps> = ({
   onClose,
 }) => {
   const [inputValue, setInputValue] = useState("");
+  const [skills, setSkills] = useState<Skill[]>([]);
   const {
     messages,
     isLoading,
@@ -45,6 +47,14 @@ export const SmartInputWindow: React.FC<SmartInputWindowProps> = ({
       setImagePath(imagePath);
     }
   }, [imagePath, setImagePath]);
+
+  // 加载技能列表
+  useEffect(() => {
+    skillsApi
+      .getAll("proxycast")
+      .then(setSkills)
+      .catch((err) => console.error("加载技能列表失败:", err));
+  }, []);
 
   // 处理关闭窗口
   const handleClose = useCallback(async () => {
@@ -69,9 +79,9 @@ export const SmartInputWindow: React.FC<SmartInputWindowProps> = ({
   }, [handleClose]);
 
   // 处理发送消息
-  const handleSend = useCallback(async () => {
-    if (!inputValue.trim()) return;
-    const message = inputValue;
+  const handleSend = useCallback(async (textOverride?: string) => {
+    const message = textOverride || inputValue;
+    if (!message.trim()) return;
     setInputValue("");
     await sendMessage(message);
   }, [inputValue, sendMessage]);
@@ -153,6 +163,7 @@ export const SmartInputWindow: React.FC<SmartInputWindowProps> = ({
           isLoading={isLoading}
           disabled={!imageBase64}
           placeholder={imageBase64 ? "输入问题..." : "正在加载图片..."}
+          skills={skills}
         />
       </div>
 

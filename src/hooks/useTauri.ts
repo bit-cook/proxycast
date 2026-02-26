@@ -266,6 +266,37 @@ export interface UserProfile {
   tags?: string[];
 }
 
+// ============ 渠道配置类型 ============
+
+export interface TelegramBotConfig {
+  enabled: boolean;
+  bot_token: string;
+  allowed_user_ids: string[];
+  default_model?: string;
+}
+
+export interface DiscordBotConfig {
+  enabled: boolean;
+  bot_token: string;
+  allowed_server_ids: string[];
+  default_model?: string;
+}
+
+export interface FeishuBotConfig {
+  enabled: boolean;
+  app_id: string;
+  app_secret: string;
+  verification_token?: string;
+  encrypt_key?: string;
+  default_model?: string;
+}
+
+export interface ChannelsConfig {
+  telegram: TelegramBotConfig;
+  discord: DiscordBotConfig;
+  feishu: FeishuBotConfig;
+}
+
 export interface Config {
   server: {
     host: string;
@@ -326,6 +357,8 @@ export interface Config {
   assistant?: AssistantConfig;
   /** 用户资料 */
   user_profile?: UserProfile;
+  /** 渠道配置（Telegram / Discord / 飞书 Bot） */
+  channels?: ChannelsConfig;
 }
 
 export interface LogEntry {

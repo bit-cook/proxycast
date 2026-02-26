@@ -3,7 +3,6 @@ import styled from "styled-components";
 import {
   ChevronLeft,
   ChevronRight,
-  Home,
   LayoutGrid,
   PanelLeftClose,
   PanelLeftOpen,
@@ -12,6 +11,7 @@ import { VideoCanvasProps } from "./types";
 import { VideoSidebar, type VideoProviderOption } from "./VideoSidebar";
 import { VideoWorkspace } from "./VideoWorkspace";
 import { apiKeyProviderApi } from "@/lib/api/apiKeyProvider";
+import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
 
 const VIDEO_MODEL_PRESETS: Record<string, string[]> = {
   doubao: ["seedance-1-5-pro-251215", "seedance-1-5-lite-250428"],
@@ -71,34 +71,6 @@ const Root = styled.div`
   padding: 6px 8px 8px;
   gap: 6px;
   background: hsl(var(--muted) / 0.28);
-`;
-
-const Header = styled.div`
-  height: 26px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: hsl(var(--muted-foreground));
-  font-size: 12px;
-  padding: 0 2px;
-`;
-
-const HeaderHome = styled.button`
-  border: none;
-  background: transparent;
-  color: hsl(var(--muted-foreground));
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  cursor: pointer;
-
-  &:hover {
-    color: hsl(var(--foreground));
-    background: hsl(var(--accent));
-  }
 `;
 
 const Body = styled.div`
@@ -310,13 +282,7 @@ export const VideoCanvas: React.FC<VideoCanvasProps> = memo(
 
     return (
       <Root>
-        <Header>
-          <HeaderHome onClick={onBackHome} title="返回首页">
-            <Home size={12} />
-          </HeaderHome>
-          <ChevronRight size={12} />
-          <span>视频</span>
-        </Header>
+        <CanvasBreadcrumbHeader label="视频" onBackHome={onBackHome} />
 
         <Body>
           <SidebarContainer $collapsed={sidebarCollapsed}>

@@ -7,7 +7,7 @@
  *
  * input: 用户配置操作
  * output: 更新检查设置 UI
- * pos: components/settings 层
+ * pos: components/settings-v2 层
  */
 
 import { useState, useEffect } from "react";

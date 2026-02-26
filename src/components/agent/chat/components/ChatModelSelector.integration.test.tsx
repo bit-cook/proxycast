@@ -104,6 +104,10 @@ interface MountedHarness {
 
 const mountedRoots: MountedHarness[] = [];
 
+interface MountOptions {
+  onManageProviders?: () => void;
+}
+
 function createModel(id: string, providerId: string) {
   return {
     id,
@@ -137,7 +141,8 @@ function createModel(id: string, providerId: string) {
   };
 }
 
-function mount(workspaceId: string): HTMLDivElement {
+function mount(workspaceId: string, options: MountOptions = {}): HTMLDivElement {
+  const { onManageProviders } = options;
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -168,6 +173,7 @@ function mount(workspaceId: string): HTMLDivElement {
           model={chat.model}
           setModel={chat.setModel}
           activeTheme="general"
+          onManageProviders={onManageProviders}
         />
         <div data-testid="current-model">
           {chat.providerType}/{chat.model}
@@ -397,5 +403,32 @@ describe("ChatModelSelector + useAsterAgentChat 集成", () => {
       providerType: "deepseek",
       model: "deepseek-chat",
     });
+  });
+
+  it("无 Provider 时应显示配置引导并支持点击配置", async () => {
+    mockUseConfiguredProviders.mockReturnValue({
+      providers: [],
+      loading: false,
+    });
+    mockUseProviderModels.mockReturnValue({
+      modelIds: [],
+      models: [],
+      loading: false,
+      error: null,
+    });
+
+    const onManageProviders = vi.fn();
+    const container = mount("ws-no-provider-guide", { onManageProviders });
+
+    await flushEffects();
+
+    expect(container.textContent).toContain("工具模型未配置");
+
+    const configButton = findButtonByText("配置");
+    await act(async () => {
+      configButton.click();
+    });
+
+    expect(onManageProviders).toHaveBeenCalledTimes(1);
   });
 });

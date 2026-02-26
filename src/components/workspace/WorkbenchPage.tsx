@@ -9,7 +9,6 @@ import {
   Bot,
   FileText,
   FolderOpen,
-  Home,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -77,6 +76,7 @@ import type { WorkflowProgressSnapshot } from "@/components/agent/chat";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import { ProjectDetailPage } from "@/components/projects/ProjectDetailPage";
 import type { CreationMode } from "@/components/content-creator/types";
+import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 import {
   VideoCanvas,
   createInitialVideoState,
@@ -763,16 +763,11 @@ export function WorkbenchPage({
   return (
     <div className="flex flex-col h-full min-h-0">
       {workspaceMode !== "workspace" && (
-        <header className="h-12 border-b px-3 flex items-center gap-2 bg-background">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={handleBackHome}
-            title="回到首页"
-          >
-            <Home className="h-4 w-4" />
-          </Button>
+        <header className="border-b px-3 py-2 flex items-center gap-2 bg-background">
+          <CanvasBreadcrumbHeader
+            label={getProjectTypeLabel(theme)}
+            onBackHome={handleBackHome}
+          />
 
           {workspaceMode !== "project-management" && (
             <Button
@@ -785,9 +780,6 @@ export function WorkbenchPage({
             </Button>
           )}
 
-          <div className="text-sm font-medium ml-2">
-            {getProjectTypeLabel(theme)}
-          </div>
           {selectedProject && (
             <div className="text-xs text-muted-foreground truncate">
               {selectedProject.name}

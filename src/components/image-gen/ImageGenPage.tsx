@@ -7,7 +7,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import styled from "styled-components";
 import {
-  Home,
   Image as ImageIcon,
   ImagePlus,
   Loader2,
@@ -29,6 +28,11 @@ import {
   setStoredResourceProjectId,
 } from "@/lib/resourceProjectSelection";
 import type { Page } from "@/types/page";
+import { CharacterMention } from "@/components/agent/chat/components/Inputbar/components/CharacterMention";
+import { SkillBadge } from "@/components/agent/chat/components/Inputbar/components/SkillBadge";
+import { useActiveSkill } from "@/components/agent/chat/components/Inputbar/hooks/useActiveSkill";
+import { skillsApi, type Skill } from "@/lib/api/skills";
+import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 
 interface ImageGenPageProps {
   onNavigate?: (page: Page) => void;
@@ -229,29 +233,8 @@ const PageLayout = styled.div`
 const HeaderBar = styled.div`
   display: flex;
   align-items: center;
-  padding: 16px 24px;
-  border-bottom: 1px solid hsl(var(--border));
+  padding: 10px 16px 6px;
   background: hsl(var(--background));
-`;
-
-const BackButton = styled.button`
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-
-  &:hover {
-    background: hsl(var(--accent));
-    border-color: hsl(var(--accent));
-  }
 `;
 
 const ControlPanel = styled.aside`
@@ -834,6 +817,10 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
   const { projects, defaultProject, loading: projectsLoading } = useProjects();
 
   const [prompt, setPrompt] = useState("");
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const { activeSkill, setActiveSkill, wrapTextWithSkill, clearActiveSkill } =
+    useActiveSkill();
+  const promptRef = useRef<HTMLTextAreaElement>(null);
   const [resolutionPreset, setResolutionPreset] =
     useState<ResolutionPreset>("1k");
   const [aspectRatio, setAspectRatio] = useState("1:1");
@@ -847,6 +834,14 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
   const [targetProjectId, setTargetProjectId] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 加载技能列表
+  useEffect(() => {
+    skillsApi
+      .getAll("proxycast")
+      .then(setSkills)
+      .catch((err) => console.error("加载技能列表失败:", err));
+  }, []);
 
   const availableProjects = useMemo(
     () => projects.filter((project) => !project.isArchived),
@@ -988,14 +983,19 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
   const handleGenerate = async () => {
     if (!canGenerate) return;
 
+    const finalPrompt = activeSkill
+      ? wrapTextWithSkill(prompt.trim())
+      : prompt.trim();
+
     try {
-      await generateImage(prompt.trim(), {
+      await generateImage(finalPrompt, {
         imageCount,
         referenceImages: referenceImages.map((item) => item.url),
         size: resolvedSize,
         targetProjectId: targetProjectId || undefined,
       });
       setPrompt("");
+      clearActiveSkill();
     } catch (error) {
       console.error("图片生成失败:", error);
     }
@@ -1044,10 +1044,7 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
   return (
     <PageLayout>
       <HeaderBar>
-        <BackButton onClick={goHome}>
-          <Home size={16} />
-          返回首页
-        </BackButton>
+        <CanvasBreadcrumbHeader label="绘画" onBackHome={goHome} />
       </HeaderBar>
 
       <Container>
@@ -1369,7 +1366,23 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
           </Canvas>
 
           <PromptDock>
+            {/* CharacterMention */}
+            {skills.length > 0 && (
+              <CharacterMention
+                characters={[]}
+                skills={skills}
+                inputRef={promptRef}
+                value={prompt}
+                onChange={setPrompt}
+                onSelectSkill={setActiveSkill}
+              />
+            )}
+            {/* Skill Badge */}
+            {activeSkill && (
+              <SkillBadge skill={activeSkill} onClear={clearActiveSkill} />
+            )}
             <PromptInput
+              ref={promptRef}
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={handlePromptKeyDown}

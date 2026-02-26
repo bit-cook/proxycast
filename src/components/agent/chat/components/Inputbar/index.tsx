@@ -5,8 +5,11 @@ import { toast } from "sonner";
 import styled from "styled-components";
 import type { MessageImage } from "../../types";
 import type { Character } from "@/lib/api/memory";
+import type { Skill } from "@/lib/api/skills";
 import { TaskFileList, type TaskFile } from "../TaskFiles";
 import { FolderOpen, ChevronUp, Code2 } from "lucide-react";
+import { useActiveSkill } from "./hooks/useActiveSkill";
+import { SkillBadge } from "./components/SkillBadge";
 import { ChatModelSelector } from "../ChatModelSelector";
 import { safeInvoke } from "@/lib/dev-bridge";
 import {
@@ -159,8 +162,12 @@ interface InputbarProps {
   onTaskFileClick?: (file: TaskFile) => void;
   /** 角色列表（用于 @ 引用） */
   characters?: Character[];
+  /** 技能列表（用于 @ 引用） */
+  skills?: Skill[];
   /** 选择角色回调 */
   onSelectCharacter?: (character: Character) => void;
+  /** 跳转到设置页安装技能 */
+  onNavigateToSettings?: () => void;
   providerType?: string;
   setProviderType?: (type: string) => void;
   model?: string;
@@ -189,7 +196,9 @@ export const Inputbar: React.FC<InputbarProps> = ({
   onToggleTaskFiles,
   onTaskFileClick,
   characters = [],
+  skills = [],
   onSelectCharacter,
+  onNavigateToSettings,
   providerType,
   setProviderType,
   model,
@@ -202,6 +211,7 @@ export const Inputbar: React.FC<InputbarProps> = ({
   const [activeTools, setActiveTools] = useState<Record<string, boolean>>({});
   const [pendingImages, setPendingImages] = useState<MessageImage[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const { activeSkill, setActiveSkill, clearActiveSkill } = useActiveSkill();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -445,15 +455,22 @@ export const Inputbar: React.FC<InputbarProps> = ({
     const strategy =
       executionStrategy ||
       (activeTools["execution_strategy"] ? "code_orchestrated" : "react");
+
+    // 如果有 activeSkill，拼接 /skill.key 前缀
+    const textOverride = activeSkill
+      ? `/${activeSkill.key} ${input}`.trim()
+      : undefined;
+
     onSend(
       pendingImages.length > 0 ? pendingImages : undefined,
       webSearch,
       thinking,
-      undefined,
+      textOverride,
       strategy,
     );
     setPendingImages([]);
-  }, [activeTools, executionStrategy, input, onSend, pendingImages]);
+    clearActiveSkill();
+  }, [activeSkill, activeTools, clearActiveSkill, executionStrategy, input, onSend, pendingImages]);
 
   const handleToggleTaskFiles = useCallback(() => {
     onToggleTaskFiles?.();
@@ -570,14 +587,17 @@ export const Inputbar: React.FC<InputbarProps> = ({
         style={{ display: "none" }}
         onChange={handleFileSelect}
       />
-      {/* 角色引用组件 */}
-      {characters.length > 0 && (
+      {/* 角色与技能引用组件 */}
+      {(characters.length > 0 || skills.length > 0) && (
         <CharacterMention
           characters={characters}
+          skills={skills}
           inputRef={textareaRef}
           value={input}
           onChange={inputAdapter.actions.setText}
           onSelectCharacter={onSelectCharacter}
+          onSelectSkill={setActiveSkill}
+          onNavigateToSettings={onNavigateToSettings}
         />
       )}
       <InputbarCore
@@ -600,6 +620,11 @@ export const Inputbar: React.FC<InputbarProps> = ({
         onPaste={handlePaste}
         isFullscreen={isFullscreen}
         isCanvasOpen={isCanvasOpen}
+        topExtra={
+          activeSkill ? (
+            <SkillBadge skill={activeSkill} onClear={clearActiveSkill} />
+          ) : undefined
+        }
         leftExtra={
           !isFullscreen ? (
             <div className="flex items-center gap-2">

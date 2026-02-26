@@ -451,7 +451,7 @@ function AppContent() {
         </PageWrapper>
 
         <PageWrapper $isActive={currentPage === "plugins"}>
-          <PluginsPage />
+          <PluginsPage onNavigate={handleNavigate} />
         </PageWrapper>
 
         <div
@@ -508,6 +508,8 @@ function AppContent() {
     currentPage !== "settings" &&
     currentPage !== "memory" &&
     currentPage !== "image-gen" &&
+    currentPage !== "tools" &&
+    currentPage !== "plugins" &&
     currentPage !== "resources" &&
     !isThemeWorkspacePage(currentPage) &&
     !shouldHideSidebarForAgent;

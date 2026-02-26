@@ -219,6 +219,7 @@ export const CanvasAdapter: React.FC<CanvasAdapterProps> = memo(
             theme="general"
             state={canvasState}
             onStateChange={handleStateChange}
+            onBackHome={handleClose}
             onClose={handleClose}
             isStreaming={isStreaming}
           />

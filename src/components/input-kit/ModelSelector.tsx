@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Bot, Check, ChevronDown, Settings2 } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  Bot,
+  Check,
+  ChevronDown,
+  Settings2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -175,6 +182,44 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     normalizedTheme !== "general" &&
     !filteredResult.usedFallback &&
     filteredResult.filteredOutCount > 0;
+  const showNoProviderGuide =
+    !providersLoading && configuredProviders.length === 0;
+
+  if (showNoProviderGuide) {
+    return (
+      <div
+        className={cn(
+          "w-full rounded-lg border border-amber-200 bg-amber-50/60 p-3",
+          className,
+        )}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-start gap-2 min-w-0">
+            <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-amber-900">
+                工具模型未配置
+              </div>
+              <div className="text-xs text-amber-700 leading-5">
+                配置工具模型以获得更好的对话标题和记忆管理。
+              </div>
+            </div>
+          </div>
+          {onManageProviders && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0 border-amber-300 bg-white text-amber-800 hover:bg-amber-100 hover:text-amber-900"
+              onClick={onManageProviders}
+            >
+              配置
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("flex items-center", className)}>

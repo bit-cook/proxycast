@@ -438,6 +438,9 @@ pub struct Config {
     /// 心跳引擎配置
     #[serde(default)]
     pub heartbeat: HeartbeatSettings,
+    /// 渠道配置（Telegram / Discord / 飞书 Bot）
+    #[serde(default)]
+    pub channels: ChannelsConfig,
 }
 
 // ============ Native Agent 配置类型 ============
@@ -1785,6 +1788,7 @@ impl Default for Config {
             hint_router: HintRouterSettings::default(),
             pairing: PairingSettings::default(),
             heartbeat: HeartbeatSettings::default(),
+            channels: ChannelsConfig::default(),
         }
     }
 }
@@ -2612,4 +2616,60 @@ impl Default for PairingSettings {
     fn default() -> Self {
         Self { enabled: false }
     }
+}
+
+// ============ 渠道配置类型（Telegram / Discord / 飞书 Bot） ============
+
+/// 渠道配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ChannelsConfig {
+    #[serde(default)]
+    pub telegram: TelegramBotConfig,
+    #[serde(default)]
+    pub discord: DiscordBotConfig,
+    #[serde(default)]
+    pub feishu: FeishuBotConfig,
+}
+
+/// Telegram Bot 配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct TelegramBotConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub bot_token: String,
+    #[serde(default)]
+    pub allowed_user_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+}
+
+/// Discord Bot 配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct DiscordBotConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub bot_token: String,
+    #[serde(default)]
+    pub allowed_server_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+}
+
+/// 飞书 Bot 配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct FeishuBotConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub app_id: String,
+    #[serde(default)]
+    pub app_secret: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encrypt_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
 }

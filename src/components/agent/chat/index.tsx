@@ -1,7 +1,7 @@
 /**
  * AI Agent 聊天页面
  *
- * 包含聊天区域和侧边栏（话题/技能列表）
+ * 包含聊天区域和侧边栏（话题列表）
  * 支持内容创作模式下的布局过渡和步骤引导
  * 当主题为 general 时，使用 GeneralChat 组件实现
  */
@@ -67,6 +67,7 @@ import {
 } from "@/lib/api/memory";
 import type { Page, PageParams } from "@/types/page";
 import { SettingsTabs } from "@/types/settings";
+import { skillsApi, type Skill } from "@/lib/api/skills";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import { LatestRunStatusBadge } from "@/components/execution/LatestRunStatusBadge";
 
@@ -335,6 +336,9 @@ export function AgentChatPage({
     [],
   );
 
+  // 技能列表（用于 @ 引用）
+  const [skills, setSkills] = useState<Skill[]>([]);
+
   // 用于追踪已处理的消息 ID，避免重复处理
   const processedMessageIds = useRef<Set<string>>(new Set());
   const pendingTopicSwitchRef = useRef<{
@@ -385,6 +389,19 @@ export function AgentChatPage({
     // 自动打开画布显示 artifact
     setLayoutMode("chat-canvas");
   }, [artifacts.length, activeTheme]);
+
+  // 加载技能列表
+  useEffect(() => {
+    skillsApi
+      .getAll("proxycast")
+      .then(setSkills)
+      .catch((err) => console.error("加载技能列表失败:", err));
+  }, []);
+
+  // 跳转到设置页安装技能
+  const handleNavigateToSkillSettings = useCallback(() => {
+    _onNavigate?.("settings", { tab: SettingsTabs.Skills });
+  }, [_onNavigate]);
 
   // 加载项目、Memory 和内容
   useEffect(() => {
@@ -1146,12 +1163,6 @@ export function AgentChatPage({
     onHasMessagesChange?.(hasMessages);
   }, [hasMessages, onHasMessagesChange]);
 
-  useEffect(() => {
-    if (hasMessages) {
-      setShowSidebar(false);
-    }
-  }, [hasMessages]);
-
   // 当有文件时默认在画布中显示最新文件（按更新时间）
   useEffect(() => {
     if (taskFiles.length > 0) {
@@ -1212,7 +1223,7 @@ export function AgentChatPage({
     if (!showChatPanel) {
       return;
     }
-    setShowSidebar(!showSidebar);
+    setShowSidebar((prev) => !prev);
   };
 
   const handleToggleNovelChapterList = useCallback(() => {
@@ -1948,6 +1959,7 @@ export function AgentChatPage({
               onToggleTaskFiles={() => setTaskFilesExpanded(!taskFilesExpanded)}
               onTaskFileClick={handleTaskFileClick}
               characters={projectMemory?.characters || []}
+              skills={skills}
               onSelectCharacter={(character) => {
                 setMentionedCharacters((prev) => {
                   // 避免重复添加
@@ -1955,6 +1967,7 @@ export function AgentChatPage({
                   return [...prev, character];
                 });
               }}
+              onNavigateToSettings={handleNavigateToSkillSettings}
             />
           </>
         )}
@@ -2018,6 +2031,7 @@ export function AgentChatPage({
           theme={mappedTheme}
           state={canvasState}
           onStateChange={setCanvasState}
+          onBackHome={handleBackHome}
           onClose={handleCloseCanvas}
           isStreaming={isSending}
           onSelectionTextChange={handleCanvasSelectionTextChange}
@@ -2042,6 +2056,7 @@ export function AgentChatPage({
     canvasState,
     mappedTheme,
     handleCloseCanvas,
+    handleBackHome,
     isSending,
     handleCanvasSelectionTextChange,
     artifactViewMode,

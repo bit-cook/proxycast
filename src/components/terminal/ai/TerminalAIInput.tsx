@@ -6,18 +6,22 @@
  * 参考 Waveterm 的 AIPanelInput 设计
  */
 
-import React from "react";
+import React, { useRef } from "react";
 import { Send, Square, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BaseComposer } from "@/components/input-kit";
+import { CharacterMention } from "@/components/agent/chat/components/Inputbar/components/CharacterMention";
+import { SkillBadge } from "@/components/agent/chat/components/Inputbar/components/SkillBadge";
+import { useActiveSkill } from "@/components/agent/chat/components/Inputbar/hooks/useActiveSkill";
+import type { Skill } from "@/lib/api/skills";
 
 interface TerminalAIInputProps {
   /** 输入值 */
   value: string;
   /** 输入变化回调 */
   onChange: (value: string) => void;
-  /** 提交回调 */
-  onSubmit: () => void;
+  /** 提交回调（可接受 textOverride） */
+  onSubmit: (textOverride?: string) => void;
   /** 停止回调 */
   onStop?: () => void;
   /** 是否正在发送 */
@@ -26,6 +30,8 @@ interface TerminalAIInputProps {
   disabled?: boolean;
   /** 占位符 */
   placeholder?: string;
+  /** 技能列表 */
+  skills?: Skill[];
 }
 
 export const TerminalAIInput: React.FC<TerminalAIInputProps> = ({
@@ -36,22 +42,49 @@ export const TerminalAIInput: React.FC<TerminalAIInputProps> = ({
   isSending,
   disabled = false,
   placeholder = "Continue...",
+  skills = [],
 }) => {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { activeSkill, setActiveSkill, wrapTextWithSkill, clearActiveSkill } =
+    useActiveSkill();
+
+  const handleSend = () => {
+    const text = activeSkill ? wrapTextWithSkill(value) : undefined;
+    onSubmit(text);
+    clearActiveSkill();
+  };
+
   return (
     <BaseComposer
       text={value}
       setText={onChange}
-      onSend={onSubmit}
+      onSend={handleSend}
       onStop={onStop}
       isLoading={isSending}
       disabled={disabled}
       placeholder={placeholder}
+      textareaRef={textareaRef}
       maxAutoHeight={7 * 24}
       rows={2}
     >
-      {({ textareaRef, textareaProps, onPrimaryAction, isPrimaryDisabled }) => (
+      {({ textareaProps, onPrimaryAction, isPrimaryDisabled }) => (
         <div className="border-t border-zinc-700">
+          {/* CharacterMention */}
+          {skills.length > 0 && (
+            <CharacterMention
+              characters={[]}
+              skills={skills}
+              inputRef={textareaRef}
+              value={value}
+              onChange={onChange}
+              onSelectSkill={setActiveSkill}
+            />
+          )}
           <div className="relative">
+            {/* Skill Badge */}
+            {activeSkill && (
+              <SkillBadge skill={activeSkill} onClear={clearActiveSkill} />
+            )}
             <textarea
               ref={textareaRef}
               {...textareaProps}

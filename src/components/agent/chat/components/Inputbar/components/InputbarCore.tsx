@@ -49,6 +49,8 @@ interface InputbarCoreProps {
   leftExtra?: React.ReactNode;
   /** 输入框底栏右侧扩展区域 */
   rightExtra?: React.ReactNode;
+  /** 输入框内部顶部扩展区域（textarea 上方） */
+  topExtra?: React.ReactNode;
 }
 
 export const InputbarCore: React.FC<InputbarCoreProps> = ({
@@ -70,6 +72,7 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
   textareaRef: externalTextareaRef,
   leftExtra,
   rightExtra,
+  topExtra,
 }) => {
   return (
     <BaseComposer
@@ -114,6 +117,8 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
                 ))}
               </ImagePreviewContainer>
             )}
+
+            {topExtra}
 
             <StyledTextarea
               ref={textareaRef}

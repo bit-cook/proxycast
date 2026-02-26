@@ -11,12 +11,16 @@ import { DocumentToolbar } from "./DocumentToolbar";
 import { DocumentRenderer } from "./DocumentRenderer";
 import { NotionEditor } from "./editor";
 import { PlatformTabs } from "./PlatformTabs";
+import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
 
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  width: 100%;
   padding: 16px;
+  gap: 8px;
 `;
 
 const InnerContainer = styled.div`
@@ -61,6 +65,7 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = memo(
   ({
     state,
     onStateChange,
+    onBackHome,
     onClose,
     isStreaming = false,
     onSelectionTextChange,
@@ -191,6 +196,8 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = memo(
 
     return (
       <Container>
+        <CanvasBreadcrumbHeader label="文档" onBackHome={onBackHome} />
+
         <InnerContainer>
           <DocumentToolbar
             currentVersion={currentVersion}

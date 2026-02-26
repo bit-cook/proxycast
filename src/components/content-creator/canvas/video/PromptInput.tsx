@@ -1,12 +1,17 @@
-import React, { memo, KeyboardEvent } from "react";
+import React, { memo, KeyboardEvent, useRef } from "react";
 import styled from "styled-components";
 import { VideoCanvasState } from "./types";
 import { Sparkles } from "lucide-react";
+import { CharacterMention } from "@/components/agent/chat/components/Inputbar/components/CharacterMention";
+import { SkillBadge } from "@/components/agent/chat/components/Inputbar/components/SkillBadge";
+import { useActiveSkill } from "@/components/agent/chat/components/Inputbar/hooks/useActiveSkill";
+import type { Skill } from "@/lib/api/skills";
 
 interface PromptInputProps {
   state: VideoCanvasState;
   onStateChange: (state: VideoCanvasState) => void;
-  onGenerate: () => void;
+  onGenerate: (textOverride?: string) => void;
+  skills?: Skill[];
 }
 
 const PromptWrapper = styled.div`
@@ -76,20 +81,48 @@ const GenerateButton = styled.button<{ $generating?: boolean }>`
 `;
 
 export const PromptInput: React.FC<PromptInputProps> = memo(
-  ({ state, onStateChange, onGenerate }) => {
+  ({ state, onStateChange, onGenerate, skills = [] }) => {
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const { activeSkill, setActiveSkill, wrapTextWithSkill, clearActiveSkill } =
+      useActiveSkill();
+
     const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         if (state.prompt.trim() && state.status !== "generating") {
-          onGenerate();
+          handleGenerate();
         }
       }
+    };
+
+    const handleGenerate = () => {
+      const text = activeSkill
+        ? wrapTextWithSkill(state.prompt)
+        : undefined;
+      onGenerate(text);
+      clearActiveSkill();
     };
 
     return (
       <PromptWrapper>
         <InputContainer>
+          {/* CharacterMention */}
+          {skills.length > 0 && (
+            <CharacterMention
+              characters={[]}
+              skills={skills}
+              inputRef={textareaRef}
+              value={state.prompt}
+              onChange={(val) => onStateChange({ ...state, prompt: val })}
+              onSelectSkill={setActiveSkill}
+            />
+          )}
+          {/* Skill Badge */}
+          {activeSkill && (
+            <SkillBadge skill={activeSkill} onClear={clearActiveSkill} />
+          )}
           <StyledTextarea
+            ref={textareaRef}
             value={state.prompt}
             onChange={(e) => {
               onStateChange({ ...state, prompt: e.target.value });
@@ -104,7 +137,7 @@ export const PromptInput: React.FC<PromptInputProps> = memo(
           <GenerateButton
             disabled={!state.prompt.trim() || state.status === "generating"}
             $generating={state.status === "generating"}
-            onClick={onGenerate}
+            onClick={handleGenerate}
           >
             <Sparkles size={20} />
           </GenerateButton>

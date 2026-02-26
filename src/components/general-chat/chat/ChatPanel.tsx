@@ -6,7 +6,7 @@
  * @requirements 3.1, 3.6, 5.4, 5.5, 2.6, 9.5, 10.2
  */
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { Settings, AlertTriangle, Loader2 } from "lucide-react";
 import { useGeneralChatStore } from "../store/useGeneralChatStore";
 import { useProvider } from "../hooks/useProvider";
@@ -19,6 +19,9 @@ import { WorkflowStatusPanel } from "../components/WorkflowStatusPanel";
 import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
 import type { MessageImage } from "@/components/agent/chat/types";
 import { createGeneralInputAdapter } from "@/components/input-kit";
+import { skillsApi, type Skill } from "@/lib/api/skills";
+import type { Page, PageParams } from "@/types/page";
+import { SettingsTabs } from "@/types/settings";
 
 interface ChatPanelProps {
   /** 当前会话 ID */
@@ -26,7 +29,7 @@ interface ChatPanelProps {
   /** 打开画布回调 */
   onOpenCanvas: (state: CanvasState) => void;
   /** 页面导航回调 */
-  onNavigate?: (page: string) => void;
+  onNavigate?: (page: Page, params?: PageParams) => void;
 }
 
 /**
@@ -89,7 +92,7 @@ const NoProviderPrompt: React.FC<NoProviderPromptProps> = ({
         className="inline-flex items-center gap-2 px-6 py-3 bg-accent text-white rounded-lg font-medium hover:bg-accent/90 transition-colors shadow-sm"
       >
         <Settings className="w-5 h-5" />
-        前往配置 Provider
+        前往配置模型
       </button>
     )}
     <p className="text-xs text-ink-400 mt-4">
@@ -110,6 +113,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(
     null,
   );
+  const [skills, setSkills] = useState<Skill[]>([]);
+
+  // 加载技能列表
+  useEffect(() => {
+    skillsApi
+      .getAll("proxycast")
+      .then(setSkills)
+      .catch((err) => console.error("加载技能列表失败:", err));
+  }, []);
 
   // 直接从 store 获取状态
   const messages = useGeneralChatStore((state) => state.messages);
@@ -198,7 +210,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   // 处理导航到 Provider 配置页面
   const handleNavigateToProviderConfig = useCallback(() => {
-    onNavigate?.("provider-pool");
+    onNavigate?.("settings", { tab: SettingsTabs.Providers });
   }, [onNavigate]);
 
   // 处理发送消息
@@ -207,11 +219,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       images?: MessageImage[],
       _webSearch?: boolean,
       _thinking?: boolean,
+      textOverride?: string,
     ) => {
       if (!sessionId || (!input.trim() && (!images || images.length === 0)))
         return;
 
-      const content = input.trim();
+      const content = (textOverride || input).trim();
       setInput("");
 
       // 将 MessageImage 转换为 File 对象（用于 store）
@@ -386,6 +399,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               hasAvailableProvider={hasProviderSelection}
               isLoading={providerSelectionLoading}
               error={providerSelectionError}
+              onManageProviders={handleNavigateToProviderConfig}
             />
           </div>
 
@@ -397,6 +411,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             onStop={inputAdapter.actions.stop}
             isLoading={inputAdapter.state.isSending}
             disabled={inputAdapter.state.disabled}
+            skills={skills}
           />
         </div>
       </div>

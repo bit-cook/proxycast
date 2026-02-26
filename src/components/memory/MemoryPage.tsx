@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import type { Page, PageParams } from "@/types/page";
+import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 import {
   getConfig,
   saveConfig,
@@ -907,14 +908,8 @@ export function MemoryPage({ onNavigate }: MemoryPageProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className="flex items-center border-b bg-background px-6 py-4">
-        <button
-          onClick={handleBackToHome}
-          className="inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium hover:bg-accent"
-        >
-          <Home className="h-4 w-4" />
-          返回首页
-        </button>
+      <div className="flex items-center bg-background px-6 pt-3 pb-2">
+        <CanvasBreadcrumbHeader label="记忆" onBackHome={handleBackToHome} />
       </div>
 
       <div className="flex flex-1 min-h-0 overflow-hidden">

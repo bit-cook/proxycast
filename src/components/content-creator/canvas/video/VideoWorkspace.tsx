@@ -16,6 +16,7 @@ import {
   videoGenerationApi,
   type VideoGenerationTask,
 } from "@/lib/api/videoGeneration";
+import { skillsApi, type Skill } from "@/lib/api/skills";
 
 interface VideoWorkspaceProps {
   state: VideoCanvasState;
@@ -231,9 +232,18 @@ function mergeTaskList(
 export const VideoWorkspace: React.FC<VideoWorkspaceProps> = memo(
   ({ state, projectId, onStateChange }) => {
     const [tasks, setTasks] = useState<WorkspaceTask[]>([]);
+    const [skills, setSkills] = useState<Skill[]>([]);
     const pollingGuard = useRef(false);
     const savingTaskIdsRef = useRef<Set<string>>(new Set());
     const materialRefCache = useRef<Map<string, string>>(new Map());
+
+    // 加载技能列表
+    useEffect(() => {
+      skillsApi
+        .getAll("proxycast")
+        .then(setSkills)
+        .catch((err) => console.error("加载技能列表失败:", err));
+    }, []);
 
     useEffect(() => {
       materialRefCache.current.clear();
@@ -486,7 +496,7 @@ export const VideoWorkspace: React.FC<VideoWorkspaceProps> = memo(
       [projectId],
     );
 
-    const handleGenerate = useCallback(async () => {
+    const handleGenerate = useCallback(async (textOverride?: string) => {
       if (!projectId) {
         toast.error("请先选择项目后再生成视频");
         return;
@@ -499,7 +509,8 @@ export const VideoWorkspace: React.FC<VideoWorkspaceProps> = memo(
         toast.error("请选择视频模型");
         return;
       }
-      if (!state.prompt.trim()) {
+      const promptText = textOverride || state.prompt.trim();
+      if (!promptText) {
         toast.error("请输入视频描述");
         return;
       }
@@ -530,7 +541,7 @@ export const VideoWorkspace: React.FC<VideoWorkspaceProps> = memo(
           projectId,
           providerId: state.providerId,
           model: state.model,
-          prompt: state.prompt.trim(),
+          prompt: promptText,
           aspectRatio: state.aspectRatio,
           resolution: state.resolution,
           duration: state.duration,
@@ -573,6 +584,7 @@ export const VideoWorkspace: React.FC<VideoWorkspaceProps> = memo(
               state={state}
               onStateChange={onStateChange}
               onGenerate={handleGenerate}
+              skills={skills}
             />
           </EmptyStateWrapper>
         ) : (
@@ -634,6 +646,7 @@ export const VideoWorkspace: React.FC<VideoWorkspaceProps> = memo(
               state={state}
               onStateChange={onStateChange}
               onGenerate={handleGenerate}
+              skills={skills}
             />
           </ContentWrapper>
         )}

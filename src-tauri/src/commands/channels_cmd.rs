@@ -147,9 +147,7 @@ pub struct TestMessageResult {
 
 /// 获取所有 AI 渠道
 #[tauri::command]
-pub async fn get_ai_channels(
-    _state: State<'_, AppState>,
-) -> Result<Vec<AIChannel>, String> {
+pub async fn get_ai_channels(_state: State<'_, AppState>) -> Result<Vec<AIChannel>, String> {
     // TODO: 实现 AI 渠道获取逻辑
     // 需要从 aster-rust 获取 DeclarativeProviderConfig 列表
     tracing::info!("[渠道] 获取 AI 渠道列表");
@@ -158,10 +156,7 @@ pub async fn get_ai_channels(
 
 /// 获取单个 AI 渠道
 #[tauri::command]
-pub async fn get_ai_channel(
-    id: String,
-    _state: State<'_, AppState>,
-) -> Result<AIChannel, String> {
+pub async fn get_ai_channel(id: String, _state: State<'_, AppState>) -> Result<AIChannel, String> {
     tracing::info!("[渠道] 获取 AI 渠道: {}", id);
     Err("暂未实现".to_string())
 }
@@ -191,10 +186,7 @@ pub async fn update_ai_channel(
 
 /// 删除 AI 渠道
 #[tauri::command]
-pub async fn delete_ai_channel(
-    id: String,
-    _state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn delete_ai_channel(id: String, _state: State<'_, AppState>) -> Result<(), String> {
     tracing::info!("[渠道] 删除 AI 渠道: {}", id);
     // TODO: 实现删除逻辑
     Err("暂未实现".to_string())

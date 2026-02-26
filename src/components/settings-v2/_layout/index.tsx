@@ -7,32 +7,32 @@
 
 import { useState, ReactNode, useEffect } from "react";
 import styled from "styled-components";
-import { Home } from "lucide-react";
 import { SettingsSidebar } from "./SettingsSidebar";
 import { SettingsTabs } from "@/types/settings";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import { Page, PageParams } from "@/types/page";
+import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 
 // 外观设置
 import { AppearanceSettings } from '../general/appearance';
 import { ChatAppearanceSettings } from '../general/chat-appearance';
 // 网络代理
-import { ProxySettings } from "../../settings/ProxySettings";
+import { ProxySettings } from "../system/proxy";
 // 安全与性能
 import { SecurityPerformanceSettings } from "../system/security-performance";
 // 心跳引擎
 import { HeartbeatSettings } from "../system/heartbeat";
 import { ExecutionTrackerSettings } from "../system/execution-tracker";
 // 外部工具
-import { ExternalToolsSettings } from "../../settings/ExternalToolsSettings";
+import { ExternalToolsSettings } from "../system/external-tools";
 // 实验功能
-import { ExperimentalSettings } from "../../settings/ExperimentalSettings";
+import { ExperimentalSettings } from "../system/experimental";
 // 开发者
-import { DeveloperSettings } from "../../settings/DeveloperSettings";
+import { DeveloperSettings } from "../system/developer";
 // 关于
-import { AboutSection } from "../../settings/AboutSection";
+import { AboutSection } from "../system/about";
 // 扩展设置
-import { ExtensionsSettings } from "../../settings/ExtensionsSettings";
+import { ExtensionsSettings } from "../agent/skills";
 // 快捷键设置
 import { HotkeysSettings } from "../general/hotkeys";
 // 记忆设置
@@ -91,31 +91,6 @@ const HeaderBar = styled.div`
   padding: 16px 24px;
   border-bottom: 1px solid hsl(var(--border));
   background: hsl(var(--background));
-`;
-
-const BackButton = styled.button`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-
-  &:hover {
-    background: hsl(var(--accent));
-    border-color: hsl(var(--accent));
-  }
-
-  svg {
-    width: 16px;
-    height: 16px;
-  }
 `;
 
 const PlaceholderPage = styled.div`
@@ -358,10 +333,7 @@ export function SettingsLayoutV2({
     <>
       {/* 顶部返回栏 */}
       <HeaderBar>
-        <BackButton onClick={handleBackToHome}>
-          <Home />
-          返回首页
-        </BackButton>
+        <CanvasBreadcrumbHeader label="设置" onBackHome={handleBackToHome} />
       </HeaderBar>
       {/* 设置内容 */}
       <LayoutContainer>

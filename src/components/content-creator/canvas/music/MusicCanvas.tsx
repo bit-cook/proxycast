@@ -14,6 +14,7 @@ import {
   PianoRollRenderer,
 } from "./renderers";
 import { Copy, Check, Music } from "lucide-react";
+import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
 
 /** 段落类型中文映射 */
 const SECTION_DISPLAY_NAMES: Record<string, string> = {
@@ -30,7 +31,10 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  width: 100%;
   padding: 16px;
+  gap: 8px;
 `;
 
 const InnerContainer = styled.div`
@@ -224,7 +228,7 @@ const StatusItem = styled.span`
  * 音乐画布主组件
  */
 export const MusicCanvas: React.FC<MusicCanvasProps> = memo(
-  ({ state, onStateChange, onClose, isStreaming = false }) => {
+  ({ state, onStateChange, onBackHome, onClose, isStreaming = false }) => {
     const [toastMessage, setToastMessage] = useState("");
     const [showToast, setShowToast] = useState(false);
 
@@ -409,6 +413,8 @@ export const MusicCanvas: React.FC<MusicCanvasProps> = memo(
 
     return (
       <Container>
+        <CanvasBreadcrumbHeader label="音乐" onBackHome={onBackHome} />
+
         <InnerContainer>
           <MusicToolbar
             spec={state.spec}

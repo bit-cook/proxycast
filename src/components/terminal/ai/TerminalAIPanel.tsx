@@ -23,6 +23,7 @@ import { TerminalAIInput } from "./TerminalAIInput";
 import { TerminalAIWelcome } from "./TerminalAIWelcome";
 import { CommandApprovalList } from "./CommandApproval";
 import { useTerminalAI } from "./useTerminalAI";
+import { skillsApi, type Skill } from "@/lib/api/skills";
 
 // ============================================================================
 // 类型
@@ -47,6 +48,15 @@ export const TerminalAIPanel: React.FC<TerminalAIPanelProps> = ({
   className,
 }) => {
   const [input, setInput] = useState("");
+  const [skills, setSkills] = useState<Skill[]>([]);
+
+  // 加载技能列表
+  useEffect(() => {
+    skillsApi
+      .getAll("proxycast")
+      .then(setSkills)
+      .catch((err) => console.error("加载技能列表失败:", err));
+  }, []);
 
   const {
     messages,
@@ -81,9 +91,9 @@ export const TerminalAIPanel: React.FC<TerminalAIPanelProps> = ({
   /**
    * 处理发送
    */
-  const handleSend = useCallback(async () => {
-    if (!input.trim()) return;
-    const text = input;
+  const handleSend = useCallback(async (textOverride?: string) => {
+    const text = textOverride || input;
+    if (!text.trim()) return;
     setInput("");
     await sendMessage(text);
   }, [input, sendMessage]);
@@ -207,6 +217,7 @@ export const TerminalAIPanel: React.FC<TerminalAIPanelProps> = ({
         onSubmit={handleSend}
         isSending={isSending}
         placeholder={hasMessages ? "继续对话..." : "向 Terminal AI 提问..."}
+        skills={skills}
       />
     </div>
   );

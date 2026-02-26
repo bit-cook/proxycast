@@ -451,6 +451,8 @@ export interface MusicCanvasProps {
   state: MusicCanvasState;
   /** 状态变更回调 */
   onStateChange: (state: MusicCanvasState) => void;
+  /** 返回首页回调 */
+  onBackHome?: () => void;
   /** 关闭画布回调 */
   onClose: () => void;
   /** 是否正在流式输出 */

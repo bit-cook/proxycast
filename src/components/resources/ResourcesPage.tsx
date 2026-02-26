@@ -8,7 +8,6 @@ import {
   FileText,
   Folder,
   FolderPlus,
-  Home,
   Image as ImageIcon,
   Library,
   MoreHorizontal,
@@ -62,6 +61,7 @@ import {
 import { cn } from "@/lib/utils";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import type { Page, PageParams } from "@/types/page";
+import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 import { fetchDocumentDetail } from "./services/resourceAdapter";
 import type { ResourceItem } from "./services/types";
 import { resourcesSelectors, useResourcesStore } from "./store";
@@ -631,14 +631,8 @@ export function ResourcesPage({ onNavigate }: ResourcesPageProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className="flex items-center justify-between border-b bg-background px-6 py-4">
-        <button
-          onClick={handleBackToHome}
-          className="inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium hover:bg-accent"
-        >
-          <Home className="h-4 w-4" />
-          返回首页
-        </button>
+      <div className="flex items-center justify-between border-b bg-background px-6 py-3">
+        <CanvasBreadcrumbHeader label="资源" onBackHome={handleBackToHome} />
 
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           {saving && <RefreshCw className="h-4 w-4 animate-spin" />}

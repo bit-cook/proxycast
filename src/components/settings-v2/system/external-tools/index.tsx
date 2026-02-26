@@ -4,7 +4,7 @@
  * 管理 Codex CLI 等外部命令行工具的状态和配置
  * 这些工具有自己的认证系统，不通过 ProxyCast 凭证池管理
  *
- * @module components/settings/ExternalToolsSettings
+ * @module components/settings-v2/system/external-tools
  */
 
 import { useState, useEffect, useCallback } from "react";

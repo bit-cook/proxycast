@@ -1,7 +1,7 @@
 /**
  * @file ExperimentalSettings.tsx
  * @description 实验室设置页面 - 管理实验性功能的开关和配置
- * @module components/settings/ExperimentalSettings
+ * @module components/settings-v2/system/experimental
  *
  * 需求: 6.1, 6.2, 6.3, 6.5 - 实验室标签页，截图对话功能开关，快捷键设置，权限警告
  */
@@ -17,7 +17,7 @@ import {
   ExperimentalFeatures,
 } from "@/hooks/useTauri";
 import { ShortcutSettings } from "@/components/smart-input/ShortcutSettings";
-import { UpdateCheckSettings } from "./UpdateNotification";
+import { UpdateCheckSettings } from "./UpdateCheckSettings";
 import { VoiceSettings } from "@/components/voice";
 import {
   getVoiceInputConfig,

@@ -9,7 +9,10 @@ import { Moon, Sun, Monitor, Volume2, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getConfig, saveConfig, Config } from "@/hooks/useTauri";
 import { useOnboardingState } from "@/components/onboarding";
-import { LanguageSelector, Language } from "../../../settings/LanguageSelector";
+import {
+  LanguageSelector,
+  Language,
+} from "../../shared/language/LanguageSelector";
 import { useI18nPatch } from "@/i18n/I18nPatchProvider";
 import { useSoundContext } from "@/contexts/useSoundContext";
 

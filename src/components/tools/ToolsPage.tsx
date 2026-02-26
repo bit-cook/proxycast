@@ -26,14 +26,16 @@ import { PluginInstallDialog } from "@/components/plugins/PluginInstallDialog";
 import { ToolCardContextMenu } from "./ToolCardContextMenu";
 import { toast } from "sonner";
 import { ImageAnalysisTool } from "./image-analysis";
-import type { Page } from "@/types/page";
+import type { Page, PageParams } from "@/types/page";
+import { buildHomeAgentParams } from "@/lib/workspace/navigation";
+import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 
 interface ToolsPageProps {
   /**
    * 页面导航回调
    * 支持静态页面和动态插件页面
    */
-  onNavigate: (page: Page) => void;
+  onNavigate: (page: Page, params?: PageParams) => void;
 }
 
 /**
@@ -261,6 +263,9 @@ export function ToolsPage({ onNavigate }: ToolsPageProps) {
   // 合并内置工具和插件工具
   const allTools = [...builtinTools, ...pluginTools, ...placeholderTools];
   const activeToolsCount = builtinTools.length + pluginTools.length;
+  const goHome = useCallback(() => {
+    onNavigate("agent", buildHomeAgentParams());
+  }, [onNavigate]);
 
   /**
    * 处理工具卡片点击
@@ -300,6 +305,10 @@ export function ToolsPage({ onNavigate }: ToolsPageProps) {
   if (selectedTool === "image-analysis") {
     return (
       <div className="space-y-4">
+        <div className="pb-1">
+          <CanvasBreadcrumbHeader label="工具箱" onBackHome={goHome} />
+        </div>
+
         {/* 返回按钮 */}
         <Button variant="ghost" onClick={handleBackToList} className="mb-4">
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -314,6 +323,10 @@ export function ToolsPage({ onNavigate }: ToolsPageProps) {
 
   return (
     <div className="space-y-6">
+      <div className="pb-1">
+        <CanvasBreadcrumbHeader label="工具箱" onBackHome={goHome} />
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">工具箱</h1>
