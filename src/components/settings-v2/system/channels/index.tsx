@@ -5,9 +5,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SettingHeader } from "@/components/settings-v2/features/SettingHeader";
 import {
   Eye,
   EyeOff,
@@ -430,7 +428,6 @@ export interface ChannelsSettingsProps {
 }
 
 export function ChannelsSettings({ className }: ChannelsSettingsProps) {
-  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabKey>("telegram");
   const [config, setConfig] = useState<Config | null>(null);
   const [channels, setChannels] = useState<ChannelsConfig>(DEFAULT_CHANNELS);
@@ -497,8 +494,6 @@ export function ChannelsSettings({ className }: ChannelsSettingsProps) {
 
   return (
     <div className={className}>
-      <SettingHeader title={t("渠道管理", "渠道管理")} />
-
       {message && (
         <div
           className={`rounded-lg border p-3 text-sm mb-4 ${
