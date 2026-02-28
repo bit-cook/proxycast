@@ -3,6 +3,7 @@
 //! Provides Tauri commands for semantic and hybrid search
 
 use crate::database::DbConnection;
+use proxycast_core::database::lock_db;
 use proxycast_memory::models::{
     MemoryCategory, MemoryMetadata, MemorySource, MemoryType, UnifiedMemory,
 };
@@ -161,7 +162,7 @@ pub async fn unified_memory_semantic_search(
         .map_err(|e| format!("Failed to get embedding: {e}"))?;
 
     let results = {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(&db)?;
         search::semantic_search(
             &conn,
             &query_embedding,
@@ -246,7 +247,7 @@ pub async fn unified_memory_hybrid_search(
 
     // Execute semantic search
     let semantic_results = {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(&db)?;
         search::semantic_search(
             &conn,
             &query_embedding,
@@ -263,7 +264,7 @@ pub async fn unified_memory_hybrid_search(
 
     // Execute keyword search
     let keyword_results: Vec<UnifiedMemory> = {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(&db)?;
         let query_clean = options.query.replace('%', "\\%").replace('_', "\\_");
         let search_pattern = format!("%{query_clean}%");
         let limit = options.limit.unwrap_or(50) as i64;

@@ -11,6 +11,7 @@ import { surfaceManager, SurfaceManager } from "./SurfaceManager";
 import { initPluginUI } from "./index";
 import type {
   PluginId,
+  PluginTaskEventPayload,
   SurfaceId,
   SurfaceState,
   ServerMessage,
@@ -31,6 +32,8 @@ interface UsePluginUIOptions {
 interface UsePluginUIResult {
   /** 插件的所有 Surface */
   surfaces: SurfaceState[];
+  /** 插件任务事件（用于状态可观测） */
+  taskEvents: PluginTaskEventPayload[];
   /** 是否正在加载 */
   loading: boolean;
   /** 错误信息 */
@@ -49,6 +52,7 @@ export function usePluginUI(options: UsePluginUIOptions): UsePluginUIResult {
   const { pluginId, autoInit = true, manager = surfaceManager } = options;
 
   const [surfaces, setSurfaces] = useState<SurfaceState[]>([]);
+  const [taskEvents, setTaskEvents] = useState<PluginTaskEventPayload[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const initializedRef = useRef(false);
@@ -72,6 +76,41 @@ export function usePluginUI(options: UsePluginUIOptions): UsePluginUIResult {
 
     return unsubscribe;
   }, [pluginId, manager]);
+
+  // 监听插件任务事件
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+
+    const setupTaskListener = async () => {
+      try {
+        unlisten = await safeListen<PluginTaskEventPayload>(
+          "plugin-task-event",
+          (event) => {
+            if (event.payload.pluginId !== pluginId) {
+              return;
+            }
+            setTaskEvents((prev) => {
+              const next = [...prev, event.payload];
+              if (next.length > 100) {
+                return next.slice(next.length - 100);
+              }
+              return next;
+            });
+          },
+        );
+      } catch (err) {
+        console.error("[usePluginUI] 监听任务事件失败:", err);
+      }
+    };
+
+    setupTaskListener();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [pluginId]);
 
   // 监听来自 Rust 的 UI 消息
   useEffect(() => {
@@ -178,6 +217,7 @@ export function usePluginUI(options: UsePluginUIOptions): UsePluginUIResult {
 
   return {
     surfaces,
+    taskEvents,
     loading,
     error,
     handleAction,

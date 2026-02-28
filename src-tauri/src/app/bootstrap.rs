@@ -232,7 +232,7 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
 
     // 初始化默认技能仓库
     {
-        let conn = db.lock().expect("Failed to lock database");
+        let conn = database::lock_db(&db).map_err(|e| format!("Failed to lock database: {e}"))?;
         database::dao::skills::SkillDao::init_default_skill_repos(&conn)
             .map_err(|e| format!("初始化默认技能仓库失败: {e}"))?;
     }

@@ -5,7 +5,7 @@
 use super::batch::{BatchTask, BatchTaskStatus};
 use super::template::TaskTemplate;
 use anyhow::{Context, Result};
-use proxycast_core::database::DbConnection;
+use proxycast_core::database::{lock_db, DbConnection};
 use rusqlite::{params, OptionalExtension};
 use uuid::Uuid;
 
@@ -15,7 +15,7 @@ pub struct BatchTaskDao;
 impl BatchTaskDao {
     /// 初始化数据库表
     pub fn init_tables(db: &DbConnection) -> Result<()> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         // 创建批量任务表
         conn.execute(
@@ -69,7 +69,7 @@ impl BatchTaskDao {
 
     /// 保存批量任务
     pub fn save(db: &DbConnection, batch_task: &BatchTask) -> Result<()> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         let options_json = serde_json::to_string(&batch_task.options)?;
         let tasks_json = serde_json::to_string(&batch_task.tasks)?;
@@ -104,7 +104,7 @@ impl BatchTaskDao {
 
     /// 根据 ID 查询批量任务
     pub fn get_by_id(db: &DbConnection, id: &Uuid) -> Result<Option<BatchTask>> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         let mut stmt = conn.prepare(
             "SELECT id, name, template_id, status, options_json, tasks_json, results_json,
@@ -185,7 +185,7 @@ impl BatchTaskDao {
 
     /// 查询所有批量任务
     pub fn list_all(db: &DbConnection, limit: usize) -> Result<Vec<BatchTask>> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         let mut stmt = conn.prepare(
             "SELECT id, name, template_id, status, options_json, tasks_json, results_json,
@@ -268,7 +268,7 @@ impl BatchTaskDao {
 
     /// 删除批量任务
     pub fn delete(db: &DbConnection, id: &Uuid) -> Result<bool> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         let affected = conn.execute(
             "DELETE FROM batch_tasks WHERE id = ?1",
@@ -280,7 +280,7 @@ impl BatchTaskDao {
 
     /// 更新批量任务状态
     pub fn update_status(db: &DbConnection, id: &Uuid, status: BatchTaskStatus) -> Result<()> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         conn.execute(
             "UPDATE batch_tasks SET status = ?1 WHERE id = ?2",
@@ -301,7 +301,7 @@ impl BatchTaskDao {
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         completed_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<()> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         let results_json = if results.is_empty() {
             None
@@ -330,7 +330,7 @@ pub struct TemplateDao;
 impl TemplateDao {
     /// 保存模板
     pub fn save(db: &DbConnection, template: &TaskTemplate) -> Result<()> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         conn.execute(
             "INSERT OR REPLACE INTO batch_templates
@@ -357,7 +357,7 @@ impl TemplateDao {
 
     /// 根据 ID 查询模板
     pub fn get_by_id(db: &DbConnection, id: &Uuid) -> Result<Option<TaskTemplate>> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         let mut stmt = conn.prepare(
             "SELECT id, name, description, model, system_prompt, user_message_template,
@@ -391,7 +391,7 @@ impl TemplateDao {
 
     /// 查询所有模板
     pub fn list_all(db: &DbConnection) -> Result<Vec<TaskTemplate>> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         let mut stmt = conn.prepare(
             "SELECT id, name, description, model, system_prompt, user_message_template,
@@ -429,7 +429,7 @@ impl TemplateDao {
 
     /// 删除模板
     pub fn delete(db: &DbConnection, id: &Uuid) -> Result<bool> {
-        let conn = db.lock().unwrap();
+        let conn = lock_db(db).map_err(|e| anyhow::anyhow!(e))?;
 
         let affected = conn.execute(
             "DELETE FROM batch_templates WHERE id = ?1",

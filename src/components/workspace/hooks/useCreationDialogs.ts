@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { toast } from "sonner";
 import {
   createContent,
@@ -39,6 +46,191 @@ function parseCreationMode(value: unknown): CreationMode | null {
     return value;
   }
   return null;
+}
+
+function parseCreationModeFromMetadata(metadata: unknown): CreationMode | null {
+  if (!metadata || typeof metadata !== "object") {
+    return null;
+  }
+  return parseCreationMode((metadata as Record<string, unknown>).creationMode);
+}
+
+function useWorkspaceProjectsRootLoader(
+  setWorkspaceProjectsRoot: Dispatch<SetStateAction<string>>,
+): void {
+  useEffect(() => {
+    let mounted = true;
+
+    const loadWorkspaceRoot = async () => {
+      try {
+        const root = await getWorkspaceProjectsRoot();
+        if (mounted) {
+          setWorkspaceProjectsRoot(root);
+        }
+      } catch (error) {
+        console.error("加载 workspace 目录失败:", error);
+      }
+    };
+
+    void loadWorkspaceRoot();
+
+    return () => {
+      mounted = false;
+    };
+  }, [setWorkspaceProjectsRoot]);
+}
+
+interface UseProjectPathResolverParams {
+  createProjectDialogOpen: boolean;
+  newProjectName: string;
+  resetProjectPathState: () => void;
+  setResolvedProjectPath: Dispatch<SetStateAction<string>>;
+}
+
+function useProjectPathResolver({
+  createProjectDialogOpen,
+  newProjectName,
+  resetProjectPathState,
+  setResolvedProjectPath,
+}: UseProjectPathResolverParams): void {
+  useEffect(() => {
+    if (!createProjectDialogOpen) {
+      resetProjectPathState();
+      return;
+    }
+
+    const projectName = newProjectName.trim();
+    if (!projectName) {
+      resetProjectPathState();
+      return;
+    }
+
+    let mounted = true;
+    const resolvePath = async () => {
+      try {
+        const path = await resolveProjectRootPath(projectName);
+        if (mounted) {
+          setResolvedProjectPath(path);
+        }
+      } catch (error) {
+        console.error("解析项目目录失败:", error);
+        if (mounted) {
+          resetProjectPathState();
+        }
+      }
+    };
+
+    void resolvePath();
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    createProjectDialogOpen,
+    newProjectName,
+    resetProjectPathState,
+    setResolvedProjectPath,
+  ]);
+}
+
+interface UseProjectPathConflictCheckerParams {
+  createProjectDialogOpen: boolean;
+  resolvedProjectPath: string;
+  setPathChecking: Dispatch<SetStateAction<boolean>>;
+  setPathConflictMessage: Dispatch<SetStateAction<string>>;
+}
+
+function useProjectPathConflictChecker({
+  createProjectDialogOpen,
+  resolvedProjectPath,
+  setPathChecking,
+  setPathConflictMessage,
+}: UseProjectPathConflictCheckerParams): void {
+  useEffect(() => {
+    if (!createProjectDialogOpen || !resolvedProjectPath) {
+      setPathChecking(false);
+      setPathConflictMessage("");
+      return;
+    }
+
+    let mounted = true;
+    setPathChecking(true);
+
+    const checkPathConflict = async () => {
+      try {
+        const existingProject = await getProjectByRootPath(resolvedProjectPath);
+        if (!mounted) {
+          return;
+        }
+        if (existingProject) {
+          setPathConflictMessage(`路径已存在项目：${existingProject.name}`);
+        } else {
+          setPathConflictMessage("");
+        }
+      } catch (error) {
+        console.error("检查项目路径冲突失败:", error);
+        if (mounted) {
+          setPathConflictMessage("");
+        }
+      } finally {
+        if (mounted) {
+          setPathChecking(false);
+        }
+      }
+    };
+
+    void checkPathConflict();
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    createProjectDialogOpen,
+    resolvedProjectPath,
+    setPathChecking,
+    setPathConflictMessage,
+  ]);
+}
+
+interface UseContentCreationModeLoaderParams {
+  selectedContentId: string | null;
+  contentCreationModes: Record<string, CreationMode>;
+  setContentCreationModes: Dispatch<SetStateAction<Record<string, CreationMode>>>;
+}
+
+function useContentCreationModeLoader({
+  selectedContentId,
+  contentCreationModes,
+  setContentCreationModes,
+}: UseContentCreationModeLoaderParams): void {
+  useEffect(() => {
+    if (!selectedContentId || contentCreationModes[selectedContentId]) {
+      return;
+    }
+
+    let mounted = true;
+    const loadCreationMode = async () => {
+      try {
+        const content = await getContent(selectedContentId);
+        const mode = parseCreationModeFromMetadata(content?.metadata);
+
+        if (mounted && mode) {
+          setContentCreationModes((previous) => ({
+            ...previous,
+            [selectedContentId]: mode,
+          }));
+        }
+      } catch (error) {
+        console.error("读取文稿创作模式失败:", error);
+      }
+    };
+
+    void loadCreationMode();
+
+    return () => {
+      mounted = false;
+    };
+  }, [contentCreationModes, selectedContentId, setContentCreationModes]);
 }
 
 export interface UseCreationDialogsParams {
@@ -91,6 +283,12 @@ export function useCreationDialogs({
     Record<string, CreationMode>
   >({});
 
+  const resetProjectPathState = useCallback(() => {
+    setResolvedProjectPath("");
+    setPathChecking(false);
+    setPathConflictMessage("");
+  }, []);
+
   const creationIntentInput = useMemo<CreationIntentInput>(
     () => ({
       creationMode: selectedCreationMode,
@@ -119,11 +317,9 @@ export function useCreationDialogs({
 
   const handleOpenCreateProjectDialog = useCallback(() => {
     setNewProjectName(`${getProjectTypeLabel(theme as ProjectType)}项目`);
-    setResolvedProjectPath("");
-    setPathConflictMessage("");
-    setPathChecking(false);
+    resetProjectPathState();
     setCreateProjectDialogOpen(true);
-  }, [theme]);
+  }, [resetProjectPathState, theme]);
 
   const handleCreateProject = useCallback(async () => {
     const name = newProjectName.trim();
@@ -253,140 +449,24 @@ export function useCreationDialogs({
     });
   }, []);
 
-  useEffect(() => {
-    let mounted = true;
-
-    const loadWorkspaceRoot = async () => {
-      try {
-        const root = await getWorkspaceProjectsRoot();
-        if (mounted) {
-          setWorkspaceProjectsRoot(root);
-        }
-      } catch (error) {
-        console.error("加载 workspace 目录失败:", error);
-      }
-    };
-
-    void loadWorkspaceRoot();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!createProjectDialogOpen) {
-      setResolvedProjectPath("");
-      setPathChecking(false);
-      setPathConflictMessage("");
-      return;
-    }
-
-    const projectName = newProjectName.trim();
-    if (!projectName) {
-      setResolvedProjectPath("");
-      setPathChecking(false);
-      setPathConflictMessage("");
-      return;
-    }
-
-    let mounted = true;
-    const resolvePath = async () => {
-      try {
-        const path = await resolveProjectRootPath(projectName);
-        if (mounted) {
-          setResolvedProjectPath(path);
-        }
-      } catch (error) {
-        console.error("解析项目目录失败:", error);
-        if (mounted) {
-          setResolvedProjectPath("");
-          setPathConflictMessage("");
-          setPathChecking(false);
-        }
-      }
-    };
-
-    void resolvePath();
-
-    return () => {
-      mounted = false;
-    };
-  }, [createProjectDialogOpen, newProjectName]);
-
-  useEffect(() => {
-    if (!createProjectDialogOpen || !resolvedProjectPath) {
-      setPathChecking(false);
-      setPathConflictMessage("");
-      return;
-    }
-
-    let mounted = true;
-    setPathChecking(true);
-
-    const checkPathConflict = async () => {
-      try {
-        const existingProject = await getProjectByRootPath(resolvedProjectPath);
-        if (!mounted) {
-          return;
-        }
-        if (existingProject) {
-          setPathConflictMessage(`路径已存在项目：${existingProject.name}`);
-        } else {
-          setPathConflictMessage("");
-        }
-      } catch (error) {
-        console.error("检查项目路径冲突失败:", error);
-        if (mounted) {
-          setPathConflictMessage("");
-        }
-      } finally {
-        if (mounted) {
-          setPathChecking(false);
-        }
-      }
-    };
-
-    void checkPathConflict();
-
-    return () => {
-      mounted = false;
-    };
-  }, [createProjectDialogOpen, resolvedProjectPath]);
-
-  useEffect(() => {
-    if (!selectedContentId || contentCreationModes[selectedContentId]) {
-      return;
-    }
-
-    let mounted = true;
-    const loadCreationMode = async () => {
-      try {
-        const content = await getContent(selectedContentId);
-        const metadata = content?.metadata;
-        const mode = parseCreationMode(
-          metadata && typeof metadata === "object"
-            ? (metadata as Record<string, unknown>).creationMode
-            : null,
-        );
-
-        if (mounted && mode) {
-          setContentCreationModes((previous) => ({
-            ...previous,
-            [selectedContentId]: mode,
-          }));
-        }
-      } catch (error) {
-        console.error("读取文稿创作模式失败:", error);
-      }
-    };
-
-    void loadCreationMode();
-
-    return () => {
-      mounted = false;
-    };
-  }, [contentCreationModes, selectedContentId]);
+  useWorkspaceProjectsRootLoader(setWorkspaceProjectsRoot);
+  useProjectPathResolver({
+    createProjectDialogOpen,
+    newProjectName,
+    resetProjectPathState,
+    setResolvedProjectPath,
+  });
+  useProjectPathConflictChecker({
+    createProjectDialogOpen,
+    resolvedProjectPath,
+    setPathChecking,
+    setPathConflictMessage,
+  });
+  useContentCreationModeLoader({
+    selectedContentId,
+    contentCreationModes,
+    setContentCreationModes,
+  });
 
   return {
     createProjectDialogOpen,

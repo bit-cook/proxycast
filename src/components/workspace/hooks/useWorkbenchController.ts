@@ -78,6 +78,96 @@ export interface UseWorkbenchControllerParams {
   resetAt?: number;
 }
 
+interface UseWorkbenchBootstrapParams {
+  applyInitialNavigationState: (
+    initialViewMode: WorkspaceViewMode | undefined,
+    initialContentId: string | undefined,
+  ) => void;
+  clearContentsSelection: () => void;
+  initialContentId?: string;
+  initialProjectId?: string;
+  initialViewMode?: WorkspaceViewMode;
+  loadProjects: () => Promise<void>;
+  resetProjectAndContentQueries: () => void;
+  resetAt?: number;
+  setSelectedContentId: (contentId: string | null) => void;
+  setSelectedProjectId: (projectId: string | null) => void;
+  theme: WorkspaceTheme;
+}
+
+function useWorkbenchBootstrap({
+  applyInitialNavigationState,
+  clearContentsSelection,
+  initialContentId,
+  initialProjectId,
+  initialViewMode,
+  loadProjects,
+  resetProjectAndContentQueries,
+  resetAt,
+  setSelectedContentId,
+  setSelectedProjectId,
+  theme,
+}: UseWorkbenchBootstrapParams): void {
+  useEffect(() => {
+    resetProjectAndContentQueries();
+    setSelectedProjectId(initialProjectId ?? null);
+    setSelectedContentId(initialContentId ?? null);
+    applyInitialNavigationState(initialViewMode, initialContentId);
+    clearContentsSelection();
+    void loadProjects();
+  }, [
+    applyInitialNavigationState,
+    clearContentsSelection,
+    initialContentId,
+    initialProjectId,
+    initialViewMode,
+    loadProjects,
+    resetProjectAndContentQueries,
+    resetAt,
+    setSelectedContentId,
+    setSelectedProjectId,
+    theme,
+  ]);
+}
+
+interface UseSelectedProjectContentsLoaderParams {
+  clearContentsSelection: () => void;
+  loadContents: (projectId: string) => Promise<void>;
+  projects: Array<unknown>;
+  selectedProjectId: string | null;
+}
+
+function useSelectedProjectContentsLoader({
+  clearContentsSelection,
+  loadContents,
+  projects,
+  selectedProjectId,
+}: UseSelectedProjectContentsLoaderParams): void {
+  useEffect(() => {
+    if (!selectedProjectId) {
+      clearContentsSelection();
+      return;
+    }
+    void loadContents(selectedProjectId);
+  }, [clearContentsSelection, loadContents, selectedProjectId, projects]);
+}
+
+function useSidebarToggleHotkey(toggleLeftSidebar: () => void): void {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "b") {
+        event.preventDefault();
+        toggleLeftSidebar();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [toggleLeftSidebar]);
+}
+
 export function useWorkbenchController({
   onNavigate,
   initialProjectId,
@@ -268,14 +358,7 @@ export function useWorkbenchController({
     }
   }, [loadContents, selectedContentId, selectedProjectId]);
 
-  useEffect(() => {
-    resetProjectAndContentQueries();
-    setSelectedProjectId(initialProjectId ?? null);
-    setSelectedContentId(initialContentId ?? null);
-    applyInitialNavigationState(initialViewMode, initialContentId);
-    clearContentsSelection();
-    void loadProjects();
-  }, [
+  useWorkbenchBootstrap({
     applyInitialNavigationState,
     clearContentsSelection,
     initialContentId,
@@ -287,33 +370,19 @@ export function useWorkbenchController({
     setSelectedContentId,
     setSelectedProjectId,
     theme,
-  ]);
-
-  useEffect(() => {
-    if (!selectedProjectId) {
-      clearContentsSelection();
-      return;
-    }
-    void loadContents(selectedProjectId);
-  }, [clearContentsSelection, loadContents, selectedProjectId, projects]);
+  });
+  useSelectedProjectContentsLoader({
+    clearContentsSelection,
+    loadContents,
+    projects,
+    selectedProjectId,
+  });
 
   const handleBackHome = useCallback(() => {
     onNavigate?.("agent", buildHomeAgentParams());
   }, [onNavigate]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "b") {
-        event.preventDefault();
-        toggleLeftSidebar();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [toggleLeftSidebar]);
+  useSidebarToggleHotkey(toggleLeftSidebar);
 
   const currentContentTitle = selectedContentId
     ? contents.find((item) => item.id === selectedContentId)?.title || "已选文稿"

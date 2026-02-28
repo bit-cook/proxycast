@@ -744,7 +744,10 @@ impl CodexProvider {
         }
 
         // 3. OAuth 刷新流程（标准流程）
-        let refresh_token = self.credentials.refresh_token.as_ref().unwrap();
+        let refresh_token =
+            self.credentials.refresh_token.as_ref().ok_or_else(|| {
+                create_config_error("OAuth 刷新令牌不可用 (refresh_token is None)")
+            })?;
 
         tracing::info!("[CODEX] 正在刷新 access token");
 
@@ -2351,7 +2354,7 @@ pub async fn start_codex_oauth_server_and_get_url() -> Result<
                 let uuid = Uuid::new_v4().to_string();
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
+                    .unwrap_or_default()
                     .as_secs();
                 let filename = format!("codex_{}_{}.json", &uuid[..8], timestamp);
                 let creds_file_path = creds_dir.join(&filename);

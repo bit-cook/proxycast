@@ -1,6 +1,7 @@
 //! Memory feedback commands
 
 use crate::database::DbConnection;
+use proxycast_core::database::lock_db;
 use proxycast_memory::feedback::{
     calculate_approval_rate, current_timestamp, generate_feedback_id, get_recent_feedbacks,
     record_feedback, FeedbackAction, UserFeedback,
@@ -28,7 +29,7 @@ pub async fn unified_memory_feedback(
         created_at: current_timestamp(),
     };
 
-    let conn = db.lock().unwrap();
+    let conn = lock_db(&db)?;
     record_feedback(&conn, &feedback)?;
 
     Ok(())
@@ -39,7 +40,7 @@ pub async fn get_memory_feedback_stats(
     db: State<'_, DbConnection>,
     session_id: String,
 ) -> Result<FeedbackStats, String> {
-    let conn = db.lock().unwrap();
+    let conn = lock_db(&db)?;
     let feedbacks = get_recent_feedbacks(&conn, &session_id, 50)?;
 
     let approval_rate = calculate_approval_rate(&feedbacks);

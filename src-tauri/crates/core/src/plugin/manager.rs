@@ -5,22 +5,34 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use dashmap::DashMap;
 use tokio::sync::RwLock;
-use tokio::time::timeout;
 
 use super::loader::PluginLoader;
+use super::task::{
+    PluginQueueStats, PluginTaskPolicy, PluginTaskRecord, PluginTaskState, PluginTaskTracker,
+};
 use super::types::{
     HookResult, PluginConfig, PluginContext, PluginError, PluginInfo, PluginInstance, PluginStatus,
 };
+use crate::DynEmitter;
 
 /// 插件管理器配置
 #[derive(Debug, Clone)]
 pub struct PluginManagerConfig {
     /// 默认超时时间 (毫秒)
     pub default_timeout_ms: u64,
+    /// 默认重试次数
+    pub default_max_retries: u32,
+    /// 默认重试退避基数 (毫秒)
+    pub default_retry_backoff_ms: u64,
+    /// 插件级并发上限
+    pub default_max_concurrency_per_plugin: usize,
+    /// 插件级队列长度上限
+    pub default_queue_limit_per_plugin: usize,
+    /// 任务记录保留数量
+    pub task_retention_limit: usize,
     /// 是否启用插件系统
     pub enabled: bool,
     /// 最大并发插件数
@@ -31,6 +43,11 @@ impl Default for PluginManagerConfig {
     fn default() -> Self {
         Self {
             default_timeout_ms: 5000,
+            default_max_retries: 2,
+            default_retry_backoff_ms: 300,
+            default_max_concurrency_per_plugin: 4,
+            default_queue_limit_per_plugin: 100,
+            task_retention_limit: 2000,
             enabled: true,
             max_plugins: 50,
         }
@@ -47,6 +64,8 @@ pub struct PluginManager {
     configs: DashMap<String, PluginConfig>,
     /// 管理器配置
     config: PluginManagerConfig,
+    /// 插件任务治理与跟踪
+    task_tracker: PluginTaskTracker,
 }
 
 impl PluginManager {
@@ -56,6 +75,7 @@ impl PluginManager {
             loader: PluginLoader::new(plugins_dir),
             plugins: DashMap::new(),
             configs: DashMap::new(),
+            task_tracker: PluginTaskTracker::new(config.task_retention_limit),
             config,
         }
     }
@@ -248,6 +268,46 @@ impl PluginManager {
         infos
     }
 
+    /// 设置插件任务事件发射器
+    pub async fn set_task_emitter(&self, emitter: DynEmitter) {
+        self.task_tracker.set_emitter(emitter).await;
+    }
+
+    /// 列出插件任务
+    pub fn list_tasks(
+        &self,
+        plugin_id: Option<&str>,
+        state: Option<PluginTaskState>,
+        limit: usize,
+    ) -> Vec<PluginTaskRecord> {
+        self.task_tracker.list_tasks(plugin_id, state, limit)
+    }
+
+    /// 获取插件任务详情
+    pub fn get_task(&self, task_id: &str) -> Option<PluginTaskRecord> {
+        self.task_tracker.get_task(task_id)
+    }
+
+    /// 取消插件任务
+    pub fn cancel_task(&self, task_id: &str) -> bool {
+        self.task_tracker.cancel_task(task_id)
+    }
+
+    /// 获取插件队列统计
+    pub fn get_queue_stats(&self, plugin_id: Option<&str>) -> Vec<PluginQueueStats> {
+        self.task_tracker.queue_stats(plugin_id)
+    }
+
+    fn build_policy(&self, timeout_ms: u64) -> PluginTaskPolicy {
+        PluginTaskPolicy {
+            timeout_ms,
+            max_retries: self.config.default_max_retries,
+            retry_backoff_ms: self.config.default_retry_backoff_ms,
+            max_concurrency_per_plugin: self.config.default_max_concurrency_per_plugin,
+            queue_limit_per_plugin: self.config.default_queue_limit_per_plugin,
+        }
+    }
+
     /// 执行请求前钩子 (带隔离)
     pub async fn run_on_request(
         &self,
@@ -267,24 +327,41 @@ impl PluginManager {
             }
 
             let timeout_ms = instance.config.timeout_ms;
+            let policy = self.build_policy(timeout_ms);
             let plugin = instance.plugin.clone();
             let plugin_name = plugin.name().to_string();
+            let base_ctx = ctx.clone();
+            let base_request = request.clone();
 
-            // 带超时执行
-            let result = match timeout(
-                Duration::from_millis(timeout_ms),
-                plugin.on_request(ctx, request),
-            )
-            .await
+            let result = match self
+                .task_tracker
+                .execute(&plugin_name, "on_request", policy, move |_attempt| {
+                    let plugin = plugin.clone();
+                    let mut attempt_ctx = base_ctx.clone();
+                    let mut attempt_request = base_request.clone();
+                    async move {
+                        let hook_result = plugin
+                            .on_request(&mut attempt_ctx, &mut attempt_request)
+                            .await?;
+                        Ok((hook_result, attempt_ctx, attempt_request))
+                    }
+                })
+                .await
             {
-                Ok(Ok(result)) => result,
-                Ok(Err(e)) => {
-                    tracing::warn!("插件 {} on_request 执行失败: {}", plugin_name, e);
-                    HookResult::failure(e.to_string(), timeout_ms)
+                Ok((hook_result, next_ctx, next_request)) => {
+                    *ctx = next_ctx;
+                    *request = next_request;
+                    hook_result
                 }
-                Err(_) => {
-                    tracing::warn!("插件 {} on_request 执行超时", plugin_name);
-                    HookResult::failure(format!("执行超时 ({timeout_ms}ms)"), timeout_ms)
+                Err(failure) => {
+                    tracing::warn!(
+                        "插件 {} on_request 执行失败: {} (state={:?}, attempts={})",
+                        plugin_name,
+                        failure.message,
+                        failure.state,
+                        failure.attempts
+                    );
+                    HookResult::failure(failure.message, timeout_ms)
                 }
             };
 
@@ -321,24 +398,41 @@ impl PluginManager {
             }
 
             let timeout_ms = instance.config.timeout_ms;
+            let policy = self.build_policy(timeout_ms);
             let plugin = instance.plugin.clone();
             let plugin_name = plugin.name().to_string();
+            let base_ctx = ctx.clone();
+            let base_response = response.clone();
 
-            // 带超时执行
-            let result = match timeout(
-                Duration::from_millis(timeout_ms),
-                plugin.on_response(ctx, response),
-            )
-            .await
+            let result = match self
+                .task_tracker
+                .execute(&plugin_name, "on_response", policy, move |_attempt| {
+                    let plugin = plugin.clone();
+                    let mut attempt_ctx = base_ctx.clone();
+                    let mut attempt_response = base_response.clone();
+                    async move {
+                        let hook_result = plugin
+                            .on_response(&mut attempt_ctx, &mut attempt_response)
+                            .await?;
+                        Ok((hook_result, attempt_ctx, attempt_response))
+                    }
+                })
+                .await
             {
-                Ok(Ok(result)) => result,
-                Ok(Err(e)) => {
-                    tracing::warn!("插件 {} on_response 执行失败: {}", plugin_name, e);
-                    HookResult::failure(e.to_string(), timeout_ms)
+                Ok((hook_result, next_ctx, next_response)) => {
+                    *ctx = next_ctx;
+                    *response = next_response;
+                    hook_result
                 }
-                Err(_) => {
-                    tracing::warn!("插件 {} on_response 执行超时", plugin_name);
-                    HookResult::failure(format!("执行超时 ({timeout_ms}ms)"), timeout_ms)
+                Err(failure) => {
+                    tracing::warn!(
+                        "插件 {} on_response 执行失败: {} (state={:?}, attempts={})",
+                        plugin_name,
+                        failure.message,
+                        failure.state,
+                        failure.attempts
+                    );
+                    HookResult::failure(failure.message, timeout_ms)
                 }
             };
 
@@ -371,24 +465,38 @@ impl PluginManager {
             }
 
             let timeout_ms = instance.config.timeout_ms;
+            let policy = self.build_policy(timeout_ms);
             let plugin = instance.plugin.clone();
             let plugin_name = plugin.name().to_string();
+            let base_ctx = ctx.clone();
+            let error_text = error.to_string();
 
-            // 带超时执行
-            let result = match timeout(
-                Duration::from_millis(timeout_ms),
-                plugin.on_error(ctx, error),
-            )
-            .await
+            let result = match self
+                .task_tracker
+                .execute(&plugin_name, "on_error", policy, move |_attempt| {
+                    let plugin = plugin.clone();
+                    let mut attempt_ctx = base_ctx.clone();
+                    let error_text = error_text.clone();
+                    async move {
+                        let hook_result = plugin.on_error(&mut attempt_ctx, &error_text).await?;
+                        Ok((hook_result, attempt_ctx))
+                    }
+                })
+                .await
             {
-                Ok(Ok(result)) => result,
-                Ok(Err(e)) => {
-                    tracing::warn!("插件 {} on_error 执行失败: {}", plugin_name, e);
-                    HookResult::failure(e.to_string(), timeout_ms)
+                Ok((hook_result, next_ctx)) => {
+                    *ctx = next_ctx;
+                    hook_result
                 }
-                Err(_) => {
-                    tracing::warn!("插件 {} on_error 执行超时", plugin_name);
-                    HookResult::failure(format!("执行超时 ({timeout_ms}ms)"), timeout_ms)
+                Err(failure) => {
+                    tracing::warn!(
+                        "插件 {} on_error 执行失败: {} (state={:?}, attempts={})",
+                        plugin_name,
+                        failure.message,
+                        failure.state,
+                        failure.attempts
+                    );
+                    HookResult::failure(failure.message, timeout_ms)
                 }
             };
 
@@ -452,9 +560,16 @@ impl PluginManager {
             .get(plugin_id)
             .ok_or_else(|| PluginError::NotFound(plugin_id.to_string()))?;
 
-        // TODO: 检查插件是否实现了 PluginUI trait
-        // 目前返回空列表
-        Ok(Vec::new())
+        let policy = self.build_policy(self.config.default_timeout_ms);
+        self.task_tracker
+            .execute(plugin_id, "get_plugin_surfaces", policy, |_attempt| async {
+                Ok::<_, PluginError>(Vec::new())
+            })
+            .await
+            .map_err(|failure| PluginError::ExecutionError {
+                plugin_name: plugin_id.to_string(),
+                message: failure.message,
+            })
     }
 
     /// 处理插件 UI 操作
@@ -468,16 +583,29 @@ impl PluginManager {
             .get(plugin_id)
             .ok_or_else(|| PluginError::NotFound(plugin_id.to_string()))?;
 
-        // TODO: 将操作转发给插件的 handle_action 方法
-        // 目前返回空列表
-        tracing::debug!(
-            "收到插件 {} 的 UI 操作: {} (surface: {})",
-            plugin_id,
-            action.name,
-            action.surface_id
-        );
+        let action_name = action.name.clone();
+        let surface_id = action.surface_id.clone();
+        let policy = self.build_policy(self.config.default_timeout_ms);
 
-        Ok(Vec::new())
+        self.task_tracker
+            .execute(plugin_id, "handle_plugin_action", policy, move |_attempt| {
+                let action_name = action_name.clone();
+                let surface_id = surface_id.clone();
+                async move {
+                    tracing::debug!(
+                        "收到插件 {} 的 UI 操作: {} (surface: {})",
+                        plugin_id,
+                        action_name,
+                        surface_id
+                    );
+                    Ok::<_, PluginError>(Vec::new())
+                }
+            })
+            .await
+            .map_err(|failure| PluginError::ExecutionError {
+                plugin_name: plugin_id.to_string(),
+                message: failure.message,
+            })
     }
 }
 

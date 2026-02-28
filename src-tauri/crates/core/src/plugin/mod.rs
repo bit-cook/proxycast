@@ -14,6 +14,7 @@ pub mod examples;
 pub mod installer;
 mod loader;
 mod manager;
+mod task;
 mod types;
 pub mod ui_builder;
 pub mod ui_trait;
@@ -22,6 +23,10 @@ pub mod ui_types;
 pub use binary_downloader::BinaryDownloader;
 pub use loader::PluginLoader;
 pub use manager::PluginManager;
+pub use task::{
+    PluginQueueStats, PluginTaskError, PluginTaskEventPayload, PluginTaskFailure, PluginTaskPolicy,
+    PluginTaskRecord, PluginTaskState, PluginTaskTracker,
+};
 pub use types::{
     BinaryComponentStatus, BinaryManifest, HookResult, PlatformBinaries, Plugin, PluginConfig,
     PluginContext, PluginError, PluginInfo, PluginManifest, PluginState, PluginStatus, PluginType,

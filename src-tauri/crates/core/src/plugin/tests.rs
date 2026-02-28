@@ -266,6 +266,7 @@ mod property_tests {
                     default_timeout_ms: 1000,
                     enabled: true,
                     max_plugins: 10,
+                    ..PluginManagerConfig::default()
                 };
                 let manager = PluginManager::new(temp_dir.path().to_path_buf(), config);
 
@@ -297,6 +298,7 @@ mod property_tests {
                     default_timeout_ms: 1000,
                     enabled: false,  // 禁用插件系统
                     max_plugins: 10,
+                    ..PluginManagerConfig::default()
                 };
                 let manager = PluginManager::new(temp_dir.path().to_path_buf(), config);
 

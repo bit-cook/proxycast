@@ -67,7 +67,7 @@ fn copy_and_rename_credential_file(
     let uuid = Uuid::new_v4().to_string();
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
 
     let new_filename = format!(
@@ -672,7 +672,7 @@ fn create_kiro_credential_from_json(json_content: &str) -> Result<String, String
     let uuid = Uuid::new_v4().to_string();
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
 
     let new_filename = format!("kiro_{}_{}_{}.json", &uuid[..8], timestamp, "kiro");

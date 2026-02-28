@@ -75,7 +75,7 @@ pub fn setup_app(
 
     // 初始化默认 skill repos
     {
-        let conn = db.lock().expect("Failed to lock database");
+        let conn = proxycast_core::database::lock_db(&db)?;
         database::dao::skills::SkillDao::init_default_skill_repos(&conn)
             .expect("Failed to initialize default skill repos");
     }

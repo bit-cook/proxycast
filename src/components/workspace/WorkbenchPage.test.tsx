@@ -1,7 +1,28 @@
-import { act, type ComponentProps } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWorkbenchStore } from "@/stores/useWorkbenchStore";
+import {
+  clickButtonByText,
+  clickButtonByTitle,
+  clickElement,
+  cleanupMountedRoots,
+  findAsideByClassFragment,
+  findButtonByText,
+  findButtonByTitle,
+  findInputById,
+  findInputByPlaceholder,
+  fillTextInput,
+  flushEffects as flushAsyncEffects,
+  mountHarness,
+  setupReactActEnvironment,
+  triggerKeyboardShortcut,
+  type MountedRoot,
+} from "./hooks/testUtils";
+import {
+  createWorkspaceContentFixture,
+  createWorkspaceProjectFixture,
+  DEFAULT_WORKSPACE_PAGE_PROPS,
+} from "./testFixtures";
 
 const {
   mockListProjects,
@@ -72,81 +93,90 @@ vi.mock("@/lib/api/project", () => ({
 
 import { WorkbenchPage } from "./WorkbenchPage";
 
-interface RenderResult {
-  container: HTMLDivElement;
-  root: Root;
-}
-
-const mountedRoots: Array<{ container: HTMLDivElement; root: Root }> = [];
+const mountedRoots: MountedRoot[] = [];
 
 function renderPage(
   props: Partial<ComponentProps<typeof WorkbenchPage>> = {},
-): RenderResult {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
+) {
+  return mountHarness(
+    WorkbenchPage,
+    { theme: "social-media", ...props },
+    mountedRoots,
+  );
+}
 
-  act(() => {
-    root.render(<WorkbenchPage theme="social-media" {...props} />);
+function renderDefaultWorkspacePage(
+  props: Partial<ComponentProps<typeof WorkbenchPage>> = {},
+) {
+  return renderPage({
+    ...DEFAULT_WORKSPACE_PAGE_PROPS,
+    ...props,
   });
-
-  mountedRoots.push({ container, root });
-  return { container, root };
 }
 
 async function flushEffects(times = 3): Promise<void> {
-  for (let i = 0; i < times; i += 1) {
-    await act(async () => {
-      await Promise.resolve();
-    });
-  }
+  await flushAsyncEffects(times);
 }
 
-function getLeftSidebar(container: HTMLElement): HTMLElement | null {
-  const matched = Array.from(container.querySelectorAll("aside")).find((aside) =>
-    aside.className.includes("bg-muted/20"),
-  );
-  return (matched as HTMLElement | undefined) ?? null;
+async function enterDefaultWorkspace(options?: {
+  expandSidebar?: boolean;
+}): Promise<{ container: HTMLDivElement }> {
+  const rendered = renderDefaultWorkspacePage();
+  await flushEffects();
+
+  if (options?.expandSidebar) {
+    triggerKeyboardShortcut(window, "b", { ctrlKey: true });
+    await flushEffects();
+  }
+
+  return { container: rendered.container };
+}
+
+function expectAgentWorkspaceVisible(container: HTMLElement): void {
+  expect(container.querySelector("[data-testid='agent-chat-page']")).not.toBeNull();
+}
+
+function expectWorkspaceNavigationVisible(container: HTMLElement): void {
+  expect(container.textContent).toContain("创作");
+  expect(container.textContent).toContain("发布");
+}
+
+async function enterProjectManagementFromWorkspace(
+  container: HTMLElement,
+): Promise<void> {
+  const managementButton = findButtonByText(container, "项目管理");
+  expect(managementButton).toBeDefined();
+  clickButtonByText(container, "项目管理");
+  await flushEffects();
+}
+
+function expectProjectManagementLandingVisible(container: HTMLElement): void {
+  expect(container.textContent).toContain("统一创作工作区");
+  expect(container.textContent).toContain("进入创作");
 }
 
 beforeEach(() => {
-  (
-    globalThis as typeof globalThis & {
-      IS_REACT_ACT_ENVIRONMENT?: boolean;
-    }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
+  setupReactActEnvironment();
 
   localStorage.clear();
   vi.clearAllMocks();
   useWorkbenchStore.getState().setLeftSidebarCollapsed(true);
 
   mockListProjects.mockResolvedValue([
-    {
+    createWorkspaceProjectFixture({
       id: "project-1",
       name: "社媒项目A",
       workspaceType: "social-media",
       rootPath: "/tmp/workspace/project-1",
-      isDefault: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      isFavorite: false,
-      isArchived: false,
-      tags: [],
-    },
+    }),
   ]);
 
   mockListContents.mockResolvedValue([
-    {
+    createWorkspaceContentFixture({
       id: "content-1",
       project_id: "project-1",
       title: "文稿A",
-      content_type: "post",
-      status: "draft",
-      order: 0,
-      word_count: 0,
-      created_at: Date.now(),
-      updated_at: Date.now(),
-    },
+    }),
   ]);
 
   mockGetContent.mockResolvedValue({
@@ -156,16 +186,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  while (mountedRoots.length > 0) {
-    const mounted = mountedRoots.pop();
-    if (!mounted) {
-      break;
-    }
-    act(() => {
-      mounted.root.unmount();
-    });
-    mounted.container.remove();
-  }
+  cleanupMountedRoots(mountedRoots);
   localStorage.clear();
 });
 
@@ -174,7 +195,7 @@ describe("WorkbenchPage 左侧栏模式行为", () => {
     const { container } = renderPage({ viewMode: "project-management" });
     await flushEffects();
 
-    const leftSidebar = getLeftSidebar(container);
+    const leftSidebar = findAsideByClassFragment(container, "bg-muted/20");
     expect(leftSidebar).not.toBeNull();
     expect(leftSidebar?.className).toContain("w-[260px]");
     expect(container.textContent).toContain("主题项目管理");
@@ -184,118 +205,54 @@ describe("WorkbenchPage 左侧栏模式行为", () => {
     const { container } = renderPage({ viewMode: "project-management" });
     await flushEffects();
 
-    const projectButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("社媒项目A"),
-    );
+    const projectButton = findButtonByText(container, "社媒项目A");
     expect(projectButton).toBeDefined();
-
-    act(() => {
-      projectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    clickButtonByText(container, "社媒项目A");
     await flushEffects();
 
-    expect(container.querySelector("[data-testid='agent-chat-page']")).not.toBeNull();
-    expect(container.textContent).toContain("创作");
-    expect(container.textContent).toContain("发布");
+    expectAgentWorkspaceVisible(container);
+    expectWorkspaceNavigationVisible(container);
   });
 
   it("作业模式默认收起左侧栏", async () => {
-    const { container } = renderPage({
-      viewMode: "workspace",
-      projectId: "project-1",
-      contentId: "content-1",
-    });
-    await flushEffects();
+    const { container } = await enterDefaultWorkspace();
 
-    expect(getLeftSidebar(container)).toBeNull();
+    expect(findAsideByClassFragment(container, "bg-muted/20")).toBeNull();
     expect(container.textContent).not.toContain("主题项目管理");
   });
 
   it("作业模式展开侧栏后点击项目保持在统一工作区", async () => {
-    const { container } = renderPage({
-      viewMode: "workspace",
-      projectId: "project-1",
-      contentId: "content-1",
-    });
-    await flushEffects();
+    const { container } = await enterDefaultWorkspace({ expandSidebar: true });
 
-    act(() => {
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "b",
-          ctrlKey: true,
-          bubbles: true,
-        }),
-      );
-    });
-    await flushEffects();
-
-    const projectButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("社媒项目A"),
-    );
+    const projectButton = findButtonByText(container, "社媒项目A");
     expect(projectButton).toBeDefined();
-
-    act(() => {
-      projectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    clickButtonByText(container, "社媒项目A");
     await flushEffects();
 
-    expect(container.querySelector("[data-testid='agent-chat-page']")).not.toBeNull();
+    expectAgentWorkspaceVisible(container);
   });
 
   it("工作区点击项目管理后回到项目管理态", async () => {
-    const { container } = renderPage({
-      viewMode: "workspace",
-      projectId: "project-1",
-      contentId: "content-1",
-    });
-    await flushEffects();
+    const { container } = await enterDefaultWorkspace();
 
-    const managementButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("项目管理"),
-    );
-    expect(managementButton).toBeDefined();
-
-    act(() => {
-      managementButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushEffects();
-
-    expect(container.textContent).toContain("统一创作工作区");
-    expect(container.textContent).toContain("进入创作");
+    await enterProjectManagementFromWorkspace(container);
+    expectProjectManagementLandingVisible(container);
   });
 
   it("工作区点击项目管理后自动展开左侧栏", async () => {
-    const { container } = renderPage({
-      viewMode: "workspace",
-      projectId: "project-1",
-      contentId: "content-1",
-    });
-    await flushEffects();
+    const { container } = await enterDefaultWorkspace();
 
-    const managementButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("项目管理"),
-    );
-    expect(managementButton).not.toBeUndefined();
+    await enterProjectManagementFromWorkspace(container);
 
-    act(() => {
-      managementButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushEffects();
-
-    const leftSidebar = getLeftSidebar(container);
+    const leftSidebar = findAsideByClassFragment(container, "bg-muted/20");
     expect(leftSidebar).not.toBeNull();
     expect(leftSidebar?.className).toContain("w-[260px]");
+    expectProjectManagementLandingVisible(container);
     expect(container.textContent).toContain("主题项目管理");
   });
 
   it("统一工作区中的聊天页隐藏内部顶部栏，避免双导航", async () => {
-    const { container } = renderPage({
-      viewMode: "workspace",
-      projectId: "project-1",
-      contentId: "content-1",
-    });
-    await flushEffects();
+    const { container } = await enterDefaultWorkspace();
 
     const chat = container.querySelector("[data-testid='agent-chat-page']");
     expect(chat).not.toBeNull();
@@ -304,18 +261,12 @@ describe("WorkbenchPage 左侧栏模式行为", () => {
 
   it("视频主题在作业模式渲染主题工作区而非对话工作区", async () => {
     mockListProjects.mockResolvedValueOnce([
-      {
+      createWorkspaceProjectFixture({
         id: "video-project-1",
         name: "视频项目A",
         workspaceType: "video",
         rootPath: "/tmp/workspace/video-project-1",
-        isDefault: false,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        isFavorite: false,
-        isArchived: false,
-        tags: [],
-      },
+      }),
     ]);
 
     const { container } = renderPage({
@@ -333,193 +284,91 @@ describe("WorkbenchPage 左侧栏模式行为", () => {
   });
 
   it("切换到非创作视图时左侧显示紧凑提示并可返回创作视图", async () => {
-    const { container } = renderPage({
-      viewMode: "workspace",
-      projectId: "project-1",
-      contentId: "content-1",
-    });
-    await flushEffects();
+    const { container } = await enterDefaultWorkspace({ expandSidebar: true });
 
-    act(() => {
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "b",
-          ctrlKey: true,
-          bubbles: true,
-        }),
-      );
-    });
-    await flushEffects();
-
-    const publishButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "发布",
-    );
+    const publishButton = findButtonByText(container, "发布", { exact: true });
     expect(publishButton).toBeDefined();
-
-    act(() => {
-      publishButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    clickButtonByText(container, "发布", { exact: true });
     await flushEffects();
 
     expect(container.textContent).toContain("当前处于「发布」视图");
     expect(container.textContent).toContain("当前文稿：文稿A");
     expect(container.textContent).toContain("返回创作视图");
-    expect(container.querySelector("input[placeholder='搜索文稿...']")).toBeNull();
+    expect(findInputByPlaceholder(container, "搜索文稿...")).toBeNull();
 
-    const openViewActionsButton = container.querySelector(
-      "button[title='展开视图动作']",
-    );
+    const openViewActionsButton = findButtonByTitle(container, "展开视图动作");
     expect(openViewActionsButton).not.toBeNull();
 
-    act(() => {
-      openViewActionsButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
-    });
+    clickElement(openViewActionsButton);
     await flushEffects();
 
     expect(container.textContent).toContain("视图动作");
     expect(container.textContent).toContain("前往设置视图");
 
-    const backToCreateButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "返回创作视图",
-    );
-    expect(backToCreateButton).toBeDefined();
-
-    act(() => {
-      backToCreateButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const backToCreateButton = findButtonByText(container, "返回创作视图", {
+      exact: true,
     });
+    expect(backToCreateButton).toBeDefined();
+    clickButtonByText(container, "返回创作视图", { exact: true });
     await flushEffects();
 
-    expect(container.querySelector("input[placeholder='搜索文稿...']")).not.toBeNull();
+    expect(findInputByPlaceholder(container, "搜索文稿...")).not.toBeNull();
   });
 
   it("创建项目后保持选中新项目且重置项目搜索", async () => {
-    mockListProjects
-      .mockResolvedValueOnce([
-        {
-          id: "project-1",
-          name: "社媒项目A",
-          workspaceType: "social-media",
-          rootPath: "/tmp/workspace/project-1",
-          isDefault: false,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          isFavorite: false,
-          isArchived: false,
-          tags: [],
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          id: "project-1",
-          name: "社媒项目A",
-          workspaceType: "social-media",
-          rootPath: "/tmp/workspace/project-1",
-          isDefault: false,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          isFavorite: false,
-          isArchived: false,
-          tags: [],
-        },
-        {
-          id: "project-2",
-          name: "新项目B",
-          workspaceType: "social-media",
-          rootPath: "/tmp/workspace/新项目B",
-          isDefault: false,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          isFavorite: false,
-          isArchived: false,
-          tags: [],
-        },
-      ]);
-    mockCreateProject.mockResolvedValue({
+    const baseProject = createWorkspaceProjectFixture({
+      id: "project-1",
+      name: "社媒项目A",
+      workspaceType: "social-media",
+      rootPath: "/tmp/workspace/project-1",
+    });
+    const createdProject = createWorkspaceProjectFixture({
       id: "project-2",
       name: "新项目B",
       workspaceType: "social-media",
       rootPath: "/tmp/workspace/新项目B",
-      isDefault: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      isFavorite: false,
-      isArchived: false,
-      tags: [],
     });
 
-    const { container } = renderPage({
-      viewMode: "workspace",
-      projectId: "project-1",
-      contentId: "content-1",
-    });
-    await flushEffects();
+    mockListProjects
+      .mockResolvedValueOnce([baseProject])
+      .mockResolvedValueOnce([baseProject, createdProject]);
+    mockCreateProject.mockResolvedValue(createdProject);
 
-    act(() => {
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "b",
-          ctrlKey: true,
-          bubbles: true,
-        }),
-      );
-    });
-    await flushEffects();
+    const { container } = await enterDefaultWorkspace({ expandSidebar: true });
 
-    const projectSearchInput = container.querySelector(
-      "input[placeholder='搜索项目...']",
+    const projectSearchInput = findInputByPlaceholder(
+      container,
+      "搜索项目...",
     ) as HTMLInputElement | null;
     expect(projectSearchInput).not.toBeNull();
-    act(() => {
-      if (!projectSearchInput) {
-        return;
-      }
-      projectSearchInput.value = "关键字";
-      projectSearchInput.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    fillTextInput(projectSearchInput, "关键字");
     await flushEffects();
     expect(projectSearchInput?.value).toBe("关键字");
 
-    const createProjectButton = container.querySelector("button[title='新建项目']");
+    const createProjectButton = findButtonByTitle(container, "新建项目");
     expect(createProjectButton).not.toBeNull();
-    act(() => {
-      createProjectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    clickButtonByTitle(container, "新建项目");
     await flushEffects();
 
-    const projectNameInput = document.querySelector(
-      "#workspace-project-name",
+    const projectNameInput = findInputById(
+      document,
+      "workspace-project-name",
     ) as HTMLInputElement | null;
     expect(projectNameInput).not.toBeNull();
-    act(() => {
-      if (!projectNameInput) {
-        return;
-      }
-      projectNameInput.value = "新项目B";
-      projectNameInput.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    fillTextInput(projectNameInput, "新项目B");
     await flushEffects();
 
-    const createButton = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "创建项目",
-    );
+    const createButton = findButtonByText(document, "创建项目", { exact: true });
     expect(createButton).toBeDefined();
-    act(() => {
-      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    clickButtonByText(document, "创建项目", { exact: true });
     await flushEffects(5);
 
     expect(mockCreateProject).toHaveBeenCalled();
     expect(mockListContents).toHaveBeenCalledWith("project-2");
     expect(projectSearchInput?.value).toBe("");
 
-    const newProjectEntry = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("新项目B"),
-    );
-    const oldProjectEntry = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("社媒项目A"),
-    );
+    const newProjectEntry = findButtonByText(container, "新项目B");
+    const oldProjectEntry = findButtonByText(container, "社媒项目A");
     expect(newProjectEntry).toBeDefined();
     expect(newProjectEntry?.className).toContain("bg-accent text-accent-foreground");
     expect(oldProjectEntry).toBeDefined();

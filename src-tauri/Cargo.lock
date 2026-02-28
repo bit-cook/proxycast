@@ -6685,7 +6685,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6785,7 +6785,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-agent"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "aster-core",
  "async-trait",
@@ -6809,7 +6809,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-config"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "async-trait",
  "parking_lot",
@@ -6825,7 +6825,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-core"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "aster-models",
  "async-trait",
@@ -6865,7 +6865,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-credential"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "axum 0.7.9",
  "base64 0.22.1",
@@ -6900,7 +6900,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-infra"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "chrono",
  "dashmap 5.5.3",
@@ -6920,7 +6920,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-mcp"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "async-trait",
  "glob",
@@ -6951,7 +6951,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-processor"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "async-trait",
  "parking_lot",
@@ -6970,7 +6970,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-providers"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -7022,7 +7022,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-server"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "async-stream",
  "axum 0.7.9",
@@ -7065,7 +7065,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-server-utils"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "axum 0.7.9",
  "futures",
@@ -7080,7 +7080,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-services"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "anyhow",
  "aster-core",
@@ -7121,7 +7121,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-skills"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "async-trait",
  "dirs 5.0.1",
@@ -7137,7 +7137,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-terminal"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -7164,7 +7164,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-websocket"
-version = "0.74.0"
+version = "0.75.0"
 dependencies = [
  "axum 0.7.9",
  "chrono",

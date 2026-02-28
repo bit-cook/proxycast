@@ -11,7 +11,10 @@
 
 #![allow(dead_code)]
 
-use proxycast_core::plugin::{PluginConfig, PluginInfo, PluginManager, PluginManifest, PluginType};
+use proxycast_core::plugin::{
+    PluginConfig, PluginInfo, PluginManager, PluginManifest, PluginQueueStats, PluginTaskRecord,
+    PluginTaskState, PluginType,
+};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -153,6 +156,59 @@ pub async fn get_plugins_dir(
     let dir = manager.plugins_dir().to_string_lossy().to_string();
     println!("[get_plugins_dir] 返回: {dir}");
     Ok(dir)
+}
+
+fn parse_task_state(state: Option<String>) -> Result<Option<PluginTaskState>, String> {
+    let Some(state) = state else {
+        return Ok(None);
+    };
+    state
+        .parse::<PluginTaskState>()
+        .map(Some)
+        .map_err(|e| format!("解析任务状态失败: {e}"))
+}
+
+/// 查询插件任务列表
+#[tauri::command]
+pub async fn list_plugin_tasks(
+    state: tauri::State<'_, PluginManagerState>,
+    plugin_id: Option<String>,
+    task_state: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<PluginTaskRecord>, String> {
+    let manager = state.0.read().await;
+    let parsed_state = parse_task_state(task_state)?;
+    Ok(manager.list_tasks(plugin_id.as_deref(), parsed_state, limit.unwrap_or(100)))
+}
+
+/// 获取单个插件任务
+#[tauri::command]
+pub async fn get_plugin_task(
+    state: tauri::State<'_, PluginManagerState>,
+    task_id: String,
+) -> Result<Option<PluginTaskRecord>, String> {
+    let manager = state.0.read().await;
+    Ok(manager.get_task(&task_id))
+}
+
+/// 取消插件任务
+#[tauri::command]
+pub async fn cancel_plugin_task(
+    state: tauri::State<'_, PluginManagerState>,
+    task_id: String,
+) -> Result<bool, String> {
+    let manager = state.0.read().await;
+    Ok(manager.cancel_task(&task_id))
+}
+
+/// 获取插件队列统计
+#[tauri::command]
+pub async fn get_plugin_queue_stats(
+    state: tauri::State<'_, PluginManagerState>,
+    plugin_id: Option<String>,
+) -> Result<Vec<PluginQueueStats>, String> {
+    let manager = state.0.read().await;
+    Ok(manager.get_queue_stats(plugin_id.as_deref()))
 }
 
 // ============================================================================

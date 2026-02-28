@@ -421,6 +421,48 @@ export type ServerMessage =
   | { beginRendering: BeginRendering }
   | { deleteSurface: DeleteSurface };
 
+/** 插件任务状态 */
+export type PluginTaskState =
+  | "queued"
+  | "running"
+  | "retrying"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "timed_out";
+
+/** 插件任务错误 */
+export interface PluginTaskError {
+  code?: string;
+  message: string;
+  retryable: boolean;
+}
+
+/** 插件任务事件 */
+export interface PluginTaskEventPayload {
+  pluginId: PluginId;
+  taskId: string;
+  operation: string;
+  state: PluginTaskState;
+  attempt: number;
+  timestamp: string;
+  error?: PluginTaskError;
+}
+
+/** 插件任务记录 */
+export interface PluginTaskRecord {
+  taskId: string;
+  pluginId: PluginId;
+  operation: string;
+  state: PluginTaskState;
+  attempt: number;
+  maxRetries: number;
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+  error?: PluginTaskError;
+}
+
 // ============================================================================
 // 消息类型 (Client → Server)
 // ============================================================================

@@ -131,7 +131,8 @@ const defaultMocks: Record<string, any> = {
     success: true,
     reused: false,
     browser_source: "system",
-    browser_path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    browser_path:
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     profile_dir: "/tmp/proxycast/chrome_profiles/search_google",
     remote_debugging_port: 13001,
     pid: 12345,
@@ -172,12 +173,11 @@ const defaultMocks: Record<string, any> = {
     auto_fallback: true,
   }),
   set_browser_backend_policy: (args: any) => ({
-    priority:
-      args?.policy?.priority ?? [
-        "aster_compat",
-        "proxycast_extension_bridge",
-        "cdp_direct",
-      ],
+    priority: args?.policy?.priority ?? [
+      "aster_compat",
+      "proxycast_extension_bridge",
+      "cdp_direct",
+    ],
     auto_fallback: args?.policy?.auto_fallback ?? true,
   }),
   get_browser_backends_status: () => ({
@@ -321,6 +321,10 @@ const defaultMocks: Record<string, any> = {
   unload_plugin: () => ({ success: true }),
   uninstall_plugin: () => ({ success: true }),
   launch_plugin_ui: () => ({}),
+  list_plugin_tasks: () => [],
+  get_plugin_task: () => null,
+  cancel_plugin_task: () => true,
+  get_plugin_queue_stats: () => [],
 
   // 凭证池相关
   get_relay_providers: () => [],

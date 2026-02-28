@@ -1,4 +1,4 @@
-# Release v0.74.0
+# Release v0.75.0
 
 ## 📊 变更统计
 
@@ -176,9 +176,9 @@
 ### 版本号
 
 已自动同步到：
-- `package.json`: 0.74.0
-- `src-tauri/Cargo.toml`: 0.74.0
-- `src-tauri/tauri.conf.json`: 0.74.0
+- `package.json`: 0.75.0
+- `src-tauri/Cargo.toml`: 0.75.0
+- `src-tauri/tauri.conf.json`: 0.75.0
 
 ### 新功能使用
 
@@ -213,4 +213,4 @@ AI：[自动打开天气网站并读取内容] 今天晴天，20-25°C...
 
 ---
 
-**完整变更日志**：https://github.com/aiclientproxy/proxycast/compare/v0.73.0...v0.74.0
+**完整变更日志**：https://github.com/aiclientproxy/proxycast/compare/v0.74.0...v0.75.0

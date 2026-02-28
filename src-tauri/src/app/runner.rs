@@ -240,6 +240,21 @@ pub fn run() {
                 tracing::info!("[启动] MCP Manager 事件发射器已设置");
             }
 
+            // 设置 PluginManager 的任务事件发射器（用于发送 plugin-task-event）
+            if let Some(plugin_manager) =
+                app.try_state::<crate::commands::plugin_cmd::PluginManagerState>()
+            {
+                let app_handle = app.handle().clone();
+                let emitter = proxycast_core::DynEmitter::new(
+                    crate::app::TauriEventEmitter(app_handle),
+                );
+                tauri::async_runtime::block_on(async {
+                    let manager = plugin_manager.0.read().await;
+                    manager.set_task_emitter(emitter).await;
+                });
+                tracing::info!("[启动] PluginManager 任务事件发射器已设置");
+            }
+
             // 初始化截图对话模块
             // _Requirements: 7.3_
             {
@@ -990,6 +1005,10 @@ pub fn run() {
             commands::plugin_cmd::reload_plugins,
             commands::plugin_cmd::unload_plugin,
             commands::plugin_cmd::get_plugins_dir,
+            commands::plugin_cmd::list_plugin_tasks,
+            commands::plugin_cmd::get_plugin_task,
+            commands::plugin_cmd::cancel_plugin_task,
+            commands::plugin_cmd::get_plugin_queue_stats,
             // Plugin Install commands
             commands::plugin_install_cmd::install_plugin_from_file,
             commands::plugin_install_cmd::install_plugin_from_url,
