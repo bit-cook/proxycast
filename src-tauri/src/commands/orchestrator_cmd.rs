@@ -224,7 +224,7 @@ pub async fn get_tier_models(tier: String) -> Result<Vec<AvailableModel>, String
     let orchestrator = get_global_orchestrator().ok_or("编排器未初始化")?;
 
     let service_tier =
-        ServiceTier::from_str(&tier).ok_or_else(|| format!("无效的服务等级: {tier}"))?;
+        ServiceTier::parse_str(&tier).ok_or_else(|| format!("无效的服务等级: {tier}"))?;
 
     Ok(orchestrator.get_models(service_tier).await)
 }
@@ -257,7 +257,7 @@ impl From<CredentialInfoRequest> for CredentialInfo {
         let original_provider_type = req.provider_type.clone();
         CredentialInfo {
             id: req.id,
-            provider_type: ProviderType::from_str(&req.provider_type)
+            provider_type: ProviderType::parse_str(&req.provider_type)
                 .unwrap_or(ProviderType::Custom),
             original_provider_type: Some(original_provider_type),
             supported_models: req.supported_models,
@@ -349,7 +349,7 @@ pub struct SelectionRequest {
 pub async fn select_model(request: SelectionRequest) -> Result<SelectionResult, String> {
     let orchestrator = get_global_orchestrator().ok_or("编排器未初始化")?;
 
-    let tier = ServiceTier::from_str(&request.tier)
+    let tier = ServiceTier::parse_str(&request.tier)
         .ok_or_else(|| format!("无效的服务等级: {}", request.tier))?;
 
     let mut ctx = SelectionContext::new(tier);
@@ -406,7 +406,7 @@ pub async fn select_model_for_task(tier: String, task: String) -> Result<Selecti
     let orchestrator = get_global_orchestrator().ok_or("编排器未初始化")?;
 
     let service_tier =
-        ServiceTier::from_str(&tier).ok_or_else(|| format!("无效的服务等级: {tier}"))?;
+        ServiceTier::parse_str(&tier).ok_or_else(|| format!("无效的服务等级: {tier}"))?;
 
     let task_hint = match task.to_lowercase().as_str() {
         "coding" => TaskHint::Coding,

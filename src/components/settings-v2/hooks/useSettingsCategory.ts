@@ -21,6 +21,8 @@ import {
   Server,
   Plug,
   Route,
+  Search,
+  Monitor,
   Globe,
   ShieldCheck,
   HeartPulse,
@@ -161,6 +163,16 @@ export function useSettingsCategory(): CategoryGroup[] {
           key: SettingsTabs.Channels,
           label: t("settings.tab.channels", "渠道管理"),
           icon: Route,
+        },
+        {
+          key: SettingsTabs.WebSearch,
+          label: t("settings.tab.webSearch", "网络搜索"),
+          icon: Search,
+        },
+        {
+          key: SettingsTabs.ChromeRelay,
+          label: t("settings.tab.chromeRelay", "Chrome Relay"),
+          icon: Monitor,
         },
         {
           key: SettingsTabs.Proxy,

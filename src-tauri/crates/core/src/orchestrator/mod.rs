@@ -18,7 +18,7 @@
 //! 2. **专家模式**: 直接选择具体模型
 
 mod fallback;
-mod orchestrator;
+mod model_orchestrator;
 mod pool_builder;
 mod selector;
 pub mod strategies;
@@ -26,7 +26,7 @@ mod strategy;
 mod tier;
 
 pub use fallback::{FallbackHandler, FallbackPolicy, FallbackResult};
-pub use orchestrator::{
+pub use model_orchestrator::{
     get_global_orchestrator, init_global_orchestrator, ModelOrchestrator, OrchestratorConfig,
     PoolStats,
 };

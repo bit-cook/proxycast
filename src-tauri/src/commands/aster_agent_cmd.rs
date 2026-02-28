@@ -9,6 +9,9 @@ use crate::agent::{
     AsterAgentState, AsterAgentWrapper, HeartbeatServiceAdapter, SessionDetail, SessionInfo,
     TauriAgentEvent,
 };
+use crate::commands::webview_cmd::{
+    browser_execute_action_global, BrowserActionRequest, BrowserBackendType,
+};
 use crate::config::GlobalConfigManagerState;
 use crate::database::dao::agent::AgentDao;
 use crate::database::DbConnection;
@@ -16,9 +19,11 @@ use crate::mcp::{McpManagerState, McpServerConfig};
 use crate::services::execution_tracker_service::{ExecutionTracker, RunFinalizeOptions, RunSource};
 use crate::services::heartbeat_service::HeartbeatServiceState;
 use crate::services::memory_profile_prompt_service::merge_system_prompt_with_memory_profile;
+use crate::services::web_search_prompt_service::merge_system_prompt_with_web_search;
 use crate::workspace::WorkspaceManager;
 use aster::agents::extension::{Envs, ExtensionConfig};
 use aster::agents::{Agent, AgentEvent};
+use aster::chrome_mcp::get_chrome_mcp_tools;
 use aster::conversation::message::{Message, MessageContent};
 use aster::permission::{
     ParameterRestriction, PermissionScope, RestrictionType, ToolPermission, ToolPermissionManager,
@@ -175,6 +180,7 @@ pub async fn aster_agent_init(
     tracing::info!("[AsterAgent] 初始化 Agent");
 
     state.init_agent_with_db(&db).await?;
+    ensure_browser_mcp_tools_registered(state.inner()).await?;
 
     let provider_config = state.get_provider_config().await;
 
@@ -837,6 +843,159 @@ impl Tool for WorkspaceTaskTool {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ProxycastBrowserMcpTool {
+    tool_name: String,
+    action_name: String,
+    description: String,
+    input_schema: serde_json::Value,
+}
+
+impl ProxycastBrowserMcpTool {
+    fn new(
+        tool_name: String,
+        action_name: String,
+        description: String,
+        input_schema: serde_json::Value,
+    ) -> Self {
+        Self {
+            tool_name,
+            action_name,
+            description,
+            input_schema,
+        }
+    }
+
+    fn parse_backend(params: &serde_json::Value) -> Option<BrowserBackendType> {
+        let raw = params.get("backend")?.as_str()?.trim().to_ascii_lowercase();
+        match raw.as_str() {
+            "aster_compat" => Some(BrowserBackendType::AsterCompat),
+            "proxycast_extension_bridge" => Some(BrowserBackendType::ProxycastExtensionBridge),
+            "cdp_direct" => Some(BrowserBackendType::CdpDirect),
+            _ => None,
+        }
+    }
+
+    fn extract_profile_key(params: &serde_json::Value, context: &ToolContext) -> Option<String> {
+        if let Some(value) = params.get("profile_key").and_then(|v| v.as_str()) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        context
+            .environment
+            .get("PROXYCAST_BROWSER_PROFILE_KEY")
+            .cloned()
+    }
+}
+
+#[async_trait]
+impl Tool for ProxycastBrowserMcpTool {
+    fn name(&self) -> &str {
+        &self.tool_name
+    }
+
+    fn description(&self) -> &str {
+        &self.description
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        self.input_schema.clone()
+    }
+
+    fn options(&self) -> ToolOptions {
+        ToolOptions::new()
+            .with_max_retries(1)
+            .with_base_timeout(Duration::from_secs(90))
+            .with_dynamic_timeout(false)
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        _context: &ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        let backend = Self::parse_backend(&params);
+        let profile_key = Self::extract_profile_key(&params, _context);
+        let timeout_ms = params.get("timeout_ms").and_then(|v| v.as_u64());
+        let request = BrowserActionRequest {
+            profile_key,
+            backend,
+            action: self.action_name.clone(),
+            args: params,
+            timeout_ms,
+        };
+
+        let result = browser_execute_action_global(request)
+            .await
+            .map_err(|e| ToolError::execution_failed(format!("浏览器动作执行失败: {e}")))?;
+
+        let payload = serde_json::to_string_pretty(&result)
+            .unwrap_or_else(|_| format!("{{\"success\": {}}}", result.success));
+
+        if result.success {
+            Ok(ToolResult::success(payload)
+                .with_metadata("action", serde_json::json!(self.action_name))
+                .with_metadata("selected_backend", serde_json::json!(result.backend))
+                .with_metadata("attempt_count", serde_json::json!(result.attempts.len())))
+        } else {
+            Ok(ToolResult::error(
+                result
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "浏览器动作执行失败".to_string()),
+            )
+            .with_metadata("action", serde_json::json!(self.action_name))
+            .with_metadata("selected_backend", serde_json::json!(result.backend))
+            .with_metadata("attempts", serde_json::json!(result.attempts))
+            .with_metadata("result", serde_json::json!(result)))
+        }
+    }
+}
+
+fn browser_mcp_tool_names() -> Vec<String> {
+    let mut names = Vec::new();
+    for tool in get_chrome_mcp_tools() {
+        names.push(format!("mcp__proxycast-browser__{}", tool.name));
+        names.push(format!("mcp__claude-in-chrome__{}", tool.name));
+    }
+    names
+}
+
+fn register_browser_mcp_tools_to_registry(registry: &mut aster::tools::ToolRegistry) {
+    let tool_defs = get_chrome_mcp_tools();
+    for tool_def in tool_defs {
+        for prefix in ["mcp__proxycast-browser__", "mcp__claude-in-chrome__"] {
+            let full_name = format!("{prefix}{}", tool_def.name);
+            if registry.contains(&full_name) {
+                continue;
+            }
+            let tool = ProxycastBrowserMcpTool::new(
+                full_name,
+                tool_def.name.clone(),
+                tool_def.description.clone(),
+                tool_def.input_schema.clone(),
+            );
+            registry.register(Box::new(tool));
+        }
+    }
+}
+
+pub async fn ensure_browser_mcp_tools_registered(state: &AsterAgentState) -> Result<(), String> {
+    let agent_arc = state.get_agent_arc();
+    let guard = agent_arc.read().await;
+    let agent = guard
+        .as_ref()
+        .ok_or_else(|| "Agent not initialized".to_string())?;
+    let registry_arc = agent.tool_registry().clone();
+    drop(guard);
+
+    let mut registry = registry_arc.write().await;
+    register_browser_mcp_tools_to_registry(&mut registry);
+    Ok(())
+}
+
 fn build_workspace_shell_allow_pattern(
     escaped_root: &str,
     allow_extended_shell_commands: bool,
@@ -1312,6 +1471,20 @@ async fn apply_workspace_sandbox_permissions(
         });
     }
 
+    for tool_name in browser_mcp_tool_names() {
+        permissions.push(ToolPermission {
+            tool: tool_name,
+            allowed: true,
+            priority: 88,
+            conditions: Vec::new(),
+            parameter_restrictions: Vec::new(),
+            scope: PermissionScope::Session,
+            reason: Some("允许浏览器 MCP 兼容工具".to_string()),
+            expires_at: None,
+            metadata: HashMap::new(),
+        });
+    }
+
     permissions.push(ToolPermission {
         tool: "*".to_string(),
         allowed: false,
@@ -1363,6 +1536,9 @@ async fn apply_workspace_sandbox_permissions(
         HeartbeatServiceAdapter::new(heartbeat_state.clone(), app_handle.clone());
     let heartbeat_tool = proxycast_agent::tools::HeartbeatTool::new(Arc::new(heartbeat_adapter));
     registry.register(Box::new(heartbeat_tool));
+
+    // 注册浏览器 MCP 兼容工具（两套前缀：proxycast / claude-in-chrome）
+    register_browser_mcp_tools_to_registry(&mut registry);
 
     Ok(apply_outcome)
 }
@@ -1522,8 +1698,11 @@ pub async fn aster_agent_chat_stream(
             }
         };
 
-        let merged_prompt =
-            merge_system_prompt_with_memory_profile(resolved_prompt, &config_manager.config());
+        let config = config_manager.config();
+        let merged_prompt = merge_system_prompt_with_web_search(
+            merge_system_prompt_with_memory_profile(resolved_prompt, &config),
+            &config,
+        );
 
         (merged_prompt, persisted)
     };

@@ -24,6 +24,8 @@ import { SaveIcon, ArchiveIcon, AlertTriangleIcon } from "lucide-react";
 export interface SettingsTabProps {
   /** 项目 ID */
   projectId: string;
+  /** 项目类型 */
+  workspaceType?: string;
 }
 
 /** 项目图标选项 */
@@ -43,7 +45,7 @@ const ICON_OPTIONS = [
  *
  * 管理项目基本信息、默认人设/模板、归档。
  */
-export function SettingsTab({ projectId }: SettingsTabProps) {
+export function SettingsTab({ projectId, workspaceType }: SettingsTabProps) {
   const { project, loading, update, archive } = useProject(projectId);
   const { personas } = usePersonas(projectId);
   const { templates } = useTemplates(projectId);
@@ -95,6 +97,7 @@ export function SettingsTab({ projectId }: SettingsTabProps) {
   }
 
   const isDefault = project.isDefault;
+  const isNovelProject = workspaceType === "novel";
 
   return (
     <div className="p-4 space-y-6 max-w-2xl">
@@ -139,25 +142,27 @@ export function SettingsTab({ projectId }: SettingsTabProps) {
       <div className="space-y-4">
         <h3 className="text-sm font-medium text-muted-foreground">默认配置</h3>
 
-        <div className="space-y-2">
-          <Label>默认人设</Label>
-          <Select value={defaultPersonaId} onValueChange={setDefaultPersonaId}>
-            <SelectTrigger>
-              <SelectValue placeholder="选择默认人设" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">无</SelectItem>
-              {personas.map((persona) => (
-                <SelectItem key={persona.id} value={persona.id}>
-                  {persona.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            新建话题时自动使用的人设
-          </p>
-        </div>
+        {!isNovelProject && (
+          <div className="space-y-2">
+            <Label>默认人设</Label>
+            <Select value={defaultPersonaId} onValueChange={setDefaultPersonaId}>
+              <SelectTrigger>
+                <SelectValue placeholder="选择默认人设" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">无</SelectItem>
+                {personas.map((persona) => (
+                  <SelectItem key={persona.id} value={persona.id}>
+                    {persona.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              新建话题时自动使用的人设
+            </p>
+          </div>
+        )}
 
         <div className="space-y-2">
           <Label>默认排版模板</Label>

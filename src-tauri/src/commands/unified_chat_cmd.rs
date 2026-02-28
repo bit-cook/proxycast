@@ -15,10 +15,12 @@
 
 use crate::agent::aster_state::SessionConfigBuilder;
 use crate::agent::{AsterAgentState, TauriAgentEvent};
+use crate::commands::aster_agent_cmd::ensure_browser_mcp_tools_registered;
 use crate::config::GlobalConfigManagerState;
 use crate::database::dao::chat::{ChatDao, ChatMessage, ChatMode, ChatSession};
 use crate::database::DbConnection;
 use crate::services::memory_profile_prompt_service::merge_system_prompt_with_memory_profile;
+use crate::services::web_search_prompt_service::merge_system_prompt_with_web_search;
 use aster::conversation::message::Message;
 use futures::StreamExt;
 use proxycast_agent::event_converter::convert_agent_event;
@@ -112,9 +114,10 @@ pub async fn chat_create_session(
     let now = chrono::Utc::now().to_rfc3339();
     let session_id = uuid::Uuid::new_v4().to_string();
 
-    let merged_system_prompt = merge_system_prompt_with_memory_profile(
-        request.system_prompt.clone(),
-        &config_manager.config(),
+    let config = config_manager.config();
+    let merged_system_prompt = merge_system_prompt_with_web_search(
+        merge_system_prompt_with_memory_profile(request.system_prompt.clone(), &config),
+        &config,
     );
 
     // 创建会话
@@ -347,9 +350,10 @@ pub async fn chat_send_message(
     tracing::debug!("[UnifiedChat] 数据库查询耗时: {:?}", db_elapsed);
 
     // 根据模式处理
-    let merged_system_prompt = merge_system_prompt_with_memory_profile(
-        session.system_prompt.clone(),
-        &config_manager.config(),
+    let config = config_manager.config();
+    let merged_system_prompt = merge_system_prompt_with_web_search(
+        merge_system_prompt_with_memory_profile(session.system_prompt.clone(), &config),
+        &config,
     );
 
     let result = match session.mode {
@@ -363,7 +367,7 @@ pub async fn chat_send_message(
                 &request.message,
                 &request.event_name,
                 merged_system_prompt.as_deref(),
-                config_manager.config().memory.enabled,
+                config.memory.enabled,
             )
             .await
         }
@@ -377,7 +381,7 @@ pub async fn chat_send_message(
                 &request.message,
                 &request.event_name,
                 merged_system_prompt.as_deref(),
-                config_manager.config().memory.enabled,
+                config.memory.enabled,
             )
             .await
         }
@@ -411,6 +415,7 @@ async fn send_message_with_aster(
     if !agent_state.is_initialized().await {
         agent_state.init_agent_with_db(db).await?;
     }
+    ensure_browser_mcp_tools_registered(agent_state).await?;
     let init_elapsed = init_start.elapsed();
     tracing::debug!("[UnifiedChat] Agent 初始化检查耗时: {:?}", init_elapsed);
 

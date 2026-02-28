@@ -485,7 +485,7 @@ impl PluginInstaller {
         &self,
         src: &Path,
         dst: &Path,
-        progress: &dyn ProgressCallback,
+        _progress: &dyn ProgressCallback,
     ) -> Result<(), InstallError> {
         for entry in fs::read_dir(src)? {
             let entry = entry?;
@@ -494,7 +494,7 @@ impl PluginInstaller {
 
             if src_path.is_dir() {
                 fs::create_dir_all(&dst_path)?;
-                self.copy_dir_recursive(&src_path, &dst_path, progress)?;
+                self.copy_dir_recursive(&src_path, &dst_path, _progress)?;
             } else {
                 fs::copy(&src_path, &dst_path)?;
 

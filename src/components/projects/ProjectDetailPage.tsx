@@ -5,7 +5,7 @@
  * @requirements 5.1, 5.2
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useProject } from "@/hooks/useProject";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
   MaterialTab,
   TemplateTab,
   PublishTab,
+  NovelPublishTab,
   SettingsTab,
 } from "./tabs";
 
@@ -48,6 +49,13 @@ export function ProjectDetailPage({
 }: ProjectDetailPageProps) {
   const { project, loading, error } = useProject(projectId);
   const [activeTab, setActiveTab] = useState<ProjectTab>("content");
+  const isNovelProject = project?.workspaceType === "novel";
+
+  useEffect(() => {
+    if (isNovelProject && activeTab === "persona") {
+      setActiveTab("content");
+    }
+  }, [activeTab, isNovelProject]);
 
   if (loading) {
     return (
@@ -69,7 +77,7 @@ export function ProjectDetailPage({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* 头部 */}
       <div className="flex items-center gap-4 p-4 border-b">
         <Button variant="ghost" size="icon" onClick={onBack}>
@@ -89,38 +97,46 @@ export function ProjectDetailPage({
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as ProjectTab)}
-        className="flex-1 flex flex-col"
+        className="flex-1 min-h-0 flex flex-col"
       >
         <TabsList className="mx-4 mt-4 justify-start">
           <TabsTrigger value="content">内容</TabsTrigger>
-          <TabsTrigger value="persona">人设</TabsTrigger>
+          {!isNovelProject && <TabsTrigger value="persona">人设</TabsTrigger>}
           <TabsTrigger value="material">素材</TabsTrigger>
           <TabsTrigger value="template">排版</TabsTrigger>
           <TabsTrigger value="publish">发布</TabsTrigger>
           <TabsTrigger value="settings">设置</TabsTrigger>
         </TabsList>
 
-        <div className="flex-1 overflow-auto">
-          <TabsContent value="content" className="h-full m-0">
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <TabsContent value="content" className="h-full m-0 overflow-y-auto">
             <ContentTab
               projectId={projectId}
+              projectName={project.name}
+              workspaceType={project.workspaceType}
               onNewTopic={() => onNavigateToChat?.(projectId)}
             />
           </TabsContent>
-          <TabsContent value="persona" className="h-full m-0">
-            <PersonaTab projectId={projectId} />
-          </TabsContent>
-          <TabsContent value="material" className="h-full m-0">
+          {!isNovelProject && (
+            <TabsContent value="persona" className="h-full m-0 overflow-y-auto">
+              <PersonaTab projectId={projectId} />
+            </TabsContent>
+          )}
+          <TabsContent value="material" className="h-full m-0 overflow-y-auto">
             <MaterialTab projectId={projectId} />
           </TabsContent>
-          <TabsContent value="template" className="h-full m-0">
+          <TabsContent value="template" className="h-full m-0 overflow-y-auto">
             <TemplateTab projectId={projectId} />
           </TabsContent>
-          <TabsContent value="publish" className="h-full m-0">
-            <PublishTab projectId={projectId} />
+          <TabsContent value="publish" className="h-full m-0 overflow-y-auto">
+            {project.workspaceType === "novel" ? (
+              <NovelPublishTab projectId={projectId} />
+            ) : (
+              <PublishTab projectId={projectId} />
+            )}
           </TabsContent>
-          <TabsContent value="settings" className="h-full m-0">
-            <SettingsTab projectId={projectId} />
+          <TabsContent value="settings" className="h-full m-0 overflow-y-auto">
+            <SettingsTab projectId={projectId} workspaceType={project.workspaceType} />
           </TabsContent>
         </div>
       </Tabs>

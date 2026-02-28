@@ -51,6 +51,7 @@ mod data;
 #[allow(dead_code)]
 mod dev_bridge;
 mod logger;
+mod theme;
 use proxycast_core::models;
 
 // 测试模块

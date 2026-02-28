@@ -49,6 +49,8 @@ import { ProviderPoolPage } from "@/components/provider-pool";
 import { ApiServerPage } from "@/components/api-server/ApiServerPage";
 import { McpPanel } from "@/components/mcp";
 import { ChannelsSettings } from "../system/channels";
+import { WebSearchSettings } from "../system/web-search";
+import { ChromeRelaySettings } from "../system/chrome-relay";
 
 import { SettingHeader } from "../features/SettingHeader";
 
@@ -225,6 +227,22 @@ function renderSettingsContent(tab: SettingsTabs): ReactNode {
         <>
           <SettingHeader title="渠道管理" />
           <ChannelsSettings />
+        </>
+      );
+
+    case SettingsTabs.WebSearch:
+      return (
+        <>
+          <SettingHeader title="网络搜索" />
+          <WebSearchSettings />
+        </>
+      );
+
+    case SettingsTabs.ChromeRelay:
+      return (
+        <>
+          <SettingHeader title="Chrome Relay" />
+          <ChromeRelaySettings />
         </>
       );
 

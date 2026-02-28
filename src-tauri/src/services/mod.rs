@@ -13,6 +13,8 @@ pub mod memory_import_parser_service;
 pub mod memory_profile_prompt_service;
 pub mod memory_rules_loader_service;
 pub mod memory_source_resolver_service;
+pub mod novel_service;
 pub mod sysinfo_service;
 pub mod update_check_service;
 pub mod update_window;
+pub mod web_search_prompt_service;

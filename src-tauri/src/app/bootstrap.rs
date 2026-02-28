@@ -20,7 +20,9 @@ use crate::commands::session_files_cmd::SessionFilesState;
 use crate::commands::skill_cmd::SkillServiceState;
 use crate::commands::terminal_cmd::TerminalManagerState;
 use crate::commands::tool_hooks::ToolHooksServiceState;
-use crate::commands::webview_cmd::{WebviewManagerState, WebviewManagerWrapper};
+use crate::commands::webview_cmd::{
+    ChromeProfileManagerWrapper, WebviewManagerState, WebviewManagerWrapper,
+};
 use crate::config::{GlobalConfigManager, GlobalConfigManagerState};
 use crate::database::{self, DbConnection};
 use crate::logger;
@@ -67,6 +69,7 @@ pub struct AppStates {
     pub global_config_manager: GlobalConfigManagerState,
     pub terminal_manager: TerminalManagerState,
     pub webview_manager: WebviewManagerWrapper,
+    pub chrome_profile_manager: ChromeProfileManagerWrapper,
     pub update_check_service: UpdateCheckServiceState,
     pub session_files: SessionFilesState,
     pub context_memory_service: ContextMemoryServiceState,
@@ -211,6 +214,8 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
     // 初始化 Webview 管理器状态
     let webview_manager_state =
         WebviewManagerWrapper(Arc::new(RwLock::new(WebviewManagerState::new())));
+    let chrome_profile_manager_state =
+        ChromeProfileManagerWrapper(crate::commands::webview_cmd::shared_chrome_profile_manager());
 
     // 初始化更新检查服务
     let update_check_service_state = UpdateCheckServiceState::new();
@@ -278,6 +283,7 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
         global_config_manager: global_config_manager_state,
         terminal_manager: terminal_manager_state,
         webview_manager: webview_manager_state,
+        chrome_profile_manager: chrome_profile_manager_state,
         update_check_service: update_check_service_state,
         session_files: session_files_state,
         context_memory_service: context_memory_service_state,

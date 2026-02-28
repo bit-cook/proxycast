@@ -62,10 +62,11 @@ pub struct ModelLimits {
 }
 
 /// 模型状态
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ModelStatus {
     /// 活跃可用
+    #[default]
     Active,
     /// 预览版
     Preview,
@@ -77,12 +78,6 @@ pub enum ModelStatus {
     Deprecated,
     /// 旧版本
     Legacy,
-}
-
-impl Default for ModelStatus {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 impl std::fmt::Display for ModelStatus {
@@ -115,21 +110,16 @@ impl std::str::FromStr for ModelStatus {
 }
 
 /// 模型服务等级
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ModelTier {
     /// 快速响应，适合简单任务
     Mini,
     /// 均衡性能，适合大多数任务
+    #[default]
     Pro,
     /// 最强能力，适合复杂任务
     Max,
-}
-
-impl Default for ModelTier {
-    fn default() -> Self {
-        Self::Pro
-    }
 }
 
 impl std::fmt::Display for ModelTier {

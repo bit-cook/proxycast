@@ -4,10 +4,12 @@
 //! 内部使用 Aster Agent 实现
 
 use crate::agent::{AgentMessage, AgentSession, AsterAgentState};
+use crate::commands::aster_agent_cmd::ensure_browser_mcp_tools_registered;
 use crate::config::GlobalConfigManagerState;
 use crate::database::dao::agent::AgentDao;
 use crate::database::DbConnection;
 use crate::services::memory_profile_prompt_service::merge_system_prompt_with_memory_profile;
+use crate::services::web_search_prompt_service::merge_system_prompt_with_web_search;
 use crate::workspace::WorkspaceManager;
 use crate::AppState;
 use serde::{Deserialize, Serialize};
@@ -95,6 +97,7 @@ pub async fn agent_start_process(
     };
 
     agent_state.init_agent_with_db(&db).await?;
+    ensure_browser_mcp_tools_registered(agent_state.inner()).await?;
     let base_url = if gateway_running {
         Some(format!("http://{host}:{port}"))
     } else {
@@ -196,6 +199,7 @@ pub async fn agent_create_session(
 
     // 初始化 Agent（使用带数据库的版本）
     agent_state.init_agent_with_db(&db).await?;
+    ensure_browser_mcp_tools_registered(agent_state.inner()).await?;
 
     // 生成会话 ID
     let session_id = uuid::Uuid::new_v4().to_string();
@@ -211,8 +215,9 @@ pub async fn agent_create_session(
 
     // 构建包含 Skills 的 System Prompt，并附加记忆画像偏好
     let base_system_prompt = build_system_prompt_with_skills(system_prompt, skills.as_ref());
-    let final_system_prompt =
-        merge_system_prompt_with_memory_profile(base_system_prompt, &config_manager.config());
+    let config = config_manager.config();
+    let prompt_with_memory = merge_system_prompt_with_memory_profile(base_system_prompt, &config);
+    let final_system_prompt = merge_system_prompt_with_web_search(prompt_with_memory, &config);
 
     // 保存会话到数据库
     let now = chrono::Utc::now().to_rfc3339();

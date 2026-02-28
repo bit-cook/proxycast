@@ -8,13 +8,13 @@
 //! - 安装进度回调
 
 mod downloader;
-mod installer;
+mod plugin_installer;
 mod registry;
 mod types;
 mod validator;
 
 pub use downloader::PluginDownloader;
-pub use installer::PluginInstaller;
+pub use plugin_installer::PluginInstaller;
 pub use registry::PluginRegistry;
 pub use types::{
     GitHubRelease, InstallError, InstallProgress, InstallSource, InstallStage, InstalledPlugin,

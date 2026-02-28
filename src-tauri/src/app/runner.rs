@@ -68,6 +68,7 @@ pub fn run() {
         global_config_manager: global_config_manager_state,
         terminal_manager: terminal_manager_state,
         webview_manager: webview_manager_state,
+        chrome_profile_manager: chrome_profile_manager_state,
         update_check_service: update_check_service_state,
         session_files: session_files_state,
         context_memory_service,
@@ -143,6 +144,7 @@ pub fn run() {
         .manage(global_config_manager_state)
         .manage(terminal_manager_state)
         .manage(webview_manager_state)
+        .manage(chrome_profile_manager_state)
         .manage(update_check_service_state)
         .manage(session_files_state)
         .manage(context_memory_service)
@@ -1168,6 +1170,17 @@ pub fn run() {
             commands::webview_cmd::resize_webview_panel,
             commands::webview_cmd::get_webview_panels,
             commands::webview_cmd::focus_webview_panel,
+            commands::webview_cmd::open_chrome_profile_window,
+            commands::webview_cmd::get_chrome_profile_sessions,
+            commands::webview_cmd::close_chrome_profile_session,
+            commands::webview_cmd::get_chrome_bridge_endpoint_info,
+            commands::webview_cmd::get_chrome_bridge_status,
+            commands::webview_cmd::chrome_bridge_execute_command,
+            commands::webview_cmd::get_browser_backends_status,
+            commands::webview_cmd::get_browser_backend_policy,
+            commands::webview_cmd::set_browser_backend_policy,
+            commands::webview_cmd::browser_execute_action,
+            commands::webview_cmd::get_browser_action_audit_logs,
             // Screenshot Chat commands
             // _Requirements: 1.1, 1.4, 1.5, 2.2, 2.4, 3.1, 5.1_
             commands::screenshot_cmd::get_experimental_config,
@@ -1307,6 +1320,18 @@ pub fn run() {
             commands::content_cmd::content_delete,
             commands::content_cmd::content_reorder,
             commands::content_cmd::content_stats,
+            // Novel Orchestrator commands
+            commands::novel_cmd::novel_create_project,
+            commands::novel_cmd::novel_update_settings,
+            commands::novel_cmd::novel_generate_outline,
+            commands::novel_cmd::novel_generate_characters,
+            commands::novel_cmd::novel_generate_chapter,
+            commands::novel_cmd::novel_continue_chapter,
+            commands::novel_cmd::novel_rewrite_chapter,
+            commands::novel_cmd::novel_polish_chapter,
+            commands::novel_cmd::novel_check_consistency,
+            commands::novel_cmd::novel_get_project_snapshot,
+            commands::novel_cmd::novel_list_runs,
             // Memory commands (Character, WorldBuilding, StyleGuide, Outline)
             commands::memory_cmd::character_create,
             commands::memory_cmd::character_get,

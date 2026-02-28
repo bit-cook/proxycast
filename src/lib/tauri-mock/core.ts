@@ -80,6 +80,9 @@ const defaultMocks: Record<string, any> = {
         shortcut: "",
       },
     },
+    web_search: {
+      engine: "google",
+    },
   }),
 
   save_config: (config: any) => {
@@ -122,6 +125,126 @@ const defaultMocks: Record<string, any> = {
     lan_ip: "192.168.1.100",
     all_ips: ["127.0.0.1", "192.168.1.100"],
   }),
+  get_chrome_profile_sessions: () => [],
+  close_chrome_profile_session: () => true,
+  open_chrome_profile_window: () => ({
+    success: true,
+    reused: false,
+    browser_source: "system",
+    browser_path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    profile_dir: "/tmp/proxycast/chrome_profiles/search_google",
+    remote_debugging_port: 13001,
+    pid: 12345,
+    devtools_http_url: "http://127.0.0.1:13001/json/version",
+  }),
+  get_chrome_bridge_endpoint_info: () => ({
+    server_running: true,
+    host: "127.0.0.1",
+    port: 8999,
+    observer_ws_url:
+      "ws://127.0.0.1:8999/proxycast-chrome-observer/Proxycast_Key=proxy_cast",
+    control_ws_url:
+      "ws://127.0.0.1:8999/proxycast-chrome-control/Proxycast_Key=proxy_cast",
+    bridge_key: "proxy_cast",
+  }),
+  get_chrome_bridge_status: () => ({
+    observer_count: 0,
+    control_count: 0,
+    pending_command_count: 0,
+    observers: [],
+    controls: [],
+    pending_commands: [],
+  }),
+  chrome_bridge_execute_command: (args: any) => ({
+    success: true,
+    request_id: `mock-${Date.now()}`,
+    command: args?.request?.command ?? "get_page_info",
+    message: "mock command result",
+    page_info: {
+      title: "Mock Page",
+      url: "https://example.com",
+      markdown: "# Mock Page\nURL: https://example.com",
+      updated_at: new Date().toISOString(),
+    },
+  }),
+  get_browser_backend_policy: () => ({
+    priority: ["aster_compat", "proxycast_extension_bridge", "cdp_direct"],
+    auto_fallback: true,
+  }),
+  set_browser_backend_policy: (args: any) => ({
+    priority:
+      args?.policy?.priority ?? [
+        "aster_compat",
+        "proxycast_extension_bridge",
+        "cdp_direct",
+      ],
+    auto_fallback: args?.policy?.auto_fallback ?? true,
+  }),
+  get_browser_backends_status: () => ({
+    policy: {
+      priority: ["aster_compat", "proxycast_extension_bridge", "cdp_direct"],
+      auto_fallback: true,
+    },
+    bridge_observer_count: 1,
+    bridge_control_count: 0,
+    running_profile_count: 1,
+    cdp_alive_profile_count: 1,
+    aster_native_host_supported: true,
+    aster_native_host_configured: false,
+    backends: [
+      {
+        backend: "aster_compat",
+        available: true,
+        capabilities: ["navigate", "read_page", "tabs_context_mcp"],
+      },
+      {
+        backend: "proxycast_extension_bridge",
+        available: true,
+        capabilities: ["open_url", "click", "type", "get_page_info"],
+      },
+      {
+        backend: "cdp_direct",
+        available: true,
+        capabilities: ["tabs_context_mcp", "navigate", "read_page"],
+      },
+    ],
+  }),
+  browser_execute_action: (args: any) => ({
+    success: true,
+    backend: args?.request?.backend ?? "aster_compat",
+    action: args?.request?.action ?? "navigate",
+    request_id: `browser-mock-${Date.now()}`,
+    data: {
+      message: "mock browser action executed",
+    },
+    attempts: [
+      {
+        backend: args?.request?.backend ?? "aster_compat",
+        success: true,
+        message: "执行成功",
+      },
+    ],
+  }),
+  get_browser_action_audit_logs: (args: any) => {
+    const now = new Date().toISOString();
+    const count = Math.min(Number(args?.limit ?? 20), 200);
+    return Array.from({ length: Math.max(1, count) }, (_, idx) => ({
+      id: `audit-mock-${idx + 1}`,
+      created_at: now,
+      action: "navigate",
+      profile_key: "default",
+      requested_backend: "aster_compat",
+      selected_backend: "aster_compat",
+      success: true,
+      attempts: [
+        {
+          backend: "aster_compat",
+          success: true,
+          message: "执行成功",
+        },
+      ],
+    }));
+  },
 
   // Agent 相关
   list_agent_sessions: () => [],

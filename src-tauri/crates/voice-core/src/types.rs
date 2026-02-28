@@ -143,17 +143,13 @@ impl WhisperModel {
 /// 输出模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OutputMode {
     /// 模拟键盘输入
+    #[default]
     Type,
     /// 复制到剪贴板
     Clipboard,
     /// 两者都做
     Both,
-}
-
-impl Default for OutputMode {
-    fn default() -> Self {
-        Self::Type
-    }
 }

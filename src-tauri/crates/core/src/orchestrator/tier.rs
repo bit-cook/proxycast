@@ -48,7 +48,7 @@ impl ServiceTier {
     }
 
     /// 从字符串解析
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "mini" => Some(ServiceTier::Mini),
             "pro" => Some(ServiceTier::Pro),
@@ -291,9 +291,9 @@ mod tests {
         assert_eq!(ServiceTier::Pro.level(), 2);
         assert_eq!(ServiceTier::Max.level(), 3);
 
-        assert_eq!(ServiceTier::from_str("mini"), Some(ServiceTier::Mini));
-        assert_eq!(ServiceTier::from_str("PRO"), Some(ServiceTier::Pro));
-        assert_eq!(ServiceTier::from_str("invalid"), None);
+        assert_eq!(ServiceTier::parse_str("mini"), Some(ServiceTier::Mini));
+        assert_eq!(ServiceTier::parse_str("PRO"), Some(ServiceTier::Pro));
+        assert_eq!(ServiceTier::parse_str("invalid"), None);
     }
 
     #[test]

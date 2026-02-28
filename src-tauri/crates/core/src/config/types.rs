@@ -408,6 +408,9 @@ pub struct Config {
     /// 聊天外观配置
     #[serde(default)]
     pub chat_appearance: ChatAppearanceConfig,
+    /// 网络搜索偏好配置
+    #[serde(default)]
+    pub web_search: WebSearchConfig,
     /// 记忆管理配置
     #[serde(default)]
     pub memory: MemoryConfig,
@@ -1778,6 +1781,7 @@ impl Default for Config {
             content_creator: ContentCreatorConfig::default(),
             navigation: NavigationConfig::default(),
             chat_appearance: ChatAppearanceConfig::default(),
+            web_search: WebSearchConfig::default(),
             memory: MemoryConfig::default(),
             voice: VoiceConfig::default(),
             image_gen: ImageGenConfig::default(),
@@ -1794,6 +1798,25 @@ impl Default for Config {
 }
 
 // ============ 设置页面配置类型 ============
+
+/// 网络搜索引擎类型
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchEngine {
+    /// Google 搜索（通用网页检索）
+    #[default]
+    Google,
+    /// 小红书搜索（中文生活方式内容）
+    Xiaohongshu,
+}
+
+/// 网络搜索配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct WebSearchConfig {
+    /// 默认搜索引擎偏好
+    #[serde(default)]
+    pub engine: SearchEngine,
+}
 
 /// 聊天外观配置
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -2569,21 +2592,16 @@ impl Default for DeliveryConfig {
 }
 
 /// 心跳执行模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum HeartbeatExecutionMode {
     /// 智能模式：通过 AI Agent 执行任务
+    #[default]
     Intelligent,
     /// 技能模式：调用已注册的技能
     Skill,
     /// 日志模式：仅记录任务，不执行
     LogOnly,
-}
-
-impl Default for HeartbeatExecutionMode {
-    fn default() -> Self {
-        Self::Intelligent
-    }
 }
 
 /// 心跳引擎配置
@@ -2717,21 +2735,12 @@ impl Default for ConversationSettings {
 }
 
 /// 提示路由配置
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct HintRouterSettings {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
     pub routes: Vec<HintRouteSettingsEntry>,
-}
-
-impl Default for HintRouterSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            routes: Vec::new(),
-        }
-    }
 }
 
 /// 提示路由条目（配置层面，provider 为字符串）
@@ -2743,16 +2752,10 @@ pub struct HintRouteSettingsEntry {
 }
 
 /// 配对认证配置
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct PairingSettings {
     #[serde(default)]
     pub enabled: bool,
-}
-
-impl Default for PairingSettings {
-    fn default() -> Self {
-        Self { enabled: false }
-    }
 }
 
 // ============ 渠道配置类型（Telegram / Discord / 飞书 Bot） ============

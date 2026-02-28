@@ -251,6 +251,7 @@ export function AgentChatPage({
   fromResources = false,
   hideHistoryToggle = false,
   showChatPanel = true,
+  hideTopBar = false,
   onBackToProjectManagement,
   hideInlineStepProgress = false,
   onWorkflowProgressChange,
@@ -269,6 +270,7 @@ export function AgentChatPage({
   fromResources?: boolean;
   hideHistoryToggle?: boolean;
   showChatPanel?: boolean;
+  hideTopBar?: boolean;
   onBackToProjectManagement?: () => void;
   hideInlineStepProgress?: boolean;
   onWorkflowProgressChange?: (
@@ -2082,76 +2084,80 @@ export function AgentChatPage({
       )}
 
       <MainArea>
-        <ChatNavbar
-          isRunning={isSending}
-          onToggleHistory={handleToggleSidebar}
-          showHistoryToggle={!hideHistoryToggle && showChatPanel}
-          onToggleFullscreen={() => {}}
-          onBackToProjectManagement={onBackToProjectManagement}
-          onBackToResources={fromResources ? handleBackToResources : undefined}
-          projectId={projectId ?? null}
-          onProjectChange={(newProjectId) => {
-            if (externalProjectId) {
-              return;
-            }
-            pendingTopicSwitchRef.current = null;
-            isResolvingTopicProjectRef.current = false;
-            savePersistedProjectId(LAST_PROJECT_ID_KEY, newProjectId);
-            setInternalProjectId(newProjectId);
-          }}
-          workspaceType={activeTheme}
-          onBackHome={handleBackHome}
-          onToggleSettings={() => {
-            _onNavigate?.("settings", {
-              tab: SettingsTabs.ChatAppearance,
-            });
-          }}
-          novelCanvasControls={
-            showNovelNavbarControls
-              ? {
-                  chapterListCollapsed: novelChapterListCollapsed,
-                  onToggleChapterList: handleToggleNovelChapterList,
-                  onAddChapter: handleAddNovelChapter,
-                  onCloseCanvas: handleCloseCanvas,
+        {!hideTopBar && (
+          <>
+            <ChatNavbar
+              isRunning={isSending}
+              onToggleHistory={handleToggleSidebar}
+              showHistoryToggle={!hideHistoryToggle && showChatPanel}
+              onToggleFullscreen={() => {}}
+              onBackToProjectManagement={onBackToProjectManagement}
+              onBackToResources={fromResources ? handleBackToResources : undefined}
+              projectId={projectId ?? null}
+              onProjectChange={(newProjectId) => {
+                if (externalProjectId) {
+                  return;
                 }
-              : null
-          }
-        />
+                pendingTopicSwitchRef.current = null;
+                isResolvingTopicProjectRef.current = false;
+                savePersistedProjectId(LAST_PROJECT_ID_KEY, newProjectId);
+                setInternalProjectId(newProjectId);
+              }}
+              workspaceType={activeTheme}
+              onBackHome={handleBackHome}
+              onToggleSettings={() => {
+                _onNavigate?.("settings", {
+                  tab: SettingsTabs.ChatAppearance,
+                });
+              }}
+              novelCanvasControls={
+                showNovelNavbarControls
+                  ? {
+                      chapterListCollapsed: novelChapterListCollapsed,
+                      onToggleChapterList: handleToggleNovelChapterList,
+                      onAddChapter: handleAddNovelChapter,
+                      onCloseCanvas: handleCloseCanvas,
+                    }
+                  : null
+              }
+            />
 
-        <LatestRunStatusBadge
-          source="chat"
-          label="统一执行状态"
-          className="px-4 py-1 border-b border-border/60"
-        />
+            <LatestRunStatusBadge
+              source="chat"
+              label="统一执行状态"
+              className="px-4 py-1 border-b border-border/60"
+            />
 
-        {/* 同步状态指示器 */}
-        {contentId && syncStatus !== "idle" && (
-          <div
-            style={{
-              padding: "4px 16px",
-              fontSize: "12px",
-              color:
-                syncStatus === "syncing"
-                  ? "hsl(var(--muted-foreground))"
-                  : syncStatus === "success"
-                    ? "hsl(142, 76%, 36%)"
-                    : "hsl(0, 84%, 60%)",
-              backgroundColor:
-                syncStatus === "syncing"
-                  ? "hsl(var(--muted) / 0.3)"
-                  : syncStatus === "success"
-                    ? "hsl(142, 76%, 96%)"
-                    : "hsl(0, 84%, 96%)",
-              borderBottom: "1px solid hsl(var(--border))",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-          >
-            {syncStatus === "syncing" && "正在同步..."}
-            {syncStatus === "success" && "✓ 已同步"}
-            {syncStatus === "error" && "⚠ 同步失败，将自动重试"}
-          </div>
+            {/* 同步状态指示器 */}
+            {contentId && syncStatus !== "idle" && (
+              <div
+                style={{
+                  padding: "4px 16px",
+                  fontSize: "12px",
+                  color:
+                    syncStatus === "syncing"
+                      ? "hsl(var(--muted-foreground))"
+                      : syncStatus === "success"
+                        ? "hsl(142, 76%, 36%)"
+                        : "hsl(0, 84%, 60%)",
+                  backgroundColor:
+                    syncStatus === "syncing"
+                      ? "hsl(var(--muted) / 0.3)"
+                      : syncStatus === "success"
+                        ? "hsl(142, 76%, 96%)"
+                        : "hsl(0, 84%, 96%)",
+                  borderBottom: "1px solid hsl(var(--border))",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                {syncStatus === "syncing" && "正在同步..."}
+                {syncStatus === "success" && "✓ 已同步"}
+                {syncStatus === "error" && "⚠ 同步失败，将自动重试"}
+              </div>
+            )}
+          </>
         )}
 
         {/* 使用布局过渡组件 */}

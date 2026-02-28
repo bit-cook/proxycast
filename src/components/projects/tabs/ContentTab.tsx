@@ -1,16 +1,20 @@
 /**
  * @file ContentTab.tsx
- * @description 内容 Tab 组件，显示项目话题列表
+ * @description 内容 Tab 组件，小说项目显示流水线工作台，其他项目显示话题列表
  * @module components/projects/tabs/ContentTab
- * @requirements 5.3, 5.4, 5.5
  */
 
 import { Button } from "@/components/ui/button";
-import { PlusIcon, MessageSquareIcon } from "lucide-react";
+import NovelFlowWorkbench from "@/components/projects/tabs/novel-flow/NovelFlowWorkbench";
+import { MessageSquareIcon, PlusIcon } from "lucide-react";
 
 export interface ContentTabProps {
   /** 项目 ID */
   projectId: string;
+  /** 项目名称 */
+  projectName?: string;
+  /** 项目类型 */
+  workspaceType?: string;
   /** 新建话题回调 */
   onNewTopic?: () => void;
   /** 话题点击回调 */
@@ -20,14 +24,20 @@ export interface ContentTabProps {
 /**
  * 内容 Tab 组件
  *
- * 显示项目下的话题列表，提供新建话题入口。
+ * 小说项目展示流水线工作台，非小说项目保持话题入口。
  */
 export function ContentTab({
-  projectId: _projectId,
+  projectId,
+  projectName,
+  workspaceType,
   onNewTopic,
   onTopicClick,
 }: ContentTabProps) {
-  // TODO: 从后端获取项目话题列表
+  if (workspaceType === "novel") {
+    return <NovelFlowWorkbench projectId={projectId} projectName={projectName} />;
+  }
+
+  // TODO: 从后端获取非小说项目的话题列表
   const topics: Array<{
     id: string;
     title: string;
@@ -37,7 +47,6 @@ export function ContentTab({
 
   return (
     <div className="p-4 space-y-4">
-      {/* 头部操作栏 */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-medium">话题列表</h2>
         <Button onClick={onNewTopic}>
@@ -46,7 +55,6 @@ export function ContentTab({
         </Button>
       </div>
 
-      {/* 话题列表 */}
       {topics.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <MessageSquareIcon className="h-12 w-12 mb-4 opacity-50" />
@@ -68,9 +76,7 @@ export function ContentTab({
               <div className="font-medium mb-1">{topic.title}</div>
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <span>{topic.messageCount} 条消息</span>
-                <span>
-                  {new Date(topic.updatedAt).toLocaleDateString("zh-CN")}
-                </span>
+                <span>{new Date(topic.updatedAt).toLocaleDateString("zh-CN")}</span>
               </div>
             </button>
           ))}

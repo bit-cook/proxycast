@@ -921,6 +921,174 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
     )?;
 
     // ============================================================================
+    // 小说编排系统相关表
+    // ============================================================================
+
+    // 小说项目表
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS novel_projects (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            theme TEXT,
+            target_words INTEGER NOT NULL DEFAULT 100000,
+            status TEXT NOT NULL DEFAULT 'draft',
+            current_word_count INTEGER NOT NULL DEFAULT 0,
+            metadata_json TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_projects_status ON novel_projects(status)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_projects_updated_at ON novel_projects(updated_at DESC)",
+        [],
+    )?;
+
+    // 小说设定版本表
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS novel_settings (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            settings_json TEXT NOT NULL DEFAULT '{}',
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES novel_projects(id) ON DELETE CASCADE,
+            UNIQUE(project_id, version)
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_settings_project_version ON novel_settings(project_id, version DESC)",
+        [],
+    )?;
+
+    // 小说大纲版本表
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS novel_outlines (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            outline_markdown TEXT NOT NULL DEFAULT '',
+            outline_json TEXT,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES novel_projects(id) ON DELETE CASCADE,
+            UNIQUE(project_id, version)
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_outlines_project_version ON novel_outlines(project_id, version DESC)",
+        [],
+    )?;
+
+    // 小说角色快照表
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS novel_characters (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            role_type TEXT NOT NULL DEFAULT 'support',
+            card_json TEXT NOT NULL DEFAULT '{}',
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES novel_projects(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_characters_project ON novel_characters(project_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_characters_role ON novel_characters(role_type)",
+        [],
+    )?;
+
+    // 小说章节表
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS novel_chapters (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            chapter_no INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL DEFAULT '',
+            word_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'draft',
+            quality_score REAL,
+            metadata_json TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES novel_projects(id) ON DELETE CASCADE,
+            UNIQUE(project_id, chapter_no)
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_chapters_project_no ON novel_chapters(project_id, chapter_no)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_chapters_status ON novel_chapters(status)",
+        [],
+    )?;
+
+    // 小说生成运行记录
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS novel_generation_runs (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            input_snapshot_json TEXT,
+            output_snapshot_json TEXT,
+            provider TEXT,
+            model TEXT,
+            latency_ms INTEGER,
+            token_usage_json TEXT,
+            result_status TEXT NOT NULL DEFAULT 'success',
+            error_message TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES novel_projects(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_runs_project_time ON novel_generation_runs(project_id, created_at DESC)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_runs_mode ON novel_generation_runs(mode)",
+        [],
+    )?;
+
+    // 小说一致性检查结果表
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS novel_consistency_checks (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            chapter_id TEXT NOT NULL,
+            issues_json TEXT NOT NULL DEFAULT '[]',
+            score REAL NOT NULL DEFAULT 100,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES novel_projects(id) ON DELETE CASCADE,
+            FOREIGN KEY (chapter_id) REFERENCES novel_chapters(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_consistency_project_chapter ON novel_consistency_checks(project_id, chapter_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_novel_consistency_created ON novel_consistency_checks(created_at DESC)",
+        [],
+    )?;
+
+    // ============================================================================
     // A2UI 表单数据表
     // 存储 AI 生成的交互式表单及用户填写的数据
     // ============================================================================

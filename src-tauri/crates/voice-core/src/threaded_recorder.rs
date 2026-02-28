@@ -325,7 +325,7 @@ fn recording_thread_main(
                         let count = callback_count_clone.fetch_add(1, Ordering::SeqCst);
                         if count == 0 {
                             tracing::info!("[录音线程] 首次收到音频数据，数据长度: {}", data.len());
-                        } else if count % 100 == 0 {
+                        } else if count.is_multiple_of(100) {
                             tracing::debug!("[录音线程] 已收到 {} 次音频回调", count);
                         }
 
@@ -338,7 +338,7 @@ fn recording_thread_main(
                         let level = ((rms * 1500.0).min(100.0)) as u32;
 
                         // 每 50 次回调打印一次音量（用于调试）
-                        if count % 50 == 0 {
+                        if count.is_multiple_of(50) {
                             tracing::debug!("[录音线程] RMS: {:.6}, 音量: {}%", rms, level);
                         }
 

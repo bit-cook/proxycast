@@ -19,6 +19,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::commands::aster_agent_cmd::ensure_browser_mcp_tools_registered;
 use crate::database::DbConnection;
 use crate::models::project_model::{
     BrandPersona, BrandPersonaExtension, BrandPersonaTemplate, CreateBrandExtensionRequest,
@@ -292,6 +293,7 @@ pub async fn generate_persona(
     if !agent_state.is_initialized().await {
         agent_state.init_agent_with_db(&db).await?;
     }
+    ensure_browser_mcp_tools_registered(agent_state.inner()).await?;
 
     // 创建临时会话 ID
     let session_id = format!("persona-gen-{}", uuid::Uuid::new_v4());

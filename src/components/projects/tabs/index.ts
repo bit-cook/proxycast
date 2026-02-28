@@ -7,4 +7,5 @@ export { PersonaTab } from "./PersonaTab";
 export { MaterialTab } from "./MaterialTab";
 export { TemplateTab } from "./TemplateTab";
 export { PublishTab } from "./PublishTab";
+export { NovelPublishTab } from "./NovelPublishTab";
 export { SettingsTab } from "./SettingsTab";

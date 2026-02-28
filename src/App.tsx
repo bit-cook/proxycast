@@ -208,7 +208,7 @@ function AppContent() {
           projectParams?.workspaceTheme,
         );
         const workspaceViewMode = projectParams?.projectId
-          ? "project-detail"
+          ? "workspace"
           : "project-management";
 
         if (typeof window !== "undefined") {

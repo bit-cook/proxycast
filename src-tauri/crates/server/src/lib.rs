@@ -1,6 +1,7 @@
 //! HTTP API 服务器
 
 pub mod auth;
+pub mod chrome_bridge;
 pub mod client_detector;
 pub mod middleware;
 
@@ -1040,6 +1041,14 @@ async fn run_server(
         // WebSocket 路由
         .route("/v1/ws", get(handlers::ws_upgrade_handler))
         .route("/ws", get(handlers::ws_upgrade_handler))
+        .route(
+            "/proxycast-chrome-observer/:proxycast_key",
+            get(handlers::chrome_observer_ws_upgrade),
+        )
+        .route(
+            "/proxycast-chrome-control/:proxycast_key",
+            get(handlers::chrome_control_ws_upgrade),
+        )
         // 多供应商路由
         .route(
             "/{selector}/v1/messages",

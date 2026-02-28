@@ -48,6 +48,10 @@ export interface CreateWebviewRequest {
   width: number;
   /** 高度 */
   height: number;
+  /** Profile 隔离键（可选） */
+  profile_key?: string;
+  /** 是否启用持久化 profile（可选） */
+  persistent_profile?: boolean;
 }
 
 /**
@@ -63,6 +67,187 @@ export interface CreateWebviewResponse {
 }
 
 /**
+ * 启动外部 Chrome Profile 的请求参数
+ */
+export interface OpenChromeProfileRequest {
+  /** Profile 隔离键 */
+  profile_key: string;
+  /** 要打开的 URL */
+  url: string;
+}
+
+/**
+ * 启动外部 Chrome Profile 的响应
+ */
+export interface OpenChromeProfileResponse {
+  /** 是否成功 */
+  success: boolean;
+  /** 是否复用已存在会话 */
+  reused?: boolean;
+  /** 浏览器来源 */
+  browser_source?: "system" | "playwright";
+  /** 浏览器可执行文件路径 */
+  browser_path?: string;
+  /** Profile 目录 */
+  profile_dir?: string;
+  /** 远程调试端口 */
+  remote_debugging_port?: number;
+  /** Chrome 进程 PID */
+  pid?: number;
+  /** DevTools HTTP URL */
+  devtools_http_url?: string;
+  /** 错误信息 */
+  error?: string;
+}
+
+/**
+ * Chrome Profile 会话信息
+ */
+export interface ChromeProfileSessionInfo {
+  profile_key: string;
+  browser_source: "system" | "playwright";
+  browser_path: string;
+  profile_dir: string;
+  remote_debugging_port: number;
+  pid: number;
+  started_at: string;
+  last_url: string;
+}
+
+export interface ChromeBridgeEndpointInfo {
+  server_running: boolean;
+  host: string;
+  port: number;
+  observer_ws_url: string;
+  control_ws_url: string;
+  bridge_key: string;
+}
+
+export interface ChromeBridgePageInfo {
+  title?: string;
+  url?: string;
+  markdown: string;
+  updated_at: string;
+}
+
+export interface ChromeBridgeObserverSnapshot {
+  client_id: string;
+  profile_key: string;
+  connected_at: string;
+  user_agent?: string;
+  last_heartbeat_at?: string;
+  last_page_info?: ChromeBridgePageInfo;
+}
+
+export interface ChromeBridgeControlSnapshot {
+  client_id: string;
+  connected_at: string;
+  user_agent?: string;
+}
+
+export interface ChromeBridgePendingCommandSnapshot {
+  request_id: string;
+  source_type: "api" | "control";
+  command: string;
+  observer_client_id: string;
+  wait_for_page_info: boolean;
+  command_completed: boolean;
+  created_at: string;
+}
+
+export interface ChromeBridgeStatusSnapshot {
+  observer_count: number;
+  control_count: number;
+  pending_command_count: number;
+  observers: ChromeBridgeObserverSnapshot[];
+  controls: ChromeBridgeControlSnapshot[];
+  pending_commands: ChromeBridgePendingCommandSnapshot[];
+}
+
+export interface ChromeBridgeCommandRequest {
+  profile_key?: string;
+  command: string;
+  target?: string;
+  text?: string;
+  url?: string;
+  wait_for_page_info?: boolean;
+  timeout_ms?: number;
+}
+
+export interface ChromeBridgeCommandResult {
+  success: boolean;
+  request_id: string;
+  command: string;
+  message?: string;
+  error?: string;
+  page_info?: ChromeBridgePageInfo;
+}
+
+export type BrowserBackendType =
+  | "aster_compat"
+  | "proxycast_extension_bridge"
+  | "cdp_direct";
+
+export interface BrowserBackendPolicy {
+  priority: BrowserBackendType[];
+  auto_fallback: boolean;
+}
+
+export interface BrowserBackendStatusItem {
+  backend: BrowserBackendType;
+  available: boolean;
+  reason?: string;
+  capabilities: string[];
+}
+
+export interface BrowserBackendsStatusSnapshot {
+  policy: BrowserBackendPolicy;
+  bridge_observer_count: number;
+  bridge_control_count: number;
+  running_profile_count: number;
+  cdp_alive_profile_count: number;
+  aster_native_host_supported: boolean;
+  aster_native_host_configured: boolean;
+  backends: BrowserBackendStatusItem[];
+}
+
+export interface BrowserActionRequest {
+  profile_key?: string;
+  backend?: BrowserBackendType;
+  action: string;
+  args?: Record<string, unknown>;
+  timeout_ms?: number;
+}
+
+export interface BrowserActionAttempt {
+  backend: BrowserBackendType;
+  success: boolean;
+  message: string;
+}
+
+export interface BrowserActionResult {
+  success: boolean;
+  backend?: BrowserBackendType;
+  action: string;
+  request_id: string;
+  data?: unknown;
+  error?: string;
+  attempts: BrowserActionAttempt[];
+}
+
+export interface BrowserActionAuditRecord {
+  id: string;
+  created_at: string;
+  action: string;
+  profile_key?: string;
+  requested_backend?: BrowserBackendType;
+  selected_backend?: BrowserBackendType;
+  success: boolean;
+  error?: string;
+  attempts: BrowserActionAttempt[];
+}
+
+/**
  * 创建一个新的 webview 窗口来显示外部 URL
  *
  * @param request - 创建请求参数
@@ -72,6 +257,90 @@ export async function createWebviewPanel(
   request: CreateWebviewRequest,
 ): Promise<CreateWebviewResponse> {
   return safeInvoke<CreateWebviewResponse>("create_webview_panel", { request });
+}
+
+/**
+ * 使用外部 Chrome + 独立 Profile 打开 URL
+ */
+export async function openChromeProfileWindow(
+  request: OpenChromeProfileRequest,
+): Promise<OpenChromeProfileResponse> {
+  return safeInvoke<OpenChromeProfileResponse>("open_chrome_profile_window", {
+    request,
+  });
+}
+
+/**
+ * 获取当前运行中的 Chrome Profile 会话
+ */
+export async function getChromeProfileSessions(): Promise<ChromeProfileSessionInfo[]> {
+  return safeInvoke<ChromeProfileSessionInfo[]>("get_chrome_profile_sessions");
+}
+
+/**
+ * 关闭指定的 Chrome Profile 会话
+ */
+export async function closeChromeProfileSession(
+  profileKey: string,
+): Promise<boolean> {
+  return safeInvoke<boolean>("close_chrome_profile_session", {
+    profile_key: profileKey,
+  });
+}
+
+/**
+ * 获取 ChromeBridge 端点信息（用于扩展配置）
+ */
+export async function getChromeBridgeEndpointInfo(): Promise<ChromeBridgeEndpointInfo> {
+  return safeInvoke<ChromeBridgeEndpointInfo>("get_chrome_bridge_endpoint_info");
+}
+
+/**
+ * 获取 ChromeBridge 当前连接状态
+ */
+export async function getChromeBridgeStatus(): Promise<ChromeBridgeStatusSnapshot> {
+  return safeInvoke<ChromeBridgeStatusSnapshot>("get_chrome_bridge_status");
+}
+
+/**
+ * 通过 ChromeBridge 发送测试命令
+ */
+export async function chromeBridgeExecuteCommand(
+  request: ChromeBridgeCommandRequest,
+): Promise<ChromeBridgeCommandResult> {
+  return safeInvoke<ChromeBridgeCommandResult>("chrome_bridge_execute_command", {
+    request,
+  });
+}
+
+export async function getBrowserBackendPolicy(): Promise<BrowserBackendPolicy> {
+  return safeInvoke<BrowserBackendPolicy>("get_browser_backend_policy");
+}
+
+export async function setBrowserBackendPolicy(
+  policy: BrowserBackendPolicy,
+): Promise<BrowserBackendPolicy> {
+  return safeInvoke<BrowserBackendPolicy>("set_browser_backend_policy", {
+    policy,
+  });
+}
+
+export async function getBrowserBackendsStatus(): Promise<BrowserBackendsStatusSnapshot> {
+  return safeInvoke<BrowserBackendsStatusSnapshot>("get_browser_backends_status");
+}
+
+export async function browserExecuteAction(
+  request: BrowserActionRequest,
+): Promise<BrowserActionResult> {
+  return safeInvoke<BrowserActionResult>("browser_execute_action", { request });
+}
+
+export async function getBrowserActionAuditLogs(
+  limit?: number,
+): Promise<BrowserActionAuditRecord[]> {
+  return safeInvoke<BrowserActionAuditRecord[]>("get_browser_action_audit_logs", {
+    limit,
+  });
 }
 
 /**

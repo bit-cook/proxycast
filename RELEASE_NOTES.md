@@ -1,39 +1,47 @@
-## ProxyCast v0.73.0
+# Release v0.74.0
 
-发布日期：2026-02-27
+## 🎉 重大功能
 
-### ✨ 新功能
+### Chrome Bridge - 浏览器自动化集成
 
-#### 记忆管理系统
-- 新增多层记忆架构：支持组织策略、项目记忆、用户记忆、项目本地记忆四层配置
-- 新增记忆画像（MemoryProfile）：可配置学习状态、擅长领域、解释风格、难题偏好
-- 新增记忆设置页面（settings-v2/general/memory），支持记忆来源、自动记忆、画像等配置
-- 新增记忆层级指标统计（memoryLayerMetrics），量化各层记忆贡献
-- 新增 memory profile prompt 服务，将记忆画像自动合并到系统提示词
+实现了完整的 Chrome 浏览器自动化控制系统，AI 可以在对话中直接操作浏览器。
 
-#### Agent 增强
-- Agent 支持上下文准备轨迹（ContextTrace）事件，前端可展示上下文注入过程
-- 新增 instruction discovery 模块，自动发现项目级指令文件
-- 新增 shell security 和 tool permissions 模块
-- 新增 hooks 模块，支持 Agent 生命周期钩子
-- SessionConfigBuilder 支持 include_context_trace 配置
+#### 核心特性
 
-#### 技能与处理器
-- 新增 skill matcher 模块，优化技能匹配逻辑
-- 新增 processor steps registry，统一步骤注册管理
+- **零配置自动连接**：打开 Chrome Profile 时自动加载扩展并配置连接
+- **双通道架构**：Observer 通道（页面监控）+ Control 通道（命令控制）
+- **AI 原生集成**：作为 MCP 工具集成到 Aster Agent，支持自然语言控制
+- **多 Profile 支持**：可同时管理多个独立的 Chrome Profile
 
-#### 渠道管理
-- 新增 ChannelsConfig 配置类型与渠道管理 UI 组件
+#### 支持的操作
 
-### 🐛 修复
-- 修复 workspace_mismatch 错误：会话切换 workspace 时自动更新 working_dir，不再阻断用户操作
-- 修复前端 lint 错误：清理未使用的导入和不必要的 try/catch 包装
-- 修复 Config 测试中缺少 channels 字段导致编译失败的问题
+- **导航**：打开 URL、刷新、前进、后退
+- **页面读取**：获取页面内容（Markdown 格式）、标题、URL
+- **元素交互**：点击、输入文本、滚动
+- **表单操作**：批量填写表单字段
+- **标签页管理**：获取标签页列表、切换标签页
 
-### 🔧 优化与重构
-- 优化 unified memory API 和前端调用
-- 移除废弃的 external-tools 设置页面
+#### 使用示例
 
-### 📦 技术细节
-- 54 个文件变更，+2279 行，-410 行
-- 新增 10 个文件，涵盖记忆管理、Agent 安全、技能匹配等模块
+用户：帮我在 Google 上搜索 "Rust"
+AI 自动执行：打开 Google → 输入搜索词 → 点击搜索 → 读取结果 → 总结
+
+## 🐛 Bug 修复
+
+- WebSocket 路由修复：从 `/Proxycast_Key={key}` 改为 `/:key`
+- Chrome 扩展存储清理：删除旧配置缓存
+- 扩展重复注入防护：使用 IIFE 包装
+- 剪贴板权限：添加 `clipboardRead` 权限
+
+## 🔧 代码质量改进
+
+- 修复 33+ Clippy 警告
+- 所有 259 个测试通过
+- ESLint 无警告
+
+## 📝 文档
+
+新增：
+- `CHROME_BRIDGE_AI_USAGE.md` - AI 使用指南
+- `CHROME_BRIDGE_QUICKSTART.md` - 快速参考
+- `CHROME_BRIDGE_USAGE.md` - API 文档

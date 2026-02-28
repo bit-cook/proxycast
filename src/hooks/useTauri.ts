@@ -413,6 +413,10 @@ export interface Config {
   navigation?: NavigationConfig;
   /** 聊天外观配置 */
   chat_appearance?: ChatAppearanceConfig;
+  /** 网络搜索配置 */
+  web_search?: {
+    engine: "google" | "xiaohongshu";
+  };
   /** 记忆管理配置 */
   memory?: MemoryConfig;
   /** 语音服务配置 */

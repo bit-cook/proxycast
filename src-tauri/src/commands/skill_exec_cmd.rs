@@ -24,6 +24,7 @@ use aster::conversation::message::Message;
 
 use crate::agent::aster_state::SessionConfigBuilder;
 use crate::agent::{AsterAgentState, TauriAgentEvent};
+use crate::commands::aster_agent_cmd::ensure_browser_mcp_tools_registered;
 use crate::commands::skill_error::{
     format_skill_error, map_find_skill_error, SKILL_ERR_CATALOG_UNAVAILABLE,
     SKILL_ERR_EXECUTE_FAILED, SKILL_ERR_PROVIDER_UNAVAILABLE, SKILL_ERR_SESSION_INIT_FAILED,
@@ -216,6 +217,14 @@ pub async fn execute_skill(
             })?;
             tracing::info!("[execute_skill] Agent 初始化完成");
         }
+        ensure_browser_mcp_tools_registered(aster_state.inner())
+            .await
+            .map_err(|e| {
+                format_skill_error(
+                    SKILL_ERR_SESSION_INIT_FAILED,
+                    format!("注册浏览器工具失败: {e}"),
+                )
+            })?;
 
         // 4. 配置 Provider（从凭证池选择，支持 fallback）
         let preferred_provider = provider_override
