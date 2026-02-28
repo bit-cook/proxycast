@@ -958,7 +958,6 @@ fn browser_mcp_tool_names() -> Vec<String> {
     let mut names = Vec::new();
     for tool in get_chrome_mcp_tools() {
         names.push(format!("mcp__proxycast-browser__{}", tool.name));
-        names.push(format!("mcp__claude-in-chrome__{}", tool.name));
     }
     names
 }
@@ -966,7 +965,7 @@ fn browser_mcp_tool_names() -> Vec<String> {
 fn register_browser_mcp_tools_to_registry(registry: &mut aster::tools::ToolRegistry) {
     let tool_defs = get_chrome_mcp_tools();
     for tool_def in tool_defs {
-        for prefix in ["mcp__proxycast-browser__", "mcp__claude-in-chrome__"] {
+        for prefix in ["mcp__proxycast-browser__"] {
             let full_name = format!("{prefix}{}", tool_def.name);
             if registry.contains(&full_name) {
                 continue;
@@ -1537,7 +1536,7 @@ async fn apply_workspace_sandbox_permissions(
     let heartbeat_tool = proxycast_agent::tools::HeartbeatTool::new(Arc::new(heartbeat_adapter));
     registry.register(Box::new(heartbeat_tool));
 
-    // 注册浏览器 MCP 兼容工具（两套前缀：proxycast / claude-in-chrome）
+    // 注册浏览器 MCP 工具
     register_browser_mcp_tools_to_registry(&mut registry);
 
     Ok(apply_outcome)

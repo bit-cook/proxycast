@@ -232,7 +232,7 @@ pub struct ChromeBridgeEndpointInfo {
     pub bridge_key: String,
 }
 
-const ASTER_CHROME_TOOL_PREFIX: &str = "mcp__claude-in-chrome__";
+const ASTER_CHROME_TOOL_PREFIX: &str = "mcp__proxycast-browser__";
 const DEFAULT_BROWSER_ACTION_TIMEOUT_MS: u64 = 30_000;
 const MIN_BROWSER_ACTION_TIMEOUT_MS: u64 = 1_000;
 const MAX_BROWSER_ACTION_TIMEOUT_MS: u64 = 120_000;
@@ -2069,7 +2069,7 @@ mod tests {
 
     #[test]
     fn normalize_action_name_should_strip_aster_prefix() {
-        let action = normalize_action_name("mcp__claude-in-chrome__read_page")
+        let action = normalize_action_name("mcp__proxycast-browser__read_page")
             .expect("action must normalize");
         assert_eq!(action, "read_page");
     }

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { Bot, FileText, Send, Sparkles, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkbenchStore } from "@/stores/useWorkbenchStore";
 import {
@@ -17,10 +16,11 @@ import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import { getThemeModule } from "@/features/themes";
 import type { CreationMode } from "@/components/content-creator/types";
 import type { WorkflowProgressSnapshot } from "@/components/agent/chat";
-import type { WorkbenchQuickAction } from "@/components/workspace/panels";
 import { useCreationDialogs } from "@/components/workspace/hooks/useCreationDialogs";
 import { useWorkbenchNavigation } from "@/components/workspace/hooks/useWorkbenchNavigation";
+import { useWorkbenchPanelRenderer } from "@/components/workspace/hooks/useWorkbenchPanelRenderer";
 import { useWorkbenchProjectData } from "@/components/workspace/hooks/useWorkbenchProjectData";
+import { useWorkbenchQuickActions } from "@/components/workspace/hooks/useWorkbenchQuickActions";
 
 export const DEFAULT_CREATION_MODE: CreationMode = "guided";
 export const MIN_CREATION_INTENT_LENGTH = 10;
@@ -319,89 +319,21 @@ export function useWorkbenchController({
     ? contents.find((item) => item.id === selectedContentId)?.title || "已选文稿"
     : null;
 
-  const activePanelRenderer = useMemo(() => {
-    if (!panelRenderers) {
-      return null;
-    }
-    switch (activeWorkspaceView) {
-      case "workflow":
-        return panelRenderers.workflow ?? null;
-      case "material":
-        return panelRenderers.material ?? null;
-      case "template":
-        return panelRenderers.template ?? null;
-      case "publish":
-        return panelRenderers.publish ?? null;
-      case "settings":
-        return panelRenderers.settings ?? null;
-      default:
-        return null;
-    }
-  }, [activeWorkspaceView, panelRenderers]);
-
-  const nonCreateQuickActions = useMemo<WorkbenchQuickAction[]>(() => {
-    if (workspaceMode !== "workspace" || activeWorkspaceView === "create") {
-      return [];
-    }
-
-    const actions: WorkbenchQuickAction[] = [
-      {
-        key: "to-create",
-        label: "返回创作视图",
-        icon: Bot,
-        onClick: () => handleSwitchWorkspaceView("create"),
-      },
-    ];
-
-    if (hasWorkflowWorkspaceView && activeWorkspaceView !== "workflow") {
-      actions.push({
-        key: "to-workflow",
-        label: "前往流程视图",
-        icon: Sparkles,
-        onClick: () => handleSwitchWorkspaceView("workflow"),
-      });
-    }
-
-    if (hasPublishWorkspaceView && activeWorkspaceView !== "publish") {
-      actions.push({
-        key: "to-publish",
-        label: "前往发布视图",
-        icon: Send,
-        onClick: () => handleSwitchWorkspaceView("publish"),
-      });
-    }
-
-    if (hasSettingsWorkspaceView && activeWorkspaceView !== "settings") {
-      actions.push({
-        key: "to-settings",
-        label: "前往设置视图",
-        icon: Wrench,
-        onClick: () => handleSwitchWorkspaceView("settings"),
-      });
-    }
-
-    if (selectedContentId) {
-      actions.push({
-        key: "quick-save",
-        label: "快速保存当前文稿",
-        icon: FileText,
-        onClick: () => {
-          void handleQuickSaveCurrent();
-        },
-      });
-    }
-
-    return actions;
-  }, [
+  const { activePanelRenderer } = useWorkbenchPanelRenderer({
     activeWorkspaceView,
-    handleQuickSaveCurrent,
-    handleSwitchWorkspaceView,
+    panelRenderers,
+  });
+
+  const { nonCreateQuickActions } = useWorkbenchQuickActions({
+    workspaceMode,
+    activeWorkspaceView,
+    hasWorkflowWorkspaceView,
     hasPublishWorkspaceView,
     hasSettingsWorkspaceView,
-    hasWorkflowWorkspaceView,
     selectedContentId,
-    workspaceMode,
-  ]);
+    onSwitchWorkspaceView: handleSwitchWorkspaceView,
+    onQuickSaveCurrent: handleQuickSaveCurrent,
+  });
 
   const ActivePanelRenderer = activePanelRenderer;
   const projectTypeLabel = getProjectTypeLabel(theme as ProjectType);
