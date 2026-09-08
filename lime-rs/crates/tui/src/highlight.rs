@@ -224,12 +224,10 @@ mod tests {
     fn unknown_language_falls_back_to_plain_text() {
         let lines = highlight_code_to_lines("some random text", "xyzlang");
         assert_eq!(reconstructed(&lines), "some random text");
-        assert!(
-            lines
-                .iter()
-                .flat_map(|line| &line.spans)
-                .all(|span| span.style == Style::default())
-        );
+        assert!(lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .all(|span| span.style == Style::default()));
     }
 
     #[test]
@@ -242,12 +240,10 @@ mod tests {
     #[test]
     fn crlf_does_not_leak_carriage_returns() {
         let lines = highlight_code_to_lines("fn main() {\r\n}\r\n", "rust");
-        assert!(
-            lines
-                .iter()
-                .flat_map(|line| &line.spans)
-                .all(|span| !span.content.contains('\r'))
-        );
+        assert!(lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .all(|span| !span.content.contains('\r')));
     }
 
     #[test]

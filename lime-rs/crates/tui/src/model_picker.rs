@@ -1,10 +1,10 @@
 use app_server_protocol::protocol::v2::Model;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use ratatui::Frame;
 
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
@@ -223,11 +223,11 @@ pub(crate) fn render_with_locale(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use app_server_protocol::CapabilitySnapshot;
     use app_server_protocol::protocol::v2::{InputModality, Model};
+    use app_server_protocol::CapabilitySnapshot;
     use crossterm::event::{KeyEvent, KeyModifiers};
-    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
 
     fn model(id: &str, provider: &str, hidden: bool, is_default: bool) -> Model {
         Model {

@@ -172,11 +172,19 @@ mod tests {
     #[derive(Default)]
     struct RecordingEmitter {
         events: Mutex<Vec<ToolLifecycleEvent>>,
+        output_events: Mutex<Vec<ToolOutputDeltaEvent>>,
     }
 
     impl RecordingEmitter {
         fn events(&self) -> Vec<ToolLifecycleEvent> {
             self.events.lock().expect("recording emitter lock").clone()
+        }
+
+        fn output_events(&self) -> Vec<ToolOutputDeltaEvent> {
+            self.output_events
+                .lock()
+                .expect("recording output emitter lock")
+                .clone()
         }
     }
 
@@ -189,9 +197,23 @@ mod tests {
                     .push(event);
             })
         }
+
+        fn emit_output_delta<'a>(
+            &'a self,
+            event: ToolOutputDeltaEvent,
+        ) -> ToolLifecycleEmissionFuture<'a> {
+            Box::pin(async move {
+                self.output_events
+                    .lock()
+                    .expect("recording output emitter lock")
+                    .push(event);
+            })
+        }
     }
 
     struct StructuredExecutor;
+
+    struct OutputForwardingExecutor;
 
     struct PendingExecutor;
 
@@ -236,6 +258,34 @@ mod tests {
                     "{}@{environment_id}",
                     call.call_id()
                 )))
+            })
+        }
+    }
+
+    impl RuntimeToolExecutor for OutputForwardingExecutor {
+        fn execute<'a>(
+            &'a self,
+            request: RuntimeToolExecutionRequest<'a>,
+        ) -> RuntimeToolExecutionFuture<'a> {
+            let output_sink = request.context.lifecycle_emitter().cloned();
+            Box::pin(async move {
+                output_sink
+                    .expect("tool call lifecycle emitter should be attached")
+                    .emit_output_delta(ToolOutputDeltaEvent {
+                        turn_id: "turn-1".to_string(),
+                        call_id: "call-output".to_string(),
+                        tool_name: request.tool_name.to_string(),
+                        delta: "streamed\n".to_string(),
+                        output_kind: Some("stdout".to_string()),
+                        metadata: HashMap::new(),
+                    })
+                    .await;
+                Ok(RuntimeToolExecutionResult::new(
+                    true,
+                    "streamed\n".to_string(),
+                    None,
+                    HashMap::new(),
+                ))
             })
         }
     }
@@ -317,6 +367,44 @@ mod tests {
         assert_eq!(events[0].environments[0].environment_id, "local");
         assert_eq!(events[1].phase, ToolLifecyclePhase::Completed);
         assert_eq!(events[1].output, Some(output));
+    }
+
+    #[tokio::test]
+    async fn canonical_tool_contract_forwards_lifecycle_emitter_to_executor_context() {
+        let emitter = Arc::new(RecordingEmitter::default());
+        let call = ToolCall::new(
+            "turn-1",
+            "call-output",
+            "exec_command",
+            serde_json::json!({ "cmd": "printf streamed" }),
+            vec![ToolEnvironment::new(
+                "local",
+                PathBuf::from("/tmp/workspace"),
+            )],
+            emitter.clone(),
+        );
+        let runtime = RuntimeToolExecutorHandle::new(Arc::new(OutputForwardingExecutor)).bind(
+            RuntimeToolDefinition::new(
+                "exec_command",
+                "Execute a command",
+                serde_json::json!({ "type": "object" }),
+            ),
+            RuntimeToolExposure::Direct,
+        );
+        let context = RuntimeToolExecutionContext::new(RuntimeToolExecutionContextInput {
+            working_directory: PathBuf::from("/tmp/workspace"),
+            session_id: "session-1".to_string(),
+            cancel_token: None,
+            workspace_sandbox: None,
+        });
+
+        runtime.execute_call(&call, &context, None).await;
+
+        let output_events = emitter.output_events();
+        assert_eq!(output_events.len(), 1);
+        assert_eq!(output_events[0].call_id, "call-output");
+        assert_eq!(output_events[0].delta, "streamed\n");
+        assert_eq!(output_events[0].output_kind.as_deref(), Some("stdout"));
     }
 
     #[tokio::test]

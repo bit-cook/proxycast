@@ -46,7 +46,11 @@ async function main() {
       "Product-only account, onboarding, pets, updater and hosted Cloud surfaces stay excluded or deferred.",
     ],
   };
-  await writeFile(outputPath, `${JSON.stringify(inventory, null, 2)}\n`, "utf8");
+  await writeFile(
+    outputPath,
+    `${JSON.stringify(inventory, null, 2)}\n`,
+    "utf8",
+  );
   console.log(
     `[inventory:tui-structure] wrote ${codex.files.length + lime.files.length} files to ${path.relative(rootDir, outputPath)}`,
   );
@@ -76,8 +80,8 @@ async function inspectTree(directory) {
 
 function extractSymbols(source, relativePath) {
   const patterns = [
-    /^(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z][A-Za-z0-9_]*)/gmu,
-    /^(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait|type)\s+([A-Za-z][A-Za-z0-9_]*)/gmu,
+    /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z][A-Za-z0-9_]*)/gmu,
+    /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait|type)\s+([A-Za-z][A-Za-z0-9_]*)/gmu,
   ];
   return patterns
     .flatMap((pattern) =>

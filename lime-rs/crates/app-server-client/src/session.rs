@@ -1,8 +1,12 @@
-use crate::{AppServerClient, ClientError, ClientEvent};
-use app_server_protocol::protocol::v2::{ServerNotification, ServerRequest};
+use crate::{AppServerClient, AppServerEvent, ClientError, ClientEvent};
+#[cfg(test)]
+use app_server_protocol::protocol::v2::ServerNotification;
+use app_server_protocol::protocol::v2::ServerRequest;
+#[cfg(test)]
+use app_server_protocol::JsonRpcRequest;
 use app_server_protocol::{
     InitializeParams, InitializeResponse, JsonRpcError, JsonRpcErrorResponse, JsonRpcMessage,
-    JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, RequestId,
+    JsonRpcNotification, JsonRpcResponse, RequestId,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -37,15 +41,6 @@ pub enum SessionError {
     },
     #[error("unsupported App Server protocol version `{actual}`; supported versions: {supported}")]
     UnsupportedProtocolVersion { actual: String, supported: String },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SessionEvent {
-    Notification(Box<ServerNotification>),
-    RawNotification(JsonRpcNotification),
-    ServerRequest(Box<ServerRequest>),
-    RawServerRequest(JsonRpcRequest),
-    Disconnected { message: String },
 }
 
 enum SessionCommand {
@@ -158,7 +153,7 @@ impl RequestHandle {
 
 pub struct ClientSession {
     request_handle: RequestHandle,
-    event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+    event_rx: mpsc::UnboundedReceiver<AppServerEvent>,
     worker: tokio::task::JoinHandle<()>,
     initialize_response: InitializeResponse,
 }
@@ -232,7 +227,7 @@ impl ClientSession {
         &self.initialize_response
     }
 
-    pub async fn next_event(&mut self) -> Option<SessionEvent> {
+    pub async fn next_event(&mut self) -> Option<AppServerEvent> {
         self.event_rx.recv().await
     }
 
@@ -273,7 +268,7 @@ async fn stop_worker(request_handle: &RequestHandle, worker: tokio::task::JoinHa
 async fn run_session<T: SessionTransport>(
     mut transport: T,
     mut command_rx: mpsc::Receiver<SessionCommand>,
-    event_tx: mpsc::UnboundedSender<SessionEvent>,
+    event_tx: mpsc::UnboundedSender<AppServerEvent>,
 ) {
     let mut client = AppServerClient::new();
     let mut pending = HashMap::<RequestId, PendingRequest>::new();
@@ -366,7 +361,13 @@ async fn run_session<T: SessionTransport>(
                             let _ = transport.close().await;
                             break;
                         }
-                        handle_message(message, &event_tx, &mut pending)
+                        if let Some(response) = handle_message(message, &event_tx, &mut pending) {
+                            if let Err(error) = transport.send(response).await {
+                                disconnect(&event_tx, &mut pending, error.to_string());
+                                let _ = transport.close().await;
+                                break;
+                            }
+                        }
                     }
                     Ok(None) => {
                         disconnect(&event_tx, &mut pending, "app-server transport closed".to_string());
@@ -413,9 +414,9 @@ fn validate_initialize_response<T: SessionTransport>(
 
 fn handle_message(
     message: JsonRpcMessage,
-    event_tx: &mpsc::UnboundedSender<SessionEvent>,
+    event_tx: &mpsc::UnboundedSender<AppServerEvent>,
     pending: &mut HashMap<RequestId, PendingRequest>,
-) {
+) -> Option<JsonRpcMessage> {
     match message {
         JsonRpcMessage::Response(response) => {
             if let Some(pending) = pending.remove(&response.id) {
@@ -432,37 +433,41 @@ fn handle_message(
         }
         message => match AppServerClient::event(message) {
             Ok(ClientEvent::Lifecycle(notification)) => {
-                let _ = event_tx.send(SessionEvent::Notification(notification));
+                let _ = event_tx.send(AppServerEvent::ServerNotification(notification));
             }
-            Ok(
-                ClientEvent::AgentSession(notification) | ClientEvent::Notification(notification),
-            ) => {
-                let _ = event_tx.send(SessionEvent::RawNotification(notification));
-            }
-            Ok(ClientEvent::Request(request)) => {
-                let event = ServerRequest::try_from(request.clone())
-                    .map(Box::new)
-                    .map(SessionEvent::ServerRequest)
-                    .unwrap_or(SessionEvent::RawServerRequest(request));
-                let _ = event_tx.send(event);
-            }
+            Ok(ClientEvent::AgentSession(_) | ClientEvent::Notification(_)) => {}
+            Ok(ClientEvent::Request(request)) => match ServerRequest::try_from(request.clone()) {
+                Ok(request) => {
+                    let _ = event_tx.send(AppServerEvent::ServerRequest(Box::new(request)));
+                }
+                Err(_) => {
+                    return Some(JsonRpcMessage::Error(JsonRpcErrorResponse {
+                        id: request.id,
+                        error: JsonRpcError::new(
+                            app_server_protocol::error_codes::METHOD_NOT_FOUND,
+                            format!("unsupported app-server request `{}`", request.method),
+                        ),
+                    }));
+                }
+            },
             Ok(ClientEvent::Response(_) | ClientEvent::Error(_)) => {}
             Err(error) => {
-                let _ = event_tx.send(SessionEvent::Disconnected {
+                let _ = event_tx.send(AppServerEvent::Disconnected {
                     message: error.to_string(),
                 });
             }
         },
     }
+    None
 }
 
 fn disconnect(
-    event_tx: &mpsc::UnboundedSender<SessionEvent>,
+    event_tx: &mpsc::UnboundedSender<AppServerEvent>,
     pending: &mut HashMap<RequestId, PendingRequest>,
     message: String,
 ) {
     fail_pending(pending, &message);
-    let _ = event_tx.send(SessionEvent::Disconnected { message });
+    let _ = event_tx.send(AppServerEvent::Disconnected { message });
 }
 
 fn fail_pending(pending: &mut HashMap<RequestId, PendingRequest>, message: &str) {
@@ -589,10 +594,16 @@ mod tests {
                 panic!("expected request");
             };
             server_tx
-                .send(JsonRpcMessage::Notification(JsonRpcNotification::new(
-                    "terminal/test",
-                    Some(serde_json::json!({ "sequence": 1 })),
-                )))
+                .send(JsonRpcMessage::Notification(
+                    ServerNotification::Warning(
+                        app_server_protocol::protocol::v2::WarningNotification {
+                            thread_id: Some("thread-1".to_string()),
+                            message: "warning".to_string(),
+                            code: None,
+                        },
+                    )
+                    .into(),
+                ))
                 .expect("send notification");
             server_tx
                 .send(JsonRpcMessage::Response(
@@ -614,9 +625,48 @@ mod tests {
         assert_eq!(response, serde_json::json!({ "value": 7 }));
         assert!(matches!(
             session.next_event().await,
-            Some(SessionEvent::RawNotification(notification))
-                if notification.method == "terminal/test"
+            Some(AppServerEvent::ServerNotification(notification))
+                if matches!(*notification, ServerNotification::Warning(_))
         ));
+        server.await.expect("server task");
+    }
+
+    #[tokio::test]
+    async fn remote_unknown_server_request_is_rejected() {
+        let (transport, mut server_rx, server_tx, close_rx) = transport_pair();
+        let (rejected_tx, rejected_rx) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            complete_handshake(&mut server_rx, &server_tx).await;
+            let request_id = RequestId::String("srv-unknown".to_string());
+            server_tx
+                .send(JsonRpcMessage::Request(JsonRpcRequest::new(
+                    request_id.clone(),
+                    "thread/unknown",
+                    None,
+                )))
+                .expect("send server request");
+
+            let JsonRpcMessage::Error(response) = server_rx.recv().await.expect("response") else {
+                panic!("expected JSON-RPC error response");
+            };
+            assert_eq!(response.id, request_id);
+            assert_eq!(
+                response.error.code,
+                app_server_protocol::error_codes::METHOD_NOT_FOUND
+            );
+            assert_eq!(
+                response.error.message,
+                "unsupported app-server request `thread/unknown`"
+            );
+            rejected_tx.send(()).expect("report rejected request");
+            close_rx.await.expect("client shutdown closes transport");
+        });
+        let session = ClientSession::start(transport, initialize_params())
+            .await
+            .expect("session");
+
+        rejected_rx.await.expect("unknown request rejected");
+        session.shutdown().await.expect("shutdown");
         server.await.expect("server task");
     }
 
@@ -644,7 +694,7 @@ mod tests {
             .await
             .expect("session");
         let request = session.next_event().await.expect("server request");
-        let SessionEvent::ServerRequest(request) = request else {
+        let AppServerEvent::ServerRequest(request) = request else {
             panic!("expected typed current time request");
         };
         let ServerRequest::CurrentTimeRead { id, params } = *request else {

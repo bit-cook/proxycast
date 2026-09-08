@@ -5323,3 +5323,81 @@ projection 收敛；冷启动 orphan 与被新 active Turn 取代的旧 Turn 仍
 本轮还修复了受控 OpenAI-compatible fixture 的生命周期竞态：`server.keepAliveTimeout=1_000` 会在 Go 题工具间隔中截断已 `response-finish` 但客户端尚未消费的 SSE 复用 socket，使 turn 永久保持 `inProgress`。fixture 现在将 idle 连接回收统一留给显式 `close()`，不强杀 active response；定向 fixture/DeepSWE 回归 `46/46`，最终 Go 与五题复跑均通过。该修复属于 `current / controlled-fixture-lifecycle`；旧同进程页面 reload 证据属于 `dead / historical-only`，无 `compat / deprecated` 新增。
 
 验证：单题 Go Gate B、完整五题 controlled smoke、desktop aggregate、DeepSWE Desktop contract/provider fixture 定向回归均通过；本轮未安装依赖、未调用 live provider、未运行 Docker/Podman/nerdctl/Colima/Pier verifier，因此 DeepSWE score、Pier artifacts、`DesktopCodingPass` 和 DSW-11 仍保持 blocked/incomplete。
+
+### 2026-09-06 P2-A bounded process output 单一 owner 收口
+
+状态：`completed / current`。
+
+主目标与写集：本切片直接关闭 coding 路线图 P2-A，将 sandbox/process backend 在进入
+RuntimeCore 前的输出语义收敛到 `tool-runtime::execution_process`。窄写集仅包含
+`lime-rs/crates/tool-runtime/src/execution_process{.rs,/**}`、`tool-runtime/src/unified_exec.rs`、
+`lime-rs/crates/app-server/src/execution_process{.rs,/tests.rs}`、四份 `internal/roadmap/coding/**` 路线图与本记录；
+工作树其他 Electron、TUI、App Server runtime、client package 和前端热区不在本切片写集。
+
+完成结果：
+
+- 新增 `BoundedProcessOutput`唯一 retained-output owner，默认上限 1 MiB，稳定保留 head 与最新 tail，
+  精确统计 `omitted_bytes`，并在 snapshot 中插入 `... N bytes omitted ...`。
+- 本地 pipe、PTY、Seatbelt、Bubblewrap、Windows restricted runner 与远程 Environment 共享同一输出边界；
+  远程旧 128 KiB tail-only 截断已删除。
+- reader -> process handle 改为 64-slot bounded broadcast；慢消费者可跳过中间 delta，但权威 terminal
+  snapshot 仍保留有界 head/tail，无消费者时大输出也不会堵塞子进程。
+- `ProcessOutputFramers` 对 stdout/stderr/combined 独立保留最多 3 个不完整字节，只在完整
+  UTF-8 scalar 边界发 lifecycle delta；正常 EOF、PTY/Windows terminal 与普通 pipe 100 ms grace
+  超时中止 reader 后均 flush 未完整后缀，raw transcript、replay 与 omission 统计不重复计数。
+- unified exec observation 改用同一有界缓冲；App Server replay 改为逐进程 queue，
+  `drain_output` 必须明确 `process_id`，不再用全局 FIFO 让一个进程驱逐另一进程输出。
+
+验证结果：`npm run test:rust:unit -- -p tool-runtime unified_exec` 11/11 通过；
+`npm run test:rust:unit -- -p app-server execution_process` 20/20 通过；修正远程 chunk sequence
+告警后 `execution_process_server_uses_environment_process_transport` 1/1 通过且零告警。
+`npm run test:rust:unit -- -p tool-runtime execution_process` 28/28 通过，包含普通 pipe grace-timeout
+UTF-8 flush 回归。Windows 当前 SHA 的 restricted-token 大输出真机
+evidence 未运行，历史 schema v3 7/7 不提升为当前 SHA 平台证据。
+跨 crate `npm run test:rust:related -- ...execution_process...` 完成编译并运行 7 个反向依赖的
+library tests；主体通过，但被工作树既有并行热区 `runtime_backend/coding_events` 中的
+`canceled_command_item_projects_canceled_test_result` 与
+`canonical_command_completion_emits_redacted_terminal_interaction_before_raw_item` 两项断言阻塞（`1776/1780`）；
+两项 external backend JSONL timeout 独立复跑各为 `1/1` 通过，判定为并发运行抖动。本切片不越界修改该并行写集。
+`npm run test:contracts`全绿：1034 协议类型零漂移、App Server client 299 checks，命令、harness、modality、scripts、Electron release、CLI 与 docs boundary 均通过。
+`npm run smoke:agent-runtime-current-fixture` 全绿：真实 Electron/preload/IPC/App Server/runtime/read model/GUI 聚合通过，`liveProviderUsed=false`。
+`npm run governance:legacy-report`全绿：2063 文件扫描、零引用候选、零分类漂移、零边界违规；`rustfmt --check` 与 `git diff --check` 通过。
+
+分类：`BoundedProcessOutput`、`ProcessOutputFramers`、各 backend 统一捕获、unified exec 有界 observation
+与 App Server per-process replay 为 `current`；128 KiB 默认、手写 tail-only capture、全局跨进程 FIFO、
+unbounded output channel 与逐 chunk lossy UTF-8 delta 为 `dead / deleted / forbidden-to-restore`；
+无 `compat / deprecated`。
+
+架构影响：非重大。本切片没有改变 crate/package、App Server JSON-RPC 协议、领域 owner 或依赖方向，
+只在既有 `tool-runtime -> App Server -> RuntimeCore` 主链内收敛输出边界，因此不更新架构图。
+本切片完成度 `100%`；P2-A/P2-B/P2-C current owner 已闭环，coding 整体工程闭环估算 `99.4%`，
+下一刀直接进入当前 tree 的 Pier/DeepSWE verifier 与正式 distribution evidence。
+
+### 2026-09-06 Pier verifier 环境注入与真实重跑
+
+状态：`blocked / verifier-environment`。
+
+为恢复已有候选 run
+`.lime/benchmark/v2/runs/20260827T060242Z-oxvg-structural-selector-preservation` 的真实 Pier
+判分，`runPierVerifier()` 新增隔离 Docker CLI 配置和当前 Docker context endpoint 注入：优先使用
+`LIME_DEEPSWE_DOCKER_CONFIG`，否则使用继承配置或仓库隔离配置；当 `DOCKER_HOST` 未显式提供时，
+从 `docker context show/inspect` 解析 endpoint 并传给 Pier 子进程。适配器测试新增 context endpoint
+回归，定向测试从 `25/25` 提升为 `26/26`。
+
+真实重跑记录：首次重跑已越过旧的 Compose plugin 不可见问题和 Docker daemon preflight，Pier
+创建了 `verify-20260827T060242Z-oxvg-structural-selector-preservation-retry-1`，但在拉取
+`public.ecr.aws/d3j8x8q7/swe-bench-202605:kh749pxv8w35vksyfhe7p8tg8x82p0vg-v1.1` 时失败：
+Colima guest 的 dockerd 使用不可用的 `[::1]:53` DNS，未继承 guest `/etc/environment` 中的
+`192.168.5.2:7890` HTTP(S) 代理。当前 run 没有生成 `reward.json`、`ctrf.json` 或有效的
+`test-stdout.txt`，不得提升为 verifier pass、`reward=1`、`DesktopCodingPass` 或 DSW-11 完成。
+
+验证：`npx vitest run scripts/harness/deepswe-adapter.test.mjs` 26/26；Prettier、
+`npm run test:contracts`、`npm run governance:legacy-report` 和 `git diff --check` 全绿。
+Colima 已启动且 `docker compose version` 为 `v5.1.4`；宿主机直接访问 `public.ecr.aws` 成功，
+但 Docker daemon 镜像拉取仍因 DNS/代理配置失败。当前唯一 blocker 是为本地 Colima Docker daemon
+注入代理或可用 DNS 并重启 daemon；该系统配置变更需显式确认后执行。
+
+分类：Docker context/Compose plugin 注入、adapter 回归与候选 run 证据为 `current`；缺失 endpoint
+导致的 `/var/run/docker.sock` 回退已修复；本地 daemon 未配置代理导致的 verifier 失败为
+`blocked`，无 `compat / deprecated`。下一刀在确认系统配置变更后重跑同一候选 run，不重新执行
+live provider。

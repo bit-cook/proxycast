@@ -1,6 +1,7 @@
 import type { OemCloudBootstrapResponse } from "./oemCloudControlPlaneTypes";
 import {
   parseAuthPolicy,
+  parseAppServerConfig,
   parseCurrentSession,
   parseFeatureFlags,
   parseGatewayConfig,
@@ -52,6 +53,7 @@ export function parseBootstrap(value: unknown): OemCloudBootstrapResponse {
       ),
     },
     authPolicy: parseAuthPolicy(value.authPolicy),
+    appServer: parseAppServerConfig(value.appServer),
     providerOffersSummary: Array.isArray(value.providerOffersSummary)
       ? value.providerOffersSummary.map(parseProviderOfferSummary)
       : [],

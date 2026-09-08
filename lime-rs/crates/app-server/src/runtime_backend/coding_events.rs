@@ -43,15 +43,19 @@ impl CodingEventMirror {
     pub(super) fn process_event(&mut self, event: &RuntimeAgentEvent) -> CodingMirrorEvents {
         match event {
             RuntimeAgentEvent::ItemStarted { item } => CodingMirrorEvents {
-                after_raw: canonical_tool_item(item)
-                    .map(|tool| {
-                        self.handle_tool_start(
-                            tool.name,
-                            tool.call_id,
-                            canonical_arguments_value(tool.arguments).as_ref(),
-                        )
-                    })
-                    .unwrap_or_default(),
+                after_raw: if let Some(command) = canonical_command_item(item) {
+                    self.handle_command_start(item, command)
+                } else {
+                    canonical_tool_item(item)
+                        .map(|tool| {
+                            self.handle_tool_start(
+                                tool.name,
+                                tool.call_id,
+                                canonical_arguments_value(tool.arguments).as_ref(),
+                            )
+                        })
+                        .unwrap_or_default()
+                },
                 ..CodingMirrorEvents::default()
             },
             RuntimeAgentEvent::ToolOutputDelta {
@@ -68,15 +72,29 @@ impl CodingEventMirror {
                 ),
                 ..CodingMirrorEvents::default()
             },
+            RuntimeAgentEvent::ItemUpdated { item } => {
+                if let Some(command) = canonical_command_item(item) {
+                    CodingMirrorEvents {
+                        after_raw: self.handle_command_update(item, command),
+                        ..CodingMirrorEvents::default()
+                    }
+                } else {
+                    CodingMirrorEvents::default()
+                }
+            }
             RuntimeAgentEvent::ItemCompleted { item } => {
-                let mut events = canonical_tool_item(item)
-                    .and_then(|tool| {
-                        tool.output.map(|output| {
-                            let result = canonical_agent_tool_result(item, output);
-                            self.handle_tool_end(tool.call_id, &result)
+                let mut events = if let Some(command) = canonical_command_item(item) {
+                    self.handle_command_completed(item, command)
+                } else {
+                    canonical_tool_item(item)
+                        .and_then(|tool| {
+                            tool.output.map(|output| {
+                                let result = canonical_agent_tool_result(item, output);
+                                self.handle_tool_end(tool.call_id, &result)
+                            })
                         })
-                    })
-                    .unwrap_or_default();
+                        .unwrap_or_default()
+                };
                 if let Some(interaction) = terminal_interaction_event(item) {
                     events.before_raw.push(interaction);
                 }
@@ -110,47 +128,14 @@ impl CodingEventMirror {
                 })),
             ));
         }
-        let test_run_id = if is_shell_tool(normalized_name) {
-            let command = command_facts
-                .as_ref()
-                .map(|facts| facts.command.clone())
-                .unwrap_or_default();
-            events.push(RuntimeEvent::new(
-                "command.started",
-                compact_object(json!({
-                    "commandId": tool_id,
-                    "toolCallId": tool_id,
-                    "toolName": normalized_name,
-                    "command": command,
-                    "canonicalCommand": command_facts.as_ref().map(|facts| facts.canonical_command.clone()),
-                    "commandSummary": command_facts.as_ref().map(|facts| facts.summary.clone()),
-                    "commandArgv": command_facts.as_ref().map(|facts| facts.argv.clone()),
-                    "commandArgvSource": command_facts.as_ref().map(|facts| facts.source),
-                    "cwd": cwd_from_value(arguments_value.as_ref()),
-                    "source": "runtime_tool",
-                })),
-            ));
-
-            if is_likely_test_command(&command) {
-                let test_run_id = stable_scope_id("test", tool_id);
-                events.push(RuntimeEvent::new(
-                    "test.started",
-                    compact_object(json!({
-                        "testRunId": test_run_id,
-                        "commandId": tool_id,
-                        "command": command,
-                        "canonicalCommand": command_facts.as_ref().map(|facts| facts.canonical_command.clone()),
-                        "commandSummary": command_facts.as_ref().map(|facts| facts.summary.clone()),
-                        "source": "runtime_tool",
-                    })),
-                ));
-                Some(test_run_id)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        let (shell_events, test_run_id) = self.shell_start_events(
+            tool_id,
+            normalized_name,
+            arguments_value.as_ref(),
+            command_facts.as_ref(),
+            "runtime_tool",
+        );
+        events.extend(shell_events);
 
         self.tools.insert(
             tool_id.to_string(),
@@ -165,6 +150,147 @@ impl CodingEventMirror {
         );
 
         events
+    }
+
+    fn shell_start_events(
+        &self,
+        tool_id: &str,
+        tool_name: &str,
+        arguments: Option<&Value>,
+        command_facts: Option<&CommandFacts>,
+        source: &str,
+    ) -> (Vec<RuntimeEvent>, Option<String>) {
+        if !is_shell_tool(tool_name) {
+            return (Vec::new(), None);
+        }
+        let command = command_facts
+            .map(|facts| facts.command.clone())
+            .or_else(|| command_from_arguments(arguments))
+            .unwrap_or_default();
+        let mut events = vec![RuntimeEvent::new(
+            "command.started",
+            compact_object(json!({
+                "commandId": tool_id,
+                "toolCallId": tool_id,
+                "toolName": tool_name,
+                "command": command,
+                "canonicalCommand": command_facts.map(|facts| facts.canonical_command.clone()),
+                "commandSummary": command_facts.map(|facts| facts.summary.clone()),
+                "commandArgv": command_facts.map(|facts| facts.argv.clone()),
+                "commandArgvSource": command_facts.map(|facts| facts.source),
+                "cwd": cwd_from_value(arguments),
+                "source": source,
+            })),
+        )];
+
+        let test_run_id = if is_likely_test_command(&command) {
+            let test_run_id = stable_scope_id("test", tool_id);
+            events.push(RuntimeEvent::new(
+                "test.started",
+                compact_object(json!({
+                    "testRunId": test_run_id,
+                    "commandId": tool_id,
+                    "command": command,
+                    "canonicalCommand": command_facts.map(|facts| facts.canonical_command.clone()),
+                    "commandSummary": command_facts.map(|facts| facts.summary.clone()),
+                    "source": source,
+                })),
+            ));
+            Some(test_run_id)
+        } else {
+            None
+        };
+        (events, test_run_id)
+    }
+
+    fn handle_command_start(
+        &mut self,
+        item: &ThreadItem,
+        command: CanonicalCommandItem<'_>,
+    ) -> Vec<RuntimeEvent> {
+        let command_id = command_item_id(item);
+        let arguments = command_item_arguments(command);
+        let command_facts = command_facts_from_text(command.command);
+        let (events, test_run_id) = self.shell_start_events(
+            &command_id,
+            "exec_command",
+            Some(&arguments),
+            command_facts.as_ref(),
+            "runtime_unified_exec",
+        );
+        self.tools.insert(
+            command_id,
+            TrackedTool {
+                name: "exec_command".to_string(),
+                arguments: Some(arguments),
+                command_facts,
+                test_run_id,
+                patch_id: None,
+                emitted_output: false,
+            },
+        );
+        events
+    }
+
+    fn handle_command_update(
+        &mut self,
+        item: &ThreadItem,
+        command: CanonicalCommandItem<'_>,
+    ) -> Vec<RuntimeEvent> {
+        let command_id = command_item_id(item);
+        if !self.tools.contains_key(&command_id) {
+            let mut events = self.handle_command_start(item, command);
+            events.extend(self.handle_command_output(item, command));
+            return events;
+        }
+        self.handle_command_output(item, command)
+    }
+
+    fn handle_command_output(
+        &mut self,
+        item: &ThreadItem,
+        command: CanonicalCommandItem<'_>,
+    ) -> Vec<RuntimeEvent> {
+        let command_id = command_item_id(item);
+        let metadata = command_item_metadata(item);
+        let output_kind = metadata
+            .as_ref()
+            .and_then(|metadata| metadata_string(metadata, &["outputKind", "output_kind"]));
+        self.handle_tool_output_delta(
+            &command_id,
+            command.output.unwrap_or_default(),
+            output_kind.as_deref(),
+            metadata.as_ref(),
+        )
+    }
+
+    fn handle_command_completed(
+        &mut self,
+        item: &ThreadItem,
+        command: CanonicalCommandItem<'_>,
+    ) -> CodingMirrorEvents {
+        let command_id = command_item_id(item);
+        let streamed_output = self
+            .tools
+            .get(&command_id)
+            .is_some_and(|tool| tool.emitted_output);
+        let mut after_raw = if streamed_output {
+            Vec::new()
+        } else if self.tools.contains_key(&command_id) {
+            self.handle_command_output(item, command)
+        } else {
+            let mut events = self.handle_command_start(item, command);
+            events.extend(self.handle_command_output(item, command));
+            events
+        };
+        let result = command_item_result(item, command);
+        let terminal = self.handle_tool_end(&command_id, &result);
+        let before_raw = terminal.before_raw;
+        after_raw.extend(terminal.after_raw);
+        CodingMirrorEvents {
+            before_raw,
+            after_raw,
+        }
     }
 
     fn handle_tool_output_delta(
@@ -211,7 +337,9 @@ impl CodingEventMirror {
             return CodingMirrorEvents::default();
         };
         let mut after_raw = match tool.name.as_str() {
-            "Bash" | "PowerShell" => self.shell_tool_end_events(tool_id, &tool, result),
+            "Bash" | "PowerShell" | "exec_command" => {
+                self.shell_tool_end_events(tool_id, &tool, result)
+            }
             "Read" => file_read_tool_end_events(tool_id, &tool, result),
             "Write" | "Edit" | "apply_patch" => file_tool_end_events(tool_id, &tool, result),
             _ => Vec::new(),
@@ -242,7 +370,7 @@ impl CodingEventMirror {
         let command =
             command_text.or_else(|| command_facts.as_ref().map(|facts| facts.command.clone()));
         let exit_code = metadata.and_then(|metadata| metadata_i64(metadata, &["exit_code"]));
-        let status = command_status(exit_code, result.success);
+        let status = command_status(exit_code, result.success, metadata);
         let process_metadata = shell_process_lifecycle_metadata(tool_id, metadata, status);
         let mut events = Vec::new();
 
@@ -324,7 +452,7 @@ fn terminal_interaction_event(item: &ThreadItem) -> Option<RuntimeEvent> {
         .as_str()
         .filter(|value| terminal_interaction_summary_is_safe(value))?;
     let command_id = match &item.payload {
-        ThreadItemPayload::Command { .. } => item.item_id.as_str().to_string(),
+        ThreadItemPayload::Command { .. } => command_item_id(item),
         ThreadItemPayload::Tool { .. } => {
             ItemId::new(metadata.get("exec_command_call_id")?.as_str()?.to_string())
                 .as_str()
@@ -361,6 +489,14 @@ struct CanonicalToolItem<'a> {
     output: Option<&'a ToolOutput>,
 }
 
+#[derive(Clone, Copy)]
+struct CanonicalCommandItem<'a> {
+    command: &'a str,
+    cwd: Option<&'a str>,
+    output: Option<&'a str>,
+    exit_code: Option<i32>,
+}
+
 fn canonical_tool_item(item: &ThreadItem) -> Option<CanonicalToolItem<'_>> {
     let ThreadItemPayload::Tool {
         call_id,
@@ -377,6 +513,94 @@ fn canonical_tool_item(item: &ThreadItem) -> Option<CanonicalToolItem<'_>> {
         arguments,
         output: output.as_ref(),
     })
+}
+
+fn canonical_command_item(item: &ThreadItem) -> Option<CanonicalCommandItem<'_>> {
+    let ThreadItemPayload::Command {
+        command,
+        cwd,
+        output,
+        exit_code,
+    } = &item.payload
+    else {
+        return None;
+    };
+    Some(CanonicalCommandItem {
+        command,
+        cwd: cwd.as_deref(),
+        output: output.as_deref(),
+        exit_code: *exit_code,
+    })
+}
+
+fn command_item_id(item: &ThreadItem) -> String {
+    item.metadata
+        .as_object()
+        .and_then(|metadata| metadata.get("exec_command_call_id"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            item.item_id
+                .as_str()
+                .strip_prefix("item_")
+                .map(ToOwned::to_owned)
+        })
+        .unwrap_or_else(|| item.item_id.as_str().to_string())
+}
+
+fn command_item_arguments(command: CanonicalCommandItem<'_>) -> Value {
+    let mut arguments = serde_json::Map::new();
+    arguments.insert(
+        "cmd".to_string(),
+        Value::String(command.command.to_string()),
+    );
+    if let Some(cwd) = command.cwd {
+        arguments.insert("workdir".to_string(), Value::String(cwd.to_string()));
+    }
+    Value::Object(arguments)
+}
+
+fn command_item_metadata(item: &ThreadItem) -> Option<HashMap<String, Value>> {
+    item.metadata.as_object().map(|metadata| {
+        metadata
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
+    })
+}
+
+fn command_item_result(item: &ThreadItem, command: CanonicalCommandItem<'_>) -> AgentToolResult {
+    let mut metadata = command_item_metadata(item).unwrap_or_default();
+    metadata
+        .entry("command".to_string())
+        .or_insert_with(|| Value::String(command.command.to_string()));
+    if let Some(cwd) = command.cwd {
+        metadata
+            .entry("cwd".to_string())
+            .or_insert_with(|| Value::String(cwd.to_string()));
+    }
+    if let Some(exit_code) = command.exit_code {
+        metadata
+            .entry("exit_code".to_string())
+            .or_insert_with(|| Value::from(exit_code));
+    }
+    if matches!(item.status, ItemStatus::Cancelled | ItemStatus::Interrupted) {
+        metadata
+            .entry("itemStatus".to_string())
+            .or_insert_with(|| Value::String("canceled".to_string()));
+        metadata
+            .entry("executionProcessStatus".to_string())
+            .or_insert_with(|| Value::String("terminated".to_string()));
+    }
+    AgentToolResult {
+        success: item.status == ItemStatus::Completed,
+        output: command.output.unwrap_or_default().to_string(),
+        error: None,
+        structured_content: None,
+        images: None,
+        metadata: (!metadata.is_empty()).then_some(metadata),
+    }
 }
 
 fn canonical_arguments_value(arguments: &[ToolArgument]) -> Option<Value> {
@@ -696,7 +920,7 @@ fn lookup_key(value: &str) -> String {
 }
 
 fn is_shell_tool(tool_name: &str) -> bool {
-    matches!(tool_name, "Bash" | "PowerShell")
+    matches!(tool_name, "Bash" | "PowerShell" | "exec_command")
 }
 
 fn command_from_arguments(arguments: Option<&Value>) -> Option<String> {
@@ -824,13 +1048,48 @@ fn value_bool(value: &Value) -> Option<bool> {
     })
 }
 
-fn command_status(exit_code: Option<i64>, success: bool) -> &'static str {
+fn command_status(
+    exit_code: Option<i64>,
+    success: bool,
+    metadata: Option<&HashMap<String, Value>>,
+) -> &'static str {
+    if metadata_indicates_cancellation(metadata) {
+        return "canceled";
+    }
     match exit_code {
         Some(0) => "passed",
         Some(_) => "failed",
         None if success => "completed",
         None => "failed",
     }
+}
+
+fn metadata_indicates_cancellation(metadata: Option<&HashMap<String, Value>>) -> bool {
+    if metadata
+        .and_then(|metadata| metadata_string(metadata, &["tool_outcome", "toolOutcome"]))
+        .is_some_and(|outcome| outcome.eq_ignore_ascii_case("aborted"))
+    {
+        return true;
+    }
+    metadata
+        .and_then(|metadata| {
+            metadata_string(
+                metadata,
+                &[
+                    "itemStatus",
+                    "item_status",
+                    "executionProcessStatus",
+                    "execution_process_status",
+                    "status",
+                ],
+            )
+        })
+        .is_some_and(|status| {
+            matches!(
+                status.to_ascii_lowercase().as_str(),
+                "canceled" | "cancelled" | "interrupted" | "terminated"
+            )
+        })
 }
 
 fn is_likely_test_command(command: &str) -> bool {

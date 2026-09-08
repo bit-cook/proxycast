@@ -1,11 +1,11 @@
 use std::cell::Cell;
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
+use ratatui::Frame;
 
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
@@ -261,8 +261,8 @@ impl PagerOverlay {
 mod tests {
     use super::*;
     use crossterm::event::{KeyEvent, KeyModifiers};
-    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
 
     fn key(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))

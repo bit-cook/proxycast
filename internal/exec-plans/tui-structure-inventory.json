@@ -60596,9 +60596,30 @@
     },
     "lime-rs/crates/tui/src": {
       "root": "/Users/coso/Documents/dev/ai/aiclientproxy/lime/lime-rs/crates/tui/src",
-      "fileCount": 64,
+      "fileCount": 91,
       "files": [
         "app.rs",
+        "app/agent_navigation.rs",
+        "app/agent_picker.rs",
+        "app/agents_overview.rs",
+        "app/agents_overview_render.rs",
+        "app/agents_overview_tests.rs",
+        "app/agents_overview_threads.rs",
+        "app/agents_overview_view.rs",
+        "app/app_server_event_targets.rs",
+        "app/app_server_events.rs",
+        "app/app_server_requests.rs",
+        "app/event_dispatch.rs",
+        "app/input.rs",
+        "app/pending_interactive_replay.rs",
+        "app/reconnect.rs",
+        "app/replay_filter.rs",
+        "app/session_lifecycle.rs",
+        "app/tests.rs",
+        "app/thread_event_buffer.rs",
+        "app/thread_event_buffer_tests.rs",
+        "app/thread_events.rs",
+        "app/thread_settings.rs",
         "app_server_session.rs",
         "bottom_pane/approval_overlay.rs",
         "bottom_pane/chat_composer.rs",
@@ -60617,11 +60638,14 @@
         "bottom_pane/textarea/wrapping_tests.rs",
         "clipboard_copy.rs",
         "clipboard_paste.rs",
+        "collaboration_modes.rs",
         "command_popup.rs",
         "diff_render.rs",
         "entry.rs",
         "external_editor.rs",
         "highlight.rs",
+        "key_hint.rs",
+        "keymap.rs",
         "lib.rs",
         "line_truncation.rs",
         "locale.rs",
@@ -60629,7 +60653,9 @@
         "markdown/local_links.rs",
         "markdown/table.rs",
         "markdown_render.rs",
+        "model_catalog.rs",
         "model_picker.rs",
+        "multi_agents.rs",
         "pager_overlay.rs",
         "pending_input_preview.rs",
         "projection.rs",
@@ -60660,16 +60686,12 @@
         "tui/frame_rate_limiter.rs",
         "tui/frame_requester.rs",
         "view.rs",
+        "viewport.rs",
         "width.rs",
         "wrapping.rs"
       ],
-      "symbolCount": 1142,
+      "symbolCount": 1491,
       "symbols": [
-        {
-          "path": "app.rs",
-          "name": "active_bottom_pane_receives_input_before_the_chat_composer",
-          "kind": "function"
-        },
         {
           "path": "app.rs",
           "name": "active_turn_elapsed",
@@ -60677,17 +60699,7 @@
         },
         {
           "path": "app.rs",
-          "name": "alt_up_does_not_offer_a_lossy_or_overwriting_queue_edit",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "alt_up_requests_server_delete_before_restoring_the_last_queued_input",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "an_open_popup_owns_escape_before_active_turn_interruption",
+          "name": "adjacent_agent",
           "kind": "function"
         },
         {
@@ -60702,17 +60714,17 @@
         },
         {
           "path": "app.rs",
-          "name": "apply_notification",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
           "name": "attach_image",
           "kind": "function"
         },
         {
           "path": "app.rs",
-          "name": "codex_style_effort_and_permission_shortcuts_are_not_inserted_into_draft",
+          "name": "can_accept_direct_input",
+          "kind": "function"
+        },
+        {
+          "path": "app.rs",
+          "name": "capture_current_thread_input",
           "kind": "function"
         },
         {
@@ -60722,37 +60734,7 @@
         },
         {
           "path": "app.rs",
-          "name": "copy_shortcut_and_slash_command_do_not_become_turn_input",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "ctrl_t_opens_transcript_without_copying_or_mutating_conversation_state",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "cycle_permission_profile",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "escape_interrupts_only_an_active_turn_and_preserves_the_draft",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "failed_image_submission_can_restore_pending_attachments",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "handle_terminal_event",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "history_search_owns_escape_before_active_turn_interruption",
+          "name": "handle_tui_event",
           "kind": "function"
         },
         {
@@ -60762,32 +60744,17 @@
         },
         {
           "path": "app.rs",
-          "name": "image_shortcut_attaches_and_allows_image_only_submission",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
           "name": "map_composer_action",
           "kind": "function"
         },
         {
           "path": "app.rs",
-          "name": "open_model_picker",
+          "name": "normalize_paste",
           "kind": "function"
         },
         {
           "path": "app.rs",
           "name": "open_status_pager",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "permission_profile_catalog_is_trimmed_deduplicated_and_used_for_cycles",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "queued_submission_projection_updates_by_id_and_clears_on_thread_change",
           "kind": "function"
         },
         {
@@ -60803,6 +60770,11 @@
         {
           "path": "app.rs",
           "name": "restore_queued_submission_for_edit",
+          "kind": "function"
+        },
+        {
+          "path": "app.rs",
+          "name": "restore_thread_input",
           "kind": "function"
         },
         {
@@ -60842,17 +60814,7 @@
         },
         {
           "path": "app.rs",
-          "name": "set_permission_profiles",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
           "name": "set_queued_submissions",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "set_settings",
           "kind": "function"
         },
         {
@@ -60862,22 +60824,7 @@
         },
         {
           "path": "app.rs",
-          "name": "slash_popup_completes_argument_commands_and_reopens_after_cancelled_input_changes",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "slash_popup_filters_and_executes_immediate_commands",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
           "name": "start_turn",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "status_command_opens_an_ephemeral_pager_and_consumes_input_until_closed",
           "kind": "function"
         },
         {
@@ -60887,22 +60834,1197 @@
         },
         {
           "path": "app.rs",
-          "name": "tab_queues_a_follow_up_without_submitting_the_active_turn",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
           "name": "take_pending_images",
           "kind": "function"
         },
         {
           "path": "app.rs",
+          "name": "upsert_queued_submission",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "active_agent_label",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "active_agent_label_tracks_current_thread",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "adjacent_thread_id",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "adjacent_thread_id_wraps_in_spawn_order",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "AgentNavigationDirection",
+          "kind": "type"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "AgentNavigationState",
+          "kind": "type"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "clear",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "get",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "is_empty",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "is_parent_owned",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "key_label",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "mark_closed",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "mark_parent_owned",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "mark_running",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "mark_stopped",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "ordered_path_backed_subagent_threads",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "ordered_threads",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "picker_subtitle",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "picker_subtitle_mentions_codex_shortcuts",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "populated_state",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "record_sub_agent_activity",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "remove",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "set_agent_path",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "set_running",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "stopped_activity_does_not_revive_after_liveness_terminal_state",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "tracked_thread_ids",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "upsert",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_navigation.rs",
+          "name": "upsert_preserves_first_seen_order",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "AgentPicker",
+          "kind": "type"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "AgentPickerAction",
+          "kind": "type"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "AgentPickerEntry",
+          "kind": "type"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "from_navigation",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "handle_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "is_empty",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "picker",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "picker_copy_and_status_render_for_every_product_locale",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "picker_escape_cancels_and_narrow_render_stays_bounded",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "picker_selects_rows_in_stable_navigation_order",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "render",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "rows",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "agents_overview_group",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "agents_overview_view",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "AgentsOverviewState",
+          "kind": "type"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "apply_agents_overview_thread_refresh",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "apply_refresh",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "begin_refresh",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "build_rows",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "dispatch_agents_overview_task",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "drop",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "new",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "open_agents_overview",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "repaint_agents_overview",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "replace_threads",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "select_agents_overview_thread",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "stop_agents_overview_thread",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "submit_agents_overview_prompt",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "sync_view_state",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview.rs",
+          "name": "take_refresh_pending",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_render.rs",
+          "name": "overview_render_is_bounded_on_wide_and_narrow_terminals",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_render.rs",
+          "name": "overview_render_shows_localized_new_task_input_without_overflow",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_render.rs",
+          "name": "render",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_render.rs",
+          "name": "render_details",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_render.rs",
+          "name": "row",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_tests.rs",
+          "name": "agents_overview_buffers_latest_notification_during_refresh",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_tests.rs",
+          "name": "agents_overview_group_bubbles_child_status_and_hides_ephemeral_threads",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_tests.rs",
+          "name": "agents_overview_refresh_coalesces_requests_and_exposes_codex_state_fields",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_tests.rs",
+          "name": "agents_overview_refresh_ignores_stale_generation",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_tests.rs",
+          "name": "agents_overview_refresh_retains_locally_observed_threads",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_tests.rs",
+          "name": "background_thread_notifications_do_not_mutate_the_current_projection",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_tests.rs",
+          "name": "thread",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_threads.rs",
+          "name": "refresh_agents_overview_threads",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_threads.rs",
+          "name": "refresh_changed_agents_overview_threads",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_threads.rs",
+          "name": "start_agents_overview_refresh",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_threads.rs",
+          "name": "track_agents_overview_notification",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "AgentsOverviewAction",
+          "kind": "type"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "AgentsOverviewGroup",
+          "kind": "type"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "AgentsOverviewInputMode",
+          "kind": "type"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "AgentsOverviewRow",
+          "kind": "type"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "AgentsOverviewView",
+          "kind": "type"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "for_status",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "handle_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "input",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "input_mode",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "is_searching",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "label",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "move_selection",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "new",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "overview_codex_shortcuts_dispatch_rename_stop_and_resume",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "overview_escape_and_refresh_are_explicit_actions",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "overview_groups_and_selects_current_thread",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "overview_rename_accepts_shifted_characters",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "overview_search_filters_and_enter_selects",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "row",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "search",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "selected_index",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "selected_row",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "selected_thread_id",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "status_grouping",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "thread",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "update_rows",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_view.rs",
+          "name": "visible_rows",
+          "kind": "function"
+        },
+        {
+          "path": "app/app_server_event_targets.rs",
+          "name": "mcp_startup_notifications_without_threads_are_app_scoped",
+          "kind": "function"
+        },
+        {
+          "path": "app/app_server_event_targets.rs",
+          "name": "server_notification_thread_target",
+          "kind": "function"
+        },
+        {
+          "path": "app/app_server_event_targets.rs",
+          "name": "server_request_thread_id",
+          "kind": "function"
+        },
+        {
+          "path": "app/app_server_event_targets.rs",
+          "name": "server_requests_expose_their_thread_target",
+          "kind": "function"
+        },
+        {
+          "path": "app/app_server_event_targets.rs",
+          "name": "ServerNotificationThreadTarget",
+          "kind": "type"
+        },
+        {
+          "path": "app/app_server_event_targets.rs",
+          "name": "thread_notifications_route_to_their_thread",
+          "kind": "function"
+        },
+        {
+          "path": "app/app_server_event_targets.rs",
+          "name": "warning_notifications_without_threads_are_global",
+          "kind": "function"
+        },
+        {
+          "path": "app/app_server_events.rs",
+          "name": "handle_app_server_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/app_server_events.rs",
+          "name": "handle_server_notification_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/app_server_events.rs",
+          "name": "refresh_queued_submissions",
+          "kind": "function"
+        },
+        {
+          "path": "app/app_server_requests.rs",
+          "name": "handle_server_request_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/event_dispatch.rs",
+          "name": "EventContext",
+          "kind": "type"
+        },
+        {
+          "path": "app/event_dispatch.rs",
+          "name": "EventDispatch",
+          "kind": "type"
+        },
+        {
+          "path": "app/event_dispatch.rs",
+          "name": "handle_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/input.rs",
+          "name": "handle_key_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "clear",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "clear_exec_approval_item",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "clear_exec_approval_turn",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "clear_patch_approval_item",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "clear_patch_approval_turn",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "clear_request_permissions_turn",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "clear_request_user_input_turn",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "closing_thread_clears_all_prompt_categories",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "each_interactive_request_is_pending_until_resolved",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "elicitation",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "ElicitationRequestKey",
+          "kind": "type"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "evicted_request_does_not_replay",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "exec_approval",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "has_pending_thread_approvals",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "has_pending_thread_user_input",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "item_started_clears_command_and_file_approval_by_item_id",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "new",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "note_evicted_server_request",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "note_outbound_response",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "note_server_notification",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "note_server_request",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "outbound_response_clears_only_the_matching_request",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "patch_approval",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "PendingInteractiveReplayState",
+          "kind": "type"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "PendingInteractiveRequest",
+          "kind": "type"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "permissions_approval",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "remove_call_id_from_turn_map",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "remove_call_id_from_turn_map_entry",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "remove_request",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "request_user_input",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "resolved",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "server_resolution_clears_request_identity_and_category",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "should_replay_snapshot_request",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "turn_completed",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "turn_completion_clears_all_turn_indexed_prompts",
+          "kind": "function"
+        },
+        {
+          "path": "app/pending_interactive_replay.rs",
+          "name": "user_input_requests_are_removed_in_fifo_order_per_turn",
+          "kind": "function"
+        },
+        {
+          "path": "app/reconnect.rs",
+          "name": "reconnect_session",
+          "kind": "function"
+        },
+        {
+          "path": "app/reconnect.rs",
+          "name": "ReconnectedSession",
+          "kind": "type"
+        },
+        {
+          "path": "app/replay_filter.rs",
+          "name": "completed_agent",
+          "kind": "function"
+        },
+        {
+          "path": "app/replay_filter.rs",
+          "name": "delta",
+          "kind": "function"
+        },
+        {
+          "path": "app/replay_filter.rs",
+          "name": "event_is_notice",
+          "kind": "function"
+        },
+        {
+          "path": "app/replay_filter.rs",
+          "name": "event_is_notice_matches_warning_notifications",
+          "kind": "function"
+        },
+        {
+          "path": "app/replay_filter.rs",
+          "name": "omit_completed_agent_deltas",
+          "kind": "function"
+        },
+        {
+          "path": "app/replay_filter.rs",
+          "name": "omit_completed_agent_deltas_removes_only_replaced_streams",
+          "kind": "function"
+        },
+        {
+          "path": "app/replay_filter.rs",
+          "name": "snapshot_has_pending_interactive_request",
+          "kind": "function"
+        },
+        {
+          "path": "app/replay_filter.rs",
+          "name": "snapshot_has_pending_interactive_request_matches_user_input",
+          "kind": "function"
+        },
+        {
+          "path": "app/session_lifecycle.rs",
+          "name": "open_agent_picker",
+          "kind": "function"
+        },
+        {
+          "path": "app/session_lifecycle.rs",
+          "name": "resume_target_session",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "active_bottom_pane_receives_input_before_the_chat_composer",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "agents_slash_command_opens_the_agents_overview",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "alt_right_switches_to_the_next_agent_in_spawn_order",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "alt_up_does_not_offer_a_lossy_or_overwriting_queue_edit",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "alt_up_requests_server_delete_before_restoring_the_last_queued_input",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "an_open_popup_owns_escape_before_active_turn_interruption",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "backtab_cycles_server_collaboration_modes_only_when_idle",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "codex_style_effort_and_permission_shortcuts_are_not_inserted_into_draft",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "copy_shortcut_and_slash_command_do_not_become_turn_input",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "ctrl_t_opens_transcript_without_copying_or_mutating_conversation_state",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "disconnected_input_edits_locally_without_submit_or_queue",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "disconnected_paste_and_ctrl_c_are_handled_at_the_app_boundary",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "dispatch_connected_input",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "dispatch_disconnected_input",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "escape_interrupts_only_an_active_turn_and_preserves_the_draft",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "failed_image_submission_can_restore_pending_attachments",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "history_search_owns_escape_before_active_turn_interruption",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "image_shortcut_attaches_and_allows_image_only_submission",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "permission_profile_catalog_is_trimmed_deduplicated_and_used_for_cycles",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "queued_submission_projection_updates_by_id_and_clears_on_thread_change",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "resume_picker_owns_input_until_cancelled",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "resume_slash_command_opens_the_shared_picker_action",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "settings_updates_keep_the_active_collaboration_mode_in_sync",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "slash_popup_completes_argument_commands_and_reopens_after_cancelled_input_changes",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "slash_popup_filters_and_executes_immediate_commands",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "status_command_opens_an_ephemeral_pager_and_consumes_input_until_closed",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "sub_agent_activity_updates_navigation_liveness_and_label",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "subagent_activity_marks_the_thread_parent_owned_before_resume",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "subagents_slash_command_opens_the_codex_named_picker",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "tab_queues_a_follow_up_without_submitting_the_active_turn",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "to_tui_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
           "name": "turn_completion_clears_the_active_status_timer",
           "kind": "function"
         },
         {
-          "path": "app.rs",
-          "name": "upsert_queued_submission",
+          "path": "app/thread_event_buffer.rs",
+          "name": "evict_overflowing_events",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_event_buffer.rs",
+          "name": "push_buffered_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_event_buffer.rs",
+          "name": "push_replay_notification",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_event_buffer_tests.rs",
+          "name": "delta",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_event_buffer_tests.rs",
+          "name": "thread_event_store_coalesces_only_adjacent_matching_agent_message_deltas",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_event_buffer_tests.rs",
+          "name": "thread_event_store_does_not_replay_server_resolved_request",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_event_buffer_tests.rs",
+          "name": "thread_event_store_drops_requests_when_turn_completes_or_thread_closes",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_event_buffer_tests.rs",
+          "name": "thread_event_store_preserves_requests_while_evicting_old_notifications",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_event_buffer_tests.rs",
+          "name": "thread_event_store_request_capacity_fails_closed_without_evicting_requests",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_event_buffer_tests.rs",
+          "name": "thread_event_store_tracks_delta_bytes_after_coalescing",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_event_buffer_tests.rs",
+          "name": "user_input_request",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "apply_notification",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "drain_snapshot",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "enqueue_thread_request",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "ensure_thread_channel",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "handle_thread_event_replay",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "new",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "new",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "note_outbound_response",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "note_outbound_response",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "observe_item",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "observe_notification",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "push_notification",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "push_notification_ref",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "push_request",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "rebase_buffer_after_session_refresh",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "replay_thread_snapshot",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "snapshot",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "take_thread_event_snapshot",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "ThreadBufferedEvent",
+          "kind": "type"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "ThreadEventChannel",
+          "kind": "type"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "ThreadEventSnapshot",
+          "kind": "type"
+        },
+        {
+          "path": "app/thread_events.rs",
+          "name": "ThreadEventStore",
+          "kind": "type"
+        },
+        {
+          "path": "app/thread_settings.rs",
+          "name": "cycle_permission_profile",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_settings.rs",
+          "name": "next_collaboration_mode",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_settings.rs",
+          "name": "open_model_picker",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_settings.rs",
+          "name": "plan_mode",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_settings.rs",
+          "name": "set_collaboration_modes",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_settings.rs",
+          "name": "set_permission_profiles",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_settings.rs",
+          "name": "set_settings",
+          "kind": "function"
+        },
+        {
+          "path": "app/thread_settings.rs",
+          "name": "sync_default_collaboration_mode",
           "kind": "function"
         },
         {
@@ -60924,11 +62046,6 @@
           "path": "app_server_session.rs",
           "name": "AppServerSession",
           "kind": "type"
-        },
-        {
-          "path": "app_server_session.rs",
-          "name": "archive_thread",
-          "kind": "function"
         },
         {
           "path": "app_server_session.rs",
@@ -60967,6 +62084,11 @@
         },
         {
           "path": "app_server_session.rs",
+          "name": "list_collaboration_modes",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session.rs",
           "name": "list_models",
           "kind": "function"
         },
@@ -60978,11 +62100,6 @@
         {
           "path": "app_server_session.rs",
           "name": "list_queued_submissions",
-          "kind": "function"
-        },
-        {
-          "path": "app_server_session.rs",
-          "name": "list_thread_page",
           "kind": "function"
         },
         {
@@ -61003,16 +62120,6 @@
         {
           "path": "app_server_session.rs",
           "name": "read_prompt_history",
-          "kind": "function"
-        },
-        {
-          "path": "app_server_session.rs",
-          "name": "read_thread",
-          "kind": "function"
-        },
-        {
-          "path": "app_server_session.rs",
-          "name": "reject_raw_server_request",
           "kind": "function"
         },
         {
@@ -61057,6 +62164,11 @@
         },
         {
           "path": "app_server_session.rs",
+          "name": "start_thread_with_session_start_source",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session.rs",
           "name": "start_turn",
           "kind": "function"
         },
@@ -61072,7 +62184,32 @@
         },
         {
           "path": "app_server_session.rs",
+          "name": "thread_archive",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session.rs",
           "name": "thread_id",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session.rs",
+          "name": "thread_list",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session.rs",
+          "name": "thread_read",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session.rs",
+          "name": "thread_set_name",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session.rs",
+          "name": "thread_unarchive",
           "kind": "function"
         },
         {
@@ -61082,7 +62219,17 @@
         },
         {
           "path": "app_server_session.rs",
-          "name": "unarchive_thread",
+          "name": "turn_interrupt",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session.rs",
+          "name": "turn_start",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session.rs",
+          "name": "update_collaboration_mode",
           "kind": "function"
         },
         {
@@ -61242,6 +62389,11 @@
         },
         {
           "path": "bottom_pane/chat_composer.rs",
+          "name": "editor_word_and_kill_shortcuts_share_textarea_semantics",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer.rs",
           "name": "handle_history_search_key",
           "kind": "function"
         },
@@ -61307,6 +62459,11 @@
         },
         {
           "path": "bottom_pane/chat_composer.rs",
+          "name": "key_release_does_not_insert_or_submit",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer.rs",
           "name": "load_history",
           "kind": "function"
         },
@@ -61343,16 +62500,6 @@
         {
           "path": "bottom_pane/chat_composer.rs",
           "name": "remove_last_pending_image",
-          "kind": "function"
-        },
-        {
-          "path": "bottom_pane/chat_composer.rs",
-          "name": "remove_next_grapheme",
-          "kind": "function"
-        },
-        {
-          "path": "bottom_pane/chat_composer.rs",
-          "name": "remove_previous_grapheme",
           "kind": "function"
         },
         {
@@ -61527,7 +62674,17 @@
         },
         {
           "path": "bottom_pane/chat_composer/reconnect_tests.rs",
+          "name": "disconnected_editing_preserves_graphemes_and_cursor_boundaries",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/reconnect_tests.rs",
           "name": "disconnected_enter_and_tab_leave_input_available_for_reconnect",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/reconnect_tests.rs",
+          "name": "disconnected_repeat_key_is_editable_but_never_submits",
           "kind": "function"
         },
         {
@@ -61608,6 +62765,11 @@
         {
           "path": "bottom_pane/mod.rs",
           "name": "queues_requests_and_resolves_them_in_arrival_order",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mod.rs",
+          "name": "unsupported_requests_return_for_rejection",
           "kind": "function"
         },
         {
@@ -61767,12 +62929,32 @@
         },
         {
           "path": "bottom_pane/textarea.rs",
+          "name": "beginning_of_previous_word",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
           "name": "codex_buffer_replacement_preserves_cursor_only_at_valid_boundaries",
           "kind": "function"
         },
         {
           "path": "bottom_pane/textarea.rs",
           "name": "codex_cursor_pos_api_keeps_cursor_visible_in_a_scrolled_viewport",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "codex_input_dispatches_emacs_style_editor_bindings",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "codex_word_boundaries_handle_cjk_and_separator_runs",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "codex_word_delete_and_line_kill_preserve_unicode_boundaries",
           "kind": "function"
         },
         {
@@ -61797,12 +62979,47 @@
         },
         {
           "path": "bottom_pane/textarea.rs",
+          "name": "delete_backward",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "delete_backward_word",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "delete_forward",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "delete_forward_kill",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "delete_forward_word",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
           "name": "desired_height",
           "kind": "function"
         },
         {
           "path": "bottom_pane/textarea.rs",
           "name": "effective_scroll",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "end_of_next_word",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "input",
           "kind": "function"
         },
         {
@@ -61823,6 +63040,26 @@
         {
           "path": "bottom_pane/textarea.rs",
           "name": "is_empty",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "is_word_separator",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "kill_range",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "kill_to_beginning_of_line",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "kill_to_end_of_line",
           "kind": "function"
         },
         {
@@ -61877,6 +63114,11 @@
         },
         {
           "path": "bottom_pane/textarea.rs",
+          "name": "next_grapheme_end_at",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
           "name": "previous_grapheme_start",
           "kind": "function"
         },
@@ -61927,8 +63169,18 @@
         },
         {
           "path": "bottom_pane/textarea.rs",
+          "name": "split_word_pieces",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
           "name": "State",
           "kind": "type"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "stateful_render_clears_rows_outside_the_current_draft",
+          "kind": "function"
         },
         {
           "path": "bottom_pane/textarea.rs",
@@ -61963,6 +63215,11 @@
         {
           "path": "bottom_pane/textarea.rs",
           "name": "wrapped_lines",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "yank",
           "kind": "function"
         },
         {
@@ -62266,6 +63523,66 @@
           "kind": "function"
         },
         {
+          "path": "collaboration_modes.rs",
+          "name": "default_mask",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "default_mode_mask",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "empty_catalog_has_no_mode",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "filtered_presets",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "mask",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "mask_for_kind",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "mode_selection_prefers_default_and_cycles_in_server_order",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "next_mask",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "plan_mask",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "to_mode",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "to_mode_preserves_an_explicit_effort_clear",
+          "kind": "function"
+        },
+        {
+          "path": "collaboration_modes.rs",
+          "name": "to_mode_uses_mask_values_and_fallbacks",
+          "kind": "function"
+        },
+        {
           "path": "command_popup.rs",
           "name": "CommandPopup",
           "kind": "type"
@@ -62562,6 +63879,11 @@
         },
         {
           "path": "entry.rs",
+          "name": "multi_agent_titles_are_localized_at_the_render_boundary",
+          "kind": "function"
+        },
+        {
+          "path": "entry.rs",
           "name": "plan_statuses_use_stable_checkbox_styles",
           "kind": "function"
         },
@@ -62756,6 +64078,66 @@
           "kind": "function"
         },
         {
+          "path": "key_hint.rs",
+          "name": "control_and_alt_characters_are_not_plain_text",
+          "kind": "function"
+        },
+        {
+          "path": "key_hint.rs",
+          "name": "is_plain_text_key_event",
+          "kind": "function"
+        },
+        {
+          "path": "key_hint.rs",
+          "name": "shifted_characters_are_plain_text",
+          "kind": "function"
+        },
+        {
+          "path": "keymap.rs",
+          "name": "AgentsKeymap",
+          "kind": "type"
+        },
+        {
+          "path": "keymap.rs",
+          "name": "codex_agents_defaults_are_stable",
+          "kind": "function"
+        },
+        {
+          "path": "keymap.rs",
+          "name": "control",
+          "kind": "function"
+        },
+        {
+          "path": "keymap.rs",
+          "name": "new_task",
+          "kind": "function"
+        },
+        {
+          "path": "keymap.rs",
+          "name": "rename",
+          "kind": "function"
+        },
+        {
+          "path": "keymap.rs",
+          "name": "resume",
+          "kind": "function"
+        },
+        {
+          "path": "keymap.rs",
+          "name": "search",
+          "kind": "function"
+        },
+        {
+          "path": "keymap.rs",
+          "name": "stop",
+          "kind": "function"
+        },
+        {
+          "path": "keymap.rs",
+          "name": "toggle_grouping",
+          "kind": "function"
+        },
+        {
           "path": "line_truncation.rs",
           "name": "ellipsis_inherits_the_last_visible_span_style",
           "kind": "function"
@@ -62787,12 +64169,67 @@
         },
         {
           "path": "locale.rs",
+          "name": "agent_picker_empty",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "agent_picker_footer",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "agent_picker_title",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "agents_overview_controls_cover_all_product_locales",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "agents_overview_footer",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "agents_overview_group_label",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "agents_overview_input_prefix",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "agents_overview_search_prefix",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "agents_overview_task_statuses_cover_all_product_locales",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "agents_overview_title",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
           "name": "approval_option",
           "kind": "function"
         },
         {
           "path": "locale.rs",
           "name": "approval_title",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "collaboration_mode_statuses_cover_all_product_locales",
           "kind": "function"
         },
         {
@@ -62858,6 +64295,16 @@
         {
           "path": "locale.rs",
           "name": "model_label",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "multi_agent",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "multi_agent_titles_cover_all_product_locales",
           "kind": "function"
         },
         {
@@ -63511,6 +64958,36 @@
           "kind": "function"
         },
         {
+          "path": "model_catalog.rs",
+          "name": "model",
+          "kind": "function"
+        },
+        {
+          "path": "model_catalog.rs",
+          "name": "model_catalog_preserves_server_order",
+          "kind": "function"
+        },
+        {
+          "path": "model_catalog.rs",
+          "name": "ModelCatalog",
+          "kind": "type"
+        },
+        {
+          "path": "model_catalog.rs",
+          "name": "new",
+          "kind": "function"
+        },
+        {
+          "path": "model_catalog.rs",
+          "name": "try_list_models",
+          "kind": "function"
+        },
+        {
+          "path": "model_catalog.rs",
+          "name": "with_collaboration_modes",
+          "kind": "function"
+        },
+        {
           "path": "model_picker.rs",
           "name": "handle_event",
           "kind": "function"
@@ -63578,6 +65055,136 @@
         {
           "path": "model_picker.rs",
           "name": "visible_models",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "activity",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "AgentPickerThreadEntry",
+          "kind": "type"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "collab_agent_status_label",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "collab_summary",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "collab_summary_for_item",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "compact_text",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "format_agent_picker_item_name",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "interacted_sub_agent_activity_does_not_change_liveness",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "interrupted_sub_agent_activity_stops_running_liveness",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "MultiAgentHistoryCell",
+          "kind": "type"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "next_agent_shortcut",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "next_agent_shortcut_matches",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "non_empty",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "previous_agent_shortcut",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "previous_agent_shortcut_matches",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "prompt_line",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "spawn_request_summary",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "spawn_request_summary_preserves_model_and_effort",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "SpawnRequestSummary",
+          "kind": "type"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "status_summary_text",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "sub_agent_activity_display",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "sub_agent_activity_summary",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "SubAgentActivityDisplay",
+          "kind": "type"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "tool_call_history_cell",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "tool_call_history_cells_cover_collaboration_lifecycle",
+          "kind": "function"
+        },
+        {
+          "path": "multi_agents.rs",
+          "name": "wait_complete_lines",
           "kind": "function"
         },
         {
@@ -63742,17 +65349,7 @@
         },
         {
           "path": "projection.rs",
-          "name": "collab_agent_status_label",
-          "kind": "function"
-        },
-        {
-          "path": "projection.rs",
           "name": "collab_entry_status",
-          "kind": "function"
-        },
-        {
-          "path": "projection.rs",
-          "name": "collab_summary",
           "kind": "function"
         },
         {
@@ -63892,11 +65489,6 @@
         },
         {
           "path": "projection.rs",
-          "name": "sub_agent_status",
-          "kind": "function"
-        },
-        {
-          "path": "projection.rs",
           "name": "TranscriptEntry",
           "kind": "type"
         },
@@ -63913,6 +65505,16 @@
         {
           "path": "projection_tests.rs",
           "name": "collab_agent_summary_keeps_requested_model_effort_and_prompt",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
+          "name": "collab_resume_projection_keeps_resume_result",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
+          "name": "collab_wait_projection_keeps_per_agent_results",
           "kind": "function"
         },
         {
@@ -63981,11 +65583,6 @@
           "kind": "function"
         },
         {
-          "path": "reconnect.rs",
-          "name": "reconnect_session",
-          "kind": "function"
-        },
-        {
           "path": "resume_picker.rs",
           "name": "action_label",
           "kind": "function"
@@ -64043,6 +65640,16 @@
         {
           "path": "resume_picker.rs",
           "name": "handle_event",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "handle_transcript_pager_event",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "has_more_pages",
           "kind": "function"
         },
         {
@@ -64332,6 +65939,11 @@
         },
         {
           "path": "resume_picker.rs",
+          "name": "toggle_density",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
           "name": "toggle_filter",
           "kind": "function"
         },
@@ -64358,6 +65970,11 @@
         {
           "path": "resume_picker.rs",
           "name": "transcript_load_event_records_loaded_and_failed_states",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "transcript_pager_is_open",
           "kind": "function"
         },
         {
@@ -64632,11 +66249,6 @@
         },
         {
           "path": "runtime.rs",
-          "name": "refresh_queued_submissions",
-          "kind": "function"
-        },
-        {
-          "path": "runtime.rs",
           "name": "run_exec",
           "kind": "function"
         },
@@ -64712,6 +66324,11 @@
         },
         {
           "path": "runtime_pty_tests.rs",
+          "name": "terminal_screen_text",
+          "kind": "function"
+        },
+        {
+          "path": "runtime_pty_tests.rs",
           "name": "visible_terminal_text",
           "kind": "function"
         },
@@ -64733,6 +66350,11 @@
         {
           "path": "runtime_pty_tests.rs",
           "name": "wait_for_marker_after",
+          "kind": "function"
+        },
+        {
+          "path": "runtime_pty_tests.rs",
+          "name": "wait_for_screen_marker",
           "kind": "function"
         },
         {
@@ -65552,7 +67174,27 @@
         },
         {
           "path": "tui.rs",
+          "name": "enter_alternate_screen",
+          "kind": "function"
+        },
+        {
+          "path": "tui.rs",
           "name": "event_stream",
+          "kind": "function"
+        },
+        {
+          "path": "tui.rs",
+          "name": "flush_terminal_input_buffer",
+          "kind": "function"
+        },
+        {
+          "path": "tui.rs",
+          "name": "flush_terminal_input_buffer",
+          "kind": "function"
+        },
+        {
+          "path": "tui.rs",
+          "name": "flush_terminal_input_buffer",
           "kind": "function"
         },
         {
@@ -65572,6 +67214,11 @@
         },
         {
           "path": "tui.rs",
+          "name": "leave_alternate_screen",
+          "kind": "function"
+        },
+        {
+          "path": "tui.rs",
           "name": "pause_events",
           "kind": "function"
         },
@@ -65582,12 +67229,12 @@
         },
         {
           "path": "tui.rs",
-          "name": "restore_terminal_state",
+          "name": "restore_keep_raw",
           "kind": "function"
         },
         {
           "path": "tui.rs",
-          "name": "resume",
+          "name": "restore_terminal_state",
           "kind": "function"
         },
         {
@@ -65597,8 +67244,18 @@
         },
         {
           "path": "tui.rs",
-          "name": "suspend",
+          "name": "set_modes",
           "kind": "function"
+        },
+        {
+          "path": "tui.rs",
+          "name": "sync_viewport",
+          "kind": "function"
+        },
+        {
+          "path": "tui.rs",
+          "name": "Terminal",
+          "kind": "type"
         },
         {
           "path": "tui.rs",
@@ -65607,7 +67264,7 @@
         },
         {
           "path": "tui.rs",
-          "name": "TerminalGuard",
+          "name": "Tui",
           "kind": "type"
         },
         {
@@ -65617,8 +67274,18 @@
         },
         {
           "path": "tui.rs",
-          "name": "TuiTerminal",
-          "kind": "type"
+          "name": "update_viewport",
+          "kind": "function"
+        },
+        {
+          "path": "tui.rs",
+          "name": "viewport_area",
+          "kind": "function"
+        },
+        {
+          "path": "tui.rs",
+          "name": "with_restored",
+          "kind": "function"
         },
         {
           "path": "tui/event_stream.rs",
@@ -65962,6 +67629,16 @@
         },
         {
           "path": "view.rs",
+          "name": "dispatch_connected_input",
+          "kind": "function"
+        },
+        {
+          "path": "view.rs",
+          "name": "footer_renders_the_active_agent_label",
+          "kind": "function"
+        },
+        {
+          "path": "view.rs",
           "name": "history_search_footer_shows_localized_query_without_hiding_composer",
           "kind": "function"
         },
@@ -66099,6 +67776,101 @@
           "path": "view.rs",
           "name": "wrapped_transcript_scroll_uses_visual_rows",
           "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "alternate_screen_round_trip_restores_inline_viewport",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "clear_for_viewport_change",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "cursor_anchor",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "enter_alternate_screen",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "first_viewport_change_clears_from_new_area_when_old_area_is_empty",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "inline_viewport_shrinks_into_terminal_bounds",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "inline_viewport_stays_bottom_aligned_when_terminal_grows",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "invalidate_viewport",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "invalidate_viewport_sets_repaint_marker",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "leave_alternate_screen",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "leaving_alternate_without_saved_area_is_a_noop",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "new",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "repeated_alternate_entry_preserves_original_inline_area",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "resize",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "resize_keeps_non_bottom_aligned_viewport_position",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "set_viewport_area",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "update_cursor_anchor",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "update_inline",
+          "kind": "function"
+        },
+        {
+          "path": "viewport.rs",
+          "name": "ViewportState",
+          "kind": "type"
         },
         {
           "path": "width.rs",
@@ -66376,40 +68148,27 @@
           "kind": "function"
         }
       ],
-      "treeSha256": "32a9f69b73411b4248ad09bd2f30db83ad0077232f0d67c394f2c7fe33725f79"
+      "treeSha256": "5f8c14d0e139f56d46ac5f0995372e21fd3516105d2b37ddb7571c5367f58369"
     }
   },
   "comparisons": {
     "filesMissingInLime": [
       "additional_dirs.rs",
       "app/agent_message_consolidation.rs",
-      "app/agent_navigation.rs",
-      "app/agent_picker.rs",
       "app/agent_status_feed.rs",
       "app/agent_status_feed_tests.rs",
-      "app/agents_overview.rs",
-      "app/agents_overview_render.rs",
-      "app/agents_overview_tests.rs",
-      "app/agents_overview_threads.rs",
-      "app/agents_overview_view.rs",
-      "app/app_server_event_targets.rs",
-      "app/app_server_events.rs",
-      "app/app_server_requests.rs",
       "app/backend_banner_fallback.rs",
       "app/background_requests.rs",
       "app/config_persistence.rs",
       "app/connector_mentions.rs",
       "app/connector_mentions_tests.rs",
-      "app/event_dispatch.rs",
       "app/exit_summary.rs",
       "app/file_change_approvals.rs",
       "app/history_pagination.rs",
       "app/history_ui.rs",
       "app/history_ui_tests.rs",
-      "app/input.rs",
       "app/loaded_threads.rs",
       "app/misalignment_policy.rs",
-      "app/pending_interactive_replay.rs",
       "app/permission_shortcuts.rs",
       "app/pets.rs",
       "app/platform_actions.rs",
@@ -66417,20 +68176,16 @@
       "app/rate_limit_refresh.rs",
       "app/recap.rs",
       "app/recap_tests.rs",
-      "app/reconnect.rs",
-      "app/replay_filter.rs",
       "app/resize_reflow.rs",
       "app/resize_reflow_tests.rs",
       "app/resume_config.rs",
       "app/safety_buffering.rs",
       "app/safety_buffering_tests.rs",
-      "app/session_lifecycle.rs",
       "app/session_picker.rs",
       "app/side.rs",
       "app/startup.rs",
       "app/startup_prompts.rs",
       "app/test_support.rs",
-      "app/tests.rs",
       "app/tests/active_reconnect_tests.rs",
       "app/tests/advanced_reasoning_tests.rs",
       "app/tests/agents_navigation_tests.rs",
@@ -66460,13 +68215,9 @@
       "app/tests/thread_usage.rs",
       "app/tests/transcript_composer.rs",
       "app/tests/turn_submission.rs",
-      "app/thread_event_buffer.rs",
-      "app/thread_event_buffer_tests.rs",
-      "app/thread_events.rs",
       "app/thread_goal_actions.rs",
       "app/thread_routing.rs",
       "app/thread_session_state.rs",
-      "app/thread_settings.rs",
       "app/thread_title.rs",
       "app/thread_title_tests.rs",
       "app/transcript_export.rs",
@@ -66683,7 +68434,6 @@
       "chatwidget/windows_sandbox_prompts.rs",
       "chatwidget/working_directory.rs",
       "cli.rs",
-      "collaboration_modes.rs",
       "color.rs",
       "config_update.rs",
       "config_update_tests.rs",
@@ -66749,8 +68499,6 @@
       "inline_visualization/viewer.rs",
       "inline_visualization_tests.rs",
       "insert_history.rs",
-      "key_hint.rs",
-      "keymap.rs",
       "keymap/bindings.rs",
       "keymap/chords.rs",
       "keymap/chords_tests.rs",
@@ -66780,10 +68528,8 @@
       "markdown_stream.rs",
       "markdown_text_merge.rs",
       "mention_codec.rs",
-      "model_catalog.rs",
       "model_migration.rs",
       "motion.rs",
-      "multi_agents.rs",
       "named_session_lookup.rs",
       "named_session_lookup_tests.rs",
       "notifications/bel.rs",
@@ -66931,7 +68677,8 @@
       "runtime_pty_tests.rs",
       "settings.rs",
       "status_indicator.rs",
-      "view.rs"
+      "view.rs",
+      "viewport.rs"
     ],
     "symbolNamesMissingInLime": [
       "ActionMenuOption",
@@ -66950,17 +68697,9 @@
       "AgentMarkdownCell",
       "AgentMessageCell",
       "AgentMetadata",
-      "AgentNavigationDirection",
-      "AgentNavigationState",
-      "AgentPickerThreadEntry",
       "AgentStatusHistoryCell",
       "AgentStatusThreadPreview",
-      "AgentsKeymap",
-      "AgentsOverviewGroup",
-      "AgentsOverviewRow",
-      "AgentsOverviewState",
       "AgentsOverviewThreadRefresh",
-      "AgentsOverviewView",
       "AgentsOverviewViewState",
       "AltScreenGuard",
       "AmbientPet",
@@ -67129,7 +68868,6 @@
       "EffortIgnition",
       "EffortStatusLineTransition",
       "EffortTier",
-      "ElicitationRequestKey",
       "EnableAlternateScroll",
       "EnableModifyOtherKeys",
       "EncodedImageFormat",
@@ -67351,7 +69089,6 @@
       "MisalignmentViolation",
       "MixedUrlWord",
       "MockResponses",
-      "ModelCatalog",
       "ModelMigrationCopy",
       "ModelMigrationOutcome",
       "ModelMigrationScreen",
@@ -67404,8 +69141,6 @@
       "PendingHistoryLines",
       "PendingHistorySearch",
       "PendingInputPreview",
-      "PendingInteractiveReplayState",
-      "PendingInteractiveRequest",
       "PendingPasteHandling",
       "PendingRecovery",
       "PendingSteer",
@@ -67578,7 +69313,6 @@
       "SelectionToggleAction",
       "SelectionViewParams",
       "SendArguments",
-      "ServerNotificationThreadTarget",
       "ServiceTierCommand",
       "SessionArchiveAction",
       "SessionArchiveCommandOptions",
@@ -67622,7 +69356,6 @@
       "SlashCommandItem",
       "SlashInput",
       "SlashValidation",
-      "SpawnRequestSummary",
       "SpendControlLimitSnapshotDisplay",
       "StablePrefixLenCache",
       "StandaloneSelectionView",
@@ -67675,7 +69408,6 @@
       "StreamingPlanTailCell",
       "StreamingRender",
       "StyledMarkerRenderable",
-      "SubAgentActivityDisplay",
       "SubmissionValidation",
       "SummaryHintKind",
       "SummaryLeft",
@@ -67690,7 +69422,6 @@
       "TargetOs",
       "TaskMention",
       "TemporaryStructuredThreadOptions",
-      "Terminal",
       "TerminalInitializationGuard",
       "TerminalRestoreGuard",
       "TerminalStderrGuard",
@@ -67706,12 +69437,8 @@
       "ThemePreviewNarrowRenderable",
       "ThemePreviewWideRenderable",
       "ThreadAttachPresentation",
-      "ThreadBufferedEvent",
       "ThreadComposerState",
       "ThreadEventAttachment",
-      "ThreadEventChannel",
-      "ThreadEventSnapshot",
-      "ThreadEventStore",
       "ThreadGoalSetMode",
       "ThreadHistoryPagination",
       "ThreadHistorySupport",
@@ -67758,7 +69485,6 @@
       "TrustDirectoryWidget",
       "TrustedFileLink",
       "Tty",
-      "Tui",
       "TuiSessionReporter",
       "TuiSharedCliOptions",
       "TurnAbortReason",
@@ -67886,8 +69612,6 @@
       "activate_thread_channel",
       "activate_thread_for_replay",
       "active",
-      "active_agent_label",
-      "active_agent_label_tracks_current_thread",
       "active_binding_specs",
       "active_blob",
       "active_cell_is_stream_tail",
@@ -68013,9 +69737,7 @@
       "adjacent_file_completion_inserts_leading_separator",
       "adjacent_image_completion_inserts_leading_separator",
       "adjacent_plugin_completion_inserts_separator_snapshot",
-      "adjacent_thread_id",
       "adjacent_thread_id_with_backfill",
-      "adjacent_thread_id_wraps_in_spawn_order",
       "adjust_pos_out_of_elements",
       "adjust_start_for_wrapped_selection_visibility",
       "advance_older_search_after_entry_miss",
@@ -68060,11 +69782,9 @@
       "agents_navigation_hint_snapshots",
       "agents_navigation_requires_local_daemon",
       "agents_overview_can_be_remapped_and_rejects_conflicts",
-      "agents_overview_group",
       "agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable",
       "agents_overview_stop_uses_full_history_after_legacy_negotiation",
       "agents_overview_stop_uses_history_mode_for_turn_lookup",
-      "agents_overview_view",
       "agents_resume_default_yields_to_existing_custom_shortcuts",
       "align_summary_line",
       "alignments_to_pipe_delimiter",
@@ -68224,7 +69944,6 @@
       "applies_managed_defaults_to_a_new_thread_config",
       "apply_accepted_model_migration",
       "apply_agent_picker_thread_refresh",
-      "apply_agents_overview_thread_refresh",
       "apply_ambient_pet_image_support_override_for_tests",
       "apply_backend_banner_fallback",
       "apply_backtrack_selection",
@@ -68536,7 +70255,6 @@
       "beginning_of_current_line",
       "beginning_of_line",
       "beginning_of_next_word",
-      "beginning_of_previous_word",
       "best_tool_match",
       "big_word_range_at_cursor",
       "billing_surfaces_render_for_every_supported_enterprise_plan",
@@ -68640,7 +70358,6 @@
       "build_pet_picker_params",
       "build_placeholder_mapping",
       "build_render_lines",
-      "build_rows",
       "build_rows_preserves_full_skill_display_names",
       "build_search_catalog",
       "build_service_tier_selection_edits",
@@ -68792,13 +70509,11 @@
       "clear_current_draft",
       "clear_dismiss_after_child_accept",
       "clear_esc_backtrack_hint",
-      "clear_exec_approval_turn",
       "clear_for_ctrl_c",
       "clear_for_ctrl_c_preserves_image_draft_state",
       "clear_for_ctrl_c_preserves_pending_paste_history_entry",
       "clear_for_ctrl_c_preserves_remote_offset_image_labels",
       "clear_for_ctrl_c_records_cleared_draft",
-      "clear_for_viewport_change",
       "clear_guardian_review_status",
       "clear_hint_items",
       "clear_if_empty",
@@ -68811,7 +70526,6 @@
       "clear_notes_draft",
       "clear_only_ui_reset_allows_active_skill_warning_to_render_again",
       "clear_only_ui_reset_preserves_chat_session_state",
-      "clear_patch_approval_turn",
       "clear_pending_history_lines",
       "clear_pending_rate_limit_reset_hint",
       "clear_pending_rate_limit_reset_requests",
@@ -68826,8 +70540,6 @@
       "clear_remote_image_selection",
       "clear_remote_image_urls",
       "clear_removes_custom_binding",
-      "clear_request_permissions_turn",
-      "clear_request_user_input_turn",
       "clear_reserve_return",
       "clear_resets_all_input_queues",
       "clear_resets_stream_reflow_flags",
@@ -69482,8 +71194,6 @@
       "default_frame_count",
       "default_image_support",
       "default_ipc_socket_path",
-      "default_mask",
-      "default_mode_mask",
       "default_pager_keymap",
       "default_reasoning_effort_for_conversation_model",
       "default_unified_mention_popup_snapshot",
@@ -69503,22 +71213,17 @@
       "delayed_enter_after_typing_submits",
       "delegated_prompt",
       "delegated_prompts_match_desktop_xml_contract",
-      "delete_backward",
       "delete_backward_and_forward_edges",
       "delete_backward_keeps_thai_elements_atomic",
       "delete_backward_preserves_other_grapheme_behavior",
       "delete_backward_removes_thai_marks_one_at_a_time",
-      "delete_backward_word",
       "delete_backward_word_alt_keys",
       "delete_backward_word_and_kill_line_variants",
       "delete_backward_word_handles_narrow_no_break_space",
       "delete_backward_word_respects_word_separators",
       "delete_current_thread",
       "delete_diff_uses_path_extension_for_highlighting",
-      "delete_forward",
       "delete_forward_deletes_element_at_left_edge",
-      "delete_forward_kill",
-      "delete_forward_word",
       "delete_forward_word_alt_d",
       "delete_forward_word_handles_atomic_elements",
       "delete_forward_word_respects_word_separators",
@@ -69535,7 +71240,6 @@
       "deliver_page",
       "deliver_rolling_rate_limit_snapshot",
       "deliver_usage_limit_error",
-      "delta",
       "deltas_then_same_final_message_are_rendered_snapshot",
       "denied_event",
       "dense_column_text",
@@ -69662,7 +71366,6 @@
       "dismissed_file_popup_ignores_token_substrings_in_leading_paste",
       "dismissed_file_popup_tracks_token_across_leading_whitespace_edits",
       "dismissed_tokens_after_adjacent_elements_are_occurrence_scoped",
-      "dispatch_agents_overview_task",
       "dispatch_binding",
       "dispatch_cancel",
       "dispatch_command",
@@ -69876,7 +71579,6 @@
       "end_of_current_line",
       "end_of_line",
       "end_of_line_or_down_at_end_of_text",
-      "end_of_next_word",
       "end_of_next_word_from",
       "end_paragraph",
       "end_table",
@@ -69901,7 +71603,6 @@
       "enqueue_thread_feedback_event",
       "enqueue_thread_history_entry_response",
       "enqueue_thread_notification",
-      "enqueue_thread_request",
       "enqueueing_history_prompt_multiple_times_is_stable",
       "ensure_builtin_pack_for_pet",
       "ensure_builtin_pet",
@@ -69923,7 +71624,6 @@
       "ensure_slash_command_allowed_in_side_conversation",
       "ensure_status_indicator",
       "ensure_success_response",
-      "ensure_thread_channel",
       "ensure_thread_rename_allowed",
       "ensure_thread_usage_requested",
       "ensure_usage_command_available",
@@ -70008,7 +71708,6 @@
       "estimated_thread_usage",
       "event_description",
       "event_header_lines",
-      "event_is_notice",
       "event_issue_lines",
       "event_label",
       "event_page_lines",
@@ -70016,8 +71715,6 @@
       "event_survives_session_refresh",
       "event_table_lines",
       "every_possible_closer_returns_to_the_canonical_parser",
-      "evict_overflowing_events",
-      "exec_approval",
       "exec_approval_decision_truncates_multiline_and_long_commands",
       "exec_approval_emits_proposed_command_and_decision_history",
       "exec_approval_request",
@@ -70297,7 +71994,6 @@
       "filtered_dashboard_actions_use_configured_shortcuts",
       "filtered_items",
       "filtered_mentions_preserve_results_beyond_popup_height",
-      "filtered_presets",
       "filtering_long_skill_names_preserves_the_matching_row",
       "final_answer_completion_restores_status_indicator_for_pending_steer",
       "final_message_separator_hides_short_worked_label_and_includes_runtime_metrics",
@@ -70415,7 +72111,6 @@
       "flush_pending_history_lines",
       "flush_pending_paste_newline",
       "flush_run",
-      "flush_terminal_input_buffer",
       "flush_unified_exec_wait_streak",
       "fmt_elapsed_compact_formats_seconds_minutes_hours",
       "focus_is_notes",
@@ -70469,7 +72164,6 @@
       "for_method",
       "for_notification",
       "for_request",
-      "for_status",
       "for_terminal",
       "force_bg_to_terminal_bg",
       "force_color_keeps_reported_stdout_level",
@@ -70494,7 +72188,6 @@
       "form_request",
       "format_action_binding_summary",
       "format_additional_permissions_rule",
-      "format_agent_picker_item_name",
       "format_auto_resolution_remaining",
       "format_config_error",
       "format_config_error_preserves_server_validation_message",
@@ -70629,7 +72322,6 @@
       "generic_url_elicitation_resolves_without_connector_refresh",
       "generic_url_elicitation_snapshot",
       "generic_url_target",
-      "get",
       "get_available_model",
       "get_confirmation_prompt_height",
       "get_cursor_position",
@@ -70730,7 +72422,6 @@
       "handle_ambient_pet_image_render_error",
       "handle_api_key_entry_key_event",
       "handle_api_key_entry_paste",
-      "handle_app_server_event",
       "handle_app_server_notification",
       "handle_app_server_steer_rejected_error",
       "handle_apply_patch_approval_now",
@@ -70832,9 +72523,7 @@
       "handle_request_user_input_sets_pending_notification",
       "handle_select_key",
       "handle_server_notification",
-      "handle_server_notification_event",
       "handle_server_request",
-      "handle_server_request_event",
       "handle_service_tier_command_dispatch",
       "handle_shared_app_keymap_action",
       "handle_side_thread_session",
@@ -70855,14 +72544,12 @@
       "handle_submission_with_time",
       "handle_thread_event_now",
       "handle_thread_event_now_recovering_file_changes",
-      "handle_thread_event_replay",
       "handle_thread_item",
       "handle_thread_session",
       "handle_thread_session_quiet",
       "handle_token_count",
       "handle_transcript_loading_key",
       "handle_trust",
-      "handle_tui_event",
       "handle_turn_completed",
       "handle_turn_completed_notification",
       "handle_turn_interrupted",
@@ -70910,8 +72597,6 @@
       "has_pending_prompt",
       "has_pending_protected_request",
       "has_pending_recovery",
-      "has_pending_thread_approvals",
-      "has_pending_thread_user_input",
       "has_persistent_output",
       "has_possible_closing_line",
       "has_prompt_context",
@@ -71130,7 +72815,6 @@
       "inline_visualization_directive_survives_raw_to_rich_render_mode_switch",
       "inline_visualizations_use_canonical_full_render",
       "inline_visualizations_without_context_use_canonical_full_render",
-      "input",
       "input_disabled_ignores_keypresses_and_hides_cursor",
       "input_enabled",
       "input_height",
@@ -71174,7 +72858,6 @@
       "installed_connector_mentions_fall_back_for_legacy_app_servers",
       "installed_connector_mentions_ignore_stale_thread_workspace_and_account",
       "installed_connector_mentions_read_callable_apps_in_bounded_thread_scoped_batches",
-      "interacted_sub_agent_activity_does_not_change_liveness",
       "interaction_end",
       "interactive_request_for_thread_request",
       "interrupt_disambiguates_same_sized_goal_pastes",
@@ -71214,7 +72897,6 @@
       "invalidate_connector_scope",
       "invalidate_ordinary_usage_recovery",
       "invalidate_recovery",
-      "invalidate_viewport",
       "invalidate_viewport_repaints_default_style_spaces_over_stale_terminal_cells",
       "is_absolute_local_link_path",
       "is_absolute_url_like",
@@ -71289,10 +72971,8 @@
       "is_normal_backtrack_mode",
       "is_ordered_list_marker",
       "is_other_adds_none_of_the_above_and_submits_it",
-      "is_parent_owned",
       "is_pending",
       "is_personal_marketplace_path",
-      "is_plain_text_key_event",
       "is_plan_streaming_in_tui",
       "is_press",
       "is_press_accepts_press_and_repeat_but_rejects_release",
@@ -71346,7 +73026,6 @@
       "is_vim_replace_mode",
       "is_visible",
       "is_visualization_thread_dir",
-      "is_word_separator",
       "is_yolo_mode",
       "is_zero",
       "issue_url_available_for_bug_bad_result_safety_check_and_other",
@@ -71428,10 +73107,7 @@
       "kill_current_line_keeps_previous_newline_for_final_line",
       "kill_current_line_removes_current_line_linewise",
       "kill_line_range",
-      "kill_range",
       "kill_range_with_kind",
-      "kill_to_beginning_of_line",
-      "kill_to_end_of_line",
       "kill_whole_line_can_be_assigned_without_default_binding",
       "kill_whole_line_conflicts_until_kill_line_start_is_unbound",
       "kill_whole_line_keymap_dispatch_uses_linewise_kill",
@@ -71444,7 +73120,6 @@
       "kitty_transmit_png_file_with_id",
       "kitty_transmit_png_with_id",
       "known_thread_started_preserves_session_without_reading_unmaterialized_rollout",
-      "label",
       "label_and_refreshed_line_appear_in_order",
       "label_only_and_fallback_presentations_snapshot",
       "label_only_policy_keeps_non_web_links_and_literal_urls_unchanged",
@@ -71751,19 +73426,15 @@
       "mark_agent_picker_thread_closed",
       "mark_available",
       "mark_budget_limited",
-      "mark_closed",
       "mark_exhausted",
       "mark_failed",
       "mark_matching_cells",
-      "mark_parent_owned",
       "mark_primary_thread_parent_owned",
       "mark_recapped",
       "mark_reflowed_width_records_actual_rebuild_width",
       "mark_reflowed_width_reports_unchanged_width",
       "mark_replay_only",
-      "mark_running",
       "mark_safety_buffering_agent_message_started",
-      "mark_stopped",
       "mark_tui_args",
       "mark_underlined_hyperlink",
       "mark_url_hyperlink",
@@ -71793,7 +73464,6 @@
       "marketplace_upgrade_failure_includes_backend_messages_snapshot",
       "marketplace_upgrade_loading_popup_params",
       "marketplace_upgrade_loading_popup_snapshot",
-      "mask_for_kind",
       "masked_graphemes_align_with_the_cursor",
       "masked_url_input_never_exposes_hyperlink_destinations",
       "match_item",
@@ -71855,7 +73525,6 @@
       "mcp_startup_header_booting_snapshot",
       "mcp_startup_ignores_status_for_other_thread",
       "mcp_startup_notifications_route_to_threads",
-      "mcp_startup_notifications_without_threads_are_app_scoped",
       "mcp_startup_status_header",
       "mcp_tools_output_from_statuses_renders_status_only_servers",
       "mcp_tools_output_from_statuses_renders_verbose_inventory",
@@ -71978,7 +73647,6 @@
       "move_highlight",
       "move_question",
       "move_selected_item",
-      "move_selection",
       "move_selection_next",
       "move_selection_prev",
       "move_to_display_col_on_line",
@@ -72092,8 +73760,6 @@
       "newly_active_errors",
       "next",
       "next_add_to_history_event",
-      "next_agent_shortcut",
-      "next_agent_shortcut_matches",
       "next_agent_word_motion_fallback",
       "next_atomic_boundary",
       "next_available_action",
@@ -72106,7 +73772,6 @@
       "next_history_offset",
       "next_interrupt_op",
       "next_large_paste_placeholder",
-      "next_mask",
       "next_rate_limits_loaded",
       "next_reasoning_effort",
       "next_reasoning_effort_clamps_at_bounds",
@@ -72187,15 +73852,12 @@
       "normalizes_generated_title_whitespace",
       "note_active_thread_outbound_op",
       "note_catch_up_exit",
-      "note_evicted_server_request",
       "note_focus_gained",
       "note_focus_lost",
       "note_history_rows_inserted",
       "note_outbound_op",
       "note_plain_char",
       "note_rendered_width",
-      "note_server_notification",
-      "note_server_request",
       "note_stream_consolidation_completed",
       "note_stream_consolidation_queued",
       "note_thread_outbound_op",
@@ -72229,7 +73891,6 @@
       "older_external_server_starts_without_unsupported_dynamic_tools_or_history",
       "older_pagination_reconciles_review_prompts_across_page_boundaries",
       "oldest_queued_age",
-      "omit_completed_agent_deltas",
       "omit_resolved_misalignment_errors",
       "on_account_login_completed",
       "on_account_updated",
@@ -72355,7 +74016,6 @@
       "op_can_change_state",
       "open",
       "open_advanced_reasoning_popup",
-      "open_agent_picker",
       "open_agent_picker_allows_existing_agent_threads_when_feature_is_disabled",
       "open_agent_picker_clears_running_hint_from_completed_snapshot",
       "open_agent_picker_keeps_missing_threads_for_replay",
@@ -72367,7 +74027,6 @@
       "open_agent_picker_prunes_terminal_metadata_only_threads",
       "open_agent_picker_refreshes_replay_only_path_backed_liveness",
       "open_agent_picker_selects_path_backed_agent",
-      "open_agents_overview",
       "open_all_models_popup",
       "open_all_models_popup_with_view_id",
       "open_app_link_view",
@@ -72466,9 +74125,7 @@
       "ordered_item_continuation_paragraph_is_indented",
       "ordered_item_with_code_block_and_nested_bullet",
       "ordered_item_with_indented_continuation_is_tight",
-      "ordered_path_backed_subagent_threads",
       "ordered_thread_ids",
-      "ordered_threads",
       "ordinary_redraws_with_known_size_do_not_query_backend_size",
       "osc52_encoding_roundtrips",
       "osc52_rejects_payload_larger_than_limit",
@@ -72665,7 +74322,6 @@
       "pasted_image_format_with_windows_style_paths",
       "pasted_text_normalizes_mixed_line_endings_at_app_boundary",
       "pasting_filepath_attaches_image",
-      "patch_approval",
       "patch_approval_lookup_keeps_turn_and_item_identity",
       "patch_approval_request",
       "patch_approval_request_from_params",
@@ -72812,7 +74468,6 @@
       "picker_runtime_keymap",
       "picker_selected_action_starts_on_matching_all_tab_row",
       "picker_shows_fast_mode_action_when_feature_is_enabled",
-      "picker_subtitle",
       "picker_subtitle_mentions_shortcuts",
       "picker_unbound_tab_lists_default_unbound_actions",
       "picker_wide_render_snapshot",
@@ -72856,7 +74511,6 @@
       "plan_implementation_popup_skips_without_proposed_plan",
       "plan_implementation_popup_snapshot",
       "plan_implementation_popup_yes_emits_submit_message_event",
-      "plan_mask",
       "plan_mode_prompt_notification_uses_dedicated_type_name",
       "plan_mode_reasoning_override_is_marked_current_in_reasoning_popup",
       "plan_reasoning_scope_popup_all_modes_persists_global_and_plan_override",
@@ -73013,7 +74667,6 @@
       "pop_next_queued_user_message",
       "pop_user_input_request_for_turn",
       "populate_history_at_index",
-      "populated_state",
       "popup_active",
       "popup_content_width",
       "popup_name_truncation_counts_halfwidth_sound_marks",
@@ -73119,8 +74772,6 @@
       "preview_uses_placeholders_when_runtime_values_are_missing",
       "preview_uses_runtime_values",
       "previous",
-      "previous_agent_shortcut",
-      "previous_agent_shortcut_matches",
       "previous_agent_word_motion_fallback",
       "previous_available_action",
       "previous_buffer",
@@ -73164,7 +74815,6 @@
       "prompt_edit_thread_history_line_snapshot",
       "prompt_for",
       "prompt_glyph",
-      "prompt_line",
       "prompt_skip_hint",
       "prompt_snapshot",
       "prompt_snapshot_gpt5_codex",
@@ -73196,7 +74846,6 @@
       "push_ascii",
       "push_binding_for_action",
       "push_blank_line",
-      "push_buffered_event",
       "push_delta",
       "push_elicitation",
       "push_exec_approval",
@@ -73214,15 +74863,11 @@
       "push_local_link_label_break",
       "push_local_link_label_span",
       "push_mcp_server_elicitation_request",
-      "push_notification",
       "push_notification_inner",
-      "push_notification_ref",
       "push_output_line",
       "push_owned_lines",
       "push_prefixed_value_line",
       "push_prewrapped_line",
-      "push_replay_notification",
-      "push_request",
       "push_request_permissions",
       "push_run",
       "push_section_header",
@@ -73399,6 +75044,7 @@
       "read_session_cwd",
       "read_session_model",
       "read_startup_probe",
+      "read_thread",
       "read_tmux_extended_keys_format",
       "read_until",
       "read_version_info",
@@ -73446,7 +75092,6 @@
       "reasoning_up_shortcut_does_not_silently_enter_advanced_effort",
       "reasoning_up_shortcuts_raise_reasoning_effort",
       "reassignable_fixed_shortcuts_conflict_until_original_action_is_unbound",
-      "rebase_buffer_after_session_refresh",
       "rebuild_config_for_cwd",
       "rebuild_config_for_permission_profile",
       "rebuild_config_for_resume_or_fallback",
@@ -73517,7 +75162,6 @@
       "record_replayed_submission",
       "record_replayed_user_message_history",
       "record_safety_buffering_turn",
-      "record_sub_agent_activity",
       "record_vim_inserted_text",
       "record_world_writable_scan_result",
       "recorded_params",
@@ -73540,9 +75184,7 @@
       "refresh_agent_picker_thread_liveness",
       "refresh_agent_picker_thread_liveness_prunes_closed_metadata_only_threads",
       "refresh_agent_picker_threads",
-      "refresh_agents_overview_threads",
       "refresh_backend_banner_visibility",
-      "refresh_changed_agents_overview_threads",
       "refresh_connector_directory_after_notification",
       "refresh_connector_mentions",
       "refresh_connectors",
@@ -73705,13 +75347,9 @@
       "remote_tmux_environment",
       "remote_turn_permissions_preserve_active_profile_selection",
       "remotely_resolved_startup_approvals_release_the_draft_after_the_last_request",
-      "remove",
-      "remove_call_id_from_turn_map",
-      "remove_call_id_from_turn_map_entry",
       "remove_deleted_local_placeholders",
       "remove_element_range",
       "remove_legacy_tui_log_file",
-      "remove_request",
       "remove_resolved_prompt",
       "remove_resolved_prompt_keeps_lifecycle_events",
       "remove_resolved_prompt_matches_exec_approval_id",
@@ -73754,7 +75392,6 @@
       "render_debug_config_lines",
       "render_dense_row_snapshot",
       "render_dense_session_lines",
-      "render_details",
       "render_device_code_login",
       "render_display_lines",
       "render_empty_state_line",
@@ -73913,7 +75550,6 @@
       "renders_without_spinner_when_animations_disabled",
       "renders_wrapped_details_panama_two_lines",
       "reopening_identical_unified_mention_restarts_file_search",
-      "repaint_agents_overview",
       "repeat_aborts_when_change_motion_cannot_start",
       "repeat_distinguishes_insert_mode_deletions_from_noops",
       "repeat_omits_ineffective_deletions_before_inserted_text",
@@ -73979,7 +75615,6 @@
       "replay_only_thread_keeps_restored_queue_visible",
       "replay_snapshot_with_pending_request_suppresses_replay_notices",
       "replay_thread_item",
-      "replay_thread_snapshot",
       "replay_thread_snapshot_does_not_submit_queue_before_replay_catches_up",
       "replay_thread_snapshot_in_progress_turn_restores_running_queue_state",
       "replay_thread_snapshot_in_progress_turn_restores_running_state_without_input_state",
@@ -74129,7 +75764,6 @@
       "reset_transcript_state_after_clear",
       "reset_turn_flags",
       "reset_vim_mode_after_successful_dispatch",
-      "resize",
       "resize_draw_applies_event_dimensions_without_querying_backend_size",
       "resize_reflow_max_rows",
       "resize_reflow_max_rows_for",
@@ -74195,7 +75829,6 @@
       "restore_draft",
       "restore_env",
       "restore_input_mode",
-      "restore_keep_raw",
       "restore_keyboard_enhancement_stack",
       "restore_locked",
       "restore_pre_review_token_info",
@@ -74250,7 +75883,6 @@
       "resume_source_kinds",
       "resume_status_timer_after_modal",
       "resume_table_snapshot",
-      "resume_target_session",
       "resume_text_entry",
       "resumed_initial_messages_render_history",
       "resumed_session_hides_unknown_token_usage_until_an_update_arrives",
@@ -74333,7 +75965,6 @@
       "row_separator_height",
       "row_tail_is_blank",
       "row_to_pipe_line",
-      "rows",
       "rows_do_not_exceed_width_ascii",
       "rows_do_not_exceed_width_emoji_cjk",
       "rows_from_matches",
@@ -74462,7 +76093,6 @@
       "scrolled_transcript_renderables_match_full_height_fallback",
       "scrolled_url_fragments_keep_the_offscreen_destination",
       "scrolling_mentions_shifts_rendered_window_snapshot",
-      "search",
       "search_batch_absent_1024_uses_one_single_and_eight_batches",
       "search_batch_late_data_is_cache_only_after_cancel_or_query_edit",
       "search_batch_match_preserves_cursor_for_next_older_search",
@@ -74496,7 +76126,6 @@
       "select",
       "select_agent_thread",
       "select_agent_thread_and_discard_side",
-      "select_agents_overview_thread",
       "select_cached_unique_match",
       "select_current_option",
       "select_first_enabled_row",
@@ -74528,7 +76157,6 @@
       "selected_event_rows_use_the_shared_accent_style",
       "selected_hook",
       "selected_hook_index",
-      "selected_index",
       "selected_index_for_active_view",
       "selected_index_for_present_view",
       "selected_item",
@@ -74540,7 +76168,6 @@
       "selected_mention",
       "selected_option_index",
       "selected_render_line_index",
-      "selected_row",
       "selected_rows_use_the_shared_accent_style",
       "selected_session_style",
       "selected_session_title_span",
@@ -74574,9 +76201,7 @@
       "server_account_requirement_controls_login_screen",
       "server_feature",
       "server_name",
-      "server_notification_thread_target",
       "server_overloaded_error_does_not_switch_models",
-      "server_request_thread_id",
       "server_version",
       "service_tier_command_uses_catalog_name_and_description",
       "service_tier_commands_are_hidden_when_disabled",
@@ -74630,7 +76255,6 @@
       "set_active_reasoning_effort",
       "set_active_reasoning_effort_baseline",
       "set_active_turn_id",
-      "set_agent_path",
       "set_agents_navigation_enabled",
       "set_all_enabled",
       "set_alt_screen_enabled",
@@ -74721,7 +76345,6 @@
       "set_metadata",
       "set_model",
       "set_model_updates_active_collaboration_mask",
-      "set_modes",
       "set_notification",
       "set_notification_settings",
       "set_panic_hook",
@@ -74761,7 +76384,6 @@
       "set_remote_image_urls",
       "set_render_mode",
       "set_resume_action",
-      "set_running",
       "set_search_query",
       "set_selected_session",
       "set_service_tier",
@@ -74815,7 +76437,6 @@
       "set_tui_theme",
       "set_turns",
       "set_unified_exec_processes",
-      "set_viewport_area",
       "set_vim_enabled",
       "set_width",
       "set_windows_degraded_sandbox_active",
@@ -74895,7 +76516,6 @@
       "should_refresh_snapshot_session",
       "should_reject_side_backtrack_esc",
       "should_render_link_destination",
-      "should_replay_snapshot_request",
       "should_show_bedrock_setup_wizard",
       "should_show_delayed_hint",
       "should_show_fast_status",
@@ -75184,7 +76804,6 @@
       "slash_with_leading_space_submits_as_text",
       "small_word_range_at_cursor",
       "smooth_mode_is_default",
-      "snapshot",
       "snapshot_auto_all_rows_col_width_mode_scroll_behavior",
       "snapshot_auto_visible_col_width_mode_scroll_behavior",
       "snapshot_buffer",
@@ -75199,7 +76818,6 @@
       "snapshot_footer_with_indicators",
       "snapshot_footer_with_mode_indicator",
       "snapshot_footer_with_mode_indicator_and_context",
-      "snapshot_has_pending_interactive_request",
       "snapshot_lines",
       "snapshot_lines_text",
       "snapshot_mention_bindings",
@@ -75239,7 +76857,6 @@
       "spawn_pet_load",
       "spawn_plugin_enabled_write",
       "spawn_request_spans",
-      "spawn_request_summary",
       "spawn_search",
       "spawn_startup_thread_start",
       "spawn_world_writable_scan",
@@ -75262,7 +76879,6 @@
       "split_plugin_name_segments",
       "split_reasoning_summary_parts",
       "split_request_user_input_answer",
-      "split_word_pieces",
       "sprite_indices",
       "srgb_to_linear",
       "ssh_inside_tmux_falls_back_to_osc52_when_tmux_copy_fails",
@@ -75294,7 +76910,6 @@
       "start_active_goal_turn",
       "start_add_credits_nudge_email_request",
       "start_agents_daemon",
-      "start_agents_overview_refresh",
       "start_and_finish_update_running_state",
       "start_api_key_entry",
       "start_app_server",
@@ -75341,7 +76956,6 @@
       "start_temporary_thread",
       "start_test_embedded_app_server",
       "start_thread_with_request_handle",
-      "start_thread_with_session_start_source",
       "start_vim_edit",
       "start_vim_find",
       "started_thread_from_fork_response",
@@ -75608,7 +77222,6 @@
       "step",
       "step_backtrack_and_highlight",
       "step_forward_backtrack_and_highlight",
-      "stop_agents_overview_thread",
       "stop_command_is_canonical_name",
       "stop_command_resolves_for_dispatch",
       "stop_rate_limit_poller",
@@ -75665,10 +77278,8 @@
       "styled_span",
       "styled_split_within_span_preserves_style",
       "styled_text_rendering_does_not_overwrite_cells_outside_the_textarea",
-      "sub_agent_activity_display",
       "sub_agent_activity_history_cell",
       "sub_agent_activity_item",
-      "sub_agent_activity_summary",
       "sub_agent_activity_title",
       "subagent_mcp_startup_settles_while_cached_servers_remain_deferred",
       "subject",
@@ -75678,7 +77289,6 @@
       "submission_preserves_text_elements_and_local_images",
       "submission_with_remote_and_local_images_keeps_local_placeholder_numbering",
       "submit_active_thread_op",
-      "submit_agents_overview_prompt",
       "submit_answers",
       "submit_at_character_limit_succeeds",
       "submit_captures_recent_mention_bindings_before_clearing_textarea",
@@ -75749,6 +77359,7 @@
       "suppresses_printable_quit_key_during_api_key_entry",
       "suppresses_stderr_only_while_terminal_is_owned",
       "surface_pending_inactive_thread_interactive_requests",
+      "suspend",
       "suspend_process",
       "swap_buffers",
       "swap_vim_persistent_state",
@@ -76024,7 +77635,6 @@
       "theme_scope_backgrounds_quantize_to_ansi256",
       "theme_warning_uses_final_config",
       "thread_approve_guardian_denied_action",
-      "thread_archive",
       "thread_background_terminals_clean",
       "thread_blocks_direct_input",
       "thread_closed",
@@ -76045,7 +77655,6 @@
       "thread_event_snapshot_keeps_newer_request_user_input_pending_when_same_turn_has_queue",
       "thread_event_snapshot_keeps_pending_request_user_input",
       "thread_event_store_clear_active_turn_id_resets_cached_turn",
-      "thread_event_store_coalesces_only_adjacent_matching_agent_message_deltas",
       "thread_event_store_preserves_recap_progress_across_replay",
       "thread_event_store_rebase_preserves_hook_notifications",
       "thread_event_store_rebase_preserves_mcp_startup_notifications",
@@ -76073,7 +77682,6 @@
       "thread_lifecycle_params_forward_config_overrides_and_service_tier",
       "thread_lifecycle_params_forward_explicit_remote_cwd_override_for_remote_sessions",
       "thread_lifecycle_params_omit_cwd_without_remote_override_for_remote_sessions",
-      "thread_list",
       "thread_list_params",
       "thread_loaded_list",
       "thread_memory_mode_set",
@@ -76082,7 +77690,6 @@
       "thread_name",
       "thread_name_suggestion_requires_matching_thread_and_request",
       "thread_params_mode",
-      "thread_read",
       "thread_read_fallback_uses_active_permission_settings",
       "thread_read_session_state_does_not_reuse_primary_permission_profile",
       "thread_recap_loading_without_animations_snapshot",
@@ -76093,7 +77700,6 @@
       "thread_session_state_from_thread_response",
       "thread_session_state_from_thread_resume_response",
       "thread_session_state_from_thread_start_response",
-      "thread_set_name",
       "thread_setting_update_params_sync_model_and_default_reasoning",
       "thread_settings_for_test",
       "thread_settings_update",
@@ -76126,7 +77732,6 @@
       "thread_to_transcript_cells_shows_raw_reasoning_over_summary_when_enabled",
       "thread_tool_transport",
       "thread_turns_page",
-      "thread_unarchive",
       "thread_unavailable",
       "thread_unsubscribe",
       "thread_usage",
@@ -76175,7 +77780,6 @@
       "tmux_should_enable_modify_other_keys_for",
       "to_result",
       "toggle_action_sends_set_app_enabled_and_updates_label",
-      "toggle_density",
       "toggle_enabled",
       "toggle_fast_mode_can_be_assigned_without_default_binding",
       "toggle_fast_mode_conflicts_with_existing_main_surface_bindings",
@@ -76210,7 +77814,6 @@
       "tokens_in_context_window",
       "tool_approval_display_params_prefer_explicit_display_order",
       "tool_approval_meta",
-      "tool_call_history_cell",
       "tool_specs",
       "tool_suggestion",
       "tool_suggestion_meta_is_parsed_into_request_payload",
@@ -76220,12 +77823,10 @@
       "total_duration",
       "total_entries",
       "total_lines",
-      "track_agents_overview_notification",
       "track_in_flight_recap",
       "track_unified_exec_output_chunk",
       "track_unified_exec_process_begin",
       "track_unified_exec_process_end",
-      "tracked_thread_ids",
       "trailing_run_start",
       "trailing_separator_trimming_preserves_local_roots",
       "trailing_spaces_wrap_without_letting_the_cursor_escape",
@@ -76315,7 +77916,6 @@
       "try_draw_with_size",
       "try_dump_windows_clipboard_image",
       "try_handle_shortcut",
-      "try_list_models",
       "try_resolve_app_server_request",
       "try_set_approval_policy_on_config",
       "try_set_builtin_active_permission_profile_on_config",
@@ -76324,10 +77924,8 @@
       "tui_mut",
       "turn",
       "turn_complete_keeps_unified_exec_processes",
-      "turn_completed",
       "turn_completed_notification",
       "turn_id_matches",
-      "turn_interrupt",
       "turn_permission_profile",
       "turn_permissions_override_from_config",
       "turn_permissions_overrides",
@@ -76335,7 +77933,6 @@
       "turn_permissions_preserve_thread_permissions_without_override",
       "turn_permissions_send_legacy_sandbox_for_local_override",
       "turn_permissions_use_active_profile_when_available",
-      "turn_start",
       "turn_start_failure_is_shown_without_exiting",
       "turn_start_keeps_an_outstanding_approval_paused",
       "turn_start_preserves_active_mcp_startup_header",
@@ -76496,12 +78093,9 @@
       "update_status",
       "update_task_running_state",
       "update_thread_goal",
-      "update_viewport",
       "update_visible_history_rows",
       "uppercase_commands_accept_shift_only_terminal_events",
-      "upsert",
       "upsert_agent_picker_thread",
-      "upsert_preserves_first_seen_order",
       "upsert_thread",
       "url_hyperlinks_preserve_existing_highlight_styles",
       "url_link_shows_destination",
@@ -76732,7 +78326,6 @@
       "vt100_user_message_url_wrap_preserves_gutter_and_background",
       "vt100_zellij_raw_insert_keeps_soft_wrapped_tail_above_viewport",
       "vt100_zellij_raw_replay_keeps_overflowing_soft_wrapped_tail_above_viewport",
-      "wait_complete_lines",
       "wait_for_fd_ready",
       "wait_for_file",
       "wait_for_ready",
@@ -76747,7 +78340,6 @@
       "warn_invalid_terminal_title_items_once",
       "warning_event_adds_warning_history_cell",
       "warning_notifications_route_to_threads_when_thread_id_is_present",
-      "warning_notifications_without_threads_are_global",
       "warns_for_read_only",
       "warns_when_profile_can_write_elsewhere_but_not_cwd",
       "wave_only_paints_while_a_sweep_is_crossing_the_composer",
@@ -76807,7 +78399,6 @@
       "with_border_internal",
       "with_border_with_inner_width",
       "with_chat_widget_frame",
-      "with_collaboration_modes",
       "with_height",
       "with_initial_and_subsequent_indents",
       "with_options",
@@ -76816,7 +78407,6 @@
       "with_pending_and_remote",
       "with_remote_cwd_override",
       "with_renderables",
-      "with_restored",
       "with_screen_size_and_cursor_position",
       "with_screen_size_and_cursor_position_for_test",
       "with_scrollback",
@@ -76961,7 +78551,6 @@
       "wt_session_promotes_ansi16_to_truecolor_for_diffs",
       "wt_session_promotes_unknown_color_level_to_truecolor",
       "xyz_to_lab",
-      "yank",
       "yank_current_line",
       "yank_line_range",
       "yank_range",
@@ -76972,6 +78561,11 @@
       "zellij_only_uses_full_screen_insertion_for_terminal_wrapped_history"
     ],
     "symbolNamesOnlyInLime": [
+      "AgentPicker",
+      "AgentPickerAction",
+      "AgentPickerEntry",
+      "AgentsOverviewAction",
+      "AgentsOverviewInputMode",
       "AppAction",
       "AppServerResponse",
       "CodeLineHighlighter",
@@ -76983,6 +78577,8 @@
       "DiffLineKind",
       "EntryKind",
       "EntryStatus",
+      "EventContext",
+      "EventDispatch",
       "ExecOptions",
       "ExecResult",
       "ListKind",
@@ -76990,32 +78586,53 @@
       "ModelPicker",
       "ModelPickerAction",
       "ModelSelection",
+      "MultiAgentHistoryCell",
       "PagerAction",
       "PagerOverlay",
       "PendingInteraction",
       "PickerAction",
       "PickerLoadEvent",
       "PickerTranscriptPager",
+      "ReconnectedSession",
       "Renderer",
       "SettingsCommand",
       "StatusFacts",
       "TableRow",
-      "TerminalGuard",
       "ThreadPage",
       "TranscriptEntry",
       "TuiOptions",
-      "TuiTerminal",
+      "ViewportState",
       "active_bottom_pane_receives_input_before_the_chat_composer",
       "active_permission_profile",
       "active_permission_profile_requires_a_non_empty_id",
       "active_turn_elapsed",
       "active_turn_status_does_not_overflow_a_tiny_terminal",
       "active_turn_status_precedes_canonical_queue_and_composer",
+      "activity",
       "adaptive_wrap_keeps_url_token_intact",
       "add_notes",
+      "adjacent_agent",
+      "agent_picker_empty",
+      "agent_picker_footer",
+      "agent_picker_title",
+      "agents_overview_buffers_latest_notification_during_refresh",
+      "agents_overview_controls_cover_all_product_locales",
+      "agents_overview_footer",
+      "agents_overview_group_bubbles_child_status_and_hides_ephemeral_threads",
+      "agents_overview_group_label",
+      "agents_overview_input_prefix",
+      "agents_overview_refresh_coalesces_requests_and_exposes_codex_state_fields",
+      "agents_overview_refresh_ignores_stale_generation",
+      "agents_overview_refresh_retains_locally_observed_threads",
+      "agents_overview_search_prefix",
+      "agents_overview_task_statuses_cover_all_product_locales",
+      "agents_overview_title",
+      "agents_slash_command_opens_the_agents_overview",
       "aliases_resolve_to_extended_syntaxes",
+      "alt_right_switches_to_the_next_agent_in_spawn_order",
       "alt_up_does_not_offer_a_lossy_or_overwriting_queue_edit",
       "alt_up_requests_server_delete_before_restoring_the_last_queued_input",
+      "alternate_screen_round_trip_restores_inline_viewport",
       "an_open_popup_owns_escape_before_active_turn_interruption",
       "ansi256_palette_contains_cube_and_grayscale",
       "ansi_alpha_markers_map_to_terminal_colors",
@@ -77023,6 +78640,7 @@
       "append_item_preview_lines",
       "append_prompt_history",
       "apply_notification",
+      "apply_refresh",
       "apply_thread_page",
       "apply_threads",
       "approval_hides_an_open_slash_command_popup",
@@ -77032,27 +78650,42 @@
       "archive_failure_preserves_selected_thread_and_allows_retry",
       "archive_request_is_deduplicated_until_completion",
       "archive_success_removes_thread_and_clamps_selection",
-      "archive_thread",
       "assistant_item",
       "assistant_markdown_is_rendered_at_the_transcript_boundary",
       "attach",
       "attachments_are_ordered_and_restorable",
+      "background_thread_notifications_do_not_mutate_the_current_projection",
+      "backtab_cycles_server_collaboration_modes_only_when_idle",
       "bare_urls_are_linked_but_code_and_unsafe_schemes_are_not",
       "begin_load",
+      "begin_refresh",
       "blank_line",
       "borrowed_range",
       "bounded_command_output_lines",
+      "can_accept_direct_input",
       "can_restore_submission",
       "cancel_response",
+      "capture_current_thread_input",
       "changed_width_is_debounced_and_due_is_observable",
+      "clear_exec_approval_item",
+      "clear_patch_approval_item",
       "client_message_id",
+      "closing_thread_clears_all_prompt_categories",
+      "codex_agents_defaults_are_stable",
       "codex_buffer_replacement_preserves_cursor_only_at_valid_boundaries",
       "codex_cursor_pos_api_keeps_cursor_visible_in_a_scrolled_viewport",
+      "codex_input_dispatches_emacs_style_editor_bindings",
       "codex_style_effort_and_permission_shortcuts_are_not_inserted_into_draft",
+      "codex_word_boundaries_handle_cjk_and_separator_runs",
+      "codex_word_delete_and_line_kill_preserve_unicode_boundaries",
       "collab_agent_status_label",
       "collab_agent_summary_keeps_requested_model_effort_and_prompt",
       "collab_entry_status",
+      "collab_resume_projection_keeps_resume_result",
       "collab_summary",
+      "collab_summary_for_item",
+      "collab_wait_projection_keeps_per_agent_results",
+      "collaboration_mode_statuses_cover_all_product_locales",
       "collect_metrics",
       "collects_option_and_freeform_questions_before_responding",
       "color_distance",
@@ -77075,6 +78708,7 @@
       "compact_text",
       "comparable_path",
       "complete_slash_command",
+      "completed_agent",
       "completed_agent_item_replaces_streaming_delta",
       "completed_command_item_replaces_live_output_with_canonical_output",
       "configure_external_editor",
@@ -77084,6 +78718,8 @@
       "constrained_tables_wrap_without_exceeding_available_width",
       "content_spans",
       "continuation_style",
+      "control",
+      "control_and_alt_characters_are_not_plain_text",
       "copy_last_response_with",
       "copy_shortcut_and_slash_command_do_not_become_turn_input",
       "copy_uses_last_canonical_agent_markdown_and_reports_outcome",
@@ -77097,6 +78733,7 @@
       "ctrl_t_opens_a_shared_transcript_pager_and_starts_loading_when_needed",
       "ctrl_t_opens_transcript_without_copying_or_mutating_conversation_state",
       "current_transcript_page_size",
+      "cursor_anchor",
       "cursor_and_backspace_respect_extended_graphemes",
       "cwd_label",
       "cycle_permission_profile",
@@ -77113,23 +78750,34 @@
       "diff_keeps_independent_multiline_syntax_state_for_old_and_new_files",
       "diff_uses_file_extension_for_syntax_highlighting",
       "disconnected_edit_preserves_draft_and_cancels_history_preview",
+      "disconnected_editing_preserves_graphemes_and_cursor_boundaries",
       "disconnected_enter_and_tab_leave_input_available_for_reconnect",
+      "disconnected_input_edits_locally_without_submit_or_queue",
+      "disconnected_paste_and_ctrl_c_are_handled_at_the_app_boundary",
+      "disconnected_repeat_key_is_editable_but_never_submits",
       "discovers_punctuated_and_balanced_web_urls",
+      "dispatch_connected_input",
+      "dispatch_disconnected_input",
       "display_change_path",
       "display_path",
       "down_selects_session_decision",
+      "drain_snapshot",
       "dump_windows_clipboard_image",
       "dynamic_entry_status",
       "dynamic_summary",
+      "each_interactive_request_is_pending_until_resolved",
       "edit_draft",
       "edit_draft_with_command",
       "edit_hint_requires_a_lossless_composer_projection",
       "edit_queued_input_hint",
       "editor_failure_is_returned_without_leaking_the_tempfile",
+      "editor_word_and_kill_shortcuts_share_textarea_semantics",
       "edits_draft_after_closing_the_tempfile_handle",
       "effort_label",
       "elapsed_time_matches_codex_compact_format",
+      "elicitation",
       "ellipsis_inherits_the_last_visible_span_style",
+      "empty_catalog_has_no_mode",
       "empty_notes_submit_the_selected_option",
       "empty_queries_and_missing_selection_do_not_match",
       "empty_threads_produce_an_empty_canonical_transcript",
@@ -77137,10 +78785,13 @@
       "end",
       "ensure_prefix",
       "enter_accepts_the_selected_command_decision",
+      "enter_alternate_screen",
       "enter_executes_immediate_commands_and_completes_argument_commands",
       "escape_cancels_instead_of_approving",
       "escape_interrupts_only_an_active_turn_and_preserves_the_draft",
       "escape_returns_an_empty_fail_closed_response",
+      "event_is_notice_matches_warning_notifications",
+      "evicted_request_does_not_replay",
       "expanded_transcript_uses_canonical_entries_and_stays_bounded",
       "exposes_all_product_locale_tags",
       "fail_closed",
@@ -77170,17 +78821,21 @@
       "finish_link",
       "finish_row",
       "finish_table",
+      "first_viewport_change_clears_from_new_area_when_old_area_is_empty",
       "first_width_sets_baseline_without_reflow",
       "fixed_elapsed_test_backend_matches_wide_and_narrow_layouts",
+      "footer_renders_the_active_agent_label",
       "for_composer",
       "forced_width_hyperlinks_preserve_wide_and_halfwidth_cells",
       "format_line",
       "format_patch",
       "from_name",
+      "from_navigation",
       "from_server_request",
-      "handle_terminal_event",
+      "handle_transcript_pager_event",
       "hard_wrap",
       "hard_wrap_spans",
+      "has_more_pages",
       "has_pending_images",
       "highlight_line",
       "highlighter_for",
@@ -77200,21 +78855,32 @@
       "image_label",
       "image_shortcut_attaches_and_allows_image_only_submission",
       "initialize_params",
+      "inline_viewport_shrinks_into_terminal_bounds",
+      "inline_viewport_stays_bottom_aligned_when_terminal_grows",
+      "input_mode",
       "insert",
       "install_panic_hook",
       "interrupt_hint",
+      "interrupted_sub_agent_activity_stops_running_liveness",
       "invalid_percent_encoding_stays_visible",
       "invalidate_thread_list",
+      "invalidate_viewport_sets_repaint_marker",
       "is_absolute_path",
       "is_no_active_turn_error",
+      "is_searching",
       "is_table_start",
       "is_transcript",
       "item_kinds_have_distinct_terminal_layouts",
       "item_result_fields_become_structured_display_summaries",
+      "item_started_clears_command_and_file_approval_by_item_id",
       "keeps_link_destinations_visible_and_underlined",
       "key",
+      "key_label",
+      "key_release_does_not_insert_or_submit",
       "language_for_path",
       "languages_for_change_path",
+      "leave_alternate_screen",
+      "leaving_alternate_without_saved_area_is_a_noop",
       "len",
       "line_end",
       "line_navigation_stays_inside_the_current_logical_line",
@@ -77223,10 +78889,10 @@
       "lines_with_locale",
       "lines_with_locale_unbounded",
       "lines_with_locale_with_width",
+      "list_collaboration_modes",
       "list_models",
       "list_permission_profiles",
       "list_queued_submissions",
-      "list_thread_page",
       "load_history",
       "load_session_transcript_with_handle",
       "load_thread_page_with_handle",
@@ -77240,12 +78906,15 @@
       "map_owned_range",
       "maps_windows_temp_paths_for_wsl",
       "mark_preview_loading",
+      "mask",
       "matching_path_labels_collapse_but_descriptive_labels_remain",
       "mcp_entry_status",
       "mcp_summary",
       "merge_canonical_items",
       "metadata_line",
+      "mode_selection_prefers_default_and_cycles_in_server_order",
       "model",
+      "model_catalog_preserves_server_order",
       "model_label",
       "model_route_requires_model_and_provider_together",
       "modified_enter_adds_a_newline_and_plain_enter_submits",
@@ -77253,6 +78922,9 @@
       "move_line_end",
       "move_line_start",
       "move_right",
+      "multi_agent",
+      "multi_agent_titles_are_localized_at_the_render_boundary",
+      "multi_agent_titles_cover_all_product_locales",
       "multiline_python_preserves_content",
       "multiline_wrap_returns_owned_lines",
       "multiple_hunks_use_a_vertical_ellipsis_instead_of_protocol_headers",
@@ -77262,16 +78934,25 @@
       "nearest_ansi256_color_is_indexed",
       "nearest_char_boundary",
       "nested_lists_keep_a_scannable_hierarchy",
+      "new_task",
+      "next_collaboration_mode",
       "next_grapheme_end",
+      "next_grapheme_end_at",
       "next_page_is_hidden_while_loading",
       "no_questions",
       "non_breaking_spaces_stay_inside_the_word",
+      "non_empty",
       "non_interactive_responses_fail_closed_for_every_supported_interaction",
       "normalize_hash_location",
       "normalize_line_column",
+      "normalize_paste",
       "normalize_path",
       "not_set_label",
+      "note_outbound_response",
+      "observe_item",
+      "observe_notification",
       "older_and_newer_matches_are_case_insensitive_and_bounded",
+      "omit_completed_agent_deltas_removes_only_replaced_streams",
       "one_column_wrap_uses_a_visible_placeholder_for_wide_graphemes",
       "only_safe_web_destinations_receive_osc8",
       "open_model_picker",
@@ -77286,9 +78967,17 @@
       "other_option",
       "other_option_enabled",
       "other_option_is_only_added_when_the_contract_enables_it",
+      "outbound_response_clears_only_the_matching_request",
       "output_omitted_bytes",
       "output_omitted_lines",
       "oversized_input_falls_back_without_highlighting",
+      "overview_codex_shortcuts_dispatch_rename_stop_and_resume",
+      "overview_escape_and_refresh_are_explicit_actions",
+      "overview_groups_and_selects_current_thread",
+      "overview_rename_accepts_shifted_characters",
+      "overview_render_is_bounded_on_wide_and_narrow_terminals",
+      "overview_render_shows_localized_new_task_input_without_overflow",
+      "overview_search_filters_and_enter_selects",
       "own_lines",
       "owned_line",
       "page_navigation_matches_codex_shape_and_reaches_the_next_cursor",
@@ -77313,8 +79002,11 @@
       "persist_prompt",
       "persist_temp_png",
       "persisted_items_share_the_live_projection_shape",
+      "picker",
       "picker_controls_match_codex_resume_shortcut_shapes",
+      "picker_copy_and_status_render_for_every_product_locale",
       "picker_empty",
+      "picker_escape_cancels_and_narrow_render_stays_bounded",
       "picker_escape_cancels_and_render_stays_bounded",
       "picker_filters_ephemeral_threads_and_navigates",
       "picker_filters_hidden_models_and_selects_default_first",
@@ -77322,10 +79014,13 @@
       "picker_only_reloads_for_query_mutations",
       "picker_render_is_bounded_for_narrow_unicode_terminal",
       "picker_search_filters_preview_name_path_and_thread_id",
+      "picker_selects_rows_in_stable_navigation_order",
+      "picker_subtitle_mentions_codex_shortcuts",
       "picker_title",
       "plain",
       "plan_and_diff_notifications_replace_stable_projection_entries",
       "plan_marker",
+      "plan_mode",
       "plan_statuses_use_stable_checkbox_styles",
       "pop_style",
       "preserves_multiline_and_empty_input",
@@ -77366,12 +79061,12 @@
       "recognizes_unix_windows_unc_and_file_url_paths",
       "reconnect_session",
       "refresh_queued_submissions",
-      "reject_raw_server_request",
       "rejects_unterminated_quotes",
       "remove_last",
       "remove_last_pending_image",
       "remove_next_grapheme",
       "remove_previous_grapheme",
+      "rename",
       "rename_uses_destination_extension_for_syntax_highlighting",
       "render_composer",
       "render_markdown_lines_with_width",
@@ -77385,16 +79080,21 @@
       "renders_encoded_paths_and_location_suffixes_without_filesystem_access",
       "renders_headings_emphasis_code_lists_quotes_and_links",
       "renders_tables_as_aligned_terminal_columns",
+      "repeated_alternate_entry_preserves_original_inline_area",
       "replace",
       "replace_composer",
       "replace_entry",
       "replace_text",
+      "replace_threads",
       "request_unarchive_for_selected_session",
+      "request_user_input",
       "required_test_path",
       "reset_discards_cursor_and_scan_progress",
       "reset_history_navigation",
+      "resize_keeps_non_bottom_aligned_viewport_position",
       "resize_recomputes_scroll_bounds_and_tiny_areas_do_not_panic",
       "resolve_editor_executable",
+      "resolved",
       "respond",
       "respond_current_time",
       "response_for_selected",
@@ -77403,6 +79103,7 @@
       "restore_queued_submission_for_edit",
       "restore_request_is_deduplicated_and_returns_canonical_target",
       "restore_terminal_state",
+      "restore_thread_input",
       "resume_controls_hint",
       "resume_density_label",
       "resume_empty",
@@ -77412,8 +79113,10 @@
       "resume_label",
       "resume_loading",
       "resume_picker_controls_cover_all_product_locales",
+      "resume_picker_owns_input_until_cancelled",
       "resume_picker_title",
       "resume_search_placeholder",
+      "resume_slash_command_opens_the_shared_picker_action",
       "resume_sort_label",
       "resume_status_label",
       "resume_title",
@@ -77422,6 +79125,7 @@
       "resume_transcript_hint",
       "resume_transcript_loading",
       "rgba_clipboard_pixels_encode_as_png",
+      "row",
       "run_exec",
       "run_exec_with_config",
       "run_exec_with_session",
@@ -77444,9 +79148,12 @@
       "selected_option_label",
       "selected_rows_use_codex_marker_and_bold_cyan_style",
       "selected_thread_id",
+      "server_requests_expose_their_thread_target",
+      "server_resolution_clears_request_identity_and_category",
       "session_id",
       "session_picker_action_keeps_resume_and_fork_selection_distinct",
       "session_target_uses_thread_id_when_path_is_not_available",
+      "set_collaboration_modes",
       "set_cwd",
       "set_locale",
       "set_permission_profiles",
@@ -77455,16 +79162,20 @@
       "set_thread_id",
       "set_transcript",
       "set_transcript_preview",
+      "settings_updates_keep_the_active_collaboration_mode_in_sync",
       "settle_running_entries",
+      "shifted_characters_are_plain_text",
       "shortcuts_cycle_codex_order_and_recover_unknown_values",
       "should_load_more",
       "slash_command_description",
       "slash_command_descriptions_cover_all_product_locales",
       "slash_popup_completes_argument_commands_and_reopens_after_cancelled_input_changes",
       "slash_popup_filters_and_executes_immediate_commands",
+      "snapshot_has_pending_interactive_request_matches_user_input",
       "soft_break_spaces_hang_on_the_previous_row",
       "spawn_archive_request",
       "spawn_preview_load",
+      "spawn_request_summary_preserves_model_and_effort",
       "spawn_thread_load",
       "spawn_transcript_load",
       "spawn_unarchive_request",
@@ -77477,27 +79188,37 @@
       "start_turn_input",
       "start_turn_records_active_turn_from_request_response",
       "state_label",
+      "stateful_render_clears_rows_outside_the_current_draft",
       "static_overlay_wraps_scrolls_jumps_and_closes",
       "status_command_opens_an_ephemeral_pager_and_consumes_input_until_closed",
+      "status_grouping",
       "status_line",
       "status_overlay_localizes_an_empty_projection_status_as_ready",
       "status_overlay_uses_current_values_without_a_second_session_model",
       "status_pager_labels_cover_all_product_locales",
       "status_pager_owns_the_frame_and_renders_current_session_facts",
+      "status_summary_text",
       "status_text",
       "status_title",
       "stdio_config",
       "stdio_config_appends_host_arguments_after_the_current_runtime_default",
       "steer_turn_input",
+      "stop",
+      "stopped_activity_does_not_revive_after_liveness_terminal_state",
       "stream_reflow_request_is_drained_once",
       "strips_osc8_without_changing_visible_text",
       "styles",
-      "sub_agent_status",
+      "sub_agent_activity_updates_navigation_liveness_and_label",
+      "subagent_activity_marks_the_thread_parent_owned_before_resume",
+      "subagents_slash_command_opens_the_codex_named_picker",
       "submission",
       "submission_input",
       "submission_input_keeps_codex_image_then_text_order",
       "submission_preview_lines",
       "submission_summary",
+      "sync_default_collaboration_mode",
+      "sync_view_state",
+      "sync_viewport",
       "syntax_highlighted_diff_wraps_without_losing_text_or_width",
       "systemic_compact_fragmentation_uses_stacked_records",
       "tab_queues_a_follow_up_without_submitting_the_active_turn",
@@ -77506,10 +79227,13 @@
       "tabs_and_blank_context_lines_preserve_diff_geometry",
       "tag",
       "take_pending_images",
+      "take_refresh_pending",
       "take_submission",
+      "take_thread_event_snapshot",
       "temporary_clipboard_image_uses_png_suffix_and_bytes",
       "terminal_copy",
       "terminal_mut",
+      "terminal_screen_text",
       "test_backend_marks_markdown_links_with_osc8",
       "test_backend_renders_bounded_command_output_marker",
       "test_backend_renders_canonical_queue_between_transcript_and_composer",
@@ -77528,15 +79252,27 @@
       "textwrap_options",
       "theme",
       "thread",
+      "thread_event_store_does_not_replay_server_resolved_request",
+      "thread_event_store_drops_requests_when_turn_completes_or_thread_closes",
+      "thread_event_store_preserves_requests_while_evicting_old_notifications",
+      "thread_event_store_request_capacity_fails_closed_without_evicting_requests",
+      "thread_event_store_tracks_delta_bytes_after_coalescing",
       "thread_line_with_preview",
+      "thread_notifications_route_to_their_thread",
       "thread_pages_append_unique_threads_and_keep_the_next_cursor",
       "thread_state",
       "thread_to_transcript_entries",
       "tmux_and_local_failures_fall_back_to_osc52",
       "tmux_requires_clipboard_forwarding_capability",
+      "to_mode",
+      "to_mode_preserves_an_explicit_effort_clear",
+      "to_mode_uses_mask_values_and_fallbacks",
+      "to_tui_event",
       "toggle_filter",
+      "toggle_grouping",
       "toggle_sort",
       "too_many_lines_fall_back_without_highlighting",
+      "tool_call_history_cells_cover_collaboration_lifecycle",
       "trailing_newline_does_not_create_a_phantom_line",
       "transcript",
       "transcript_load_event_records_loaded_and_failed_states",
@@ -77546,6 +79282,7 @@
       "transcript_page_size",
       "transcript_page_size_tracks_resize",
       "transcript_pager_footer",
+      "transcript_pager_is_open",
       "transcript_pager_renders_canonical_entries_scrolls_and_closes_with_ctrl_t",
       "transcript_preview_text",
       "transcript_scroll_offset",
@@ -77556,6 +79293,7 @@
       "truncate_display",
       "truncation_preserves_display_width",
       "tui_client_uses_stable_identity_and_v2_capabilities",
+      "turn_completion_clears_all_turn_indexed_prompts",
       "turn_completion_clears_the_active_status_timer",
       "turn_completion_inserts_missing_canonical_items_before_known_following_items",
       "turn_completion_repairs_missing_streamed_items_from_canonical_turn",
@@ -77563,7 +79301,6 @@
       "turn_label",
       "turn_status",
       "turn_terminal_status_settles_in_progress_items",
-      "unarchive_thread",
       "unicode_cursor_and_grapheme_deletion_match_codex_textarea_semantics",
       "unicode_labels_remain_single_stable_row",
       "unified_diff_uses_stable_line_numbers_and_gutter_signs",
@@ -77571,22 +79308,32 @@
       "unknown_fenced_language_preserves_plain_code",
       "unknown_language_falls_back_to_plain_text",
       "unselected_dim_rows_keep_numbering_and_dim_style",
+      "unsupported_requests_return_for_rejection",
       "untitled_conversation",
+      "update_collaboration_mode",
+      "update_cursor_anchor",
+      "update_inline",
+      "update_rows",
       "update_settings",
       "updated_label",
       "upsert_queued_submission",
       "url_detection_rejects_file_paths",
+      "user_input_request",
+      "user_input_requests_are_removed_in_fifo_order_per_turn",
       "user_input_text",
       "user_item",
       "user_visible_header_labels_cover_all_product_locales",
       "validate_model_route",
+      "viewport_area",
       "visible_buffer_lines",
       "visible_models",
+      "visible_rows",
       "visible_terminal_text",
       "visible_terminal_text_ignores_cursor_controls",
       "wait_for_ledger_kind_and_scenario",
       "wait_for_marker",
       "wait_for_marker_after",
+      "wait_for_screen_marker",
       "width_allocation_preserves_compact_columns_after_token_heavy_columns",
       "windows_path_to_wsl",
       "with_status_suffix",

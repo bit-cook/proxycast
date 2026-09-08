@@ -2,28 +2,31 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use app_server_client::{
-    ClientSession, RemoteTransportConfig, RequestHandle, SessionEvent, StdioTransportConfig,
+    AppServerEvent, ClientSession, RemoteTransportConfig, RequestHandle, StdioTransportConfig,
 };
 use app_server_protocol::protocol::v2::{
-    CurrentTimeReadResponse, METHOD_PERMISSION_PROFILE_LIST, METHOD_PROMPT_HISTORY_APPEND,
-    METHOD_PROMPT_HISTORY_READ, METHOD_THREAD_ARCHIVE, METHOD_THREAD_QUEUE_ADD,
-    METHOD_THREAD_QUEUE_DELETE, METHOD_THREAD_QUEUE_LIST, METHOD_THREAD_READ, METHOD_THREAD_RESUME,
-    METHOD_THREAD_SETTINGS_UPDATE, METHOD_THREAD_START, METHOD_TURN_INTERRUPT, METHOD_TURN_START,
-    METHOD_TURN_STEER, ModelListParams, ModelListResponse, PermissionProfileListParams,
+    CollaborationModeListParams, CollaborationModeListResponse, CollaborationModeMask,
+    CurrentTimeReadResponse, ModelListParams, ModelListResponse, PermissionProfileListParams,
     PermissionProfileListResponse, PromptHistoryAppendParams, PromptHistoryAppendResponse,
     PromptHistoryReadParams, PromptHistoryReadResponse, QueuedSubmission, ServerRequest,
     ThreadForkParams, ThreadForkResponse, ThreadListParams, ThreadListResponse,
     ThreadQueueAddParams, ThreadQueueAddResponse, ThreadQueueDeleteParams,
     ThreadQueueDeleteResponse, ThreadQueueListParams, ThreadQueueListResponse, ThreadReadParams,
-    ThreadReadResponse, ThreadResumeParams, ThreadResumeResponse, ThreadSettingsUpdateParams,
-    ThreadSettingsUpdateResponse, ThreadStartParams, ThreadStartResponse, ThreadUnarchiveParams,
+    ThreadReadResponse, ThreadResumeParams, ThreadResumeResponse, ThreadSetNameParams,
+    ThreadSetNameResponse, ThreadSettingsUpdateParams, ThreadSettingsUpdateResponse,
+    ThreadStartParams, ThreadStartResponse, ThreadStartSource, ThreadUnarchiveParams,
     ThreadUnarchiveResponse, TurnInterruptParams, TurnInterruptResponse, TurnStartParams,
     TurnStartResponse, TurnSteerParams, TurnSteerResponse, UserInput,
+    METHOD_COLLABORATION_MODE_LIST, METHOD_PERMISSION_PROFILE_LIST, METHOD_PROMPT_HISTORY_APPEND,
+    METHOD_PROMPT_HISTORY_READ, METHOD_THREAD_ARCHIVE, METHOD_THREAD_QUEUE_ADD,
+    METHOD_THREAD_QUEUE_DELETE, METHOD_THREAD_QUEUE_LIST, METHOD_THREAD_READ, METHOD_THREAD_RESUME,
+    METHOD_THREAD_SETTINGS_UPDATE, METHOD_THREAD_START, METHOD_TURN_INTERRUPT, METHOD_TURN_START,
+    METHOD_TURN_STEER,
 };
 use app_server_protocol::{
-    ClientCapabilities, ClientInfo, InitializeParams, JsonRpcError, JsonRpcRequest, RequestId,
+    ClientCapabilities, ClientInfo, InitializeParams, JsonRpcError, RequestId,
 };
 use serde_json::Value;
 
@@ -87,21 +90,10 @@ impl AppServerSession {
         cwd: PathBuf,
         model: Option<String>,
         model_provider: Option<String>,
-    ) -> Result<String> {
-        let cwd = cwd.to_string_lossy().into_owned();
-        let params = ThreadStartParams {
-            cwd: Some(cwd.clone()),
-            runtime_workspace_roots: Some(vec![cwd]),
-            model,
-            model_provider,
-            experimental_raw_events: false,
-            ..ThreadStartParams::default()
-        };
-        let response: ThreadStartResponse = self
-            .request_handle
-            .request(METHOD_THREAD_START, params)
-            .await
-            .context("failed to start App Server thread")?;
+    ) -> Result<ThreadStartResponse> {
+        let response = self
+            .start_thread_with_session_start_source(cwd, model, model_provider, None)
+            .await?;
         let thread_id = response.thread.id.clone();
         self.session_id = Some(response.thread.session_id.clone());
         self.thread_id = Some(thread_id.clone());
@@ -109,7 +101,33 @@ impl AppServerSession {
             .active_permission_profile
             .as_ref()
             .and_then(permission_profile_id);
-        Ok(thread_id)
+        Ok(response)
+    }
+
+    /// Start a thread without changing the interactive session target.
+    pub(crate) async fn start_thread_with_session_start_source(
+        &self,
+        cwd: PathBuf,
+        model: Option<String>,
+        model_provider: Option<String>,
+        session_start_source: Option<ThreadStartSource>,
+    ) -> Result<ThreadStartResponse> {
+        let cwd = cwd.to_string_lossy().into_owned();
+        self.request_handle
+            .request(
+                METHOD_THREAD_START,
+                ThreadStartParams {
+                    cwd: Some(cwd.clone()),
+                    runtime_workspace_roots: Some(vec![cwd]),
+                    model,
+                    model_provider,
+                    session_start_source,
+                    experimental_raw_events: false,
+                    ..ThreadStartParams::default()
+                },
+            )
+            .await
+            .context("failed to start App Server thread")
     }
 
     pub(crate) async fn resume_thread(
@@ -176,10 +194,7 @@ impl AppServerSession {
     }
 
     #[allow(dead_code)]
-    pub(crate) async fn list_thread_page(
-        &self,
-        params: ThreadListParams,
-    ) -> Result<ThreadListResponse> {
+    pub(crate) async fn thread_list(&self, params: ThreadListParams) -> Result<ThreadListResponse> {
         self.request_handle
             .request(
                 app_server_protocol::protocol::v2::METHOD_THREAD_LIST,
@@ -200,7 +215,7 @@ impl AppServerSession {
     }
 
     #[allow(dead_code)]
-    pub(crate) async fn read_thread(
+    pub(crate) async fn thread_read(
         &self,
         thread_id: impl Into<String>,
         include_turns: bool,
@@ -218,7 +233,7 @@ impl AppServerSession {
     }
 
     #[allow(dead_code)]
-    pub(crate) async fn archive_thread(&self, thread_id: impl Into<String>) -> Result<()> {
+    pub(crate) async fn thread_archive(&self, thread_id: impl Into<String>) -> Result<()> {
         self.request_handle
             .request(
                 METHOD_THREAD_ARCHIVE,
@@ -231,8 +246,26 @@ impl AppServerSession {
             .context("failed to archive App Server thread")
     }
 
+    pub(crate) async fn thread_set_name(
+        &self,
+        thread_id: impl Into<String>,
+        name: String,
+    ) -> Result<()> {
+        self.request_handle
+            .request(
+                app_server_protocol::protocol::v2::METHOD_THREAD_NAME_SET,
+                ThreadSetNameParams {
+                    thread_id: thread_id.into(),
+                    name,
+                },
+            )
+            .await
+            .map(|_: ThreadSetNameResponse| ())
+            .context("failed to set App Server thread name")
+    }
+
     #[allow(dead_code)]
-    pub(crate) async fn unarchive_thread(
+    pub(crate) async fn thread_unarchive(
         &self,
         thread_id: impl Into<String>,
     ) -> Result<ThreadUnarchiveResponse> {
@@ -301,6 +334,42 @@ impl AppServerSession {
             cursor = Some(next_cursor);
         }
         bail!("model list pagination exceeded 16 pages")
+    }
+
+    /// Discover optional collaboration modes from the App Server catalog.
+    ///
+    /// A server may legitimately omit this experimental method. Callers treat
+    /// an error as an empty catalog and keep the ordinary model picker usable.
+    pub(crate) async fn list_collaboration_modes(&self) -> Result<Vec<CollaborationModeMask>> {
+        let response: CollaborationModeListResponse = self
+            .request_handle
+            .request(
+                METHOD_COLLABORATION_MODE_LIST,
+                CollaborationModeListParams {},
+            )
+            .await
+            .context("failed to list App Server collaboration modes")?;
+        Ok(response.data)
+    }
+
+    pub(crate) async fn update_collaboration_mode(
+        &self,
+        collaboration_mode: agent_protocol::CollaborationMode,
+    ) -> Result<()> {
+        let thread_id = self.thread_id()?.to_string();
+        let _: ThreadSettingsUpdateResponse = self
+            .request_handle
+            .request(
+                METHOD_THREAD_SETTINGS_UPDATE,
+                ThreadSettingsUpdateParams {
+                    thread_id,
+                    collaboration_mode: Some(collaboration_mode),
+                    ..ThreadSettingsUpdateParams::default()
+                },
+            )
+            .await
+            .context("failed to update App Server collaboration mode")?;
+        Ok(())
     }
 
     pub(crate) async fn list_queued_submissions(
@@ -433,6 +502,26 @@ impl AppServerSession {
         Ok(response.turn.id)
     }
 
+    pub(crate) async fn turn_start(
+        &self,
+        thread_id: impl Into<String>,
+        input: Vec<UserInput>,
+    ) -> Result<String> {
+        let response: TurnStartResponse = self
+            .request_handle
+            .request(
+                METHOD_TURN_START,
+                TurnStartParams {
+                    thread_id: thread_id.into(),
+                    input,
+                    ..TurnStartParams::default()
+                },
+            )
+            .await
+            .context("failed to start background turn")?;
+        Ok(response.turn.id)
+    }
+
     pub(crate) async fn interrupt(&self, turn_id: &str) -> Result<()> {
         let thread_id = self.thread_id()?.to_string();
         let _: TurnInterruptResponse = self
@@ -446,6 +535,25 @@ impl AppServerSession {
             )
             .await
             .context("failed to interrupt turn")?;
+        Ok(())
+    }
+
+    pub(crate) async fn turn_interrupt(
+        &self,
+        thread_id: impl Into<String>,
+        turn_id: impl Into<String>,
+    ) -> Result<()> {
+        let _: TurnInterruptResponse = self
+            .request_handle
+            .request(
+                METHOD_TURN_INTERRUPT,
+                TurnInterruptParams {
+                    thread_id: thread_id.into(),
+                    turn_id: turn_id.into(),
+                },
+            )
+            .await
+            .context("failed to interrupt background turn")?;
         Ok(())
     }
 
@@ -507,7 +615,7 @@ impl AppServerSession {
         Ok(response.deleted)
     }
 
-    pub(crate) async fn next_event(&mut self) -> Option<SessionEvent> {
+    pub(crate) async fn next_event(&mut self) -> Option<AppServerEvent> {
         self.session.next_event().await
     }
 
@@ -554,20 +662,6 @@ impl AppServerSession {
             )
             .await
             .context("failed to reject unsupported server request")
-    }
-
-    pub(crate) async fn reject_raw_server_request(&self, request: JsonRpcRequest) -> Result<()> {
-        let method = request.method.clone();
-        self.request_handle
-            .reject(
-                request.id,
-                JsonRpcError::new(
-                    app_server_protocol::error_codes::METHOD_NOT_FOUND,
-                    format!("TUI client does not support server request {method}"),
-                ),
-            )
-            .await
-            .context("failed to reject unknown server request")
     }
 
     pub(crate) async fn shutdown(self) -> Result<()> {

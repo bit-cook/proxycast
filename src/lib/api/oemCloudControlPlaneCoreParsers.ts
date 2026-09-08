@@ -1,6 +1,7 @@
 import type {
   OemCloudAuthCatalogProvider,
   OemCloudAuthPolicy,
+  OemCloudAppServerConfig,
   OemCloudCurrentSession,
   OemCloudCustomScene,
   OemCloudDesktopAuthSessionStartResponse,
@@ -114,7 +115,9 @@ export function parseAuthPolicy(value: unknown): OemCloudAuthPolicy {
   };
 }
 
-export function parsePublicAuthCatalog(value: unknown): OemCloudPublicAuthCatalog {
+export function parsePublicAuthCatalog(
+  value: unknown,
+): OemCloudPublicAuthCatalog {
   const record = isRecord(value) ? value : {};
   return {
     providers: Array.isArray(record.items)
@@ -183,7 +186,9 @@ export function parseProviderOfferSummary(
   };
 }
 
-export function parseProviderOfferDetail(value: unknown): OemCloudProviderOfferDetail {
+export function parseProviderOfferDetail(
+  value: unknown,
+): OemCloudProviderOfferDetail {
   const summary = parseProviderOfferSummary(value);
   const access = isRecord((value as Record<string, unknown>).access)
     ? ((value as Record<string, unknown>).access as Record<string, unknown>)
@@ -220,7 +225,9 @@ export function parseProviderOfferDetail(value: unknown): OemCloudProviderOfferD
   };
 }
 
-export function parseProviderModelItem(value: unknown): OemCloudProviderModelItem {
+export function parseProviderModelItem(
+  value: unknown,
+): OemCloudProviderModelItem {
   if (!isRecord(value)) {
     throw new OemCloudControlPlaneError("服务商模型格式非法");
   }
@@ -272,7 +279,9 @@ export function parseProviderModelItem(value: unknown): OemCloudProviderModelIte
   };
 }
 
-export function parseProviderPreference(value: unknown): OemCloudProviderPreference {
+export function parseProviderPreference(
+  value: unknown,
+): OemCloudProviderPreference {
   if (!isRecord(value)) {
     throw new OemCloudControlPlaneError("默认服务商配置格式非法");
   }
@@ -519,5 +528,46 @@ export function parseGatewayConfig(value: unknown): OemCloudGatewayConfig {
     authorizationHeader: normalizeText(value.authorizationHeader),
     authorizationScheme: normalizeText(value.authorizationScheme),
     tenantHeader: normalizeText(value.tenantHeader),
+  };
+}
+
+export function parseAppServerConfig(value: unknown): OemCloudAppServerConfig {
+  const record = isRecord(value) ? value : {};
+  const enabled = normalizeBoolean(record.enabled);
+  const endpoint = normalizeText(record.endpoint);
+
+  if (endpoint) {
+    let parsed: URL;
+    try {
+      parsed = new URL(endpoint);
+    } catch {
+      throw new OemCloudControlPlaneError("App Server endpoint 格式非法");
+    }
+    if (
+      (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") ||
+      !parsed.host ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      throw new OemCloudControlPlaneError(
+        "App Server endpoint 必须是无凭证、无 query/fragment 的 ws/wss URL",
+      );
+    }
+  }
+
+  if (enabled && !endpoint) {
+    throw new OemCloudControlPlaneError("App Server 已启用但缺少 endpoint");
+  }
+
+  return {
+    enabled: enabled && Boolean(endpoint),
+    endpoint,
+    transport: "websocket",
+    protocol: "appserver.v0",
+    authorizationHeader: "Authorization",
+    authorizationScheme: "Bearer",
+    tenantHeader: "X-Lime-Tenant-ID",
   };
 }

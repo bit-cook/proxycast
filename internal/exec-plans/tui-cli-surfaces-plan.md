@@ -187,6 +187,9 @@ Lime 与 LimeCore 只共享 App Server protocol/session 合同；租户隔离、
 - `ClientSession::start_remote`、TUI `AppServerSession::connect_remote` 与 CLI `start_session` 复用同一 initialize/request/event/shutdown actor；TUI reconnect 和 session picker 也按同一 remote 配置工作，未创建第二套 runtime、Thread 状态或持久化。
 - CLI 参数与 Codex 形状对齐：`--remote URL`、`--remote-auth-token-env ENV_VAR`；缺失 endpoint、缺失/空 token 环境变量均在连接前失败。
 - `cargo test --manifest-path "lime-rs/Cargo.toml" -p app-server-client -p cli -p tui`：44 + 34 + 177 全部通过；新增 remote auth policy、WebSocket roundtrip、CLI parser 和 fail-closed 回归。
+- TypeScript `packages/app-server-client/src/remote.ts` 复用既有 `AppServerConnection`，补齐 Node/Electron 可用的 authenticated WebSocket transport；Bearer token 与 tenant id 仅进入 header，握手在 `initialized` 前固定校验 `app-server`/`appserver.v0`，并复用 JSON-RPC request、notification、reverse request、cancel 和单读泵语义。
+- TypeScript remote transport 只作为 Cloud foundation，不接入 renderer 或默认 Electron sidecar；生产 Cloud endpoint 仍由 Cloud 服务的租户、凭证、恢复、限流和审计合同决定。
+- `npm --prefix "packages/app-server-client" test`：11 个测试文件、139 项通过，包含 6 项真实 `ws` `WebSocketServer` roundtrip/header/握手/身份/协议安全回归，以及 browser entry 不暴露 Node/WebSocket transport 的边界回归；`npm run check:protocol-types`、Node syntax、Prettier 与 `git diff --check` 通过。
 - P4 剩余未完成：identity、tenant isolation、凭证存储、协议版本协商、跨网络 resume/rate limit/audit 与真实 Cloud endpoint；在这些条件完成前，Cloud 继续保持架构扩展点，不进入生产发布路径。
 - `npx vitest run scripts/app-server/{cli,tui}-gate-b.test.mjs scripts/app-server/tui-snapshot-inventory.test.mjs`：7 项通过；包含 Windows CLI/TUI workflow 结构守卫。
 - `cargo clippy -p tui -p cli --no-deps -- -D warnings`：通过。
@@ -585,7 +588,7 @@ Codex 形状的 `handle_key_event(KeyEvent)`。request-user-input 的 `Event` �
 - `bottom_pane/request_user_input` 迁移为 Codex 同名目录模块，并新增 `render.rs`，将问题渲染与
   `bottom_pane/render.rs` 的 approval 渲染职责分离。`bottom_pane/chat_composer.rs` 现为 composer
   唯一 owner，类型名为 `ChatComposer`；终端生命周期 owner 已从 Lime-only `terminal.rs` 迁到
-  Codex 同名 `tui.rs`，`TerminalGuard` 仍保留其真实生命周期职责。
+  Codex 同名 `tui.rs`；终端生命周期类型已进一步收敛为 Codex 同名 `Tui`。
 - 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui`（188/188）、
   `cargo fmt --manifest-path "lime-rs/Cargo.toml" --all`、
   `npx vitest run "scripts/app-server/tui-structure-inventory.test.mjs" "scripts/app-server/tui-snapshot-inventory.test.mjs"`
@@ -602,19 +605,19 @@ Codex 形状的 `handle_key_event(KeyEvent)`。request-user-input 的 `Event` �
   `tui/frame_requester.rs`。`EventBroker` 是唯一 crossterm 输入 owner，支持暂停/恢复并在
   `TuiEventStream` 中统一 key、paste、resize、focus 与 draw；`FrameRequester` 合并异步重绘
   并限制最高 120 FPS。
-- `TerminalGuard` 现在持有 broker、draw channel 和 frame requester；外部编辑器 suspend/resume
+- `Tui` 现在持有 broker、draw channel 和 frame requester；外部编辑器 `with_restored`
   会释放并恢复 stdin。runtime 与 session picker 均消费 `TuiEventStream`，不再各自直接创建
   `EventStream`，业务事件仍由 App Server session 与 `App` 处理。
 - 新增 Codex 同名事件流/帧调度回归 21 项，`cargo test -p tui` 当前为 214/214；结构账本刷新为
   624 文件，TUI/CLI structure、snapshot、test inventory 11/11，`cargo clippy -p tui -p cli
   --no-deps -- -D warnings` 与 workspace fmt 通过。
-- 分类：`current = tui::event_stream + tui::frame_requester + TerminalGuard`；
+- 分类：`current = tui::event_stream + tui::frame_requester + Tui`；
   `compat/deprecated = none`；Codex job-control、inline scrollback、keyboard enhancement 与
   platform probe 仍按账本 `defer/product-specific`，本轮不伪造第二套 runtime 或平台 owner。
 
 ## 2026-09-05 PTY editor handoff recovery
 
-- 外部编辑器返回后的 `TerminalGuard::resume` 只重新启用 raw/alternate/bracketed-paste 模式并恢复
+- 外部编辑器返回后的 `Tui::with_restored` 重新启用 raw/alternate/bracketed-paste 模式并恢复
   `EventBroker`，不再调用会同步发送 `CSI 6n` 的 Ratatui 清屏路径；下一轮正常 draw 负责重绘恢复后的
   composer。这样不会让 TUI 的事件 reader 与编辑器/PTY 的光标响应竞争 stdin。
 - 删除 Gate B 中针对旧同步光标查询的 PTY 回写步骤，改为直接断言编辑器交接标记和恢复后的 prompt；
@@ -625,7 +628,7 @@ Codex 形状的 `handle_key_event(KeyEvent)`。request-user-input 的 `Event` �
   `cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui -p cli --no-deps -- -D warnings`、
   `npm run smoke:tui-gate-b`（complete、approval、user-input、interrupt、failure、queue-edit 六场景）
   全部通过。
-- 分类：`current = tui::tui::TerminalGuard + tui::runtime_pty_tests`；
+- 分类：`current = tui::Tui + tui::runtime_pty_tests`；
   `compat/deprecated = none`；旧同步 CPR 查询与调试输出为 `dead / deleted / forbidden-to-restore`。
 
 ## 2026-09-05 Codex text formatting owner
@@ -689,3 +692,522 @@ Codex 形状的 `handle_key_event(KeyEvent)`。request-user-input 的 `Event` �
   resume_picker_transcript_preview_tests.rs`；`dead/deleted/forbidden-to-restore = session_picker.rs`；
   Codex 的本地 state DB、归档恢复后台 loader、远端跨网络 resume 和完整密集表格 UI 仍为
   `deferred`，不能以本地伪实现替代 App Server owner。
+
+## 2026-09-06 Codex resume picker pager and incremental pagination
+
+- `resume_picker.rs` 新增 `PickerTranscriptPager`，复用 current `PagerOverlay`、
+  `entry::hyperlink_lines_with_locale` 和 canonical `TranscriptEntry`。Ctrl+T 在选中会话上打开
+  独立 transcript pager，加载中/失败/空记录均可见；Esc、Q、Ctrl+T 关闭，Home/End、上下键和
+  PageUp/PageDown 沿用 pager 导航，不把 picker transcript 复制成第二个 projection owner。
+- `thread/list` 改为单页 `ThreadPage` 请求；`PickerState` 复用 Codex 形状的
+  `PaginationState`/`PageCursor`/`PageLoadMode` 保存 cursor 和 request token，仅在列表尾部滚动时
+  追加下一页，按 thread id 去重，查询、状态、目录、排序变化会失效旧 cursor，重复 cursor 和
+  stale response fail closed。
+- 归档成功会清理对应 transcript pager；footer 与 transcript 状态文案覆盖五个产品 locale。
+- 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`（288/288）、
+  `cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`、
+  `npx vitest run "scripts/app-server/tui-structure-inventory.test.mjs"`（3/3）、
+  `npm run test:contracts`、`npm run governance:legacy-report`、`npm run smoke:tui-gate-b`（六场景）
+  与 `git diff --check` 均通过。
+- 分类：新增 pager、分页状态、locale 和测试属于 `current`；没有新增 `compat` 或
+  `deprecated`；旧 `lime-cli`、`terminal-ui`、Codex 私有 history/state DB 仍为
+  `dead/deleted/forbidden-to-restore`。剩余差距回到 P3 composer 分模块迁移和 Codex snapshot
+  场景选择性迁移，不复制无 Lime owner 的产品模块。
+
+## 2026-09-06 Codex composer textarea owner
+
+- 迁移到 Codex 同名 `bottom_pane/textarea.rs`，`TextArea` 统一持有可编辑文本和
+  UTF-8/grapheme 安全光标；`ChatComposer` 保留提交、排队、历史搜索和权限/编辑器动作编排，
+  不再直接维护第二套文本/光标状态。
+- 迁移 `insert`、左右移动、行首尾、前后 grapheme 删除和整段替换；保留现有
+  `InputResult` 与 App Server queue/turn lowering，不引入 Codex 私有 Vim、mention catalog 或
+  attachment runtime。
+- 新增 `TextArea` 同名语义测试，覆盖复合 emoji 删除和多行行首尾；验证：
+  `cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`（290/290）、
+  `cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`、
+  `npm run smoke:tui-gate-b`（六场景）和 `git diff --check` 通过。
+- 分类：`TextArea` 与 `ChatComposer` 为 `current`；未新增 `compat/deprecated`，未恢复
+  Codex 私有 history DB、Vim/mention/connector 产品面。下一步继续从 snapshot inventory 选择
+  可由 Lime current owner 承接的 composer/history 场景。
+
+## 2026-09-06 Codex composer history search owner
+
+- 新增 Codex 同名 `bottom_pane/chat_composer/history_search.rs`，由
+  `HistorySearchState`、`find_match`、`find_older`、`find_newer` 承接纯历史匹配规则；
+  `ChatComposer` 只编排查询输入、draft 恢复、选中结果和提交，不再内嵌搜索算法副本。
+- 补充大小写不敏感、旧/新方向边界、空查询和无选中项回归；未改变 App Server
+  `promptHistory/read|append` 或队列/turn lowering。
+- 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib bottom_pane::chat_composer`
+  （13/13）与 `cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`
+  通过。分类：`history_search.rs` 与 `ChatComposer` 为 `current`，无 `compat/deprecated`，
+  Codex 私有 rollout/history DB 仍为 `dead/deleted/forbidden-to-restore`。
+
+## 2026-09-06 Codex composer state owners and textarea wrapping
+
+- `ChatComposer` 现在按 Codex 目录拆出 `chat_composer/attachment_state.rs` 与
+  `chat_composer/draft_state.rs`。`AttachmentState` 成为本地图片队列的唯一 owner，
+  `DraftState` 持有 `TextArea` 和待恢复 draft；`App` 不再维护平行 `pending_images` 字段，
+  runtime/view/test 通过 composer 委托保持原有 API 和 App Server lowering。
+- `bottom_pane/textarea/wrapping.rs` 按 Codex 同名纯终端算法迁入 grapheme-safe
+  `wrapped_lines`、`cursor_position` 与 `visible_prefix`，`TextArea` 光标定位复用该结果，
+  支持软空格挂接、非断行空格、中文/emoji UTF-8 边界和满行 cursor sentinel；不引入 Vim、
+  mention catalog、history DB 或第二套 runtime 状态。
+- 新增 `bottom_pane/textarea/wrapping_tests.rs` 与 `attachment_state` 单测，覆盖换行边界、
+  显示宽度、附件有序取回/恢复/删除；结构账本刷新后保留 Codex 路径、函数和类型双向对照。
+- 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`（296/296）、
+  `npx vitest run "scripts/app-server/tui-structure-inventory.test.mjs"`（3/3）通过；
+  后续收尾仍需执行 clippy、相关 Rust 测试、contracts、治理扫描、TUI Gate B 和 diff check。
+- 分类：`bottom_pane/textarea.rs`、`bottom_pane/textarea/wrapping.rs`、
+  `chat_composer/{attachment_state,draft_state}.rs` 与委托调用属于 `current`；没有新增
+  `compat/deprecated`；Codex 私有 Vim/mention/connector/history DB 继续为
+  `dead/deleted/forbidden-to-restore`。
+
+## 2026-09-06 Codex textarea state and reconnect boundary
+
+- `bottom_pane/textarea.rs` 补齐 Codex 同名 `TextAreaState`、`cursor_pos`、
+  `cursor_pos_with_state`、`desired_height`、`insert_str`、`replace_range`、`set_cursor` 和
+  Ratatui `StatefulWidgetRef` 渲染接口；主 composer 通过 `DraftState::textarea_state_mut` 保存
+  viewport scroll，长行和多行输入按实际视觉行滚动，光标始终留在可见区域。
+- 新增 `bottom_pane/chat_composer/reconnect.rs` 与 `reconnect_tests.rs`，提供 Codex 形状的
+  `ChatComposer::handle_disconnected_key`：断线编辑会恢复 history preview，Enter/Tab 不会
+  消费草稿，字符与基本移动/删除仍保持 UTF-8 安全；重连尝试和 session 生命周期仍由
+  `tui::reconnect` + App Server owner 承担。
+- 结构账本扫描器改为识别缩进的 `impl` 方法，避免只记录顶层函数造成 Codex 符号漏报；账本
+  新增 reconnect 文件与 `TextAreaState`/cursor state 符号守卫。
+- 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`（301/301；含 stateful
+  render 清屏回归）、
+  `cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`、
+  `rustfmt --check`（本轮 touched TUI 文件）、结构账本 Vitest（3/3）和 `git diff --check`
+  通过；workspace 全量 `cargo fmt --check` 仍受既有并行改动阻塞，未执行全仓格式化。
+- 分类：`TextAreaState`、stateful composer render、reconnect boundary 与对应测试属于
+  `current`；没有新增 `compat/deprecated`，Codex 私有 Vim/mention/connector/history DB
+  继续为 `dead/deleted/forbidden-to-restore`。下一步回到 snapshot inventory，选择能由 Lime
+  current owner 承接的 composer attachment/draft snapshot 和 multi-agent navigation 场景。
+
+## 2026-09-06 Codex composer key-event boundary
+
+- 对照 Codex `ChatComposer::handle_key_event` 的入口语义，公共 composer 现在先忽略
+  `KeyEventKind::Release`，只让 Press/Repeat 进入历史搜索、编辑、提交和排队分派；主循环已有
+  的 Press 过滤保持不变，断线入口继续由 `handle_disconnected_key` 独立处理。
+- 新增 `key_release_does_not_insert_or_submit` 回归，证明释放事件不会改变草稿、触发提交或
+  消费当前输入；没有改变 `TextArea::input`、App Server queue/turn lowering 或 Ctrl-C 边界。
+- 验证：touched `chat_composer.rs` `rustfmt --check`、
+  `cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib bottom_pane::chat_composer`
+  （18/18）、`cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`
+  均通过；随后完整 TUI、结构 inventory、contracts、治理扫描与真实 TUI Gate B 作为收尾门禁。
+- 分类：`current = ChatComposer::handle_key_event` 的 Press/Repeat 边界及其测试；
+  `compat/deprecated = none`；Codex 私有 Vim/mention/connector/history DB 仍为
+  `dead/deleted/forbidden-to-restore`。本轮继续推进同一 `CLI/TUI Host -> App Server JSON-RPC`
+  主链，不复制第二套 runtime 或历史状态 owner。
+
+### 收尾门禁
+
+- 完整 `cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`：318/318 通过。
+- `cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings` 与
+  touched 文件 `rustfmt --check` 通过。
+- TUI structure inventory 与 802 条 Codex snapshot inventory：5/5 测试通过；
+  `npm run test:contracts`、`npm run governance:legacy-report`、`git diff --check` 通过。
+- `npm run smoke:tui-gate-b`：complete、approval、user-input、interrupt、failure、queue-edit
+  六场景通过，真实 PTY/alternate screen/键盘输入/终端恢复与 canonical App Server ledger 均通过。
+
+## 2026-09-06 Codex model catalog and collaboration mode wiring
+
+- 按 Codex `tui/src/model_catalog.rs` 保留 `ModelCatalog`、`with_collaboration_modes` 和
+  `try_list_models`，模型 picker 通过该 catalog 读取服务端模型；移除当前 Lime 没有真实消费者的
+  `model_by_id`/`default_model` 扩展，避免用测试 API 冒充产品能力。
+- 按 Codex `tui/src/collaboration_modes.rs` 接入 `default_mask`、`default_mode_mask`、`next_mask`
+  和 `plan_mask`：启动/设置同步优先服务端 Default preset，缺失时才回退到服务端首个可见 preset；
+  `Shift+Tab` 仅在无 active turn、无 modal/popup 时循环服务端模式，结果通过现有
+  `thread/settings/update` lowering，不创建 TUI 私有模式状态源。
+- `AppServerSession::start_thread` 现在返回完整 typed `ThreadStartResponse`。TUI 使用服务端实际
+  model/provider/reasoning effort 初始化本地只读状态，因此未传 `--model/--provider` 的自动模型场景
+  也能构造合法 collaboration mode；`exec` 入口同步适配该 typed 返回值。
+- 新增 App 回归覆盖默认模式选择、`BackTab` 模式循环和运行中不抢占输入；模式更新失败保持当前
+  本地状态，服务端未提供 mode catalog 时 `/plan` 继续 fail closed。
+
+本轮验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`（324/324）、
+`cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`、
+`node scripts/app-server/tui-structure-inventory.mjs`（646 files）及
+`npx vitest run "scripts/app-server/tui-structure-inventory.test.mjs" "scripts/app-server/tui-snapshot-inventory.test.mjs"`
+（5/5）通过。`cargo fmt --check` 未作为全仓绿灯报告：当前并行工作树已有未归本轮的大量格式差异，
+本轮未执行全仓格式化；新增/修改逻辑由 Clippy、编译和单测覆盖，`git diff --check` 待本轮收尾门禁执行。
+
+分类：`current = tui::model_catalog + tui::collaboration_modes + AppServerSession typed thread/start +
+App mode cycling`；`compat/deprecated = none`；`dead/deleted/forbidden-to-restore = 未消费的
+model catalog 查找扩展、旧 lime-cli、terminal-ui、Codex 私有 history/state DB`。下一刀继续从
+snapshot inventory 选择 multi-agent navigation 或剩余可由 Lime current owner 承接的模式/模型场景，
+不复制 Codex 私有 runtime、账号和 Cloud 状态。
+
+## 2026-09-06 Codex collaboration mode status localization and effort clearing
+
+- 为 `plan mode`、`plan mode unavailable on this server` 和 `collaboration mode updated` 补齐
+  `zh-CN`、`zh-TW`、`en-US`、`ja-JP`、`ko-KR` 状态映射，并加入逐语言回归；未知状态仍保持
+  原文，状态翻译继续由 `Locale::status` 作为唯一展示边界承接。
+- 模式切换后 runtime 直接采用服务端 `CollaborationModeSettings.reasoning_effort`，不再用旧
+  effort 值覆盖 `Some(None)` 的显式清除；保留 mask 缺省值通过 lowering 时的 fallback 语义。
+- 更新 App 模式循环测试，覆盖 Default preset 的显式 effort 清除；没有新增 compat/deprecated
+  路径，也没有复制 Codex runtime、history DB 或 Cloud 状态。
+
+本轮验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`（325/325）、
+`cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`、touched
+文件 `rustfmt --check`、`git diff --check`、`npm run test:contracts`（299 项 client contract）、
+`npm run governance:legacy-report`（零引用候选/分类漂移/边界违规）、
+`npm run governance:cli-boundary`、TUI structure/Gate B Vitest（6/6）及
+`npm run smoke:tui-gate-b`（六场景真实 PTY、alternate screen、App Server ledger、终端恢复）
+均通过。全仓 `cargo fmt --check` 仍受并行工作树既有格式差异影响，未执行全仓格式化。
+
+分类：`current = Locale::status` 的协作模式状态、runtime collaboration mode lowering 与
+对应测试；`compat/deprecated = none`；`dead/deleted/forbidden-to-restore = 旧 lime-cli、
+terminal-ui、Codex 私有 runtime/history/state DB`。下一刀继续从 Codex snapshot inventory 选择
+具备 Lime current owner 和真实证据的 multi-agent navigation 或剩余模式/模型交互场景。
+
+## 2026-09-06 Codex settings synchronization boundary
+
+- 对齐 Codex `chatwidget/settings.rs` 的有效状态语义：`App::set_settings` 在 model 有显式值时
+  同步当前 collaboration mode 的 model；reasoning effort 只有显式提供时才覆盖当前 mode，避免
+  CLI 未传 `--effort` 时把服务端 preset 默认值误清空。
+- collaboration mode 切换仍直接把服务端 mode settings 写入 `App`，因此 `Some(None)` 的显式
+  effort 清除不会被全局 settings fallback 重新覆盖。
+- 新增 `settings_updates_keep_the_active_collaboration_mode_in_sync`，同时覆盖 model 更新、显式
+  effort 更新和未提供 effort 时保留 preset；未新增 compat/deprecated 路径。
+
+本轮增量验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`（326/326）、
+`cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`、touched
+TUI 文件 `rustfmt --check` 均通过；前一节记录的 contracts、governance、结构快照和真实
+TUI Gate B 证据继续有效。
+
+分类：`current = App::set_settings` 与 collaboration mode 有效状态同步；
+`compat/deprecated = none`；`dead/deleted/forbidden-to-restore = 旧 lime-cli、terminal-ui、
+Codex 私有 runtime/history/state DB`。下一刀继续从 multi-agent contract snapshots 选择能由
+Lime App Server current owner 承接的纯展示/导航能力。
+
+## 2026-09-06 Codex multi-agent interaction regression boundary
+
+- 对照 Codex `app/agent_navigation.rs` 的 parent-owned/liveness 语义，`SubAgentActivity::Started`
+  现在在 parent stream 观察到时立即标记 child thread 为 parent-owned；即使 `ThreadStarted`、
+  `ItemStarted` 和 resume 的到达顺序交错，也不会向子 Agent 直接提交或排队用户输入。
+- `App::can_accept_direct_input` 成为 TUI runtime 的唯一直接输入护栏，`Submit` 与 `Queue` 共用
+  同一检查和 canonical 状态文案，移除 runtime 内的重复判断。
+- `/subagents` 执行回归确认 slash command 会消费本地命令、清空 composer 并打开 Codex 命名的
+  Agent picker；新增五产品 locale 的 picker title/footer TestBackend 渲染回归。footer 改为
+  不在单行区域叠加底边框，避免窄终端裁掉可见控制文案；新增当前 Agent footer 渲染回归。
+- 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`（347/347）通过，
+  touched TUI 文件 `rustfmt` 与 `git diff --check` 通过。新增行为只复用 App Server
+  `Thread`/`SubAgentActivity`/`thread/resume` 和 canonical `ConversationProjection`，没有新增
+  runtime、持久化或 Cloud 假 endpoint。
+
+分类：`current = app::{agent_navigation,agent_picker} + multi_agents + App direct-input guard`
+及其回归；`compat/deprecated = none`；`dead/deleted/forbidden-to-restore = 旧 lime-cli、
+terminal-ui、Codex 私有 agents daemon/state DB`。完整 contracts、governance、TUI Gate B
+收尾门禁仍需在本轮最终状态上复跑。
+
+## 2026-09-06 Codex Agents Overview owner alignment
+
+- 按 Codex 真实目录补齐 `app/agents_overview.rs`、`app/agents_overview_render.rs`、
+  `app/agents_overview_threads.rs`、`app/agents_overview_view.rs` 与独立
+  `app/agents_overview_tests.rs`。Overview 的状态分组、根线程/子线程状态冒泡、搜索、分组切换、
+  刷新、选择和窄终端渲染均由同名 current owner 承接。
+- `/agents` 现在打开 Agents Overview，并返回显式 `RefreshAgentsOverview` action；`/subagents`
+  保留为当前会话 Agent Picker。运行时通过 `AppServerSession::list_thread_page` 分页读取
+  canonical v2 `ThreadList`，不访问 Codex 私有 daemon/state DB。ThreadStarted/Closed/
+  StatusChanged/NameUpdated/Archived/Deleted 通知在 `App::apply_notification` 边界更新 Overview，
+  刷新代次用于丢弃过期结果。
+- 新增五种产品 locale 的 Overview 标题、控制提示、搜索前缀和状态摘要；`agent_picker` 继续
+  作为 `/subagents` 的 current 会话导航 surface，Overview 可见时不渲染或接收其输入。
+- Codex 的 shared agents daemon 生命周期、后台线程 turn owner 与完整输入状态恢复尚未迁入；
+  Lime 已将新任务、改名、停止和交互请求重放接到现有 App Server `thread/start`、`turn/start`、
+  `thread/name/set`、`turn/interrupt` 与当前 `BottomPane`，但 daemon 专属的跨会话语义仍分类为
+  `deferred`，本轮不伪造 endpoint、request 或平行 runtime。
+- 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`（354/354）、
+  `cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`、
+  `node scripts/app-server/tui-structure-inventory.mjs`（Codex/Lime 文件缺口为 0）、
+  touched TUI `rustfmt` 与 `git diff --check` 通过。
+
+分类：`current = app/agents_overview* + AppServer ThreadList/notification projection +
+RefreshAgentsOverview action + existing child-thread command lowering + app/agent_picker`
+（`/subagents` current 会话导航）；`compat/deprecated = none`；
+`dead/deleted/forbidden-to-restore = 旧 lime-cli、terminal-ui、Codex 私有 agents daemon/state DB`；
+`deferred = Codex daemon 专属跨会话 dispatch/stop/replay 语义`。下一刀应补真实 App Server
+child-thread command contract 后，再迁移 daemon 级跨会话恢复，不得先恢复 Codex 私有 daemon。
+
+## 2026-09-06 Agents Overview refresh state and resume command
+
+- `AgentsOverviewState` 补齐 Codex 同名生命周期字段：`initialized`、`request_id`、
+  `refresh_pending`、`refresh_thread_ids`、`refresh_notifications`、`refresh_task`、
+  `visible_thread_ids`、`rendered_full_screen` 和共享 `view_state` 镜像。当前 `Vec<Thread>` 仍是
+  Lime 的唯一投影 owner；共享镜像只服务于同名 host adapter，不创建第二套交互状态。
+- 刷新请求现在具备单一 request identity；并发刷新被合并，刷新期间同一线程同类通知采用
+  last-write-wins，响应完成后按到达顺序重放。Overview 的选中行、过滤结果和共享 view state
+  同步维护，状态对象 drop 时取消已安装的异步 refresh task。
+- 新增 Codex 风格 `/resume` slash command，直接触发现有运行中 resume picker；命令目录、五语言
+  描述、设置命令解析和 App 回归同步更新。`agent_picker` 由 `/subagents` 触发并保持 current，
+  不参与 Overview 产品渲染。
+- 验证：Agents Overview 和 slash command 定向测试通过；完整 TUI 测试与 clippy 待本轮收尾门禁
+  重跑。真实 PTY 继续覆盖既有六场景；Overview -> picker 的 PTY 证据仍待终端控制键在
+  portable-pty 环境稳定映射后补齐。
+
+分类：`current = AgentsOverviewState request/notification lifecycle、/resume、/agents、/subagents、
+既有 App Server thread/list + thread/resume`；`compat/deprecated = none`；
+`dead/deleted/forbidden-to-restore = lime-cli、terminal-ui、Codex agents daemon/state DB`；
+`deferred = 依赖真实 App Server child-thread command contract 的跨会话 daemon 行为`。下一刀优先补
+App Server child-thread contract 和 portable-pty 可重复的 Overview 流程，再扩展完整 Codex
+`BottomPaneView`，不恢复私有 daemon。
+
+## 2026-09-06 Agents Overview thread targeting and PTY Gate B
+
+- 按 Codex 真实目录新增 `app/app_server_event_targets.rs`，保留同名
+  `ServerNotificationThreadTarget`、`server_notification_thread_target` 与
+  `server_request_thread_id`。`App::apply_notification` 先更新 Overview/导航，再只把当前 Thread
+  notification 写入当前 `ConversationProjection`；后台 Thread 的 message/item/turn 事件不会污染
+  前台 transcript。
+- foreign Thread reverse request 的分发复制 Codex `unsupported_request` 处理形状。只有 Lime
+  `BottomPane` 已实现的 command/file/permission approval 与 `request_user_input` 可以进入 Overview
+  对应 `ThreadEventStore` 的 bounded replay channel；`pending_interactive_replay` 维护 request identity，Dynamic Tool 和 MCP elicitation 当前没有 TUI consumer，立即走既有 reject，channel 满时也 fail closed
+  路径，不会在恢复时静默丢失。`unsupported_requests_return_for_rejection` 锁住该 fail-closed 合同。
+- `agents-overview` 成为默认第七个 TUI Gate B 场景：真实 `/agents -> Ctrl+N -> prompt -> Enter`
+  经过 `thread/start + turn/start`，等待 `ThreadStatusChanged(Active)` 投影为 `1 working` 后，
+  真实发送 Down、Ctrl+R、Ctrl+X、Enter 与 Ctrl+D，依次验证选择后台 Thread、改名、停止同一
+  Turn、恢复 transcript 和退出 TUI。ledger 断言精确 input、Thread/Turn identity、
+  `turn.started,message.delta` 与同 identity `turnCancel`；PTY 在关闭 alternate screen 前使用 Codex
+  同款 `vt100::Parser` 还原 24x100 实际屏幕并验证终端恢复。
+- 共享 terminal backend fixture 对所有 `turnStart` 统一先发 Codex 生命周期事件
+  `turn.started`，修复“输出可见但 Thread 永远 Ready”的伪闭环；七个场景各自使用独立
+  cwd/data/app-data，避免前序 Thread 改变 Overview 选择顺序。`terminal-gate-binaries.mjs` 在默认
+  路径下用仓库受校验 rusty-v8 环境重建 current `cli`/`app-server`，显式二进制覆盖则保持不变，
+  因而 Gate 不再测试新 harness 却复用旧产品二进制。
+- 按 Codex `key_hint.rs::is_plain_text_key_event` 的同名边界接入 Overview 新任务、搜索与改名输入，
+  允许 Shift 字符并拒绝 Control/Alt 文本，真实 PTY 中 `Gate B background` 不再丢失大写字符。
+  用户指定的 GPT-6 viewport workstream 同时落地 `viewport.rs`，字段与状态语义映射 Codex
+  `custom_terminal.rs`/`tui.rs` 的 `viewport_area`、`last_known_screen_size`、
+  `last_known_cursor_pos`、`alt_saved_viewport`、resize 与 alternate-screen round trip；它不创建第二 renderer。
+- 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`（373/373）、
+  `cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`、
+  terminal Gate/构建 helper Vitest（8/8）、structure/snapshot inventory（5/5）、
+  `npm run smoke:tui-gate-b`（七场景，`queue-edit=ok agents-overview=ok terminal=restored`）、
+  `npm run smoke:cli-gate-b`、`npm run test:contracts`、`npm run governance:legacy-report` 和
+  structure inventory（657 files）通过；CLI boundary 为
+  `current=cli+tui+npm-platform-packages retired=lime-cli`。全 crate
+  `cargo fmt --check` 仍报告并行工作树中既有的 TUI import/折行差异，本轮没有批量格式化或覆盖。
+
+分类：`current = app/app_server_event_targets.rs + 当前 Thread projection 路由 + Overview
+ThreadEventStore + pending_interactive_replay + 七场景 TUI Gate B + app/agent_picker（`/subagents` 会话导航）；
+`deprecated = none`；`dead/deleted/forbidden-to-restore = 旧 lime-cli、terminal-ui、Codex 私有
+runtime/history/state DB`；`deferred = Codex shared agents daemon 与生产 Cloud`。本刀已用真实 stdio/PTY
+覆盖 child-thread start/name/interrupt/resume；下一刀继续从 Codex TUI 测试账本选择能由 Lime
+App Server current owner 承接的未覆盖交互，不恢复私有 daemon。
+
+## 2026-09-06 Codex App Server event owner alignment
+
+- 按 Codex 真实目录新增 `tui/src/app/app_server_events.rs`，由同名
+  `handle_app_server_event` 与 `handle_server_notification_event` 承接 TUI transport event 和 typed
+  notification；reverse server request 由同名 `tui/src/app/app_server_requests.rs::handle_server_request_event`
+  承接。交互 `runtime.rs` 不再直接匹配 notification/server request，只保留 terminal
+  lifecycle、session shutdown 与 bounded reconnect 编排。
+- `app-server-client::AppServerEvent` 按 Codex 定义迁到 `app-server-client/src/lib.rs`，并精确收敛为
+  `Lagged`、`ServerNotification`、`ServerRequest`、`Disconnected` 四个变体。旧 Lime-only
+  `SessionEvent`、`RawNotification` 和 `RawServerRequest` 类型形状已删除，没有 compat alias。
+- 未知 notification 在 typed client 边界忽略；未知 reverse request 在同一 transport 上立即返回
+  JSON-RPC `METHOD_NOT_FOUND`，不再泄漏给 CLI/TUI。复制 Codex 测试名
+  `remote_unknown_server_request_is_rejected`，覆盖 request id、错误码、错误文案和拒绝后的正常
+  shutdown。
+- 结构 inventory 守卫新增 `app/app_server_events.rs`、`app/app_server_requests.rs` 和三个 handler 符号，并禁止交互 runtime
+  恢复直接 typed event 分发、禁止 client 恢复 `SessionEvent` 或 raw event 变体。inventory 更新为
+  Codex/Lime 合计 658 个 Rust 文件。
+- 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p app-server-client -p tui -p cli`
+  （50 + 373 + CLI library 8 / binary 40 / integration 2）、三 crate Clippy `-D warnings`、
+  `npm run test:contracts`、TUI structure Vitest、`npm run smoke:cli-gate-b` 与
+  `npm run smoke:tui-gate-b` 均通过。真实 CLI/TUI evidence 经过 current stdio App Server、
+  canonical `turn.started,message.delta,item.started,item.completed,turn.completed`；TUI 七场景继续
+  保持 `queue-edit=ok agents-overview=ok terminal=restored`。Gate 构建仅有既有
+  `app-server/src/processor/turn.rs` 两条 dead-code warning，不在本刀写集。
+
+分类：`current = app/app_server_events.rs + app/app_server_requests.rs + app-server-client::AppServerEvent + typed
+notification/reverse-request routing + app/agent_picker（`/subagents` 会话导航）；
+`deprecated = none`；`dead/deleted/forbidden-to-restore = SessionEvent、raw event 变体、旧
+lime-cli、terminal-ui、Codex 私有 runtime/history/state DB`；`deferred = Codex shared agents
+daemon 与生产 Cloud`。下一刀从 Codex `app/input.rs` 与 Lime `App::handle_terminal_event` 做逐函数
+对照，把 App 输入 owner 迁入同名目录并继续降低 `app.rs` 体量；不得自行设计第二套 input reducer。
+
+## 2026-09-06 Codex TUI input and session lifecycle owner alignment
+
+- 按当前 Codex `tui/src/app.rs::handle_tui_event` 与 `tui/src/app/input.rs::handle_key_event`
+  拆分终端输入 owner：`runtime.rs` 直接把 `TuiEvent` 交给 `App::handle_tui_event`，后者负责
+  paste 换行规范化、断线草稿、活动弹层和输入视图路由；键盘快捷键与 composer key dispatch
+  进入同名 `app/input.rs`。旧 Lime-only `handle_terminal_event` 与
+  `handle_disconnected_event` 生产入口已删除，没有 compat wrapper。
+- 对照 Codex `chatwidget/slash_dispatch.rs` 的真实分支修正命令语义：新增 `/agents` 并打开
+  Agents Overview；`/subagents` 恢复为打开当前会话 Agent Picker。早先章节中
+  “`/subagents` 打开 Overview / `agent_picker` 仅为 compat”的过渡记录由本节取代。两个入口都消费
+  本地 slash command，不进入 App Server turn input；`/agents` 描述覆盖 `zh-CN`、`zh-TW`、
+  `en-US`、`ja-JP`、`ko-KR`。
+- 按 Codex `tui/src/app/session_lifecycle.rs` 把 `open_agent_picker` 迁到同名 owner；picker 继续只消费
+  App Server-backed navigation/thread identity，不新增私有 daemon、历史库或第二套 runtime。
+- 按 Codex `tui/src/app.rs` 的 `mod tests;` 形状把内联 App 回归迁到同名 `app/tests.rs`，测试名称、
+  断言和覆盖范围保持不变；`app.rs` 从 1542 行降到 665 行，不再越过仓库 1000 行业务逻辑红线。
+- 结构守卫锁定 `app/input.rs`、`app/session_lifecycle.rs`、`handle_tui_event`、
+  `handle_key_event`、`open_agent_picker`、`app/tests.rs` 与 `mod tests;`，并禁止 runtime 恢复两个旧
+  handler。structure inventory 更新为 Codex/Lime 合计 661 个 Rust 文件。
+- 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui`（374/374）、`cargo test
+  --manifest-path "lime-rs/Cargo.toml" -p cli`（library 8 / binary 40 / integration 2）、两 crate Clippy
+  `-D warnings`、touched Rustfmt、TUI structure/snapshot/Gate B Vitest（11/11）、`npm run
+  test:contracts`、`npm run governance:legacy-report`、`npm run smoke:cli-gate-b`、`npm run
+  smoke:tui-gate-b` 与 `git diff --check` 通过。TUI Gate B 七场景继续保持 `queue-edit=ok
+  agents-overview=ok terminal=restored`；CLI Gate B 保持 JSON/JSONL/stdin/error exit/completion 全链。
+  Gate 构建仍只有既有 `app-server/src/processor/turn.rs` 两条 dead-code warning，不在本节写集。
+
+分类：`current = App::handle_tui_event + app/input.rs::handle_key_event +
+app/session_lifecycle.rs::open_agent_picker + /agents + /subagents`；`compat/deprecated = none`；
+`dead/deleted/forbidden-to-restore = handle_terminal_event、handle_disconnected_event、旧 lime-cli、
+terminal-ui、Codex 私有 runtime/history/state DB`；`deferred = Codex shared agents daemon 与生产
+Cloud`。下一刀应继续对照 Codex `app/event_dispatch.rs`、`app_event.rs` 与 Lime runtime action match，
+把 App action/event owner 收敛到 Codex 命名和目录，同时保持公共 JSON-RPC 主链不变。
+
+## 2026-09-06 Codex reconnect owner alignment
+
+- 按 Codex `tui/src/app/reconnect.rs` 将 Lime 的 App Server 重连实现迁入
+  `tui/src/app/reconnect.rs`，runtime 直接从该 owner 引用 `reconnect_session` 与
+  `ReconnectedSession`。重连继续复用共享 `connect_session`、`thread/resume`、权限 profile
+  和设置更新，不建立第二个 transport 或 runtime。
+- 顶层 `tui/src/reconnect.rs` 仅保留委托导出，未复制实现；待引用迁移完成并获得删除确认后再清理。
+- 结构守卫新增 `app/reconnect.rs` 和 runtime owner 引用断言；inventory 同步记录该 Codex 目录。
+- 分类：`current = app/reconnect.rs + App Server session resume`；`compat = reconnect.rs`
+  （仅委托导出）；`deprecated = none`；`dead/deleted/forbidden-to-restore = 旧 lime-cli、
+  terminal-ui、Codex 私有 runtime/history/state DB`；`deferred = Cloud production transport`。
+
+## 2026-09-06 Codex event dispatch owner alignment
+
+- 按 Codex `tui/src/app/event_dispatch.rs::handle_event` 建立 Lime 的
+  `app/event_dispatch.rs` owner。设置、协作模式、权限 profile、模型选择和 Agents Overview
+  action 现在由 `App::handle_event` 消费，并通过显式 `EventContext` 复用当前 App Server session
+  与共享状态引用。
+- `AppAction` 继续表示 TUI 输入 reducer 的结果，不改名为 `AppEvent`；未迁移的提交、队列、
+  picker、编辑器和终端滚动 action 仍由 runtime 处理，避免把终端资源生命周期错误下沉到 App。
+- runtime 保留明确的不可达保护分支，确保未来新增 action 不会静默绕过 Codex-shaped owner；
+  结构守卫新增 `event_dispatch.rs`、`handle_event`、`EventContext`、`EventDispatch` 断言。
+- 分类：`current = app/event_dispatch.rs::handle_event + EventContext`；`compat/deprecated = none`；
+  `dead/deleted/forbidden-to-restore = 旧 lime-cli、terminal-ui、Codex 私有 runtime/history/state DB`；
+  `deferred = Codex account/daemon/product-only AppEvent variants 与 Cloud production transport`。
+
+## 2026-09-06 Codex thread event owner alignment
+
+- 按 Codex `tui/src/app/thread_events.rs` 将 Lime 的 Thread/Turn/Item 通知投影从
+  `app/app_server_events.rs` 迁入 `app/thread_events.rs`。`apply_notification`、liveness
+  observation 和 sub-agent activity 现在由线程事件 owner 维护，App Server 文件只保留 transport
+  分流、请求队列和队列刷新。
+- 保持同一 canonical `ServerNotification` 投影和 App Server request 生命周期，不引入 per-thread
+  第二状态库；当前 Lime 的单投影模型仍是产品边界内的唯一 read model。
+- 分类：`current = app/thread_events.rs::{apply_notification,observe_notification,observe_item} +
+  ThreadEventStore + pending_interactive_replay`；`compat/deprecated = none`；
+  `dead/deleted/forbidden-to-restore = 旧 lime-cli、terminal-ui、Codex 私有 runtime/history/state DB`；
+  `deferred = Codex daemon 专属跨会话行为与 Cloud production transport`。
+
+## 2026-09-06 Codex thread settings owner alignment
+
+- 按 Codex `tui/src/app/thread_settings.rs` 将 Lime 的模型/provider、effort、权限 profile 和
+  collaboration mode 状态同步迁入 `app/thread_settings.rs`。`set_settings`、profile 去重与
+  cycling、model picker catalog 更新及 mode 选择均保留原有行为和 API 名称。
+- App Server 持久化仍由 `AppServerSession` 承担；该模块只维护 TUI 的当前线程 settings/read
+  model，不创建 Codex legacy config 或 provider catalog 副本。
+- 分类：`current = app/thread_settings.rs`；`compat/deprecated = none`；
+  `dead/deleted/forbidden-to-restore = 旧 lime-cli、terminal-ui、Codex 私有 runtime/history/state DB`；
+  `deferred = Codex account/managed config product-only settings`。
+
+## 2026-09-06 Codex reverse request owner alignment
+
+- 按 Codex `tui/src/app/app_server_requests.rs` 的目录和函数命名，将
+  `handle_server_request_event` 从 `app/app_server_events.rs` 迁入同名
+  `app/app_server_requests.rs`。`app_server_events.rs` 现在只负责 transport event 分流和
+  typed notification dispatch；reverse request 的 queue/reject、foreign thread 路由和
+  current-time response 由 requests owner 维护。
+- 共享 `AppServerEvent`、App Server JSON-RPC 和 canonical Thread/Turn/Item projection 不变；
+  没有新增 TUI 私有 request bus、daemon、状态库或 compat wrapper。
+- 结构守卫新增 `app/app_server_requests.rs` 文件断言，并断言
+  `handle_server_request_event` 不再回流到 `app_server_events.rs`；inventory 更新为
+  Codex/Lime 合计 666 个 Rust 文件。
+- 验证：`cargo check --manifest-path "lime-rs/Cargo.toml" -p tui`、TUI structure
+  inventory Vitest、`git diff --check`；后续完成整组 Rust/Clippy 与 Gate B 回归后再关闭本阶段。
+
+分类：`current = app/app_server_events.rs + app/app_server_requests.rs + app-server-client::AppServerEvent`；
+`compat/deprecated = none`；`dead/deleted/forbidden-to-restore = 旧 lime-cli、terminal-ui、
+第二套 runtime/history/state DB`；`deferred = Codex shared agents daemon 与生产 Cloud`。
+
+## 2026-09-06 Codex external-editor PTY recovery
+
+- 该阶段加入的 runtime 有界 EOF 重建只是定位外部编辑器恢复失败的临时实现，已由 2026-09-07
+  `Tui::with_restored` 对齐替换并删除；不得恢复为第二套输入恢复策略。
+- 真实 `complete` 场景稳定复现 editor 返回后丢失提交，为后续 Codex 同构恢复入口提供了回归基线。
+- 分类：`dead/deleted/forbidden-to-restore = runtime bounded TuiEventStream restart`；
+  `compat/deprecated = none`；旧 terminal lifecycle、`terminal-ui` 和第二套 runtime 继续
+  `dead/deleted/forbidden-to-restore`。
+
+## 2026-09-07 Codex replay filter owner alignment
+
+- 对照 Codex `tui/src/app/replay_filter.rs`，在 Lime 当前 `tui/src/app/replay_filter.rs` 建立同名
+  replay 过滤 owner，并由 `thread_events.rs` 在 snapshot drain 时调用。直接迁移
+  `snapshot_has_pending_interactive_request`、`event_is_notice`、`omit_completed_agent_deltas`；
+  这些函数只依赖 Lime 已有的 `ThreadEventSnapshot`、`ThreadBufferedEvent` 与 v2 typed
+  `ServerNotification`/`ServerRequest`。
+- Codex 的 `omit_resolved_misalignment_errors` 暂不迁移：Lime v2 当前 `CodexErrorInfo` 没有
+  `MisalignmentPolicyViolation`，也没有对应的 review/continuation owner。不得为了补齐函数名而
+  伪造协议枚举、状态机或 no-op 过滤；该能力记录为 `defer`，直到 App Server current owner
+  提供真实 wire 合同。
+- `thread_events.rs` 在 `drain_snapshot` 中先清理已完成 Agent message 的 streaming delta，并在
+  有最新 turn identity 时移除已被后续 turn 解决的 misalignment error；interactive request
+  是否仍可 replay 继续由 `PendingInteractiveReplayState` 唯一负责。
+- 本轮不机械复制 Codex 的 `thread_routing`、`thread_session_state`、`thread_title` 或
+  `transcript_export`：Lime 当前没有对应的 Codex rollout DB、HistoryCell、私有 provider/auth
+  或独立 routing owner。它们分别归并现有 Thread event/session/projection owner，或标记
+  `defer`，不得创建平行状态模型。
+
+分类：`current = app/replay_filter.rs + thread_events.rs snapshot replay`；
+`compat/deprecated = none`；`dead/deleted/forbidden-to-restore = rollout/history DB 导出 owner、
+  旧 lime-cli、terminal-ui、第二套 runtime`；`deferred = Codex 私有 misalignment error 过滤、
+  thread title generation、shared daemon 与 Cloud production transport`。
+
+退出条件：replay filter 定向单测、`cargo test -p tui`、TUI Clippy、TUI structure/inventory、
+`npm run test:contracts`、`npm run governance:legacy-report` 与真实 `npm run smoke:tui-gate-b`
+全部通过；未迁移的 Codex 文件在 inventory 中保持明确分类。
+
+## 2026-09-07 Codex Tui external-program lifecycle alignment
+
+- 按 Codex `tui/src/tui.rs` 复制同名 `set_modes`、`restore_keep_raw`、
+  `flush_terminal_input_buffer` 与 `Tui::with_restored` 生命周期。恢复入口依次暂停
+  `EventBroker`、退出 active alternate screen、向外部编辑器交还终端、重建 TUI modes、清理编辑器
+  留下的 typeahead、重新进入 alternate screen、恢复事件并调度 frame。
+- 删除 runtime 的 50 次 `TuiEventStream` EOF 重建和分离的 `suspend/resume` 调用；终端关闭仍按
+  Codex 语义由输入流 `None` 直接结束，编辑器恢复只有 `with_restored` 一个 owner。
+- 将 Lime-only `TerminalGuard`/`TuiTerminal` 改为 Codex 同名 `Tui`/`Terminal`，并更新结构测试，
+  明确禁止旧类型名回流。Unix 使用 `tcflush(TCIFLUSH)`；Windows 使用
+  `FlushConsoleInputBuffer`，不引入平台假实现。
+- 真实 `complete` 场景验证 editor fd 0/1/2 继承 PTY、编辑后的 prompt 进入 canonical turn 并完成；
+  完整 `npm run smoke:tui-gate-b` 七场景通过，保持
+  `queue-edit=ok agents-overview=ok terminal=restored`。
+- 验证：`cargo test --manifest-path "lime-rs/Cargo.toml" -p tui`（390/390）、
+  `cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings`、
+  `npx vitest run "scripts/app-server/tui-structure-inventory.test.mjs"`（12/12）和真实七场景
+  TUI Gate B 通过；当前机器仅安装 `aarch64-apple-darwin` target，Windows 实现未在本机编译运行。
+
+分类：`current = tui::{Tui,Terminal,set_modes,restore_keep_raw,flush_terminal_input_buffer} +
+Tui::with_restored + EventBroker + FrameRequester`；`compat/deprecated = none`；
+`dead/deleted/forbidden-to-restore = TerminalGuard、TuiTerminal、runtime bounded EOF restart、旧
+lime-cli、terminal-ui、第二套 runtime`；`deferred = Windows CI 运行证据、Codex 私有产品面与生产
+Cloud transport`。
+
+## 2026-09-07 Codex crossterm fork recovery verification
+
+- 按 `/Users/coso/Documents/dev/rust/codex/codex-rs/Cargo.toml` 增加 workspace 级
+  `[patch.crates-io]`，固定 `crossterm` 到 `openai-oss-forks/crossterm`
+  revision `45fecb9508105988f42fe6ff0441783ed3717f92`，并同步 `lime-rs/Cargo.lock`。
+  该 fork 的 terminal readiness、外部消费输入缓冲和不完整 escape 隔离修复直接覆盖
+  TUI `Tui::with_restored` 后首个 Enter 偶发丢失的根因；没有在 Lime 增加第二套输入恢复逻辑。
+- `cargo test -p tui` 390/390、`cargo clippy -p tui --no-deps -- -D warnings`、
+  `cargo check --locked -p tui` 全部通过。
+- 真实 `LIME_TUI_GATE_B_SCENARIOS=complete npm run smoke:tui-gate-b` 连续 5 次通过；每次均
+  记录 external editor 修改后的 prompt、canonical `turn.started,message.delta,item.started,
+  item.completed,turn.completed` 和 `terminal=restored`。完整七场景
+  `npm run smoke:tui-gate-b` 同样通过，`queue-edit=ok`、`agents-overview=ok`。
+
+分类保持：`current = crossterm` Codex 固定 fork + `tui::{Tui,Terminal,EventBroker,TuiEventStream}`；
+`compat/deprecated = none`；`dead/deleted/forbidden-to-restore = 旧 crossterm registry 输入路径、
+TerminalGuard、TuiTerminal、runtime bounded EOF restart、旧 lime-cli、terminal-ui、第二套 runtime`；
+`deferred = Windows CI 运行证据、Codex 私有产品面与生产 Cloud transport`。

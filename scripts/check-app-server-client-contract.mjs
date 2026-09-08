@@ -67,6 +67,7 @@ const appServerClientSplitSourceFiles = [
   "packages/app-server-client/src/sidecar-manifest.ts",
   "packages/app-server-client/src/sidecar-process.ts",
   "packages/app-server-client/src/sidecar-lifecycle.ts",
+  "packages/app-server-client/src/remote.ts",
   "packages/app-server-client/src/agent-runtime.ts",
 ];
 const rendererAppServerIndexFile = "src/lib/api/appServer.ts";

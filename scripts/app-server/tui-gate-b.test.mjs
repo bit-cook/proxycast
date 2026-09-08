@@ -19,6 +19,8 @@ const ptyTestSource = readFileSync(
 describe("TUI Gate B", () => {
   it("drives the real TUI through a portable PTY and current App Server", () => {
     expect(gateSource).toContain('LIME_TEST_TUI_GATE_B: "1"');
+    expect(gateSource).toContain("buildTerminalGateBinaries");
+    expect(gateSource).toContain("LIME_TEST_TERMINAL_CWD: scenarioDir");
     expect(gateSource).toContain('"--exact"');
     expect(gateSource).toContain("writeTerminalExternalBackend");
     expect(ptyTestSource).toContain('OsString::from("tui")');
@@ -37,13 +39,24 @@ describe("TUI Gate B", () => {
     expect(ptyTestSource).toContain('"esc to interrupt"');
     expect(ptyTestSource).toContain('write_all(b"\\x1b[1;3A")');
     expect(ptyTestSource).toContain('"editing queued"');
+    expect(ptyTestSource).toContain('write_all(b"/agents\\r")');
+    expect(ptyTestSource).toContain("writer.write_all(&[14])");
+    expect(ptyTestSource).toContain("writer.write_all(&[18])");
+    expect(ptyTestSource).toContain("writer.write_all(&[24])");
+    expect(ptyTestSource).toContain('"Agent command center"');
+    expect(ptyTestSource).toContain("vt100::Parser::new(24, 100, 0)");
+    expect(ptyTestSource).toContain('"background task started"');
+    expect(ptyTestSource).toContain('"1 working"');
+    expect(ptyTestSource).toContain('"Rename:"');
+    expect(ptyTestSource).toContain('"Gate B background"');
+    expect(ptyTestSource).toContain('"AGENTS_OVERVIEW_READY"');
     expect(gateSource).toContain('event?.type === "queue.added"');
     expect(gateSource).toContain('event?.type === "queue.removed"');
     expect(gateSource).toContain(
       'event.payload?.source === "thread/queue/delete"',
     );
     expect(gateSource).toContain(
-      '"complete,approval,user-input,interrupt,failure,queue-edit"',
+      '"complete,approval,user-input,interrupt,failure,queue-edit,agents-overview"',
     );
   });
 

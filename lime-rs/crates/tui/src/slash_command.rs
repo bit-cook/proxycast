@@ -3,28 +3,40 @@ use crate::locale::Locale;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SlashCommand {
     Model,
+    Plan,
     Effort,
     Permissions,
     Status,
     Copy,
+    Agents,
+    MultiAgents,
+    Resume,
 }
 
 impl SlashCommand {
-    pub(crate) const ALL: [Self; 5] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::Model,
+        Self::Plan,
         Self::Effort,
         Self::Permissions,
         Self::Status,
         Self::Copy,
+        Self::Agents,
+        Self::MultiAgents,
+        Self::Resume,
     ];
 
     pub(crate) const fn command(self) -> &'static str {
         match self {
             Self::Model => "model",
+            Self::Plan => "plan",
             Self::Effort => "effort",
             Self::Permissions => "permissions",
             Self::Status => "status",
             Self::Copy => "copy",
+            Self::Agents => "agents",
+            Self::MultiAgents => "subagents",
+            Self::Resume => "resume",
         }
     }
 
@@ -74,7 +86,17 @@ mod tests {
     fn command_catalog_is_the_prompt_parser_fact_source() {
         assert_eq!(
             SlashCommand::ALL.map(SlashCommand::command),
-            ["model", "effort", "permissions", "status", "copy"]
+            [
+                "model",
+                "plan",
+                "effort",
+                "permissions",
+                "status",
+                "copy",
+                "agents",
+                "subagents",
+                "resume",
+            ]
         );
         for command in SlashCommand::ALL {
             let prompt = format!("/{}", command.command());

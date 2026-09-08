@@ -213,6 +213,16 @@ export interface OemCloudGatewayConfig {
   tenantHeader?: string;
 }
 
+export interface OemCloudAppServerConfig {
+  enabled: boolean;
+  endpoint?: string;
+  transport: "websocket";
+  protocol: "appserver.v0";
+  authorizationHeader: "Authorization";
+  authorizationScheme: "Bearer";
+  tenantHeader: "X-Lime-Tenant-ID";
+}
+
 export interface OemCloudBootstrapResponse {
   session: OemCloudCurrentSession;
   app: {
@@ -228,6 +238,7 @@ export interface OemCloudBootstrapResponse {
   authPolicy: OemCloudAuthPolicy;
   providerOffersSummary: OemCloudProviderOfferSummary[];
   providerPreference: OemCloudProviderPreference;
+  appServer?: OemCloudAppServerConfig;
   skillCatalog?: unknown;
   serviceSkillCatalog?: unknown;
   sceneCatalog?: Array<{ id: string }>;

@@ -463,13 +463,11 @@ mod tests {
 
     #[test]
     fn tmux_requires_clipboard_forwarding_capability() {
-        assert!(
-            tmux_clipboard_copy_ready(
-                || Ok("external\n".to_string()),
-                || Ok("193: Ms: (string) \\033]52\n".to_string()),
-            )
-            .is_ok()
-        );
+        assert!(tmux_clipboard_copy_ready(
+            || Ok("external\n".to_string()),
+            || Ok("193: Ms: (string) \\033]52\n".to_string()),
+        )
+        .is_ok());
         assert_eq!(
             tmux_clipboard_copy_ready(
                 || Ok("off\n".to_string()),

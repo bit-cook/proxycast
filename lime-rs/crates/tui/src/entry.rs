@@ -8,7 +8,7 @@ use crate::diff_render;
 use crate::locale::Locale;
 use crate::markdown_render;
 use crate::projection::{EntryKind, EntryStatus, TranscriptEntry};
-use crate::terminal_hyperlinks::{HyperlinkLine, prefix_hyperlink_lines};
+use crate::terminal_hyperlinks::{prefix_hyperlink_lines, HyperlinkLine};
 
 const COMMAND_OUTPUT_HEAD_LINES: usize = 50;
 const COMMAND_OUTPUT_TAIL_LINES: usize = 50;
@@ -72,10 +72,10 @@ pub(crate) fn hyperlink_lines_with_locale(
     }
     let mut source = entry.text.lines();
     let first = source.next().unwrap_or("");
-    let first = if matches!(entry.kind, EntryKind::Tool | EntryKind::System) {
-        locale.detail(first)
-    } else {
-        first.to_string()
+    let first = match entry.kind {
+        EntryKind::Tool | EntryKind::System => locale.detail(first),
+        EntryKind::MultiAgent => locale.multi_agent(first),
+        _ => first.to_string(),
     };
     let first = with_status_suffix(&first, entry.status, locale);
     let mut lines = vec![HyperlinkLine::new(format_line(
@@ -287,13 +287,25 @@ mod tests {
         assert_eq!(mcp[0].spans[0].content.as_ref(), "@ ");
         assert_eq!(plan[0].spans[0].content.as_ref(), "• ");
         assert_eq!(multi_agent[0].spans[0].content.as_ref(), "& ");
-        assert!(
-            patch[1]
-                .spans
-                .iter()
-                .any(|span| span.style.fg == Some(Color::Green))
-        );
+        assert!(patch[1]
+            .spans
+            .iter()
+            .any(|span| span.style.fg == Some(Color::Green)));
         assert_eq!(command[1].spans[1].style.fg, Some(Color::DarkGray));
+    }
+
+    #[test]
+    fn multi_agent_titles_are_localized_at_the_render_boundary() {
+        let entry = entry(EntryKind::MultiAgent, "Spawned agent-1");
+        let rendered =
+            hyperlink_lines_with_locale(&entry, Locale::ZhCn, Some(80), Path::new("/workspace"));
+        let text = rendered
+            .iter()
+            .flat_map(|line| line.line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(text.contains("已启动 agent-1"));
+        assert!(!text.contains("Spawned agent-1"));
     }
 
     #[test]
@@ -302,12 +314,10 @@ mod tests {
         let running = lines(&entry(EntryKind::Plan, "[~] test"));
         let pending = lines(&entry(EntryKind::Plan, "[ ] ship"));
 
-        assert!(
-            completed[0].spans[1]
-                .style
-                .add_modifier
-                .contains(Modifier::CROSSED_OUT)
-        );
+        assert!(completed[0].spans[1]
+            .style
+            .add_modifier
+            .contains(Modifier::CROSSED_OUT));
         assert_eq!(running[0].spans[1].style.fg, Some(Color::Cyan));
         assert_eq!(pending[0].spans[1].style.fg, Some(Color::DarkGray));
     }
@@ -345,12 +355,10 @@ mod tests {
             span.style.fg == Some(Color::DarkGray)
                 && span.style.add_modifier.contains(Modifier::BOLD)
         }));
-        assert!(
-            rendered
-                .iter()
-                .flat_map(|line| &line.spans)
-                .any(|span| span.content == "src/lib.rs" && span.style.fg == Some(Color::Cyan))
-        );
+        assert!(rendered
+            .iter()
+            .flat_map(|line| &line.spans)
+            .any(|span| span.content == "src/lib.rs" && span.style.fg == Some(Color::Cyan)));
     }
 
     #[test]

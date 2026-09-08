@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
-use app_server_protocol::RequestId;
 use app_server_protocol::protocol::v2::{
     ToolRequestUserInputAnswer, ToolRequestUserInputParams, ToolRequestUserInputResponse,
 };
+use app_server_protocol::RequestId;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::{AppServerResponse, ChatComposer, InputResult};

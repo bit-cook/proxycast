@@ -270,9 +270,11 @@ async fn execute_current_tool_attempt(
                 working_directory: request.context.working_directory().clone(),
                 environment: request.context.environment().clone(),
                 tool_call_id: attempt.identity().call_id().to_string(),
+                turn_id: attempt.identity().turn_id().to_string(),
                 cancel_token: request.context.cancel_token().cloned(),
                 turn_context: request.turn_context,
                 attempt: Some(attempt),
+                output_sink: request.context.lifecycle_emitter().cloned(),
             },
         )
         .await;

@@ -14,6 +14,7 @@ Current scope:
 - build sidecar launch config from manifest + resources path;
 - verify the sidecar binary sha256 before launch;
 - spawn / connect a stdio sidecar with the initialize handshake;
+- connect an authenticated remote WebSocket with the same initialize handshake;
 - supervise sidecar crash, startup failure, and restart with deterministic backoff;
 - route direct v2 Thread / Turn / Item lifecycle notifications into app-owned
   state, including `item/agentMessage/delta`;
@@ -98,7 +99,6 @@ const thread = await runtime.readThread({
   threadId: session.result.thread.id,
   includeTurns: true,
 });
-
 ```
 
 `AgentRuntimeClient` is a facade over the current App Server JSON-RPC methods.
@@ -122,3 +122,30 @@ evidence export surface is not available on this client.
 Sidecar `backendMode: "mock"` is test-only. Production hosts must use `runtime`,
 `external`, or fail closed; they must not treat the mock backend as a fallback
 for Agent Runtime or renderer UI flows.
+
+Remote WebSocket foundation:
+
+```ts
+import {
+  connectRemoteAppServer,
+  type RemoteTransportConfig,
+} from "@limecloud/app-server-client";
+
+const remote: RemoteTransportConfig = {
+  websocketUrl: "wss://cloud.example/app-server",
+  authToken: process.env.LIME_REMOTE_TOKEN,
+  tenantId: "tenant-42",
+};
+const connected = await connectRemoteAppServer(remote, {
+  clientInfo: { name: "host-app", version: "1" },
+});
+```
+
+The remote transport sends credentials only as `Authorization: Bearer ...` and
+the optional `X-Lime-Tenant-ID` header. It rejects URL userinfo, fragments,
+credential query parameters, insecure public `ws://` token connections, binary
+frames, and messages above 128 MiB. The server must identify itself as
+`app-server` and speak `appserver.v0` before `initialized` is sent. This is a
+transport foundation only; tenant isolation, token storage/rotation, reconnect,
+rate limiting, audit, and a production Cloud endpoint remain outside this
+package and must be completed by the Cloud service before enablement.

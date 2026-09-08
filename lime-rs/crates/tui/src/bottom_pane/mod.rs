@@ -2,16 +2,17 @@ mod approval_overlay;
 mod chat_composer;
 mod render;
 mod request_user_input;
+mod textarea;
 
 use std::collections::VecDeque;
 
-use app_server_protocol::RequestId;
 use app_server_protocol::protocol::v2::{
     CommandExecutionApprovalDecision, CommandExecutionRequestApprovalResponse,
     FileChangeApprovalDecision, FileChangeRequestApprovalResponse, GrantedPermissionProfile,
     PermissionGrantScope, PermissionsRequestApprovalResponse, ServerRequest,
     ToolRequestUserInputResponse,
 };
+use app_server_protocol::RequestId;
 use crossterm::event::{Event, KeyEvent};
 
 use approval_overlay::ApprovalOverlay;
@@ -154,11 +155,13 @@ mod tests {
     use super::*;
     use app_server_protocol::protocol::v2::{
         CommandExecutionApprovalDecision, CommandExecutionRequestApprovalParams,
-        FileChangeApprovalDecision, FileChangeRequestApprovalParams,
-        PermissionsRequestApprovalParams, RequestPermissionProfile, ToolRequestUserInputOption,
-        ToolRequestUserInputParams, ToolRequestUserInputQuestion,
+        DynamicToolCallParams, DynamicToolCallPhase, FileChangeApprovalDecision,
+        FileChangeRequestApprovalParams, PermissionsRequestApprovalParams,
+        RequestPermissionProfile, ToolRequestUserInputOption, ToolRequestUserInputParams,
+        ToolRequestUserInputQuestion,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use serde_json::json;
 
     fn key(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
@@ -222,6 +225,47 @@ mod tests {
                 id: RequestId::Integer(2),
                 ..
             })
+        ));
+        assert!(!pane.is_active());
+    }
+
+    #[test]
+    fn unsupported_requests_return_for_rejection() {
+        let mut pane = BottomPane::default();
+        let dynamic_tool = ServerRequest::DynamicToolCall {
+            id: RequestId::Integer(3),
+            params: DynamicToolCallParams {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                call_id: "call-1".to_string(),
+                namespace: None,
+                tool: "browser.open".to_string(),
+                arguments: json!({}),
+                phase: DynamicToolCallPhase::Preflight,
+                approval_token: None,
+            },
+        };
+        assert!(matches!(
+            pane.enqueue(dynamic_tool),
+            Err(request) if matches!(*request, ServerRequest::DynamicToolCall { .. })
+        ));
+
+        let mcp_elicitation = serde_json::from_value::<ServerRequest>(json!({
+            "method": "mcpServer/elicitation/request",
+            "id": 4,
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "serverName": "form-server",
+                "mode": "form",
+                "message": "Choose a value",
+                "requestedSchema": { "type": "object", "properties": {} }
+            }
+        }))
+        .expect("MCP elicitation request");
+        assert!(matches!(
+            pane.enqueue(mcp_elicitation),
+            Err(request) if matches!(*request, ServerRequest::McpServerElicitationRequest { .. })
         ));
         assert!(!pane.is_active());
     }

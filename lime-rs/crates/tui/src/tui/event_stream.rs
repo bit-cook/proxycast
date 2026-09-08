@@ -18,20 +18,20 @@
 //! See https://ratatui.rs/recipes/apps/spawn-vim/ and https://www.reddit.com/r/rust/comments/1f3o33u/myterious_crossterm_input_after_running_vim for more details.
 
 use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::task::Context;
 use std::task::Poll;
 
 use crossterm::event::Event;
 use tokio::sync::broadcast;
 use tokio::sync::watch;
-use tokio_stream::Stream;
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::wrappers::WatchStream;
-use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
+use tokio_stream::Stream;
 
 use super::TuiEvent;
 

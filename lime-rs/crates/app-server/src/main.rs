@@ -506,10 +506,7 @@ fn parse_args_from_with_env(
 
     while let Some(arg) = args.next() {
         if let Some(value) = arg.strip_prefix("--data-dir=") {
-            if value.is_empty() {
-                anyhow::bail!("--data-dir requires a path");
-            }
-            data_dir = Some(PathBuf::from(value));
+            data_dir = Some(validate_data_dir(PathBuf::from(value), "--data-dir")?);
             data_dir_from_cli = true;
             continue;
         }
@@ -567,10 +564,13 @@ fn parse_args_from_with_env(
                 );
             }
             "--data-dir" => {
-                data_dir =
-                    Some(PathBuf::from(args.next().ok_or_else(|| {
-                        anyhow::anyhow!("--data-dir requires a path")
-                    })?));
+                data_dir = Some(validate_data_dir(
+                    PathBuf::from(
+                        args.next()
+                            .ok_or_else(|| anyhow::anyhow!("--data-dir requires a path"))?,
+                    ),
+                    "--data-dir",
+                )?);
                 data_dir_from_cli = true;
             }
             "--app-data-dir" => {
@@ -595,6 +595,12 @@ fn parse_args_from_with_env(
         }
     }
 
+    if !data_dir_from_cli {
+        if let Some(path) = data_dir.take() {
+            data_dir = Some(validate_data_dir(path, APP_SERVER_DATA_DIR_ENV)?);
+        }
+    }
+
     if model_control_source.is_some() && !data_dir_from_cli {
         anyhow::bail!("--model-control-source requires an explicit --data-dir");
     }
@@ -610,6 +616,19 @@ fn parse_args_from_with_env(
         app_data_dir,
         model_control_source,
     })
+}
+
+fn validate_data_dir(path: PathBuf, source: &str) -> anyhow::Result<PathBuf> {
+    if path.as_os_str().is_empty() {
+        anyhow::bail!("{source} requires a path");
+    }
+    if path == Path::new("undefined") || path == Path::new("null") {
+        anyhow::bail!("{source} has an invalid path");
+    }
+    if !path.is_absolute() {
+        anyhow::bail!("{source} must be an absolute path");
+    }
+    Ok(path)
 }
 
 fn load_app_policy_source(path: &str) -> anyhow::Result<app_server::CapabilityInventorySource> {
@@ -804,6 +823,31 @@ mod tests {
         .expect("config");
 
         assert_eq!(config.data_dir, Some(PathBuf::from("/tmp/env-app-server")));
+    }
+
+    #[test]
+    fn parse_args_rejects_invalid_data_dir_values() {
+        for args in [
+            vec!["--data-dir", "undefined"],
+            vec!["--data-dir=null"],
+            vec!["--data-dir", "relative/app-server"],
+        ] {
+            let error = parse_args_from(args.into_iter().map(str::to_string))
+                .expect_err("invalid data dir must fail closed");
+            assert!(error.to_string().contains("data-dir"));
+        }
+
+        let error = parse_args_from_with_env(Vec::new(), Some(OsString::from("undefined")), None)
+            .expect_err("invalid data dir environment must fail closed");
+        assert!(error.to_string().contains("APP_SERVER_DATA_DIR"));
+
+        let config = parse_args_from_with_env(
+            ["--data-dir", "/tmp/cli-app-server"].map(str::to_string),
+            Some(OsString::from("undefined")),
+            None,
+        )
+        .expect("explicit CLI data dir must override invalid environment");
+        assert_eq!(config.data_dir, Some(PathBuf::from("/tmp/cli-app-server")));
     }
 
     #[test]

@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
+use ratatui::Frame;
 
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
@@ -45,8 +45,8 @@ fn fmt_elapsed_compact(elapsed_secs: u64) -> String {
 mod tests {
     use super::*;
     use crate::line_truncation::line_width;
-    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
 
     fn line_text(line: &Line<'_>) -> String {
         line.spans

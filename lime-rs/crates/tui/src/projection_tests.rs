@@ -473,6 +473,79 @@ fn collab_agent_summary_keeps_requested_model_effort_and_prompt() {
 }
 
 #[test]
+fn collab_wait_projection_keeps_per_agent_results() {
+    let mut agents_states = HashMap::new();
+    agents_states.insert(
+        "agent-1".to_string(),
+        CollabAgentState {
+            status: CollabAgentStatus::Completed,
+            message: Some("answer".to_string()),
+        },
+    );
+    agents_states.insert(
+        "agent-2".to_string(),
+        CollabAgentState {
+            status: CollabAgentStatus::Errored,
+            message: Some("timeout".to_string()),
+        },
+    );
+
+    let collab = project_item(
+        &ThreadItem::CollabAgentToolCall {
+            id: "collab-wait".to_string(),
+            metadata: None,
+            tool: CollabAgentTool::Wait,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: "thread-1".to_string(),
+            receiver_thread_ids: vec!["agent-2".to_string(), "agent-1".to_string()],
+            prompt: None,
+            model: None,
+            reasoning_effort: None,
+            agents_states,
+        },
+        false,
+    )
+    .expect("collab projection");
+
+    assert!(collab
+        .summary
+        .iter()
+        .any(|detail| detail == "agent-1: Completed - answer"));
+    assert!(collab
+        .summary
+        .iter()
+        .any(|detail| detail == "agent-2: Error - timeout"));
+}
+
+#[test]
+fn collab_resume_projection_keeps_resume_result() {
+    let collab = project_item(
+        &ThreadItem::CollabAgentToolCall {
+            id: "collab-resume".to_string(),
+            metadata: None,
+            tool: CollabAgentTool::ResumeAgent,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: "thread-1".to_string(),
+            receiver_thread_ids: vec!["agent-1".to_string()],
+            prompt: None,
+            model: None,
+            reasoning_effort: None,
+            agents_states: HashMap::from([(
+                "agent-1".to_string(),
+                CollabAgentState {
+                    status: CollabAgentStatus::Interrupted,
+                    message: None,
+                },
+            )]),
+        },
+        false,
+    )
+    .expect("collab projection");
+
+    assert!(collab.summary.iter().any(|detail| detail == "Interrupted"));
+}
+
+#[test]
 fn turn_terminal_status_settles_in_progress_items() {
     let mut projection = ConversationProjection::default();
     projection.apply(ServerNotification::ItemStarted(ItemStartedNotification {

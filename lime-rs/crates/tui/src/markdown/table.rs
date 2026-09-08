@@ -5,7 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use super::{TableRow, TableState};
-use crate::terminal_hyperlinks::{HyperlinkLine, wrap_hyperlink_line};
+use crate::terminal_hyperlinks::{wrap_hyperlink_line, HyperlinkLine};
 use crate::width::display_width;
 
 const COLUMN_GAP: usize = 2;

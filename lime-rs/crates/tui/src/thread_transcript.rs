@@ -8,7 +8,7 @@ use std::io;
 
 use app_server_client::RequestHandle;
 use app_server_protocol::protocol::v2::{
-    METHOD_THREAD_READ, Thread, ThreadReadParams, ThreadReadResponse,
+    Thread, ThreadReadParams, ThreadReadResponse, METHOD_THREAD_READ,
 };
 
 use crate::app_server_session::AppServerSession;
@@ -20,7 +20,7 @@ pub(crate) async fn load_session_transcript(
     thread_id: impl Into<String>,
 ) -> io::Result<Vec<TranscriptEntry>> {
     let response = app_server
-        .read_thread(thread_id, true)
+        .thread_read(thread_id, true)
         .await
         .map_err(io::Error::other)?;
     Ok(thread_to_transcript_entries(response.thread))

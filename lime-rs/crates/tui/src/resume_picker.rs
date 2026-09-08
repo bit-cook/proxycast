@@ -1,29 +1,32 @@
 use anyhow::{Context, Result};
 use app_server_client::RequestHandle;
 use app_server_protocol::protocol::v2::{
-    METHOD_THREAD_ARCHIVE, METHOD_THREAD_UNARCHIVE, SortDirection, Thread, ThreadArchiveParams,
-    ThreadHistoryMode, ThreadListCwdFilter, ThreadListParams, ThreadListResponse, ThreadSortKey,
-    ThreadStatus, ThreadUnarchiveParams, ThreadUnarchiveResponse,
+    SortDirection, Thread, ThreadArchiveParams, ThreadHistoryMode, ThreadListCwdFilter,
+    ThreadListParams, ThreadListResponse, ThreadSortKey, ThreadStatus, ThreadUnarchiveParams,
+    ThreadUnarchiveResponse, METHOD_THREAD_ARCHIVE, METHOD_THREAD_UNARCHIVE,
 };
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
-use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::Frame;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 
 use crate::clipboard_paste::normalize_pasted_search_query;
+use crate::entry;
 use crate::locale::Locale;
+use crate::pager_overlay::{PagerAction, PagerOverlay};
 use crate::projection::{EntryKind, TranscriptEntry};
-use crate::runtime::{TuiOptions, connect_session};
+use crate::runtime::{connect_session, TuiOptions};
+use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::text_formatting::center_truncate_path;
-use crate::tui::{TerminalGuard, TuiEvent};
+use crate::tui::{Tui, TuiEvent};
 use crate::width::display_width;
-use crate::wrapping::{RtOptions, adaptive_wrap_line};
+use crate::wrapping::{adaptive_wrap_line, RtOptions};
 
 mod archive;
 mod page_loading;
@@ -34,7 +37,6 @@ use page_loading::{PageCursor, PageLoadMode, PaginationState};
 mod transcript_preview;
 
 const MAX_THREADS: u32 = 100;
-const MAX_PAGES: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -132,72 +134,42 @@ pub(crate) async fn run_fork_picker_with_app_server(
     Ok(Some(response.thread.id))
 }
 
-async fn load_threads_with_handle(
+#[derive(Debug)]
+pub(crate) struct ThreadPage {
+    threads: Vec<Thread>,
+    next_cursor: Option<String>,
+}
+
+async fn load_thread_page_with_handle(
     request_handle: RequestHandle,
     status: SessionStatus,
     filter_cwd: Option<&std::path::Path>,
     query: &str,
     sort_key: ThreadSortKey,
-) -> Result<Vec<Thread>> {
-    let mut pagination = PaginationState::new();
-    let mut cursor = None;
-    let mut data = Vec::new();
-    let mut seen_cursors = std::collections::HashSet::new();
-    let mut seen_thread_ids = std::collections::HashSet::new();
-
-    for request_token in 0..MAX_PAGES {
-        if request_token == 0 {
-            pagination.reset();
-        }
-        // Lime's current App Server owns the canonical index; do not switch
-        // to Codex's private local state DB mode for later pages.
-        let mode = PageLoadMode::StoreDefault;
-        pagination.start_load(request_token, None, mode);
-        let page: ThreadListResponse = request_handle
-            .request(
-                app_server_protocol::protocol::v2::METHOD_THREAD_LIST,
-                ThreadListParams {
-                    cursor: cursor.clone(),
-                    limit: Some(MAX_THREADS),
-                    sort_key: Some(sort_key),
-                    sort_direction: Some(SortDirection::Desc),
-                    archived: Some(status == SessionStatus::Archived),
-                    cwd: filter_cwd
-                        .map(|cwd| ThreadListCwdFilter::One(cwd.to_string_lossy().into_owned())),
-                    search_term: (!query.trim().is_empty()).then(|| query.trim().to_string()),
-                    ..ThreadListParams::default()
-                },
-            )
-            .await?;
-        pagination
-            .finish_load(request_token)
-            .ok_or_else(|| anyhow::anyhow!("thread list response became stale"))?;
-        let next_cursor = page.next_cursor.clone();
-        let page_len = page.data.len();
-        data.extend(
-            page.data
-                .into_iter()
-                .filter(|thread| seen_thread_ids.insert(thread.id.clone())),
-        );
-        pagination.complete_page(
-            next_cursor.clone().map(PageCursor::AppServer),
-            page_len,
-            false,
-        );
-        let Some((PageCursor::AppServer(next), _mode)) = pagination.next_page() else {
-            return Ok(filter_threads(data, query));
-        };
-        if !seen_cursors.insert(next.clone()) {
-            return Err(anyhow::anyhow!(
-                "thread list pagination repeated cursor {next}"
-            ));
-        }
-        cursor = Some(next);
-    }
-
-    Err(anyhow::anyhow!(
-        "thread list pagination exceeded {MAX_PAGES} pages"
-    ))
+    cursor: Option<String>,
+) -> Result<ThreadPage> {
+    // Lime's current App Server owns the canonical index; do not switch to
+    // Codex's private local state DB mode for later pages.
+    let page: ThreadListResponse = request_handle
+        .request(
+            app_server_protocol::protocol::v2::METHOD_THREAD_LIST,
+            ThreadListParams {
+                cursor,
+                limit: Some(MAX_THREADS),
+                sort_key: Some(sort_key),
+                sort_direction: Some(SortDirection::Desc),
+                archived: Some(status == SessionStatus::Archived),
+                cwd: filter_cwd
+                    .map(|cwd| ThreadListCwdFilter::One(cwd.to_string_lossy().into_owned())),
+                search_term: (!query.trim().is_empty()).then(|| query.trim().to_string()),
+                ..ThreadListParams::default()
+            },
+        )
+        .await?;
+    Ok(ThreadPage {
+        threads: filter_threads(page.data, query),
+        next_cursor: page.next_cursor,
+    })
 }
 
 fn filter_threads(mut threads: Vec<Thread>, query: &str) -> Vec<Thread> {
@@ -227,7 +199,7 @@ fn filter_threads(mut threads: Vec<Thread>, query: &str) -> Vec<Thread> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PickerAction {
+pub(crate) enum PickerAction {
     None,
     Reload,
     MoveUp,
@@ -240,13 +212,14 @@ enum PickerAction {
     ToggleSort,
     ToggleDensity,
     ToggleExpanded,
+    OpenTranscript,
     Cancel,
 }
 
-enum PickerLoadEvent {
+pub(crate) enum PickerLoadEvent {
     Threads {
         token: usize,
-        result: Result<Vec<Thread>>,
+        result: Result<ThreadPage>,
     },
     Preview {
         thread_id: String,
@@ -267,7 +240,7 @@ enum PickerLoadEvent {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum SessionStatus {
+pub(crate) enum SessionStatus {
     #[default]
     Active,
     Archived,
@@ -287,6 +260,21 @@ enum SessionTranscriptState {
     Failed,
 }
 
+#[derive(Debug)]
+struct PickerTranscriptPager {
+    thread_id: String,
+    overlay: PagerOverlay,
+}
+
+impl PickerTranscriptPager {
+    fn new(thread_id: String, locale: Locale) -> Self {
+        Self {
+            thread_id,
+            overlay: PagerOverlay::transcript(locale),
+        }
+    }
+}
+
 impl SessionListDensity {
     fn toggle(self) -> Self {
         match self {
@@ -297,9 +285,9 @@ impl SessionListDensity {
 }
 
 #[derive(Debug)]
-struct PickerState {
+pub(crate) struct PickerState {
     action: SessionPickerAction,
-    threads: Vec<Thread>,
+    pub(crate) threads: Vec<Thread>,
     selected: usize,
     query: String,
     status: SessionStatus,
@@ -311,14 +299,17 @@ struct PickerState {
     preview_loading: HashSet<String>,
     expanded_thread_id: Option<String>,
     transcripts: HashMap<String, SessionTranscriptState>,
+    transcript_pager: Option<PickerTranscriptPager>,
+    pagination: PaginationState,
+    seen_cursors: HashSet<String>,
     archive_state: archive::ArchiveState,
     status_message: Option<String>,
     loading: bool,
-    load_token: usize,
+    pub(crate) load_token: usize,
 }
 
 impl PickerState {
-    fn new(
+    pub(crate) fn new(
         threads: Vec<Thread>,
         action: SessionPickerAction,
         status: SessionStatus,
@@ -339,6 +330,9 @@ impl PickerState {
             preview_loading: HashSet::new(),
             expanded_thread_id: None,
             transcripts: HashMap::new(),
+            transcript_pager: None,
+            pagination: PaginationState::new(),
+            seen_cursors: HashSet::new(),
             archive_state: archive::ArchiveState::Idle,
             status_message: None,
             loading: false,
@@ -346,13 +340,13 @@ impl PickerState {
         }
     }
 
-    fn selected_thread_id(&self) -> Option<&str> {
+    pub(crate) fn selected_thread_id(&self) -> Option<&str> {
         self.threads
             .get(self.selected)
             .map(|thread| thread.id.as_str())
     }
 
-    fn set_transcript_preview(
+    pub(crate) fn set_transcript_preview(
         &mut self,
         thread_id: String,
         preview: Vec<transcript_preview::TranscriptPreviewLine>,
@@ -370,7 +364,7 @@ impl PickerState {
         self.preview_loading.insert(thread_id.into());
     }
 
-    fn toggle_selected_expansion(&mut self) -> Option<String> {
+    pub(crate) fn toggle_selected_expansion(&mut self) -> Option<String> {
         let thread_id = self.selected_thread_id()?.to_string();
         if self.expanded_thread_id.as_deref() == Some(thread_id.as_str()) {
             self.expanded_thread_id = None;
@@ -388,7 +382,71 @@ impl PickerState {
         None
     }
 
-    fn set_transcript(&mut self, thread_id: String, result: std::io::Result<Vec<TranscriptEntry>>) {
+    pub(crate) fn open_transcript_pager(&mut self, locale: Locale) -> Option<String> {
+        let thread_id = self.selected_thread_id()?.to_string();
+        let should_load = if self.transcripts.contains_key(&thread_id) {
+            false
+        } else {
+            self.transcripts
+                .insert(thread_id.clone(), SessionTranscriptState::Loading);
+            true
+        };
+        self.transcript_pager = Some(PickerTranscriptPager::new(thread_id.clone(), locale));
+        should_load.then_some(thread_id)
+    }
+
+    fn transcript_lines(&self, thread_id: &str, width: u16, locale: Locale) -> Vec<HyperlinkLine> {
+        let Some(state) = self.transcripts.get(thread_id) else {
+            return vec![HyperlinkLine::new(Line::styled(
+                locale.resume_transcript_loading(),
+                Style::default().fg(Color::DarkGray),
+            ))];
+        };
+        match state {
+            SessionTranscriptState::Loading => vec![HyperlinkLine::new(Line::styled(
+                locale.resume_transcript_loading(),
+                Style::default().fg(Color::DarkGray),
+            ))],
+            SessionTranscriptState::Failed => vec![HyperlinkLine::new(Line::styled(
+                locale.resume_transcript_failed(),
+                Style::default().fg(Color::Red),
+            ))],
+            SessionTranscriptState::Loaded(entries) if entries.is_empty() => {
+                vec![HyperlinkLine::new(Line::styled(
+                    locale.resume_transcript_empty(),
+                    Style::default().fg(Color::DarkGray),
+                ))]
+            }
+            SessionTranscriptState::Loaded(entries) => {
+                let content_width = Some(usize::from(width.saturating_sub(2).max(1)));
+                let cwd = self
+                    .threads
+                    .iter()
+                    .find(|thread| thread.id == thread_id)
+                    .map(|thread| thread.cwd.as_path());
+                let cwd = cwd.unwrap_or_else(|| std::path::Path::new(""));
+                let mut lines = Vec::new();
+                for entry in entries {
+                    if !lines.is_empty() {
+                        lines.push(HyperlinkLine::default());
+                    }
+                    lines.extend(entry::hyperlink_lines_with_locale(
+                        entry,
+                        locale,
+                        content_width,
+                        cwd,
+                    ));
+                }
+                lines
+            }
+        }
+    }
+
+    pub(crate) fn set_transcript(
+        &mut self,
+        thread_id: String,
+        result: std::io::Result<Vec<TranscriptEntry>>,
+    ) {
         self.transcripts.insert(
             thread_id,
             match result {
@@ -402,15 +460,62 @@ impl PickerState {
         self.load_token = self.load_token.wrapping_add(1);
         self.loading = true;
         self.status_message = None;
+        self.pagination
+            .start_load(self.load_token, None, PageLoadMode::StoreDefault);
         self.load_token
     }
 
+    #[cfg(test)]
     fn apply_threads(&mut self, token: usize, threads: Vec<Thread>) {
-        if token != self.load_token {
+        self.apply_thread_page(
+            token,
+            ThreadPage {
+                threads,
+                next_cursor: None,
+            },
+        );
+    }
+
+    pub(crate) fn apply_thread_page(&mut self, token: usize, page: ThreadPage) {
+        if token != self.load_token || self.pagination.finish_load(token).is_none() {
             return;
         }
         self.loading = false;
-        self.set_threads(threads);
+        let page_len = page.threads.len();
+        let next_cursor = page.next_cursor;
+        let mut seen_thread_ids = self
+            .threads
+            .iter()
+            .map(|thread| thread.id.clone())
+            .collect::<HashSet<_>>();
+        self.threads.extend(
+            page.threads
+                .into_iter()
+                .filter(|thread| seen_thread_ids.insert(thread.id.clone())),
+        );
+        self.pagination
+            .complete_page(next_cursor.map(PageCursor::AppServer), page_len, false);
+        self.selected = self.selected.min(self.threads.len().saturating_sub(1));
+    }
+
+    pub(crate) fn fail_thread_load(&mut self, token: usize, error: anyhow::Error) {
+        if token != self.load_token {
+            return;
+        }
+        let _ = self.pagination.finish_load(token);
+        self.loading = false;
+        self.status_message = Some(error.to_string());
+    }
+
+    pub(crate) fn should_load_more(&self) -> bool {
+        !self.pagination.is_loading()
+            && self.pagination.next_page().is_some()
+            && !self.threads.is_empty()
+            && self.selected + 1 >= self.threads.len()
+    }
+
+    pub(crate) fn has_more_pages(&self) -> bool {
+        self.pagination.next_page().is_some()
     }
 
     fn transcript_preview_text(&self, thread_id: &str) -> Option<String> {
@@ -430,13 +535,14 @@ impl PickerState {
         })
     }
 
-    fn handle_event(&mut self, event: Event) -> PickerAction {
+    pub(crate) fn handle_event(&mut self, event: Event) -> PickerAction {
         if let Event::Paste(text) = event {
             if let Some(text) = normalize_pasted_search_query(&text) {
                 if !self.query.is_empty() && !self.query.ends_with(char::is_whitespace) {
                     self.query.push(' ');
                 }
                 self.query.push_str(&text);
+                self.invalidate_thread_list();
             }
             return PickerAction::Reload;
         }
@@ -465,8 +571,12 @@ impl PickerState {
                 KeyCode::Char('r') => return PickerAction::ToggleSort,
                 KeyCode::Char('o') => return PickerAction::ToggleDensity,
                 KeyCode::Char('e') => return PickerAction::ToggleExpanded,
+                KeyCode::Char('t') => return PickerAction::OpenTranscript,
                 _ => {}
             }
+        }
+        if key.modifiers.is_empty() && key.code == KeyCode::Char('\u{0014}') {
+            return PickerAction::OpenTranscript;
         }
         if key.modifiers.is_empty() && key.code == KeyCode::Char('\u{0005}') {
             return PickerAction::ToggleExpanded;
@@ -476,9 +586,29 @@ impl PickerState {
                 self.selected = self.selected.saturating_sub(1);
                 PickerAction::MoveUp
             }
+            KeyCode::PageUp => {
+                self.selected = self.selected.saturating_sub(10);
+                PickerAction::MoveUp
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.threads.is_empty() {
                     self.selected = (self.selected + 1).min(self.threads.len() - 1);
+                }
+                PickerAction::MoveDown
+            }
+            KeyCode::PageDown => {
+                if !self.threads.is_empty() {
+                    self.selected = (self.selected + 10).min(self.threads.len() - 1);
+                }
+                PickerAction::MoveDown
+            }
+            KeyCode::Home => {
+                self.selected = 0;
+                PickerAction::MoveUp
+            }
+            KeyCode::End => {
+                if !self.threads.is_empty() {
+                    self.selected = self.threads.len() - 1;
                 }
                 PickerAction::MoveDown
             }
@@ -486,22 +616,25 @@ impl PickerState {
             KeyCode::Enter => PickerAction::Select,
             KeyCode::Backspace => {
                 self.query.pop();
+                self.invalidate_thread_list();
                 PickerAction::Reload
             }
             KeyCode::Esc if self.query.is_empty() => PickerAction::Cancel,
             KeyCode::Esc => {
                 self.query.clear();
+                self.invalidate_thread_list();
                 PickerAction::Reload
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::ALT) => {
                 self.query.push(c);
+                self.invalidate_thread_list();
                 PickerAction::Reload
             }
             _ => PickerAction::None,
         }
     }
 
-    fn toggle_status(&mut self) {
+    pub(crate) fn toggle_status(&mut self) {
         self.status = match self.status {
             SessionStatus::Active => SessionStatus::Archived,
             SessionStatus::Archived => SessionStatus::Active,
@@ -511,18 +644,24 @@ impl PickerState {
         self.preview_loading.clear();
         self.expanded_thread_id = None;
         self.transcripts.clear();
+        self.transcript_pager = None;
+        self.pagination.reset();
+        self.seen_cursors.clear();
     }
 
-    fn toggle_filter(&mut self) {
+    pub(crate) fn toggle_filter(&mut self) {
         self.show_all = !self.show_all;
         self.selected = 0;
         self.transcript_previews.clear();
         self.preview_loading.clear();
         self.expanded_thread_id = None;
         self.transcripts.clear();
+        self.transcript_pager = None;
+        self.pagination.reset();
+        self.seen_cursors.clear();
     }
 
-    fn toggle_sort(&mut self) {
+    pub(crate) fn toggle_sort(&mut self) {
         self.sort_key = match self.sort_key {
             ThreadSortKey::UpdatedAt => ThreadSortKey::CreatedAt,
             ThreadSortKey::CreatedAt
@@ -534,8 +673,12 @@ impl PickerState {
         self.preview_loading.clear();
         self.expanded_thread_id = None;
         self.transcripts.clear();
+        self.transcript_pager = None;
+        self.pagination.reset();
+        self.seen_cursors.clear();
     }
 
+    #[cfg(test)]
     fn set_threads(&mut self, threads: Vec<Thread>) {
         self.threads = filter_threads(threads, &self.query);
         self.selected = self.selected.min(self.threads.len().saturating_sub(1));
@@ -543,14 +686,61 @@ impl PickerState {
         self.preview_loading.clear();
         self.expanded_thread_id = None;
         self.transcripts.clear();
+        self.transcript_pager = None;
+        self.pagination.reset();
+        self.seen_cursors.clear();
+    }
+
+    pub(crate) fn invalidate_thread_list(&mut self) {
+        self.pagination.reset();
+        self.seen_cursors.clear();
+    }
+
+    pub(crate) fn toggle_density(&mut self) {
+        self.density = self.density.toggle();
+    }
+
+    pub(crate) fn transcript_pager_is_open(&self) -> bool {
+        self.transcript_pager.is_some()
+    }
+
+    pub(crate) fn handle_transcript_pager_event(&mut self, event: &Event) {
+        if let Some(pager) = self.transcript_pager.as_mut() {
+            if pager.overlay.handle_event(event) == PagerAction::Close {
+                self.transcript_pager = None;
+            }
+        }
     }
 }
 
-fn spawn_thread_load(
+pub(crate) fn spawn_thread_load(
     request_handle: RequestHandle,
     sender: &mpsc::UnboundedSender<PickerLoadEvent>,
     picker: &mut PickerState,
 ) {
+    let cursor = picker
+        .pagination
+        .next_cursor
+        .as_ref()
+        .map(|cursor| match cursor {
+            PageCursor::AppServer(cursor) => cursor.clone(),
+        });
+    if cursor.is_none() {
+        picker.threads.clear();
+        picker.selected = 0;
+        picker.transcript_previews.clear();
+        picker.preview_loading.clear();
+        picker.expanded_thread_id = None;
+        picker.transcripts.clear();
+        picker.transcript_pager = None;
+        picker.seen_cursors.clear();
+    } else if let Some(cursor) = cursor.as_deref() {
+        if !picker.seen_cursors.insert(cursor.to_string()) {
+            picker.status_message =
+                Some(format!("thread list pagination repeated cursor {cursor}"));
+            return;
+        }
+    }
     let token = picker.begin_load();
     let status = picker.status;
     let cwd = (!picker.show_all)
@@ -560,14 +750,20 @@ fn spawn_thread_load(
     let sort_key = picker.sort_key;
     let sender = sender.clone();
     tokio::spawn(async move {
-        let result =
-            load_threads_with_handle(request_handle, status, cwd.as_deref(), &query, sort_key)
-                .await;
+        let result = load_thread_page_with_handle(
+            request_handle,
+            status,
+            cwd.as_deref(),
+            &query,
+            sort_key,
+            cursor,
+        )
+        .await;
         let _ = sender.send(PickerLoadEvent::Threads { token, result });
     });
 }
 
-fn spawn_preview_load(
+pub(crate) fn spawn_preview_load(
     request_handle: RequestHandle,
     sender: &mpsc::UnboundedSender<PickerLoadEvent>,
     picker: &mut PickerState,
@@ -584,7 +780,7 @@ fn spawn_preview_load(
     });
 }
 
-fn spawn_transcript_load(
+pub(crate) fn spawn_transcript_load(
     request_handle: RequestHandle,
     sender: &mpsc::UnboundedSender<PickerLoadEvent>,
     thread_id: String,
@@ -625,7 +821,7 @@ async fn load_transcript_preview_with_handle(
     transcript_preview::preview_from_entries(preview_entries)
 }
 
-fn spawn_archive_request(
+pub(crate) fn spawn_archive_request(
     request_handle: RequestHandle,
     sender: &mpsc::UnboundedSender<PickerLoadEvent>,
     thread_id: String,
@@ -646,7 +842,7 @@ fn spawn_archive_request(
     });
 }
 
-fn spawn_unarchive_request(
+pub(crate) fn spawn_unarchive_request(
     request_handle: RequestHandle,
     sender: &mpsc::UnboundedSender<PickerLoadEvent>,
     thread_id: String,
@@ -692,7 +888,7 @@ async fn run_session_picker_with_action(
     );
     spawn_thread_load(request_handle.clone(), &load_tx, &mut picker);
     let locale = Locale::resolve(options.locale.as_deref());
-    let mut terminal = match TerminalGuard::enter().context("failed to initialize terminal") {
+    let mut terminal = match Tui::enter().context("failed to initialize terminal") {
         Ok(terminal) => terminal,
         Err(error) => {
             let _ = session.shutdown().await;
@@ -713,10 +909,15 @@ async fn run_session_picker_with_action(
                 let Some(load_event) = load_event else { break None; };
                 match load_event {
                     PickerLoadEvent::Threads { token, result } => match result {
-                        Ok(threads) => picker.apply_threads(token, threads),
+                        Ok(page) => {
+                            picker.apply_thread_page(token, page);
+                            if picker.threads.is_empty() && picker.pagination.next_page().is_some()
+                            {
+                                spawn_thread_load(request_handle.clone(), &load_tx, &mut picker);
+                            }
+                        }
                         Err(error) if token == picker.load_token => {
-                            picker.loading = false;
-                            picker.status_message = Some(error.to_string());
+                            picker.fail_thread_load(token, error);
                         }
                         Err(_) => {}
                     },
@@ -747,6 +948,12 @@ async fn run_session_picker_with_action(
                     TuiEvent::FocusLost => Event::FocusLost,
                     TuiEvent::Draw | TuiEvent::Resume => continue,
                 };
+                if let Some(pager) = picker.transcript_pager.as_mut() {
+                    if pager.overlay.handle_event(&event) == PagerAction::Close {
+                        picker.transcript_pager = None;
+                    }
+                    continue;
+                }
                 let action = picker.handle_event(event);
                 match action {
                     PickerAction::Select => break picker.selected_thread_id().map(ToOwned::to_owned),
@@ -778,7 +985,15 @@ async fn run_session_picker_with_action(
                             spawn_transcript_load(request_handle.clone(), &load_tx, thread_id);
                         }
                     }
+                    PickerAction::OpenTranscript => {
+                        if let Some(thread_id) = picker.open_transcript_pager(locale) {
+                            spawn_transcript_load(request_handle.clone(), &load_tx, thread_id);
+                        }
+                    }
                     PickerAction::Cancel => break None,
+                    PickerAction::MoveDown if picker.should_load_more() => {
+                        spawn_thread_load(request_handle.clone(), &load_tx, &mut picker);
+                    }
                     PickerAction::None | PickerAction::MoveUp | PickerAction::MoveDown => {}
                 }
             }
@@ -796,8 +1011,13 @@ fn render(frame: &mut Frame<'_>, picker: &PickerState) {
     render_with_locale(frame, picker, Locale::default());
 }
 
-fn render_with_locale(frame: &mut Frame<'_>, picker: &PickerState, locale: Locale) {
+pub(crate) fn render_with_locale(frame: &mut Frame<'_>, picker: &PickerState, locale: Locale) {
     let area = frame.area();
+    if let Some(pager) = picker.transcript_pager.as_ref() {
+        let lines = picker.transcript_lines(&pager.thread_id, area.width, locale);
+        pager.overlay.render(frame, area, locale, &lines);
+        return;
+    }
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -911,13 +1131,14 @@ fn render_with_locale(frame: &mut Frame<'_>, picker: &PickerState, locale: Local
         message.to_string()
     } else {
         format!(
-            "{} | {}  {} | {}",
+            "{} | {}  {} | {} | {}",
             locale.resume_enter_hint(
                 matches!(picker.action, SessionPickerAction::Fork),
                 picker.status == SessionStatus::Archived,
             ),
             locale.resume_controls_hint(),
             locale.resume_expand_hint(),
+            locale.resume_transcript_hint(),
             locale.resume_density_label(picker.density == SessionListDensity::Dense),
         )
     };
@@ -1105,8 +1326,8 @@ fn truncate_display(text: &str, max_width: usize) -> String {
 mod tests {
     use super::*;
     use app_server_protocol::protocol::v2::{SessionSource, ThreadActiveFlag, ThreadHistoryMode};
-    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
     use std::path::PathBuf;
 
     fn thread(id: &str, preview: &str, ephemeral: bool) -> Thread {
@@ -1141,6 +1362,18 @@ mod tests {
             name: None,
             turns: Vec::new(),
         }
+    }
+
+    fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
@@ -1186,14 +1419,11 @@ mod tests {
         );
         let mut terminal = Terminal::new(TestBackend::new(24, 8)).expect("terminal");
         terminal.draw(|frame| render(frame, &picker)).expect("draw");
-        assert!(
-            terminal
-                .backend()
-                .buffer()
-                .content()
-                .iter()
-                .all(|cell| cell.symbol().chars().count() <= 1)
-        );
+        assert!(terminal.backend().buffer().content().iter().all(|cell| cell
+            .symbol()
+            .chars()
+            .count()
+            <= 1));
     }
 
     #[test]
@@ -1283,6 +1513,107 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_t_opens_a_shared_transcript_pager_and_starts_loading_when_needed() {
+        let mut picker = PickerState::new(
+            vec![thread("one", "first", false)],
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        let key = Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Char('t'),
+            KeyModifiers::CONTROL,
+        ));
+        assert_eq!(picker.handle_event(key), PickerAction::OpenTranscript);
+        assert_eq!(
+            picker.open_transcript_pager(Locale::EnUs),
+            Some("one".to_string())
+        );
+        assert!(picker.transcript_pager.is_some());
+        assert!(matches!(
+            picker.transcripts.get("one"),
+            Some(SessionTranscriptState::Loading)
+        ));
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 8)).expect("terminal");
+        terminal
+            .draw(|frame| render_with_locale(frame, &picker, Locale::EnUs))
+            .expect("draw");
+        assert!(buffer_text(&terminal).contains("Loading transcript"));
+    }
+
+    #[test]
+    fn transcript_pager_renders_canonical_entries_scrolls_and_closes_with_ctrl_t() {
+        let mut picker = PickerState::new(
+            vec![thread("one", "first", false)],
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        picker.transcripts.insert(
+            "one".to_string(),
+            SessionTranscriptState::Loaded(vec![TranscriptEntry {
+                id: "entry-1".to_string(),
+                kind: EntryKind::Assistant,
+                text: (0..16)
+                    .map(|index| format!("assistant line {index}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                streaming: false,
+                status: None,
+                summary: Vec::new(),
+            }]),
+        );
+        assert_eq!(picker.open_transcript_pager(Locale::EnUs), None);
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 8)).expect("terminal");
+        terminal
+            .draw(|frame| render_with_locale(frame, &picker, Locale::EnUs))
+            .expect("draw");
+        let text = buffer_text(&terminal);
+        assert!(text.contains("assistant line"));
+        let pager = picker.transcript_pager.as_mut().expect("pager");
+        assert_eq!(
+            pager
+                .overlay
+                .handle_event(&Event::Key(crossterm::event::KeyEvent::new(
+                    KeyCode::Home,
+                    KeyModifiers::NONE,
+                ))),
+            PagerAction::Consumed
+        );
+        assert_eq!(
+            pager
+                .overlay
+                .handle_event(&Event::Key(crossterm::event::KeyEvent::new(
+                    KeyCode::Char('t'),
+                    KeyModifiers::CONTROL,
+                ))),
+            PagerAction::Close
+        );
+    }
+
+    #[test]
+    fn raw_ctrl_t_keycode_matches_codex_resume_shortcut() {
+        let mut picker = PickerState::new(
+            vec![thread("one", "first", false)],
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        assert_eq!(
+            picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char('\u{0014}'),
+                KeyModifiers::NONE,
+            ))),
+            PickerAction::OpenTranscript
+        );
+    }
+
+    #[test]
     fn ctrl_e_toggles_selected_session_expansion_and_transcript_loading() {
         let mut picker = PickerState::new(
             vec![thread("one", "first", false)],
@@ -1354,16 +1685,12 @@ mod tests {
             }]),
         );
         let lines = render_expanded_session_details(&picker.threads[0], &picker, 24, Locale::EnUs);
-        assert!(
-            lines
-                .iter()
-                .any(|line| line.to_string().contains("assistant"))
-        );
-        assert!(
-            lines
-                .iter()
-                .all(|line| display_width(&line.to_string()) <= 24)
-        );
+        assert!(lines
+            .iter()
+            .any(|line| line.to_string().contains("assistant")));
+        assert!(lines
+            .iter()
+            .all(|line| display_width(&line.to_string()) <= 24));
     }
 
     #[test]
@@ -1443,5 +1770,125 @@ mod tests {
         picker.apply_threads(second, vec![thread("fresh", "fresh", false)]);
         assert!(!picker.loading);
         assert_eq!(picker.selected_thread_id(), Some("fresh"));
+    }
+
+    #[test]
+    fn thread_pages_append_unique_threads_and_keep_the_next_cursor() {
+        let mut picker = PickerState::new(
+            Vec::new(),
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        let first_token = picker.begin_load();
+        picker.apply_thread_page(
+            first_token,
+            ThreadPage {
+                threads: vec![
+                    thread("one", "first", false),
+                    thread("two", "second", false),
+                ],
+                next_cursor: Some("cursor-1".to_string()),
+            },
+        );
+        assert_eq!(picker.threads.len(), 2);
+        assert!(matches!(
+            picker.pagination.next_cursor.as_ref(),
+            Some(PageCursor::AppServer(cursor)) if cursor == "cursor-1"
+        ));
+        picker.selected = 1;
+        assert!(picker.should_load_more());
+
+        let second_token = picker.begin_load();
+        picker.apply_thread_page(
+            second_token,
+            ThreadPage {
+                threads: vec![
+                    thread("two", "duplicate", false),
+                    thread("three", "third", false),
+                ],
+                next_cursor: None,
+            },
+        );
+        assert_eq!(
+            picker
+                .threads
+                .iter()
+                .map(|thread| thread.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["one", "two", "three"]
+        );
+        assert!(picker.pagination.next_cursor.is_none());
+        assert!(!picker.should_load_more());
+    }
+
+    #[test]
+    fn query_mutation_invalidates_a_previous_page_cursor() {
+        let mut picker = PickerState::new(
+            vec![thread("one", "first", false)],
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        picker.pagination.complete_page(
+            Some(PageCursor::AppServer("cursor-1".to_string())),
+            0,
+            false,
+        );
+        picker.seen_cursors.insert("cursor-1".to_string());
+        assert_eq!(
+            picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char('x'),
+                KeyModifiers::NONE,
+            ))),
+            PickerAction::Reload
+        );
+        assert!(picker.pagination.next_cursor.is_none());
+        assert!(picker.seen_cursors.is_empty());
+    }
+
+    #[test]
+    fn page_navigation_matches_codex_shape_and_reaches_the_next_cursor() {
+        let mut picker = PickerState::new(
+            (0..12)
+                .map(|index| thread(&format!("thread-{index}"), "preview", false))
+                .collect(),
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        picker.pagination.complete_page(
+            Some(PageCursor::AppServer("cursor-1".to_string())),
+            12,
+            false,
+        );
+        assert_eq!(
+            picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::PageDown,
+                KeyModifiers::NONE,
+            ))),
+            PickerAction::MoveDown
+        );
+        assert_eq!(picker.selected, 10);
+        assert_eq!(
+            picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::PageDown,
+                KeyModifiers::NONE,
+            ))),
+            PickerAction::MoveDown
+        );
+        assert_eq!(picker.selected, 11);
+        assert!(picker.should_load_more());
+        assert_eq!(
+            picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Home,
+                KeyModifiers::NONE,
+            ))),
+            PickerAction::MoveUp
+        );
+        assert_eq!(picker.selected, 0);
     }
 }

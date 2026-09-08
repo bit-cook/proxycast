@@ -531,11 +531,9 @@ mod tests {
 
     #[test]
     fn url_detection_rejects_file_paths() {
-        assert!(
-            text_contains_url_like("open https://example.com")
-                .then_some(())
-                .is_some()
-        );
+        assert!(text_contains_url_like("open https://example.com")
+            .then_some(())
+            .is_some());
         assert!(!text_contains_url_like("src/main.rs foo/bar"));
     }
 
@@ -550,11 +548,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["你好", "世界"]
         );
-        assert!(
-            wrap_ranges(text, Options::new(5))
-                .iter()
-                .all(|range| range.end <= text.len() + 1)
-        );
+        assert!(wrap_ranges(text, Options::new(5))
+            .iter()
+            .all(|range| range.end <= text.len() + 1));
     }
 
     #[test]

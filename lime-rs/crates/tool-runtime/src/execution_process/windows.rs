@@ -169,7 +169,7 @@ pub(super) fn start_windows_restricted_execution_process(
     let process_state = ExecutionProcess::start(start);
     let initial_snapshot = process_state.snapshot();
     let process = Arc::new(Mutex::new(process_state));
-    let (output_tx, output_rx) = mpsc::unbounded_channel();
+    let (output_tx, output_rx) = broadcast::channel(PROCESS_OUTPUT_CHANNEL_CAPACITY);
     let (control_tx, control_rx) = std::sync::mpsc::channel();
     let (state_tx, state_rx) = watch::channel(initial_snapshot);
     let (final_tx, final_rx) = oneshot::channel();

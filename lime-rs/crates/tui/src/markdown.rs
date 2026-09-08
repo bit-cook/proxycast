@@ -627,19 +627,15 @@ mod tests {
             .find(|span| span.content == "https://example.com/guide")
             .expect("visible link destination");
         assert_eq!(destination.style.fg, Some(Color::Cyan));
-        assert!(
-            destination
-                .style
-                .add_modifier
-                .contains(Modifier::UNDERLINED)
-        );
+        assert!(destination
+            .style
+            .add_modifier
+            .contains(Modifier::UNDERLINED));
         assert_eq!(lines[0].hyperlinks.len(), 2);
-        assert!(
-            lines[0]
-                .hyperlinks
-                .iter()
-                .all(|link| link.destination == "https://example.com/guide")
-        );
+        assert!(lines[0]
+            .hyperlinks
+            .iter()
+            .all(|link| link.destination == "https://example.com/guide"));
     }
 
     #[test]
@@ -695,13 +691,11 @@ mod tests {
             plain(&lines),
             vec![" Name    Count ", "━━━━━━  ━━━━━━━", " Lime        2 "]
         );
-        assert!(
-            lines[0]
-                .line
-                .spans
-                .iter()
-                .any(|span| span.style.add_modifier.contains(Modifier::BOLD))
-        );
+        assert!(lines[0]
+            .line
+            .spans
+            .iter()
+            .any(|span| span.style.add_modifier.contains(Modifier::BOLD)));
     }
 
     #[test]

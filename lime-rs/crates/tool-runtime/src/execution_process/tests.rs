@@ -15,7 +15,9 @@ fn start_process() -> ExecutionProcess {
 #[test]
 fn process_tracks_output_delta_metadata() {
     let mut process = start_process();
-    let delta = process.append_output(ExecutionOutputKind::Stdout, b"hello");
+    let delta = process
+        .append_output(ExecutionOutputKind::Stdout, b"hello")
+        .expect("complete output should emit a delta");
 
     assert_eq!(delta.sequence, 1);
     assert_eq!(delta.delta, "hello");
@@ -32,6 +34,40 @@ fn process_tracks_output_delta_metadata() {
 }
 
 #[test]
+fn process_frames_utf8_deltas_across_reader_chunks() {
+    let mut process = start_process();
+
+    assert!(process
+        .append_output(ExecutionOutputKind::Stdout, &[0xf0, 0x9f])
+        .is_none());
+    let delta = process
+        .append_output(ExecutionOutputKind::Stdout, &[0x98, 0x80])
+        .expect("completed scalar should emit");
+
+    assert_eq!(delta.delta, "\u{1f600}");
+    assert_eq!(delta.raw_bytes, "\u{1f600}".as_bytes());
+    assert_eq!(delta.bytes, 4);
+    assert_eq!(process.snapshot().retained_output, "\u{1f600}");
+}
+
+#[test]
+fn process_flushes_incomplete_utf8_suffix_at_stream_end() {
+    let mut process = start_process();
+
+    assert!(process
+        .append_output(ExecutionOutputKind::Stderr, &[0xc3])
+        .is_none());
+    let delta = process
+        .finish_output(ExecutionOutputKind::Stderr)
+        .expect("incomplete suffix should flush");
+
+    assert_eq!(delta.delta, "\u{fffd}");
+    assert_eq!(delta.raw_bytes, vec![0xc3]);
+    assert_eq!(delta.bytes, 1);
+    assert_eq!(process.snapshot().retained_output, "\u{fffd}");
+}
+
+#[test]
 fn process_bounds_retained_output() {
     let mut output = BoundedProcessOutput::new(8);
     output.push(b"12345");
@@ -41,7 +77,7 @@ fn process_bounds_retained_output() {
     assert_eq!(snapshot.bytes, 10);
     assert_eq!(snapshot.omitted_bytes, 2);
     assert!(snapshot.truncated);
-    assert_eq!(snapshot.text, "34567890");
+    assert_eq!(snapshot.text, "1234\n... 2 bytes omitted ...\n7890");
 }
 
 #[test]
@@ -124,10 +160,10 @@ async fn local_process_reports_direct_child_exit_when_output_pipes_stay_open() {
         command
     };
     let child = command.spawn().expect("direct child should start");
-    let (_stdout_writer, stdout_reader) = tokio::io::duplex(64);
+    let (mut stdout_writer, stdout_reader) = tokio::io::duplex(64);
     let (_stderr_writer, stderr_reader) = tokio::io::duplex(64);
     let process = Arc::new(Mutex::new(start_process()));
-    let (output_tx, _output_rx) = mpsc::unbounded_channel();
+    let (output_tx, mut output_rx) = broadcast::channel(PROCESS_OUTPUT_CHANNEL_CAPACITY);
     let (control_tx, control_rx) = mpsc::unbounded_channel();
     let (state_tx, mut state_rx) = watch::channel(process.lock().await.snapshot());
     let (final_tx, _final_rx) = oneshot::channel();
@@ -143,6 +179,10 @@ async fn local_process_reports_direct_child_exit_when_output_pipes_stay_open() {
         final_tx,
         control_rx,
     ));
+    stdout_writer
+        .write_all(&[0xc3])
+        .await
+        .expect("write incomplete UTF-8 prefix");
 
     let terminal_snapshot = tokio::time::timeout(Duration::from_secs(1), async {
         loop {
@@ -161,6 +201,12 @@ async fn local_process_reports_direct_child_exit_when_output_pipes_stay_open() {
 
     assert_eq!(terminal_snapshot.status, ExecutionProcessStatus::Exited);
     assert_eq!(terminal_snapshot.exit_code, Some(7));
+    let flushed = tokio::time::timeout(Duration::from_secs(1), output_rx.recv())
+        .await
+        .expect("grace fallback should flush pending output")
+        .expect("output channel should remain available until final flush");
+    assert_eq!(flushed.delta, "\u{fffd}");
+    assert_eq!(flushed.raw_bytes, vec![0xc3]);
     drop(control_tx);
 }
 
@@ -189,6 +235,34 @@ async fn local_process_does_not_inherit_sensitive_parent_environment() {
     assert_eq!(final_snapshot.status, ExecutionProcessStatus::Exited);
     assert_eq!(final_snapshot.exit_code, Some(0));
     assert_eq!(final_snapshot.retained_output, "filtered");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn local_process_large_output_completes_without_draining_deltas() {
+    let output_bytes = DEFAULT_OUTPUT_RETAIN_BYTES + 64 * 1024;
+    let mut handle = start_local_execution_process(LocalExecutionRequest::new(
+        "process-local-large-output",
+        "tool-local-large-output",
+        "exec_command",
+        shell_command(&format!(
+            "awk 'BEGIN {{ for (i = 0; i < {output_bytes}; i++) printf \"x\" }}'"
+        )),
+    ))
+    .expect("large-output process should start");
+
+    let snapshot = tokio::time::timeout(Duration::from_secs(10), handle.wait())
+        .await
+        .expect("large-output process should not block on an undrained delta receiver")
+        .expect("large-output process should finish");
+
+    assert_eq!(snapshot.status, ExecutionProcessStatus::Exited);
+    assert_eq!(snapshot.exit_code, Some(0));
+    assert_eq!(snapshot.output_bytes, output_bytes as u64);
+    assert_eq!(snapshot.output_omitted_bytes, 64 * 1024);
+    assert!(snapshot
+        .retained_output
+        .contains("... 65536 bytes omitted ..."));
 }
 
 #[tokio::test]

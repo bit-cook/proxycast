@@ -9,6 +9,7 @@ import { ElectronHostCommands } from "./hostCommands";
 import type { ElectronAppServerHost } from "./appServerHost";
 import { SystemUtilityHost } from "./systemUtilityHost";
 import { VoiceModelHost } from "./voiceModelHost";
+import type { SecureCredentialStore } from "./secureCredentialStore";
 
 const {
   browserWindowCtorMock,
@@ -233,6 +234,7 @@ function createHost(
     throw new Error("App Server should not be called");
   },
   appDataRoot = userDataDir,
+  secureCredentialStore: SecureCredentialStore | null = null,
 ) {
   const appServerHost = {
     request,
@@ -242,6 +244,7 @@ function createHost(
     userDataDir,
     emit,
     appDataRoot,
+    secureCredentialStore,
   );
 }
 
@@ -280,6 +283,82 @@ async function withRemotePngServer<T>(
     });
   }
 }
+
+describe("ElectronHostCommands secure Cloud credential boundary", () => {
+  it("只允许写入和读取 metadata，不把 token 回传 renderer", async () => {
+    const userDataDir = await createTempUserDataDir();
+    const store: SecureCredentialStore = {
+      setCloudSessionCredential: vi.fn(async (credential) => ({
+        available: true,
+        exists: true,
+        tenantId: credential.tenantId,
+        endpoint: credential.endpoint,
+        updatedAt: "2026-09-06T00:00:00.000Z",
+      })),
+      readCloudSessionCredential: vi.fn(async () => ({
+        tenantId: "tenant-001",
+        endpoint: "wss://gateway.example.test/v1/app-server",
+        token: "session-secret",
+      })),
+      getCloudSessionCredentialMetadata: vi.fn(async () => ({
+        available: true,
+        exists: true,
+        tenantId: "tenant-001",
+        endpoint: "wss://gateway.example.test/v1/app-server",
+        updatedAt: "2026-09-06T00:00:00.000Z",
+      })),
+      deleteCloudSessionCredential: vi.fn(async () => ({ deleted: true })),
+    };
+    const host = createHost(
+      userDataDir,
+      () => undefined,
+      undefined,
+      userDataDir,
+      store,
+    );
+
+    await expect(
+      host.invoke("cloud_session_credential_set", {
+        request: {
+          tenantId: "tenant-001",
+          endpoint: "wss://gateway.example.test/v1/app-server",
+          token: "session-secret",
+        },
+      }),
+    ).resolves.toEqual({
+      available: true,
+      exists: true,
+      tenantId: "tenant-001",
+      endpoint: "wss://gateway.example.test/v1/app-server",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+    });
+    await expect(
+      host.invoke("cloud_session_credential_status"),
+    ).resolves.toEqual({
+      available: true,
+      exists: true,
+      tenantId: "tenant-001",
+      endpoint: "wss://gateway.example.test/v1/app-server",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+    });
+    await expect(
+      host.invoke("cloud_session_credential_delete"),
+    ).resolves.toEqual({ deleted: true });
+    expect(
+      JSON.stringify(store.getCloudSessionCredentialMetadata),
+    ).not.toContain("session-secret");
+    expect(store.readCloudSessionCredential).not.toHaveBeenCalled();
+  });
+
+  it("未配置 secure store 时 fail closed", async () => {
+    const userDataDir = await createTempUserDataDir();
+    const host = createHost(userDataDir);
+
+    await expect(
+      host.invoke("cloud_session_credential_status"),
+    ).rejects.toThrow("secure credential storage is not configured");
+  });
+});
 
 afterEach(async () => {
   vi.useRealTimers();

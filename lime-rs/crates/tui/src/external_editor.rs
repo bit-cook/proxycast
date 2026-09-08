@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Stdio;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use tokio::process::Command;
 
 /// Open the user's configured editor and return the edited draft.
@@ -178,11 +178,9 @@ mod tests {
         .expect_err("non-zero editor must fail");
 
         assert!(error.to_string().contains("exited with status"));
-        assert!(
-            fs::read_dir(directory.path())
-                .expect("directory listing")
-                .filter_map(Result::ok)
-                .all(|entry| !entry.file_name().to_string_lossy().starts_with("lime-tui-"))
-        );
+        assert!(fs::read_dir(directory.path())
+            .expect("directory listing")
+            .filter_map(Result::ok)
+            .all(|entry| !entry.file_name().to_string_lossy().starts_with("lime-tui-")));
     }
 }

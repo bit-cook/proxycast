@@ -4,18 +4,19 @@ use crate::sandbox::{
 use app_server_protocol::protocol::v2::GrantedPermissionProfile;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, Command};
-use tokio::sync::{mpsc, oneshot, watch, Mutex};
+use tokio::sync::{broadcast, mpsc, oneshot, watch, Mutex};
 use tokio::task::JoinHandle;
 
 mod environment;
 pub mod live;
+mod output_buffer;
 mod pty;
 #[cfg(target_os = "windows")]
 mod windows;
@@ -107,9 +108,11 @@ pub fn audit_windows_world_writable(
 }
 
 use environment::resolve_child_environment;
+pub use output_buffer::{BoundedProcessOutput, BoundedProcessOutputSnapshot, ProcessOutputFramers};
 
-const DEFAULT_OUTPUT_RETAIN_BYTES: usize = 128 * 1024;
+pub const DEFAULT_OUTPUT_RETAIN_BYTES: usize = 1024 * 1024;
 const PROCESS_OUTPUT_CHUNK_BYTES: usize = 8 * 1024;
+const PROCESS_OUTPUT_CHANNEL_CAPACITY: usize = 64;
 pub(crate) const TRAILING_OUTPUT_GRACE: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -285,6 +288,7 @@ pub struct ExecutionProcess {
     failure: Option<String>,
     started_at: Instant,
     output: BoundedProcessOutput,
+    output_framers: ProcessOutputFramers,
     sequence: u64,
 }
 
@@ -301,6 +305,7 @@ impl ExecutionProcess {
             failure: None,
             started_at: Instant::now(),
             output: BoundedProcessOutput::new(DEFAULT_OUTPUT_RETAIN_BYTES),
+            output_framers: ProcessOutputFramers::default(),
             sequence: 0,
         }
     }
@@ -321,21 +326,46 @@ impl ExecutionProcess {
         &mut self,
         kind: ExecutionOutputKind,
         bytes: &[u8],
-    ) -> ExecutionOutputDelta {
-        self.sequence = self.sequence.saturating_add(1);
+    ) -> Option<ExecutionOutputDelta> {
         self.output.push(bytes);
+        let frame = self.output_framers.push(kind, bytes);
+        self.output_delta(kind, frame)
+    }
+
+    pub fn finish_output(&mut self, kind: ExecutionOutputKind) -> Option<ExecutionOutputDelta> {
+        let frame = self.output_framers.finish(kind);
+        self.output_delta(kind, frame)
+    }
+
+    pub fn finish_all_output(&mut self) -> Vec<ExecutionOutputDelta> {
+        let frames = self.output_framers.finish_all();
+        frames
+            .into_iter()
+            .filter_map(|(kind, frame)| self.output_delta(kind, frame))
+            .collect()
+    }
+
+    fn output_delta(
+        &mut self,
+        kind: ExecutionOutputKind,
+        frame: Vec<u8>,
+    ) -> Option<ExecutionOutputDelta> {
+        if frame.is_empty() {
+            return None;
+        }
+        self.sequence = self.sequence.saturating_add(1);
         let snapshot = self.output.snapshot();
-        ExecutionOutputDelta {
+        Some(ExecutionOutputDelta {
             process_id: self.process_id.clone(),
             tool_id: self.tool_id.clone(),
             sequence: self.sequence,
             kind,
-            delta: String::from_utf8_lossy(bytes).to_string(),
+            delta: String::from_utf8_lossy(&frame).into_owned(),
             bytes: snapshot.bytes,
             omitted_bytes: snapshot.omitted_bytes,
             truncated: snapshot.truncated,
-            raw_bytes: bytes.to_vec(),
-        }
+            raw_bytes: frame,
+        })
     }
 
     pub fn interrupt(&mut self) {
@@ -404,7 +434,7 @@ impl ExecutionProcessManager {
     ) -> Option<ExecutionOutputDelta> {
         self.processes
             .get_mut(process_id)
-            .map(|process| process.append_output(kind, bytes))
+            .and_then(|process| process.append_output(kind, bytes))
     }
 
     pub fn interrupt(&mut self, process_id: &str) -> Option<ExecutionProcessSnapshot> {
@@ -518,7 +548,7 @@ pub trait LiveExecutionProcessRegistry: Send + Sync {
 pub struct LocalExecutionProcessHandle {
     process_id: String,
     control_tx: LocalExecutionControlSender,
-    output_rx: mpsc::UnboundedReceiver<ExecutionOutputDelta>,
+    output_rx: broadcast::Receiver<ExecutionOutputDelta>,
     state_rx: watch::Receiver<ExecutionProcessSnapshot>,
     final_rx: Option<oneshot::Receiver<ExecutionProcessSnapshot>>,
     final_snapshot: Option<ExecutionProcessSnapshot>,
@@ -555,36 +585,55 @@ impl LocalExecutionProcessHandle {
     }
 
     pub async fn recv_output(&mut self) -> Option<ExecutionOutputDelta> {
-        self.output_rx.recv().await
+        loop {
+            match self.output_rx.recv().await {
+                Ok(delta) => return Some(delta),
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
     }
 
     pub async fn next_event(&mut self) -> Option<LocalExecutionProcessEvent> {
-        if let Ok(delta) = self.output_rx.try_recv() {
-            return Some(LocalExecutionProcessEvent::Output(delta));
-        }
-        if self.final_snapshot.is_some() {
-            return None;
-        }
-        let mut final_rx = self.final_rx.take()?;
-        tokio::select! {
-            biased;
-            delta = self.output_rx.recv() => {
-                match delta {
-                    Some(delta) => {
-                        self.final_rx = Some(final_rx);
-                        return Some(LocalExecutionProcessEvent::Output(delta));
-                    }
-                    None => {
-                        let snapshot = final_rx.await.ok()?;
-                        self.final_snapshot = Some(snapshot.clone());
-                        return Some(LocalExecutionProcessEvent::Exited(snapshot));
-                    }
+        loop {
+            loop {
+                match self.output_rx.try_recv() {
+                    Ok(delta) => return Some(LocalExecutionProcessEvent::Output(delta)),
+                    Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
+                    Err(
+                        broadcast::error::TryRecvError::Empty
+                        | broadcast::error::TryRecvError::Closed,
+                    ) => break,
                 }
             }
-            result = &mut final_rx => {
-                let snapshot = result.ok()?;
-                self.final_snapshot = Some(snapshot.clone());
-                return Some(LocalExecutionProcessEvent::Exited(snapshot));
+            if self.final_snapshot.is_some() {
+                return None;
+            }
+            let mut final_rx = self.final_rx.take()?;
+            tokio::select! {
+                biased;
+                delta = self.output_rx.recv() => {
+                    match delta {
+                        Ok(delta) => {
+                            self.final_rx = Some(final_rx);
+                            return Some(LocalExecutionProcessEvent::Output(delta));
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            self.final_rx = Some(final_rx);
+                            continue;
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            let snapshot = final_rx.await.ok()?;
+                            self.final_snapshot = Some(snapshot.clone());
+                            return Some(LocalExecutionProcessEvent::Exited(snapshot));
+                        }
+                    }
+                }
+                result = &mut final_rx => {
+                    let snapshot = result.ok()?;
+                    self.final_snapshot = Some(snapshot.clone());
+                    return Some(LocalExecutionProcessEvent::Exited(snapshot));
+                }
             }
         }
     }
@@ -787,7 +836,7 @@ fn start_local_execution_process_with_inherited_environment(
     let process_state = ExecutionProcess::start(start);
     let initial_snapshot = process_state.snapshot();
     let process = Arc::new(Mutex::new(process_state));
-    let (output_tx, output_rx) = mpsc::unbounded_channel();
+    let (output_tx, output_rx) = broadcast::channel(PROCESS_OUTPUT_CHANNEL_CAPACITY);
     let (control_tx, control_rx) = mpsc::unbounded_channel();
     let (state_tx, state_rx) = watch::channel(initial_snapshot);
     let (final_tx, final_rx) = oneshot::channel();
@@ -813,7 +862,7 @@ async fn supervise_local_process(
     stdout: Option<impl AsyncRead + Unpin + Send + 'static>,
     stderr: Option<impl AsyncRead + Unpin + Send + 'static>,
     process: Arc<Mutex<ExecutionProcess>>,
-    output_tx: mpsc::UnboundedSender<ExecutionOutputDelta>,
+    output_tx: broadcast::Sender<ExecutionOutputDelta>,
     state_tx: watch::Sender<ExecutionProcessSnapshot>,
     final_tx: oneshot::Sender<ExecutionProcessSnapshot>,
     mut control_rx: mpsc::UnboundedReceiver<LocalExecutionControl>,
@@ -833,7 +882,7 @@ async fn supervise_local_process(
             reader,
             ExecutionOutputKind::Stderr,
             Arc::clone(&process),
-            output_tx,
+            output_tx.clone(),
             state_tx.clone(),
         ))
     });
@@ -886,7 +935,13 @@ async fn supervise_local_process(
 
     join_output_tasks_with_grace(stdout_task, stderr_task).await;
 
-    let final_snapshot = process.lock().await.snapshot();
+    let (final_deltas, final_snapshot) = {
+        let mut guard = process.lock().await;
+        (guard.finish_all_output(), guard.snapshot())
+    };
+    for delta in final_deltas {
+        let _ = output_tx.send(delta);
+    }
     let _ = state_tx.send(final_snapshot.clone());
     let _ = final_tx.send(final_snapshot);
 }
@@ -946,7 +1001,7 @@ async fn read_process_stream<R>(
     mut reader: R,
     kind: ExecutionOutputKind,
     process: Arc<Mutex<ExecutionProcess>>,
-    output_tx: mpsc::UnboundedSender<ExecutionOutputDelta>,
+    output_tx: broadcast::Sender<ExecutionOutputDelta>,
     state_tx: watch::Sender<ExecutionProcessSnapshot>,
 ) where
     R: AsyncRead + Unpin + Send + 'static,
@@ -964,86 +1019,15 @@ async fn read_process_stream<R>(
             let snapshot = guard.snapshot();
             (delta, snapshot)
         };
-        let _ = output_tx.send(delta);
+        if let Some(delta) = delta {
+            let _ = output_tx.send(delta);
+        }
         let _ = state_tx.send(snapshot);
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct BoundedProcessOutput {
-    retain_bytes: usize,
-    bytes: u64,
-    retained_bytes: usize,
-    omitted_bytes: u64,
-    chunks: VecDeque<Vec<u8>>,
-}
-
-impl BoundedProcessOutput {
-    fn new(retain_bytes: usize) -> Self {
-        Self {
-            retain_bytes,
-            bytes: 0,
-            retained_bytes: 0,
-            omitted_bytes: 0,
-            chunks: VecDeque::new(),
-        }
+    let final_delta = process.lock().await.finish_output(kind);
+    if let Some(delta) = final_delta {
+        let _ = output_tx.send(delta);
     }
-
-    fn push(&mut self, bytes: &[u8]) {
-        self.bytes = self.bytes.saturating_add(bytes.len() as u64);
-        if self.retain_bytes == 0 {
-            self.omitted_bytes = self.omitted_bytes.saturating_add(bytes.len() as u64);
-            return;
-        }
-
-        let chunk = if bytes.len() > self.retain_bytes {
-            let omitted = bytes.len() - self.retain_bytes;
-            self.omitted_bytes = self.omitted_bytes.saturating_add(omitted as u64);
-            bytes[omitted..].to_vec()
-        } else {
-            bytes.to_vec()
-        };
-        self.retained_bytes += chunk.len();
-        self.chunks.push_back(chunk);
-
-        while self.retained_bytes > self.retain_bytes {
-            let overflow = self.retained_bytes - self.retain_bytes;
-            let Some(front) = self.chunks.front_mut() else {
-                break;
-            };
-            if front.len() <= overflow {
-                let removed = self.chunks.pop_front().unwrap_or_default();
-                self.retained_bytes -= removed.len();
-                self.omitted_bytes = self.omitted_bytes.saturating_add(removed.len() as u64);
-            } else {
-                front.drain(..overflow);
-                self.retained_bytes -= overflow;
-                self.omitted_bytes = self.omitted_bytes.saturating_add(overflow as u64);
-            }
-        }
-    }
-
-    fn snapshot(&self) -> BoundedProcessOutputSnapshot {
-        let retained = self
-            .chunks
-            .iter()
-            .flat_map(|chunk| chunk.iter().copied())
-            .collect::<Vec<_>>();
-        BoundedProcessOutputSnapshot {
-            bytes: self.bytes,
-            omitted_bytes: self.omitted_bytes,
-            truncated: self.omitted_bytes > 0,
-            text: String::from_utf8_lossy(&retained).to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct BoundedProcessOutputSnapshot {
-    bytes: u64,
-    omitted_bytes: u64,
-    truncated: bool,
-    text: String,
 }
 
 fn duration_millis(duration: Duration) -> u64 {

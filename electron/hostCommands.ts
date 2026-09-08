@@ -40,6 +40,10 @@ import { LayeredDesignProjectHost } from "./layeredDesignProjectHost";
 import { openResourceManagerWindow } from "./resourceManagerWindowHost";
 import { SystemUtilityHost } from "./systemUtilityHost";
 import { VoiceModelHost } from "./voiceModelHost";
+import type {
+  CloudSessionCredential,
+  SecureCredentialStore,
+} from "./secureCredentialStore";
 
 type HostArgs = Record<string, unknown> | null | undefined;
 type AppServerParams = Record<string, unknown>;
@@ -79,6 +83,7 @@ export class ElectronHostCommands {
   readonly #layeredDesignProjectHost = new LayeredDesignProjectHost();
   readonly #systemUtilityHost: SystemUtilityHost;
   readonly #voiceModelHost: VoiceModelHost;
+  readonly #secureCredentialStore: SecureCredentialStore | null;
   #oauthCallbackBridgeServer: Server | null = null;
   #oauthCallbackBridgeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -87,10 +92,12 @@ export class ElectronHostCommands {
     userDataDir = app.getPath("userData"),
     emit: HostEventEmitter = () => undefined,
     appDataRoot = resolveCurrentDesktopStorageRoots(userDataDir).appDataRoot,
+    secureCredentialStore: SecureCredentialStore | null = null,
   ) {
     this.#appServerHost = appServerHost;
     this.#userDataDir = userDataDir;
     this.#emit = emit;
+    this.#secureCredentialStore = secureCredentialStore;
     this.#systemUtilityHost = new SystemUtilityHost({
       appDataRoot,
       readConfig: () => this.#readConfig(),
@@ -192,6 +199,12 @@ export class ElectronHostCommands {
         return null;
       case "app_server_host_diagnostics":
         return this.#appServerHost.getDiagnostics();
+      case "cloud_session_credential_set":
+        return await this.#setCloudSessionCredential(args);
+      case "cloud_session_credential_status":
+        return await this.#requireSecureCredentialStore().getCloudSessionCredentialMetadata();
+      case "cloud_session_credential_delete":
+        return await this.#requireSecureCredentialStore().deleteCloudSessionCredential();
       case "report_frontend_crash":
         this.#reportFrontendCrash(args);
         return { success: true };
@@ -569,6 +582,30 @@ export class ElectronHostCommands {
       message,
       report,
     );
+  }
+
+  async #setCloudSessionCredential(args: HostArgs): Promise<unknown> {
+    const request = readRequest(args);
+    const credential: CloudSessionCredential = {
+      tenantId:
+        readString(request, "tenantId") ??
+        readString(request, "tenant_id") ??
+        readRequiredString(request, "tenantId"),
+      endpoint:
+        readString(request, "endpoint") ??
+        readRequiredString(request, "endpoint"),
+      token: readRequiredRawString(request, "token"),
+    };
+    return await this.#requireSecureCredentialStore().setCloudSessionCredential(
+      credential,
+    );
+  }
+
+  #requireSecureCredentialStore(): SecureCredentialStore {
+    if (!this.#secureCredentialStore) {
+      throw new Error("secure credential storage is not configured");
+    }
+    return this.#secureCredentialStore;
   }
 }
 

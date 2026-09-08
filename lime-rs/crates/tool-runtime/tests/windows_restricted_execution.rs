@@ -10,6 +10,7 @@ use app_server_protocol::protocol::v2::{AdditionalNetworkPermissions, GrantedPer
 use tool_runtime::execution_process::{
     audit_windows_world_writable, start_local_execution_process, ExecutionProcessStatus,
     LocalExecutionProcessHandle, LocalExecutionRequest, LocalExecutionSandbox,
+    DEFAULT_OUTPUT_RETAIN_BYTES,
 };
 use tool_runtime::sandbox::SandboxBackend;
 use windows_sys::Win32::Foundation::{LocalFree, ERROR_SUCCESS, HLOCAL};
@@ -380,11 +381,12 @@ async fn restricted_execution_uses_offline_account_and_blocks_network() {
 #[tokio::test]
 async fn restricted_execution_bounds_large_output() {
     let fixture = workspace_fixture();
-    let script = "[Console]::Out.Write(('x' * 400000))";
+    let output_bytes = DEFAULT_OUTPUT_RETAIN_BYTES + 64 * 1024;
+    let script = format!("[Console]::Out.Write(('x' * {output_bytes}))");
     let snapshot = run_to_terminal(
         start_local_execution_process(restricted_request(
             fixture.path(),
-            powershell_script(script),
+            powershell_script(&script),
         ))
         .expect("large-output process should start"),
     )
@@ -397,11 +399,16 @@ async fn restricted_execution_bounds_large_output() {
         "large-output restricted process must exit successfully: {snapshot:#?}"
     );
     assert!(snapshot.output_truncated, "large output must be truncated");
-    assert!(
-        snapshot.output_omitted_bytes > 0,
-        "omitted byte count must be reported"
+    assert_eq!(
+        snapshot.output_omitted_bytes,
+        output_bytes.saturating_sub(DEFAULT_OUTPUT_RETAIN_BYTES) as u64
     );
-    assert!(snapshot.retained_output.len() <= 128 * 1024);
+    let marker = format!("... {} bytes omitted ...", snapshot.output_omitted_bytes);
+    assert!(snapshot.retained_output.contains(&marker));
+    assert_eq!(
+        snapshot.retained_output.len(),
+        DEFAULT_OUTPUT_RETAIN_BYTES + marker.len() + 2
+    );
 }
 
 #[tokio::test]

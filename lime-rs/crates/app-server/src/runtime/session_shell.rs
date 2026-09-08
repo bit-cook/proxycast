@@ -13,16 +13,26 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use tool_runtime::execution_process::{live::LiveExecutionRequest, ExecutionProcessStatus};
+use tool_runtime::execution_process::{
+    live::{LiveExecutionOutputQuery, LiveExecutionRequest},
+    ExecutionOutputDelta, ExecutionProcessStatus,
+};
 use uuid::Uuid;
 
 const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const OUTPUT_DRAIN_LIMIT: u16 = 128;
+const OUTPUT_DRAIN_MAX_BYTES: u64 = 1024 * 1024;
+const COMMAND_OUTPUT_PREVIEW_CHARS: usize = 1_200;
 
 #[derive(Debug)]
 struct ShellProcessOutcome {
     output: String,
     exit_code: Option<i32>,
     elapsed_ms: u64,
+    output_bytes: u64,
+    output_omitted_bytes: u64,
+    output_truncated: bool,
+    process_status: ExecutionProcessStatus,
     terminal: ShellTerminal,
 }
 
@@ -222,6 +232,10 @@ impl RuntimeCore {
                     output: error.clone(),
                     exit_code: Some(-1),
                     elapsed_ms: 0,
+                    output_bytes: 0,
+                    output_omitted_bytes: 0,
+                    output_truncated: false,
+                    process_status: ExecutionProcessStatus::Failed,
                     terminal: ShellTerminal::Failed,
                 };
                 let mut events = vec![
@@ -256,7 +270,17 @@ impl RuntimeCore {
         )?;
 
         let outcome = self
-            .poll_shell_process(server, process_id, cancellation_token)
+            .poll_shell_process(
+                session_id,
+                thread_id,
+                turn_id,
+                item_id,
+                process_id,
+                command,
+                cwd,
+                server,
+                cancellation_token,
+            )
             .await;
         match outcome {
             Ok(outcome) => {
@@ -282,6 +306,10 @@ impl RuntimeCore {
                     output: error.clone(),
                     exit_code: Some(-1),
                     elapsed_ms: 0,
+                    output_bytes: 0,
+                    output_omitted_bytes: 0,
+                    output_truncated: false,
+                    process_status: ExecutionProcessStatus::Failed,
                     terminal: ShellTerminal::Failed,
                 };
                 let mut events = vec![RuntimeEvent::new(
@@ -382,15 +410,46 @@ impl RuntimeCore {
 
     async fn poll_shell_process(
         &self,
-        server: crate::execution_process::ExecutionProcessServer,
+        session_id: &str,
+        thread_id: &str,
+        turn_id: &str,
+        item_id: &str,
         process_id: &str,
+        command: &str,
+        cwd: &Path,
+        server: crate::execution_process::ExecutionProcessServer,
         cancellation_token: CancellationToken,
     ) -> Result<ShellProcessOutcome, String> {
         let mut canceled = false;
+        let mut after_sequence = None;
         loop {
             if cancellation_token.is_cancelled() && !canceled {
                 canceled = true;
                 let _ = server.terminate(process_id);
+            }
+            let output = server
+                .drain_output(LiveExecutionOutputQuery {
+                    process_id: Some(process_id.to_string()),
+                    after_sequence,
+                    limit: Some(OUTPUT_DRAIN_LIMIT),
+                    max_bytes: Some(OUTPUT_DRAIN_MAX_BYTES),
+                })
+                .map_err(|error| error.to_string())?;
+            after_sequence = output.next_sequence.or(after_sequence);
+            for delta in output.deltas {
+                if delta.delta.is_empty() {
+                    continue;
+                }
+                self.append_and_publish_shell_events(
+                    session_id,
+                    thread_id,
+                    turn_id,
+                    vec![RuntimeEvent::new(
+                        "command.output",
+                        shell_output_event_payload(item_id, process_id, command, cwd, &delta),
+                    )],
+                )
+                .map_err(|error| error.to_string())?;
             }
             let snapshot = server
                 .status(process_id)
@@ -419,6 +478,10 @@ impl RuntimeCore {
                     output: snapshot.retained_output,
                     exit_code: snapshot.exit_code,
                     elapsed_ms: snapshot.elapsed_ms,
+                    output_bytes: snapshot.output_bytes,
+                    output_omitted_bytes: snapshot.output_omitted_bytes,
+                    output_truncated: snapshot.output_truncated,
+                    process_status: snapshot.status,
                     terminal,
                 });
             }
@@ -484,11 +547,13 @@ fn shell_event_payload(
     cwd: &Path,
     outcome: Option<&ShellProcessOutcome>,
 ) -> serde_json::Value {
-    let exit_code = outcome.and_then(|outcome| {
-        outcome
-            .exit_code
-            .or_else(|| (!matches!(outcome.terminal, ShellTerminal::Completed)).then_some(-1))
-    });
+    let output_ref = shell_output_ref(item_id);
+    let process_status = outcome
+        .map(|outcome| outcome.process_status.label())
+        .unwrap_or(ExecutionProcessStatus::Running.label());
+    let status = outcome
+        .map(|outcome| shell_terminal_status(outcome.terminal))
+        .unwrap_or("running");
     json!({
         "commandId": item_id,
         "itemId": item_id,
@@ -496,13 +561,79 @@ fn shell_event_payload(
         "command": command,
         "cwd": cwd.to_string_lossy(),
         "output": outcome.map(|outcome| outcome.output.as_str()),
-        "exitCode": exit_code,
+        "outputRef": output_ref.clone(),
+        "refIds": [output_ref],
+        "exitCode": outcome.and_then(|outcome| outcome.exit_code),
+        "status": status,
         "durationMs": outcome.map(|outcome| outcome.elapsed_ms),
         "source": "user_shell",
         "metadata": {
             "commandExecutionSource": "userShell",
             "processId": process_id,
+            "executionProcessStatus": process_status,
+            "executionProcessControlStatus": "registered",
+            "executionSurface": "user_shell",
+            "stdinWritable": outcome.is_none(),
+            "outputBytes": outcome.map(|outcome| outcome.output_bytes),
+            "outputOmittedBytes": outcome.map(|outcome| outcome.output_omitted_bytes),
+            "outputTruncated": outcome.map(|outcome| outcome.output_truncated),
             "durationMs": outcome.map(|outcome| outcome.elapsed_ms),
         },
     })
+}
+
+fn shell_output_event_payload(
+    item_id: &str,
+    process_id: &str,
+    command: &str,
+    cwd: &Path,
+    delta: &ExecutionOutputDelta,
+) -> serde_json::Value {
+    let output_ref = shell_output_ref(item_id);
+    let mut metadata = delta.metadata();
+    metadata.insert("commandExecutionSource".to_string(), json!("userShell"));
+    metadata.insert(
+        "executionProcessControlStatus".to_string(),
+        json!("registered"),
+    );
+    metadata.insert("executionSurface".to_string(), json!("user_shell"));
+    metadata.insert("execution_surface".to_string(), json!("user_shell"));
+    metadata.insert("command".to_string(), json!(command));
+    metadata.insert("cwd".to_string(), json!(cwd.to_string_lossy()));
+    json!({
+        "commandId": item_id,
+        "itemId": item_id,
+        "processId": process_id,
+        "outputRef": output_ref.clone(),
+        "refIds": [output_ref],
+        "kind": delta.kind.label(),
+        "delta": delta.delta,
+        "preview": truncate_chars(&delta.delta, COMMAND_OUTPUT_PREVIEW_CHARS),
+        "source": "user_shell_stream",
+        "metadata": metadata,
+    })
+}
+
+fn shell_output_ref(item_id: &str) -> String {
+    format!("output:user-shell:{item_id}")
+}
+
+fn shell_terminal_status(terminal: ShellTerminal) -> &'static str {
+    match terminal {
+        ShellTerminal::Completed => "completed",
+        ShellTerminal::Failed => "failed",
+        ShellTerminal::Canceled => "canceled",
+    }
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    let mut output = String::new();
+    for (index, character) in value.chars().enumerate() {
+        if index >= max_chars {
+            output.push('\u{2026}');
+            break;
+        }
+        output.push(character);
+    }
+    output
 }

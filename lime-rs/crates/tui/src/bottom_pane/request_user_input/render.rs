@@ -1,7 +1,7 @@
-use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
+use ratatui::Frame;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::line_truncation::line_width;

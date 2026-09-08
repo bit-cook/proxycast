@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::Frame;
 
 use crate::locale::Locale;
 use crate::status_indicator;

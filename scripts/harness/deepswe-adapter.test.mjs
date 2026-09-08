@@ -17,6 +17,7 @@ import {
   preparePierReplayTask,
   prepareTaskWorkspace,
   readJson,
+  resolveDockerHost,
   runContextBase,
   runCurrentChainTask,
   runPierVerifier,
@@ -212,9 +213,7 @@ describe("DeepSWE current-chain adapter", () => {
       sourceRoot: fixture.sourceRoot,
       taskId: "happy-dom-abort-pending-body-reads",
     });
-    const fixtureTask = fixture.tasks.get(
-      "happy-dom-abort-pending-body-reads",
-    );
+    const fixtureTask = fixture.tasks.get("happy-dom-abort-pending-body-reads");
 
     expect(task).toMatchObject({
       id: "happy-dom-abort-pending-body-reads",
@@ -881,6 +880,8 @@ const verifierDir = path.join(jobsDir, jobName, "verifier");
 fs.mkdirSync(verifierDir, { recursive: true });
 fs.writeFileSync(path.join(path.dirname(jobsDir), "pier-child-env.json"), JSON.stringify({
   tmpdir: process.env.TMPDIR,
+  dockerConfig: process.env.DOCKER_CONFIG,
+  dockerHost: process.env.DOCKER_HOST,
   containerBin: process.env.PIER_CONTAINER_BIN,
   args: process.argv.slice(2),
 }));
@@ -890,7 +891,21 @@ fs.writeFileSync(path.join(verifierDir, "test-stdout.txt"), "passed");
 `,
       { mode: 0o755 },
     );
-    fs.writeFileSync(containerBin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    fs.writeFileSync(
+      containerBin,
+      `#!/bin/sh
+if [ "$1" = "context" ] && [ "$2" = "show" ]; then
+  printf 'colima\n'
+  exit 0
+fi
+if [ "$1" = "context" ] && [ "$2" = "inspect" ]; then
+  printf 'unix:///tmp/pier-test-docker.sock\n'
+  exit 0
+fi
+exit 0
+`,
+      { mode: 0o755 },
+    );
 
     const result = runPierVerifier({
       task: { taskDir },
@@ -904,6 +919,11 @@ fs.writeFileSync(path.join(verifierDir, "test-stdout.txt"), "passed");
     const childEnv = readJson(path.join(runDir, "pier-child-env.json"));
     expect(childEnv).toMatchObject({
       tmpdir: path.join(runDir, "pier-tmp"),
+      dockerConfig: path.join(
+        repoRoot,
+        ".lime/benchmark/tools/docker-cli-config",
+      ),
+      dockerHost: "unix:///tmp/pier-test-docker.sock",
       containerBin,
     });
     expect(childEnv.args).toEqual(
@@ -923,6 +943,33 @@ fs.writeFileSync(path.join(verifierDir, "test-stdout.txt"), "passed");
     });
     expect(result.status).toBe("blocked");
     expect(result.checks.every((check) => check.passed === false)).toBe(true);
+  });
+
+  it("resolves the active Docker context endpoint for isolated CLI config", () => {
+    const root = temporaryRoot();
+    const containerBin = path.join(root, "docker");
+    fs.writeFileSync(
+      containerBin,
+      `#!/bin/sh
+if [ "$1" = "context" ] && [ "$2" = "show" ]; then
+  printf 'colima\\n'
+  exit 0
+fi
+if [ "$1" = "context" ] && [ "$2" = "inspect" ]; then
+  printf 'unix:///tmp/pier-test-docker.sock\\n'
+  exit 0
+fi
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    expect(
+      resolveDockerHost(containerBin, {
+        ...process.env,
+        DOCKER_HOST: "",
+      }),
+    ).toBe("unix:///tmp/pier-test-docker.sock");
   });
 
   it("rejects a Pier binary that does not report the pinned 0.3.1 version", () => {

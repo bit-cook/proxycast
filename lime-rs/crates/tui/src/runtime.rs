@@ -1,13 +1,17 @@
 use std::ffi::OsString;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow, bail};
-use app_server_client::{RemoteTransportConfig, SessionEvent, StdioTransportConfig};
+use anyhow::{anyhow, bail, Context, Result};
+use app_server_client::{AppServerEvent, RemoteTransportConfig, StdioTransportConfig};
 use app_server_protocol::protocol::v2::{ServerNotification, ServerRequest, UserInput};
 use futures::StreamExt;
 use serde::Serialize;
 
+use crate::app::event_dispatch::{EventContext, EventDispatch};
+use crate::app::reconnect::{reconnect_session, ReconnectedSession};
 use crate::app::{App, AppAction};
 use crate::app_server_session::AppServerSession;
 use crate::bottom_pane::AppServerResponse;
@@ -16,10 +20,12 @@ use crate::clipboard_paste::paste_image_to_temp_png;
 use crate::external_editor::edit_draft;
 use crate::locale::Locale;
 use crate::projection::ConversationProjection;
-use crate::reconnect::reconnect_session;
-use crate::resume_picker::run_resume_picker_with_app_server;
-use crate::settings::{EFFORTS, SettingsCommand, cycle_setting, parse_settings_command};
-use crate::tui::{TerminalGuard, TuiEvent};
+use crate::resume_picker::{
+    run_resume_picker_with_app_server, PickerAction, PickerLoadEvent, PickerState,
+    SessionPickerAction, SessionStatus,
+};
+use crate::settings::{parse_settings_command, SettingsCommand};
+use crate::tui::{Tui, TuiEvent};
 use crate::view;
 
 #[derive(Debug, Clone)]
@@ -92,11 +98,20 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                 effort = response.reasoning_effort;
             }
         } else {
-            session
+            let response = session
                 .as_mut()
                 .expect("session available during setup")
                 .start_thread(options.cwd.clone(), model.clone(), model_provider.clone())
                 .await?;
+            if model.is_none() {
+                model = Some(response.model);
+            }
+            if model_provider.is_none() {
+                model_provider = Some(response.model_provider);
+            }
+            if effort.is_none() {
+                effort = response.reasoning_effort;
+            }
         }
         let permission_profiles = session
             .as_ref()
@@ -124,6 +139,13 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                 .thread_id()?
                 .to_string(),
         );
+        let collaboration_modes = session
+            .as_ref()
+            .expect("session available during setup")
+            .list_collaboration_modes()
+            .await
+            .unwrap_or_default();
+        app.set_collaboration_modes(collaboration_modes);
         session
             .as_ref()
             .expect("session available during setup")
@@ -153,11 +175,8 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                 .projection
                 .set_status(format!("prompt history unavailable: {error}")),
         }
-        refresh_queued_submissions(
-            session.as_ref().expect("session available during setup"),
-            &mut app,
-        )
-        .await;
+        app.refresh_queued_submissions(session.as_ref().expect("session available during setup"))
+            .await;
         Ok(())
     }
     .await;
@@ -169,7 +188,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
             .await;
         return Err(error);
     }
-    let mut terminal = match TerminalGuard::enter().context("failed to initialize terminal") {
+    let mut terminal = match Tui::enter().context("failed to initialize terminal") {
         Ok(terminal) => terminal,
         Err(error) => {
             let _ = session
@@ -186,20 +205,134 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
     let mut status_tick = tokio::time::interval(Duration::from_secs(1));
     status_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let run_result: Result<()> = async {
+        let mut resume_picker_load_tx: Option<tokio::sync::mpsc::UnboundedSender<PickerLoadEvent>> =
+            None;
+        let mut resume_picker_load_rx: Option<tokio::sync::mpsc::UnboundedReceiver<PickerLoadEvent>> =
+            None;
+        let mut reconnect: Option<Pin<Box<dyn Future<Output = Result<ReconnectedSession>>>>> = None;
+        let mut reconnect_thread_id: Option<String> = None;
+        let mut reconnect_failed = false;
         loop {
+            if session.is_none() && reconnect.is_none() && !reconnect_failed {
+                if let Some(thread_id) = reconnect_thread_id.as_deref() {
+                    reconnect = Some(Box::pin(reconnect_session(
+                        options.clone(),
+                        thread_id.to_string(),
+                        model.clone(),
+                        model_provider.clone(),
+                        effort.clone(),
+                        permissions.clone(),
+                    )));
+                } else {
+                    reconnect_failed = true;
+                    app.projection
+                        .set_status("reconnect unavailable: thread id missing");
+                }
+            }
+            terminal
+                .sync_viewport()
+                .context("failed to synchronize terminal viewport")?;
+            if let Some(active_session) = session.as_ref() {
+                if let (Some(picker), Some(sender)) =
+                    (app.resume_picker.as_mut(), resume_picker_load_tx.as_ref())
+                {
+                    if let Some(thread_id) = picker.selected_thread_id().map(ToOwned::to_owned) {
+                        crate::resume_picker::spawn_preview_load(
+                            active_session.request_handle(),
+                            sender,
+                            picker,
+                            thread_id,
+                        );
+                    }
+                }
+            }
             terminal
                 .terminal_mut()
                 .draw(|frame| view::render(frame, &app))
                 .context("failed to render terminal")?;
 
             tokio::select! {
+                resume_event = async {
+                    match resume_picker_load_rx.as_mut() {
+                        Some(receiver) => receiver.recv().await,
+                        None => std::future::pending::<Option<PickerLoadEvent>>().await,
+                    }
+                }, if resume_picker_load_rx.is_some() => {
+                    let Some(resume_event) = resume_event else {
+                        resume_picker_load_rx = None;
+                        resume_picker_load_tx = None;
+                        continue;
+                    };
+                    let Some(picker) = app.resume_picker.as_mut() else {
+                        continue;
+                    };
+                    match resume_event {
+                        PickerLoadEvent::Threads { token, result } => match result {
+                            Ok(page) => {
+                                picker.apply_thread_page(token, page);
+                                if picker.threads.is_empty() && picker.has_more_pages() {
+                                    if let Some(sender) = resume_picker_load_tx.as_ref() {
+                                        crate::resume_picker::spawn_thread_load(
+                                            session
+                                                .as_ref()
+                                                .expect("session available during resume picker")
+                                                .request_handle(),
+                                            sender,
+                                            picker,
+                                        );
+                                    }
+                                }
+                            }
+                            Err(error) if picker.load_token == token => {
+                                picker.fail_thread_load(token, error);
+                            }
+                            Err(_) => {}
+                        },
+                        PickerLoadEvent::Preview { thread_id, result } => {
+                            picker.set_transcript_preview(thread_id, result.unwrap_or_default());
+                        }
+                        PickerLoadEvent::Transcript { thread_id, result } => {
+                            picker.set_transcript(thread_id, result);
+                        }
+                        PickerLoadEvent::Archive { thread_id, result } => {
+                            picker.handle_archive_result(thread_id, result);
+                        }
+                        PickerLoadEvent::Unarchive { thread_id, result } => {
+                            if let Some(crate::resume_picker::SessionSelection::Resume(target)) =
+                                picker.handle_unarchive_result(thread_id, *result)
+                            {
+                                let thread_id = target.thread_id;
+                                app.resume_picker = None;
+                                resume_picker_load_rx = None;
+                                resume_picker_load_tx = None;
+                                app.agents_overview = None;
+                                match app.resume_target_session(
+                                    session
+                                        .as_mut()
+                                        .expect("session available during resume picker"),
+                                    thread_id,
+                                    &mut model,
+                                    &mut model_provider,
+                                    &mut effort,
+                                    &mut permissions,
+                                    &options,
+                                )
+                                .await
+                                {
+                                    Ok(()) => app.projection.set_status("archived session restored"),
+                                    Err(error) => app
+                                        .projection
+                                        .set_status(format!("resume failed: {error}")),
+                                }
+                            }
+                        }
+                    }
+                }
                 _ = status_tick.tick(), if app.projection.active_turn_id().is_some() => {
                     frame_requester.schedule_frame();
                 }
                 event = input.next() => {
-                    let Some(event) = event else {
-                        break;
-                    };
+                    let Some(event) = event else { break };
                     let event = match event {
                         TuiEvent::Draw => {
                             if app.projection.active_turn_id().is_some() {
@@ -207,19 +340,73 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                             }
                             continue;
                         }
-                        TuiEvent::Key(key) => crossterm::event::Event::Key(key),
-                        TuiEvent::Paste(text) => crossterm::event::Event::Paste(text),
                         TuiEvent::Resize(size) => {
-                            crossterm::event::Event::Resize(size.width, size.height)
+                            terminal.update_viewport(size, size.height);
+                            TuiEvent::Resize(size)
                         }
                         TuiEvent::Resume => continue,
-                        TuiEvent::FocusGained => crossterm::event::Event::FocusGained,
-                        TuiEvent::FocusLost => crossterm::event::Event::FocusLost,
+                        event => event,
                     };
-                    match app.handle_terminal_event(event) {
+                    let connected = session.is_some();
+                    let action = app.handle_tui_event(event, connected);
+                    if !connected {
+                        if matches!(action, AppAction::Quit) {
+                            break;
+                        }
+                        continue;
+                    }
+                    let action = match app
+                        .handle_event(
+                            action,
+                            EventContext {
+                                session: session
+                                    .as_mut()
+                                    .expect("session available during TUI action dispatch"),
+                                model: &mut model,
+                                model_provider: &mut model_provider,
+                                effort: &mut effort,
+                                permissions: &mut permissions,
+                            },
+                        )
+                        .await?
+                    {
+                        EventDispatch::Handled => continue,
+                        EventDispatch::Unhandled(action) => action,
+                    };
+                    match action {
                         AppAction::Submit(prompt) => {
+                            if !app.can_accept_direct_input() {
+                                continue;
+                            }
                             if let Some(command) = parse_settings_command(&prompt) {
                                 match command {
+                                    Ok(SettingsCommand::Plan) => {
+                                        let Some(collaboration_mode) = app.plan_mode() else {
+                                            app.projection
+                                                .set_status("plan mode unavailable on this server");
+                                            continue;
+                                        };
+                                        match session
+                                            .as_ref()
+                                            .expect("session available during TUI")
+                                            .update_collaboration_mode(collaboration_mode.clone())
+                                            .await
+                                        {
+                                            Ok(()) => {
+                                                model = Some(collaboration_mode.settings.model.clone());
+                                                effort = collaboration_mode.settings.reasoning_effort.clone();
+                                                app.set_settings(
+                                                    model.clone(),
+                                                    model_provider.clone(),
+                                                    effort.clone(),
+                                                    permissions.clone(),
+                                                );
+                                                app.collaboration_mode = Some(collaboration_mode);
+                                                app.projection.set_status("plan mode");
+                                            }
+                                            Err(error) => app.projection.set_status(error.to_string()),
+                                        }
+                                    }
                                     Ok(SettingsCommand::ModelPicker) => {
                                         match session
                                             .as_ref()
@@ -375,6 +562,9 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                             }
                         }
                         AppAction::Queue(prompt) => {
+                            if !app.can_accept_direct_input() {
+                                continue;
+                            }
                             let images = app.take_pending_images();
                             let input = submission_input(prompt.clone(), &images);
                             match session
@@ -410,17 +600,15 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                     app.projection.set_status("queued input editing");
                                 }
                                 Ok(true) => {
-                                    refresh_queued_submissions(
+                                    app.refresh_queued_submissions(
                                         session.as_ref().expect("session available during TUI"),
-                                        &mut app,
                                     )
                                     .await;
                                     app.projection.set_status("queued input unavailable");
                                 }
                                 Ok(false) => {
-                                    refresh_queued_submissions(
+                                    app.refresh_queued_submissions(
                                         session.as_ref().expect("session available during TUI"),
-                                        &mut app,
                                     )
                                     .await;
                                     app.projection.set_status("queued input unavailable");
@@ -428,59 +616,6 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 Err(error) => app
                                     .projection
                                     .set_status(format!("queue edit failed: {error}")),
-                            }
-                        }
-                        action @ (AppAction::DecreaseEffort | AppAction::IncreaseEffort) => {
-                            let direction = if matches!(action, AppAction::DecreaseEffort) {
-                                -1
-                            } else {
-                                1
-                            };
-                            let next = cycle_setting(&EFFORTS, effort.as_deref(), direction);
-                            match session
-                                .as_ref()
-                                .expect("session available during TUI")
-                                .update_settings(None, None, Some(next.clone()), None)
-                                .await
-                            {
-                                Ok(()) => {
-                                    effort = Some(next.clone());
-                                    app.set_settings(
-                                        model.clone(),
-                                        model_provider.clone(),
-                                        effort.clone(),
-                                        permissions.clone(),
-                                    );
-                                    app.projection.set_status(format!("effort: {next}"));
-                                }
-                                Err(error) => app.projection.set_status(error.to_string()),
-                            }
-                        }
-                        action @ (AppAction::PreviousPermissions | AppAction::NextPermissions) => {
-                            let direction = if matches!(action, AppAction::PreviousPermissions) {
-                                -1
-                            } else {
-                                1
-                            };
-                            let next = app
-                                .cycle_permission_profile(permissions.as_deref(), direction);
-                            match session
-                                .as_ref()
-                                .expect("session available during TUI")
-                                .update_settings(None, None, None, Some(next.clone()))
-                                .await
-                            {
-                                Ok(()) => {
-                                    permissions = Some(next.clone());
-                                    app.set_settings(
-                                        model.clone(),
-                                        model_provider.clone(),
-                                        effort.clone(),
-                                        permissions.clone(),
-                                    );
-                                    app.projection.set_status(format!("permissions: {next}"));
-                                }
-                                Err(error) => app.projection.set_status(error.to_string()),
                             }
                         }
                         AppAction::CopyLastResponse => {
@@ -517,17 +652,13 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                         }
                         AppAction::OpenExternalEditor => {
                             let draft = app.composer.text().to_string();
-                            if let Err(error) = terminal.suspend() {
-                                app.projection.set_status(format!("editor unavailable: {error}"));
-                                continue;
-                            }
-                            let edited = edit_draft(&draft, &options.cwd).await;
-                            let resume_result = terminal.resume();
-                            match (edited, resume_result) {
-                                (Ok(Some(text)), Ok(())) => app.replace_composer(text),
-                                (Ok(None), Ok(())) => app.projection.set_status("editor draft empty"),
-                                (Err(error), Ok(())) => app.projection.set_status(error.to_string()),
-                                (_, Err(error)) => return Err(anyhow!("failed to resume terminal after editor: {error}")),
+                            let edited = terminal
+                                .with_restored(|| edit_draft(&draft, &options.cwd))
+                                .await;
+                            match edited {
+                                Ok(Some(text)) => app.replace_composer(text),
+                                Ok(None) => app.projection.set_status("editor draft empty"),
+                                Err(error) => app.projection.set_status(error.to_string()),
                             }
                         }
                         AppAction::ScrollUp => {
@@ -540,118 +671,209 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                         }
                         AppAction::ScrollTop => app.scroll_top(),
                         AppAction::ScrollBottom => app.scroll_bottom(),
-                        AppAction::Respond(response) => {
-                            if let Err(error) = session
-                                .as_ref()
-                                .expect("session available during TUI")
-                                .respond(response)
-                                .await
-                            {
-                                app.projection.set_status(error.to_string());
+                        AppAction::OpenResumePicker => {
+                            if app.resume_picker.is_none() {
+                                let (load_tx, load_rx) = tokio::sync::mpsc::unbounded_channel();
+                                let mut picker = PickerState::new(
+                                    Vec::new(),
+                                    SessionPickerAction::Resume,
+                                    SessionStatus::Active,
+                                    Some(app.cwd.clone()),
+                                    false,
+                                );
+                                crate::resume_picker::spawn_thread_load(
+                                    session
+                                        .as_ref()
+                                        .expect("session available during resume picker")
+                                        .request_handle(),
+                                    &load_tx,
+                                    &mut picker,
+                                );
+                                app.resume_picker = Some(picker);
+                                resume_picker_load_tx = Some(load_tx);
+                                resume_picker_load_rx = Some(load_rx);
                             }
                         }
-                        AppAction::SelectModel(selection) => {
-                            match session
+                        AppAction::ResumePicker(action) => {
+                            let Some(picker) = app.resume_picker.as_mut() else {
+                                continue;
+                            };
+                            let request_handle = session
                                 .as_ref()
-                                .expect("session available during TUI")
-                                .update_settings(
-                                    Some(selection.model.clone()),
-                                    Some(selection.provider.clone()),
-                                    None,
-                                    None,
-                                )
-                                .await
-                            {
-                                Ok(()) => {
-                                    model = Some(selection.model.clone());
-                                    model_provider = Some(selection.provider.clone());
-                                    app.set_settings(
-                                        model.clone(),
-                                        model_provider.clone(),
-                                        effort.clone(),
-                                        permissions.clone(),
-                                    );
-                                    app.projection.set_status("settings updated");
+                                .expect("session available during resume picker")
+                                .request_handle();
+                            match action {
+                                PickerAction::Select => {
+                                    let selected = picker.selected_thread_id().map(ToOwned::to_owned);
+                                    app.resume_picker = None;
+                                    resume_picker_load_rx = None;
+                                    resume_picker_load_tx = None;
+                                    app.agents_overview = None;
+                                    if let Some(thread_id) = selected {
+                                        app.projection
+                                            .set_status(format!("resuming session {thread_id}"));
+                                        match app.resume_target_session(
+                                            session
+                                                .as_mut()
+                                                .expect("session available during resume picker"),
+                                            thread_id,
+                                            &mut model,
+                                            &mut model_provider,
+                                            &mut effort,
+                                            &mut permissions,
+                                            &options,
+                                        )
+                                        .await
+                                        {
+                                            Ok(()) => {}
+                                            Err(error) => app
+                                                .projection
+                                                .set_status(format!("resume failed: {error}")),
+                                        }
+                                    }
                                 }
-                                Err(error) => app.projection.set_status(error.to_string()),
+                                PickerAction::Restore => {
+                                    if let Some(thread_id) =
+                                        picker.request_unarchive_for_selected_session()
+                                    {
+                                        if let Some(sender) = resume_picker_load_tx.as_ref() {
+                                            crate::resume_picker::spawn_unarchive_request(
+                                                request_handle,
+                                                sender,
+                                                thread_id,
+                                            );
+                                        }
+                                    }
+                                }
+                                PickerAction::Archive => {
+                                    if let Some(thread_id) =
+                                        picker.request_archive_for_selected_session()
+                                    {
+                                        if let Some(sender) = resume_picker_load_tx.as_ref() {
+                                            crate::resume_picker::spawn_archive_request(
+                                                request_handle,
+                                                sender,
+                                                thread_id,
+                                            );
+                                        }
+                                    }
+                                }
+                                PickerAction::ToggleStatus
+                                | PickerAction::ToggleFilter
+                                | PickerAction::ToggleSort
+                                | PickerAction::Reload => {
+                                    match action {
+                                        PickerAction::ToggleStatus => picker.toggle_status(),
+                                        PickerAction::ToggleFilter => picker.toggle_filter(),
+                                        PickerAction::ToggleSort => picker.toggle_sort(),
+                                        PickerAction::Reload => {}
+                                        _ => unreachable!(),
+                                    }
+                                    if let Some(sender) = resume_picker_load_tx.as_ref() {
+                                        crate::resume_picker::spawn_thread_load(
+                                            request_handle,
+                                            sender,
+                                            picker,
+                                        );
+                                    }
+                                }
+                                PickerAction::ToggleDensity => picker.toggle_density(),
+                                PickerAction::ToggleExpanded => {
+                                    if let Some(thread_id) = picker.toggle_selected_expansion() {
+                                        if let Some(sender) = resume_picker_load_tx.as_ref() {
+                                            crate::resume_picker::spawn_transcript_load(
+                                                request_handle,
+                                                sender,
+                                                thread_id,
+                                            );
+                                        }
+                                    }
+                                }
+                                PickerAction::OpenTranscript => {
+                                    if let Some(thread_id) = picker.open_transcript_pager(app.locale) {
+                                        if let Some(sender) = resume_picker_load_tx.as_ref() {
+                                            crate::resume_picker::spawn_transcript_load(
+                                                request_handle,
+                                                sender,
+                                                thread_id,
+                                            );
+                                        }
+                                    }
+                                }
+                                PickerAction::MoveDown if picker.should_load_more() => {
+                                    if let Some(sender) = resume_picker_load_tx.as_ref() {
+                                        crate::resume_picker::spawn_thread_load(
+                                            request_handle,
+                                            sender,
+                                            picker,
+                                        );
+                                    }
+                                }
+                                PickerAction::MoveUp
+                                | PickerAction::MoveDown
+                                | PickerAction::None
+                                | PickerAction::Cancel => {}
                             }
+                        }
+                        AppAction::SwitchThread(thread_id) => {
+                            match app.resume_target_session(
+                                session.as_mut().expect("session available during TUI"),
+                                thread_id,
+                                &mut model,
+                                &mut model_provider,
+                                &mut effort,
+                                &mut permissions,
+                                &options,
+                            )
+                            .await
+                            {
+                                Ok(()) => app.projection.set_status("switched agent"),
+                                Err(error) => app.projection.set_status(format!(
+                                    "agent switch failed: {error}"
+                                )),
+                            }
+                        }
+                        AppAction::DecreaseEffort
+                        | AppAction::IncreaseEffort
+                        | AppAction::PreviousPermissions
+                        | AppAction::NextPermissions
+                        | AppAction::Respond(_)
+                        | AppAction::SelectModel(_)
+                        | AppAction::ChangeCollaborationMode(_)
+                        | AppAction::RefreshAgentsOverview
+                        | AppAction::DispatchAgentsOverviewTask { .. }
+                        | AppAction::RenameAgentsOverviewThread { .. }
+                        | AppAction::StopAgentsOverviewThread { .. } => {
+                            unreachable!("App Server actions are handled by app::event_dispatch")
                         }
                         AppAction::Quit => break,
                         AppAction::None => {}
                     }
                 }
-                event = session
-                    .as_mut()
-                    .expect("session available during TUI")
-                    .next_event() => {
-                    let event = event.unwrap_or_else(|| SessionEvent::Disconnected {
+                event = async {
+                    match session.as_mut() {
+                        Some(session) => session.next_event().await,
+                        None => std::future::pending::<Option<AppServerEvent>>().await,
+                    }
+                }, if session.is_some() => {
+                    let event = event.unwrap_or_else(|| AppServerEvent::Disconnected {
                         message: "app-server event stream closed".to_string(),
                     });
-                    match event {
-                        SessionEvent::Notification(notification) => {
-                            let queue_changed = matches!(
-                                notification.as_ref(),
-                                ServerNotification::ThreadQueueChanged(params)
-                                    if app.thread_id.as_deref() == Some(params.thread_id.as_str())
-                            );
-                            app.apply_notification(*notification);
-                            if queue_changed {
-                                refresh_queued_submissions(
-                                    session.as_ref().expect("session available during TUI"),
-                                    &mut app,
-                                )
-                                .await;
-                            }
-                        }
-                        SessionEvent::ServerRequest(request) => {
-                            match *request {
-                                ServerRequest::CurrentTimeRead { id, .. } => {
-                                    if let Err(error) = session
-                                        .as_ref()
-                                        .expect("session available during TUI")
-                                        .respond_current_time(id)
-                                        .await
-                                    {
-                                        app.projection.set_status(error.to_string());
-                                    }
-                                }
-                                request => {
-                                    match app.bottom_pane.enqueue(request) {
-                                        Ok(()) => app.pager_overlay = None,
-                                        Err(request) => {
-                                            if let Err(error) = session
-                                                .as_ref()
-                                                .expect("session available during TUI")
-                                                .reject_server_request(request)
-                                                .await
-                                            {
-                                                app.projection.set_status(error.to_string());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        SessionEvent::RawServerRequest(request) => {
-                            if let Err(error) = session
-                                .as_ref()
-                                .expect("session available during TUI")
-                                .reject_raw_server_request(request)
-                                .await
-                            {
-                                app.projection.set_status(error.to_string());
-                            }
-                        }
-                        SessionEvent::Disconnected { message } => {
+                    let disconnected_message = match &event {
+                        AppServerEvent::Disconnected { message } => Some(message.clone()),
+                        _ => None,
+                    };
+                    app.handle_app_server_event(
+                        session.as_ref().expect("session available during TUI"),
+                        event,
+                    )
+                    .await;
+                    if disconnected_message.is_some() {
                             let thread_id = session
                                 .as_ref()
                                 .expect("session available during TUI")
                                 .thread_id()?
                             .to_string();
-                            app.bottom_pane.clear();
-                            app.model_picker = None;
-                            app.pager_overlay = None;
-                            app.projection.set_status(format!("reconnecting: {message}"));
                             terminal
                                 .terminal_mut()
                                 .draw(|frame| view::render(frame, &app))
@@ -660,33 +882,53 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 .take()
                                 .expect("session available during reconnect");
                             let _ = old_session.shutdown().await;
-                            let reconnected = reconnect_session(
-                                &options,
-                                &mut app,
-                                &thread_id,
+                            reconnect_thread_id = Some(thread_id);
+                            reconnect_failed = false;
+                    }
+                }
+                result = async {
+                    match reconnect.as_mut() {
+                        Some(future) => future.await,
+                        None => std::future::pending::<Result<ReconnectedSession>>().await,
+                    }
+                }, if reconnect.is_some() => {
+                    reconnect = None;
+                    match result {
+                        Ok(reconnected) => {
+                            let active_profile = reconnected
+                                .session
+                                .active_permission_profile()
+                                .map(str::to_string);
+                            app.hydrate_thread(reconnected.thread);
+                            app.set_permission_profiles(reconnected.permission_profiles);
+                            app.set_collaboration_modes(
+                                reconnected
+                                    .session
+                                    .list_collaboration_modes()
+                                    .await
+                                    .unwrap_or_default(),
+                            );
+                            if options.permissions.is_none() {
+                                if let Some(active_profile) = active_profile {
+                                    permissions = Some(active_profile);
+                                }
+                            }
+                            app.set_settings(
                                 model.clone(),
                                 model_provider.clone(),
                                 effort.clone(),
                                 permissions.clone(),
-                            )
-                            .await?;
-                            if options.permissions.is_none() {
-                                if let Some(active_profile) =
-                                    reconnected.active_permission_profile()
-                                {
-                                    permissions = Some(active_profile.to_string());
-                                    app.set_settings(
-                                        model.clone(),
-                                        model_provider.clone(),
-                                        effort.clone(),
-                                        permissions.clone(),
-                                    );
-                                }
-                            }
-                            refresh_queued_submissions(&reconnected, &mut app).await;
-                            session = Some(reconnected);
+                            );
+                            app.refresh_queued_submissions(&reconnected.session).await;
+                            session = Some(reconnected.session);
+                            reconnect_thread_id = None;
+                            reconnect_failed = false;
+                            app.projection.set_status("reconnected");
                         }
-                        SessionEvent::RawNotification(_) => {}
+                        Err(error) => {
+                            reconnect_failed = true;
+                            app.projection.set_status(format!("reconnect failed: {error}"));
+                        }
                     }
                 }
             }
@@ -712,7 +954,7 @@ fn is_no_active_turn_error(error: &anyhow::Error) -> bool {
     })
 }
 
-fn current_transcript_page_size(terminal: &mut TerminalGuard, app: &App) -> Result<usize> {
+fn current_transcript_page_size(terminal: &mut Tui, app: &App) -> Result<usize> {
     let size = terminal
         .terminal_mut()
         .size()
@@ -741,17 +983,6 @@ async fn persist_prompt(session: &AppServerSession, app: &mut App, prompt: Strin
     if let Err(error) = session.append_prompt_history(prompt).await {
         app.projection
             .set_status(format!("prompt history unavailable: {error}"));
-    }
-}
-
-async fn refresh_queued_submissions(session: &AppServerSession, app: &mut App) {
-    match session.list_queued_submissions(100).await {
-        Ok(submissions) => app.set_queued_submissions(submissions),
-        Err(error) => {
-            app.set_queued_submissions(Vec::new());
-            app.projection
-                .set_status(format!("queue unavailable: {error}"));
-        }
     }
 }
 
@@ -839,14 +1070,17 @@ async fn run_exec_with_session(
             projection.hydrate_thread(response.thread);
             (thread_id, projection)
         } else {
-            let thread_id = session
+            let response = session
                 .start_thread(
                     options.tui.cwd.clone(),
                     options.tui.model.clone(),
                     options.tui.model_provider.clone(),
                 )
                 .await?;
-            (thread_id, ConversationProjection::default())
+            (
+                response.thread.id.clone(),
+                ConversationProjection::default(),
+            )
         };
         session
             .update_settings(
@@ -865,7 +1099,7 @@ async fn run_exec_with_session(
                 .await
                 .ok_or_else(|| anyhow!("App Server disconnected before turn completion"))?;
             match event {
-                SessionEvent::Notification(notification) => {
+                AppServerEvent::ServerNotification(notification) => {
                     let completed = matches!(
                         notification.as_ref(),
                         ServerNotification::TurnCompleted(params) if params.turn.id == turn_id
@@ -875,7 +1109,7 @@ async fn run_exec_with_session(
                         break;
                     }
                 }
-                SessionEvent::ServerRequest(request) => match *request {
+                AppServerEvent::ServerRequest(request) => match *request {
                     ServerRequest::CurrentTimeRead { id, .. } => {
                         session.respond_current_time(id).await?;
                     }
@@ -884,11 +1118,8 @@ async fn run_exec_with_session(
                         Err(request) => session.reject_server_request(request).await?,
                     },
                 },
-                SessionEvent::RawServerRequest(request) => {
-                    session.reject_raw_server_request(request).await?;
-                }
-                SessionEvent::Disconnected { message } => bail!(message),
-                SessionEvent::RawNotification(_) => {}
+                AppServerEvent::Disconnected { message } => bail!(message),
+                AppServerEvent::Lagged { .. } => {}
             }
         }
 

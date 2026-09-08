@@ -4,6 +4,8 @@ use app_server_protocol::protocol::v2::{
     UserInput,
 };
 
+use crate::multi_agents;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EntryKind {
     User,
@@ -431,39 +433,43 @@ fn project_item(item: &ThreadItem, streaming: bool) -> Option<TranscriptEntry> {
             Some(dynamic_entry_status(*status)),
             dynamic_summary(content_items.as_deref(), *success, *duration_ms),
         ),
-        ThreadItem::CollabAgentToolCall {
-            id,
-            tool,
-            status,
-            prompt,
-            model,
-            reasoning_effort,
-            agents_states,
-            ..
-        } => (
-            id.clone(),
-            EntryKind::MultiAgent,
-            format!("{tool:?}"),
-            Some(collab_entry_status(*status)),
-            collab_summary(
-                agents_states,
-                prompt.as_deref(),
-                model.as_deref(),
-                reasoning_effort.as_ref(),
-            ),
-        ),
-        ThreadItem::SubAgentActivity {
+        item @ ThreadItem::CollabAgentToolCall {
+            id, tool, status, ..
+        } => {
+            let text = multi_agents::tool_call_history_cell(item)
+                .map(|cell| cell.title)
+                .unwrap_or_else(|| format!("{tool:?}"));
+            (
+                id.clone(),
+                EntryKind::MultiAgent,
+                text,
+                Some(collab_entry_status(*status)),
+                multi_agents::collab_summary_for_item(item),
+            )
+        }
+        item @ ThreadItem::SubAgentActivity {
             id,
             kind,
             agent_path,
             ..
-        } => (
-            id.clone(),
-            EntryKind::MultiAgent,
-            format!("{agent_path} [{kind:?}]"),
-            sub_agent_status(*kind),
-            Vec::new(),
-        ),
+        } => {
+            let status = multi_agents::sub_agent_activity_display(item)
+                .map(|activity| {
+                    if activity.is_running_hint {
+                        EntryStatus::Running
+                    } else {
+                        EntryStatus::Interrupted
+                    }
+                })
+                .or(Some(EntryStatus::Running));
+            (
+                id.clone(),
+                EntryKind::MultiAgent,
+                multi_agents::sub_agent_activity_summary(*kind, agent_path),
+                status,
+                Vec::new(),
+            )
+        }
         ThreadItem::WebSearch(item) => (
             item.id.clone(),
             EntryKind::Tool,
@@ -617,64 +623,6 @@ fn dynamic_summary(
         details.push(format!("duration {duration_ms}ms"));
     }
     details
-}
-
-fn collab_summary(
-    agents_states: &std::collections::HashMap<
-        String,
-        app_server_protocol::protocol::v2::CollabAgentState,
-    >,
-    prompt: Option<&str>,
-    model: Option<&str>,
-    reasoning_effort: Option<&app_server_protocol::protocol::v2::ReasoningEffort>,
-) -> Vec<String> {
-    let mut details = vec![format!("agents: {}", agents_states.len())];
-    let mut counts = std::collections::BTreeMap::<&'static str, usize>::new();
-    for state in agents_states.values() {
-        *counts
-            .entry(collab_agent_status_label(state.status))
-            .or_default() += 1;
-    }
-    details.extend(
-        counts
-            .into_iter()
-            .map(|(label, count)| format!("{label}: {count}")),
-    );
-    if let Some(model) = model.filter(|model| !model.trim().is_empty()) {
-        details.push(format!("model: {}", compact_text(model)));
-    }
-    if let Some(reasoning_effort) = reasoning_effort {
-        details.push(format!("effort: {}", reasoning_effort.as_str()));
-    }
-    if let Some(prompt) = prompt.filter(|prompt| !prompt.trim().is_empty()) {
-        details.push(format!("prompt: {}", compact_text(prompt)));
-    }
-    details
-}
-
-fn sub_agent_status(
-    kind: app_server_protocol::protocol::v2::SubAgentActivityKind,
-) -> Option<EntryStatus> {
-    use app_server_protocol::protocol::v2::SubAgentActivityKind;
-    Some(match kind {
-        SubAgentActivityKind::Started | SubAgentActivityKind::Interacted => EntryStatus::Running,
-        SubAgentActivityKind::Interrupted => EntryStatus::Interrupted,
-    })
-}
-
-fn collab_agent_status_label(
-    status: app_server_protocol::protocol::v2::CollabAgentStatus,
-) -> &'static str {
-    use app_server_protocol::protocol::v2::CollabAgentStatus;
-    match status {
-        CollabAgentStatus::PendingInit => "pending",
-        CollabAgentStatus::Running => "running",
-        CollabAgentStatus::Interrupted => "interrupted",
-        CollabAgentStatus::Completed => "completed",
-        CollabAgentStatus::Errored => "errored",
-        CollabAgentStatus::Shutdown => "shutdown",
-        CollabAgentStatus::NotFound => "not-found",
-    }
 }
 
 fn compact_text(value: &str) -> String {

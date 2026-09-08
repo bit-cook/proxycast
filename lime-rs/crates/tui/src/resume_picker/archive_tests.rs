@@ -128,11 +128,9 @@ fn restore_failure_preserves_archived_thread_and_allows_retry() {
         .request_unarchive_for_selected_session()
         .expect("selected archived thread");
 
-    assert!(
-        picker
-            .handle_unarchive_result(thread_id.clone(), Err(anyhow::anyhow!("restore denied")))
-            .is_none()
-    );
+    assert!(picker
+        .handle_unarchive_result(thread_id.clone(), Err(anyhow::anyhow!("restore denied")))
+        .is_none());
     assert_eq!(picker.threads.len(), 1);
     assert_eq!(
         picker.status_message.as_deref(),

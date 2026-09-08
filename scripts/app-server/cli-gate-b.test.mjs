@@ -13,10 +13,12 @@ const fixtureSource = readFileSync(
 
 describe("CLI Gate B", () => {
   it("runs the real CLI and App Server through the current stdio boundary", () => {
+    expect(source).toContain("buildTerminalGateBinaries");
     expect(source).toContain("spawn(cliBinaryPath");
     expect(source).toContain('"--app-server"');
     expect(source).toContain('"--app-server-arg=--backend"');
     expect(source).toContain('"--app-server-arg=external"');
+    expect(fixtureSource).toContain('"turn.started"');
     expect(fixtureSource).toContain('"turn.completed"');
     expect(source).toContain('envelope.result?.status, "ready"');
     expect(source).toContain('argument === "--json" ? "--jsonl" : argument');

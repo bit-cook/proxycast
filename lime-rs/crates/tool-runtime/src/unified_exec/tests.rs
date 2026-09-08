@@ -4,6 +4,9 @@ use crate::execution_process::{
     ExecutionOutputDelta, ExecutionOutputKind, ExecutionProcessSnapshot,
 };
 use crate::tool_executor::{RuntimeToolExecutionError, RuntimeToolPolicyErrorKind};
+use crate::tool_lifecycle::{
+    ToolLifecycleEmissionFuture, ToolLifecycleEmitter, ToolLifecycleEvent, ToolOutputDeltaEvent,
+};
 use async_trait::async_trait;
 
 #[cfg(target_os = "windows")]
@@ -250,9 +253,37 @@ fn request<'a>(
         working_directory: std::env::current_dir().unwrap(),
         environment: HashMap::new(),
         tool_call_id: call_id.to_string(),
+        turn_id: "turn-1".to_string(),
         cancel_token: None,
         turn_context: None,
         attempt: None,
+        output_sink: None,
+    }
+}
+
+#[derive(Default)]
+struct RecordingOutputSink {
+    events: Mutex<Vec<ToolOutputDeltaEvent>>,
+}
+
+impl RecordingOutputSink {
+    fn events(&self) -> Vec<ToolOutputDeltaEvent> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+impl ToolLifecycleEmitter for RecordingOutputSink {
+    fn emit<'a>(&'a self, _event: ToolLifecycleEvent) -> ToolLifecycleEmissionFuture<'a> {
+        Box::pin(async {})
+    }
+
+    fn emit_output_delta<'a>(
+        &'a self,
+        event: ToolOutputDeltaEvent,
+    ) -> ToolLifecycleEmissionFuture<'a> {
+        Box::pin(async move {
+            self.events.lock().unwrap().push(event);
+        })
     }
 }
 
@@ -274,18 +305,18 @@ fn definitions_expose_only_codex_unified_exec_tools() {
 #[tokio::test]
 async fn exec_command_returns_terminal_output_for_short_process() {
     let gateway = Arc::new(FixtureGateway::default());
+    let output_sink = Arc::new(RecordingOutputSink::default());
     let params = json!({
         "cmd": "short",
         "login": false,
         "yield_time_ms": 250
     });
 
-    let result = execute_runtime_unified_exec_tool(
-        gateway,
-        request(EXEC_COMMAND_TOOL_NAME, &params, "call-short"),
-    )
-    .await
-    .expect("short command result");
+    let mut execution_request = request(EXEC_COMMAND_TOOL_NAME, &params, "call-short");
+    execution_request.output_sink = Some(output_sink.clone());
+    let result = execute_runtime_unified_exec_tool(gateway, execution_request)
+        .await
+        .expect("short command result");
 
     assert!(result.success);
     let structured = result.structured_content.expect("structured output");
@@ -297,6 +328,35 @@ async fn exec_command_returns_terminal_output_for_short_process() {
     assert_eq!(
         result.metadata.get("exec_command_call_id"),
         Some(&json!("call-short"))
+    );
+    assert!(result
+        .metadata
+        .get("processId")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.starts_with("unified-exec-")));
+    assert_eq!(
+        result.metadata.get("executionProcessStatus"),
+        Some(&json!("exited"))
+    );
+    assert_eq!(result.metadata.get("outputTruncated"), Some(&json!(false)));
+    let events = output_sink.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].turn_id, "turn-1");
+    assert_eq!(events[0].call_id, "call-short");
+    assert_eq!(events[0].delta, "completed\n");
+    assert_eq!(events[0].output_kind.as_deref(), Some("stdout"));
+    assert_eq!(
+        events[0].metadata.get("processId"),
+        result.metadata.get("processId")
+    );
+    assert_eq!(events[0].metadata.get("outputSequence"), Some(&json!(1)));
+    assert_eq!(
+        events[0].metadata.get("executionProcessStatus"),
+        Some(&json!("exited"))
+    );
+    assert_eq!(
+        events[0].metadata.get("executionSurface"),
+        Some(&json!("unified_exec"))
     );
 }
 
@@ -381,35 +441,43 @@ async fn exec_command_forwards_environment_identity_to_execution_gateway() {
 #[tokio::test]
 async fn write_stdin_resumes_and_completes_original_exec_command() {
     let gateway = Arc::new(FixtureGateway::default());
+    let output_sink = Arc::new(RecordingOutputSink::default());
     let exec_params = json!({
         "cmd": "long-running",
         "login": false,
         "yield_time_ms": 250
     });
-    let running = execute_runtime_unified_exec_tool(
-        gateway.clone(),
-        request(EXEC_COMMAND_TOOL_NAME, &exec_params, "call-long"),
-    )
-    .await
-    .expect("running command result");
+    let mut exec_request = request(EXEC_COMMAND_TOOL_NAME, &exec_params, "call-long");
+    exec_request.output_sink = Some(output_sink.clone());
+    let running = execute_runtime_unified_exec_tool(gateway.clone(), exec_request)
+        .await
+        .expect("running command result");
     let session_id = running
         .structured_content
         .as_ref()
         .and_then(|value| value.get("session_id"))
         .and_then(Value::as_i64)
         .expect("session id") as i32;
+    assert_eq!(
+        running.metadata.get("executionProcessStatus"),
+        Some(&json!("running"))
+    );
+    assert_eq!(
+        running.metadata.get("processId"),
+        Some(&json!(format!("unified-exec-{session_id}")))
+    );
 
     let write_params = json!({
         "session_id": session_id,
         "chars": "continue\n",
         "yield_time_ms": 250
     });
-    let completed = execute_runtime_unified_exec_tool(
-        gateway,
-        request(WRITE_STDIN_TOOL_NAME, &write_params, "write-call"),
-    )
-    .await
-    .expect("write stdin result");
+    let mut write_request = request(WRITE_STDIN_TOOL_NAME, &write_params, "write-call");
+    write_request.turn_id = "turn-write".to_string();
+    write_request.output_sink = Some(output_sink.clone());
+    let completed = execute_runtime_unified_exec_tool(gateway, write_request)
+        .await
+        .expect("write stdin result");
 
     assert!(completed.success);
     let structured = completed.structured_content.expect("structured output");
@@ -427,6 +495,12 @@ async fn write_stdin_resumes_and_completes_original_exec_command() {
             "stdin": "sent 9 chars",
         }))
     );
+    let events = output_sink.events();
+    assert_eq!(events.len(), 2);
+    assert!(events.iter().all(|event| event.turn_id == "turn-1"));
+    assert!(events.iter().all(|event| event.call_id == "call-long"));
+    assert_eq!(events[0].delta, "started\n");
+    assert_eq!(events[1].delta, "finished\n");
 }
 
 #[tokio::test]

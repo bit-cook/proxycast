@@ -29,16 +29,24 @@ All surfaces
 
 | 需求                                                            | Owner                                               |
 | --------------------------------------------------------------- | --------------------------------------------------- |
-| Thread / Turn / Item、read model、evidence、业务查询与写入      | App Server protocol + handler + current Rust domain |
-| 模型路由、canonical content、capability、provider wire lowering | `runtime-core` / `model-provider`                   |
-| 工具定义、审批、sandbox、dispatch、MCP                          | `tool-runtime`                                      |
-| 窗口、系统文件选择、通知、Dock、tray、updater、sidecar          | Electron Desktop Host                               |
-| UI request builder、response normalization、projection          | Renderer `src/lib/api/` 或 typed package            |
-| TUI composer、terminal lifecycle、terminal projection           | `tui`                                               |
-| CLI 参数、非交互输出、进程退出码                                | `cli`                                               |
-| 本地/未来远端 App Server 会话、请求并发和 reverse request       | `app-server-client`                                 |
+| Thread / Turn / Item、read model、evidence、业务查询与写入      | App Server protocol + handler + current Rust domain    |
+| 模型路由、canonical content、capability、provider wire lowering | `runtime-core` / `model-provider`                      |
+| 工具定义、审批、sandbox、dispatch、MCP                          | `tool-runtime`                                         |
+| 窗口、系统文件选择、通知、Dock、tray、updater、sidecar          | Electron Desktop Host                                  |
+| Cloud session credential 的平台加密保存、删除与 metadata        | `electron/secureCredentialStore.ts` + Desktop Host IPC |
+| UI request builder、response normalization、projection          | Renderer `src/lib/api/` 或 typed package               |
+| TUI composer、terminal lifecycle、terminal projection           | `tui`                                                  |
+| CLI 参数、非交互输出、进程退出码                                | `cli`                                                  |
+| 本地/未来远端 App Server 会话、请求并发和 reverse request       | `app-server-client`                                    |
 
 禁止为业务调用新增第二个 Electron/CLI 后端、renderer mock fallback、临时 DevBridge 命令或 legacy wrapper。生产失败必须显式失败；mock 仅在测试夹具中显式注入。
+
+Cloud session credential 的 IPC 只允许 `cloud_session_credential_set`、
+`cloud_session_credential_status` 和 `cloud_session_credential_delete`。写入由
+Electron `safeStorage` 加密后落在统一 `AppDataRoot/credentials`，状态接口只返回
+`exists`、`tenantId`、endpoint 和更新时间，不提供 token 读取 IPC。token 不得进入 URL、
+query、Debug 或日志；safeStorage 不可用时必须 fail closed。该 owner 只是 Cloud
+transport foundation，不会启用默认远端 App Server，也不替代 App Server JSON-RPC。
 
 ## TUI/CLI 与 Cloud transport 边界
 
@@ -182,11 +190,14 @@ root 并重建受管目录，不删除 Thread/Turn/Item、event log、projection
 
 Codex exact 独立命令执行与 Desktop 交互终端只允许走 connection-scoped App Server JSON-RPC：
 
-`src/lib/api/commandExec.ts -> typed App Server client -> command/exec -> App Server CommandExecServer -> tool-runtime local process supervisor`
+`src/lib/api/commandExec.ts -> typed App Server client -> command/exec -> App Server CommandExecServer -> ExecutionProcessServer -> tool-runtime local process supervisor`
 
 一次性命令通过 `command/exec` 返回 `exitCode/stdout/stderr`；流式命令通过
 `command/exec/outputDelta` 投影 raw bytes 的 `deltaBase64`，并由同一连接内的 `processId` 过滤。交互终端的
-输入、PTY 尺寸和终止分别使用 `command/exec/write`、`command/exec/resize`、`command/exec/terminate`。
+输入、PTY 尺寸和终止分别使用 `command/exec/write`、`command/exec/resize`、`command/exec/terminate`；stdin 写入、超时终止、
+断连清理和 lifecycle/status/output owner 统一复用内部 `ExecutionProcessServer`。公开 `processId` 仍按
+`ConnectionId` 隔离，内部 owner ID 以 `command-exec-{connectionId}-{processId}` 为 base；终态 owner 仍保留时，后续
+复用追加 instance UUID，不进入 command/exec wire。
 `outputBytesCap`、`timeoutMs` 保持 omitted/null/value 语义；stdin close 后的非空写入、非 TTY resize、零值尺寸、
 未知 process id 和同一连接重复 active id 均 fail closed。断连、response 发送失败或 notification writer 失败都清理该
 连接拥有的进程。Electron 只转发 App Server JSONL，不持有第二套终端会话、轮询 drain 或 renderer mock fallback。

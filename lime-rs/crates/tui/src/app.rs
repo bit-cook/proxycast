@@ -1,17 +1,48 @@
-use app_server_protocol::protocol::v2::{QueuedSubmission, ServerNotification, Thread};
+mod agent_navigation;
+pub(crate) mod agent_picker;
+pub(crate) mod agents_overview;
+pub(crate) mod agents_overview_threads;
+pub(crate) mod agents_overview_view;
+pub(crate) mod app_server_event_targets;
+mod app_server_events;
+pub(crate) mod app_server_requests;
+pub(crate) mod event_dispatch;
+mod input;
+mod pending_interactive_replay;
+pub(crate) mod reconnect;
+mod replay_filter;
+mod session_lifecycle;
+mod thread_event_buffer;
+mod thread_events;
+mod thread_settings;
+
+#[cfg(test)]
+use app_server_protocol::protocol::v2::ServerNotification;
+use app_server_protocol::protocol::v2::{QueuedSubmission, Thread};
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use self::agent_navigation::{AgentNavigationDirection, AgentNavigationState};
+use self::agent_picker::{AgentPicker, AgentPickerAction};
+use self::agents_overview::AgentsOverviewState;
+use self::agents_overview_view::AgentsOverviewAction;
 use crate::bottom_pane::{AppServerResponse, BottomPane, ChatComposer, InputResult};
 use crate::command_popup::{CommandPopup, CommandPopupAction};
 use crate::locale::Locale;
+use crate::model_catalog::ModelCatalog;
 use crate::model_picker::{ModelPicker, ModelPickerAction, ModelSelection};
 use crate::pager_overlay::{PagerAction, PagerOverlay, StatusFacts};
 use crate::pending_input_preview::can_restore_submission;
 use crate::projection::ConversationProjection;
-use crate::settings::{PERMISSION_PROFILES, cycle_setting};
-use crate::slash_command::{SlashCommand, command_from_prompt};
+use crate::resume_picker::{PickerAction, PickerState};
+use crate::slash_command::{command_from_prompt, SlashCommand};
+use crate::tui::TuiEvent;
+
+fn normalize_paste(text: String) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum AppAction {
@@ -32,6 +63,22 @@ pub(crate) enum AppAction {
     ScrollTop,
     ScrollBottom,
     SelectModel(ModelSelection),
+    ChangeCollaborationMode(agent_protocol::CollaborationMode),
+    SwitchThread(String),
+    RefreshAgentsOverview,
+    DispatchAgentsOverviewTask {
+        prompt: String,
+        cwd: Option<PathBuf>,
+    },
+    RenameAgentsOverviewThread {
+        thread_id: String,
+        name: String,
+    },
+    StopAgentsOverviewThread {
+        thread_id: String,
+    },
+    OpenResumePicker,
+    ResumePicker(PickerAction),
     Respond(AppServerResponse),
     Quit,
 }
@@ -42,9 +89,17 @@ pub(crate) struct App {
     pub(crate) composer: ChatComposer,
     pub(crate) projection: ConversationProjection,
     pub(crate) model_picker: Option<ModelPicker>,
+    pub(crate) agent_picker: Option<AgentPicker>,
+    pub(crate) agents_overview: Option<AgentsOverviewState>,
+    pub(crate) resume_picker: Option<PickerState>,
+    pub(crate) model_catalog: ModelCatalog,
+    pub(crate) collaboration_mode: Option<agent_protocol::CollaborationMode>,
     pub(crate) command_popup: Option<CommandPopup>,
     pub(crate) pager_overlay: Option<PagerOverlay>,
     pub(crate) thread_id: Option<String>,
+    pub(crate) primary_thread_id: Option<String>,
+    pub(crate) agent_navigation: AgentNavigationState,
+    thread_event_channels: HashMap<String, self::thread_events::ThreadEventChannel>,
     pub(crate) model: Option<String>,
     pub(crate) model_provider: Option<String>,
     pub(crate) reasoning_effort: Option<String>,
@@ -54,8 +109,8 @@ pub(crate) struct App {
     pub(crate) locale: Locale,
     pub(crate) cwd: PathBuf,
     pub(crate) clipboard_lease: Option<crate::clipboard_copy::ClipboardLease>,
-    pub(crate) pending_images: Vec<PathBuf>,
     pub(crate) queued_submissions: Vec<QueuedSubmission>,
+    pub(crate) thread_input_states: HashMap<String, String>,
     active_turn_started_at: Option<Instant>,
 }
 
@@ -68,46 +123,62 @@ impl App {
         if self.thread_id.as_deref() != Some(thread_id.as_str()) {
             self.queued_submissions.clear();
         }
+        if self.primary_thread_id.is_none() {
+            self.primary_thread_id = Some(thread_id.clone());
+        }
+        if self.agent_navigation.get(&thread_id).is_none() {
+            self.agent_navigation
+                .upsert(thread_id.clone(), None, None, false);
+        }
+        self.ensure_thread_channel(&thread_id);
         self.thread_id = Some(thread_id);
+    }
+
+    pub(crate) fn capture_current_thread_input(&mut self) {
+        let Some(thread_id) = self.thread_id.clone() else {
+            return;
+        };
+        let draft = self.composer.text().to_string();
+        self.thread_input_states
+            .insert(thread_id.clone(), draft.clone());
+        if let Some(overview) = self.agents_overview.as_mut() {
+            overview.input_states.insert(thread_id, draft);
+        }
+    }
+
+    pub(crate) fn restore_thread_input(&mut self, thread_id: &str) {
+        let draft = self
+            .thread_input_states
+            .get(thread_id)
+            .cloned()
+            .or_else(|| {
+                self.agents_overview
+                    .as_ref()
+                    .and_then(|overview| overview.input_states.get(thread_id))
+                    .cloned()
+            })
+            .unwrap_or_default();
+        self.composer.replace(draft);
+        self.sync_command_popup();
     }
 
     pub(crate) fn set_locale(&mut self, locale: Locale) {
         self.locale = locale;
     }
 
-    pub(crate) fn set_settings(
-        &mut self,
-        model: Option<String>,
-        model_provider: Option<String>,
-        reasoning_effort: Option<String>,
-        permissions: Option<String>,
-    ) {
-        self.model = model;
-        self.model_provider = model_provider;
-        self.reasoning_effort = reasoning_effort;
-        self.permissions = permissions;
-    }
-
-    pub(crate) fn set_permission_profiles(&mut self, profiles: impl IntoIterator<Item = String>) {
-        let mut next = Vec::new();
-        for profile in profiles {
-            let profile = profile.trim();
-            if profile.is_empty() || next.iter().any(|value| value == profile) {
-                continue;
-            }
-            next.push(profile.to_string());
-        }
-        self.permission_profiles = next;
-    }
-
-    pub(crate) fn cycle_permission_profile(&self, current: Option<&str>, direction: i8) -> String {
-        if self.permission_profiles.is_empty() {
-            return cycle_setting(&PERMISSION_PROFILES, current, direction);
-        }
-        cycle_setting(&self.permission_profiles, current, direction)
-    }
-
     pub(crate) fn hydrate_thread(&mut self, thread: Thread) {
+        self.agent_navigation.upsert(
+            thread.id.clone(),
+            thread.agent_nickname.clone(),
+            thread.agent_role.clone(),
+            false,
+        );
+        if let Some(parent_thread_id) = thread.parent_thread_id.clone() {
+            self.agent_navigation.mark_parent_owned(thread.id.clone());
+            if self.primary_thread_id.is_none() {
+                self.primary_thread_id = Some(parent_thread_id);
+            }
+        }
         self.projection.hydrate_thread(thread);
         self.active_turn_started_at = self
             .projection
@@ -121,13 +192,10 @@ impl App {
         self.active_turn_started_at = Some(Instant::now());
     }
 
-    pub(crate) fn apply_notification(&mut self, notification: ServerNotification) {
-        let previous_turn_id = self.projection.active_turn_id().map(str::to_owned);
-        self.projection.apply(notification);
-        let active_turn_id = self.projection.active_turn_id();
-        if active_turn_id != previous_turn_id.as_deref() {
-            self.active_turn_started_at = active_turn_id.map(|_| Instant::now());
-        }
+    fn adjacent_agent(&self, direction: AgentNavigationDirection) -> Option<String> {
+        self.agent_navigation
+            .adjacent_thread_id(self.thread_id.as_deref(), direction)
+            .filter(|thread_id| self.thread_id.as_deref() != Some(thread_id.as_str()))
     }
 
     pub(crate) fn active_turn_elapsed(&self, now: Instant) -> Option<Duration> {
@@ -139,11 +207,17 @@ impl App {
         )
     }
 
-    pub(crate) fn open_model_picker(
-        &mut self,
-        models: Vec<app_server_protocol::protocol::v2::Model>,
-    ) {
-        self.model_picker = Some(ModelPicker::new(models));
+    pub(crate) fn can_accept_direct_input(&mut self) -> bool {
+        if self
+            .thread_id
+            .as_deref()
+            .is_some_and(|thread_id| self.agent_navigation.is_parent_owned(thread_id))
+        {
+            self.projection
+                .set_status("sub-agent thread is parent-owned");
+            return false;
+        }
+        true
     }
 
     pub(crate) fn replace_composer(&mut self, text: String) {
@@ -151,28 +225,44 @@ impl App {
         self.sync_command_popup();
     }
 
-    pub(crate) fn handle_terminal_event(&mut self, event: Event) -> AppAction {
+    pub(crate) fn handle_tui_event(&mut self, event: TuiEvent, connected: bool) -> AppAction {
+        if !connected {
+            return match event {
+                TuiEvent::Key(key)
+                    if key.kind == KeyEventKind::Press
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                        && matches!(key.code, KeyCode::Char(value) if value.eq_ignore_ascii_case(&'c')) =>
+                {
+                    AppAction::Quit
+                }
+                TuiEvent::Key(key) => {
+                    self.composer.handle_disconnected_key(key);
+                    self.command_popup = None;
+                    AppAction::None
+                }
+                TuiEvent::Paste(text) => {
+                    self.composer.insert(&normalize_paste(text));
+                    self.command_popup = None;
+                    AppAction::None
+                }
+                _ => AppAction::None,
+            };
+        }
+
+        let event = match event {
+            TuiEvent::Key(key) => Event::Key(key),
+            TuiEvent::Paste(text) => Event::Paste(normalize_paste(text)),
+            TuiEvent::Resize(size) => Event::Resize(size.width, size.height),
+            TuiEvent::FocusGained => Event::FocusGained,
+            TuiEvent::FocusLost => Event::FocusLost,
+            TuiEvent::Draw | TuiEvent::Resume => return AppAction::None,
+        };
+
         if let Some(pager) = self.pager_overlay.as_mut() {
             if pager.handle_event(&event) == PagerAction::Close {
                 self.pager_overlay = None;
             }
             return AppAction::None;
-        }
-
-        if let Event::Key(ref key) = event {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::PageUp => return AppAction::ScrollUp,
-                    KeyCode::PageDown => return AppAction::ScrollDown,
-                    KeyCode::Home if key.modifiers.contains(KeyModifiers::ALT) => {
-                        return AppAction::ScrollTop;
-                    }
-                    KeyCode::End if key.modifiers.contains(KeyModifiers::ALT) => {
-                        return AppAction::ScrollBottom;
-                    }
-                    _ => {}
-                }
-            }
         }
 
         if self.bottom_pane.is_active() {
@@ -181,6 +271,57 @@ impl App {
                 .handle_event(event)
                 .map(AppAction::Respond)
                 .unwrap_or(AppAction::None);
+        }
+
+        if let Some(picker) = self.resume_picker.as_mut() {
+            if picker.transcript_pager_is_open() {
+                picker.handle_transcript_pager_event(&event);
+                return AppAction::None;
+            }
+            let action = picker.handle_event(event);
+            if action == PickerAction::Cancel {
+                self.resume_picker = None;
+                return AppAction::None;
+            }
+            return AppAction::ResumePicker(action);
+        }
+
+        if let Some(overview) = self.agents_overview.as_mut() {
+            let action = overview.view.handle_event(event);
+            overview.visible_thread_ids = overview
+                .view
+                .visible_rows()
+                .into_iter()
+                .map(|row| row.thread.id.clone())
+                .collect();
+            overview.sync_view_state();
+            return match action {
+                AgentsOverviewAction::Select => {
+                    let thread_id = overview.view.selected_thread_id().map(str::to_owned);
+                    self.agents_overview = None;
+                    self.agent_picker = None;
+                    thread_id
+                        .map(AppAction::SwitchThread)
+                        .unwrap_or(AppAction::None)
+                }
+                AgentsOverviewAction::Cancel => {
+                    self.agents_overview = None;
+                    self.agent_picker = None;
+                    AppAction::None
+                }
+                AgentsOverviewAction::Refresh => AppAction::RefreshAgentsOverview,
+                AgentsOverviewAction::Dispatch { prompt, cwd } => {
+                    AppAction::DispatchAgentsOverviewTask { prompt, cwd }
+                }
+                AgentsOverviewAction::Rename { thread_id, name } => {
+                    AppAction::RenameAgentsOverviewThread { thread_id, name }
+                }
+                AgentsOverviewAction::Stop { thread_id } => {
+                    AppAction::StopAgentsOverviewThread { thread_id }
+                }
+                AgentsOverviewAction::OpenResumePicker => AppAction::OpenResumePicker,
+                AgentsOverviewAction::None => AppAction::None,
+            };
         }
 
         if let Some(picker) = self.model_picker.as_mut() {
@@ -197,6 +338,20 @@ impl App {
                     AppAction::None
                 }
                 ModelPickerAction::None => AppAction::None,
+            };
+        }
+
+        if let Some(picker) = self.agent_picker.as_mut() {
+            return match picker.handle_event(event) {
+                AgentPickerAction::Select(thread_id) => {
+                    self.agent_picker = None;
+                    AppAction::SwitchThread(thread_id)
+                }
+                AgentPickerAction::Cancel => {
+                    self.agent_picker = None;
+                    AppAction::None
+                }
+                AgentPickerAction::None => AppAction::None,
             };
         }
 
@@ -238,81 +393,7 @@ impl App {
         }
 
         match event {
-            Event::Key(key)
-                if key.kind == KeyEventKind::Press
-                    && key.code == KeyCode::Esc
-                    && self.projection.active_turn_id().is_some() =>
-            {
-                AppAction::Interrupt
-            }
-            Event::Key(key)
-                if key.kind == KeyEventKind::Press
-                    && key
-                        .modifiers
-                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-                    && matches!(key.code, KeyCode::Char(value) if value.eq_ignore_ascii_case(&'v')) =>
-            {
-                AppAction::PasteImage
-            }
-            Event::Key(key)
-                if key.kind == KeyEventKind::Press
-                    && key.modifiers.contains(KeyModifiers::CONTROL)
-                    && matches!(key.code, KeyCode::Char(value) if value.eq_ignore_ascii_case(&'o')) =>
-            {
-                AppAction::CopyLastResponse
-            }
-            Event::Key(key)
-                if key.kind == KeyEventKind::Press
-                    && key.modifiers.contains(KeyModifiers::CONTROL)
-                    && matches!(key.code, KeyCode::Char(value) if value.eq_ignore_ascii_case(&'t')) =>
-            {
-                self.command_popup = None;
-                self.pager_overlay = Some(PagerOverlay::transcript(self.locale));
-                AppAction::None
-            }
-            Event::Key(key)
-                if key.kind == KeyEventKind::Press
-                    && key.code == KeyCode::Up
-                    && key.modifiers.contains(KeyModifiers::ALT)
-                    && self.composer.is_empty()
-                    && self.pending_images.is_empty() =>
-            {
-                self.queued_submissions
-                    .last()
-                    .filter(|submission| can_restore_submission(submission))
-                    .cloned()
-                    .map(AppAction::EditQueuedSubmission)
-                    .unwrap_or(AppAction::None)
-            }
-            Event::Key(key) if key.kind == KeyEventKind::Press => {
-                if key.code == KeyCode::Enter
-                    && !key
-                        .modifiers
-                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT)
-                {
-                    if let Some(action) = self.run_local_command() {
-                        return action;
-                    }
-                }
-                if matches!(key.code, KeyCode::Enter | KeyCode::Tab)
-                    && self.composer.is_empty()
-                    && !self.pending_images.is_empty()
-                {
-                    return if key.code == KeyCode::Tab {
-                        AppAction::Queue(String::new())
-                    } else {
-                        AppAction::Submit(String::new())
-                    };
-                }
-                if key.code == KeyCode::Backspace
-                    && self.composer.is_empty()
-                    && self.pending_images.pop().is_some()
-                {
-                    return AppAction::None;
-                }
-                let action = self.composer.handle_key_event(key);
-                self.map_composer_action(action)
-            }
+            Event::Key(key) => self.handle_key_event(key),
             Event::Paste(text) => {
                 self.composer.insert(&text);
                 self.sync_command_popup();
@@ -339,15 +420,15 @@ impl App {
     }
 
     pub(crate) fn attach_image(&mut self, path: PathBuf) {
-        self.pending_images.push(path);
+        self.composer.attach_image(path);
     }
 
     pub(crate) fn take_pending_images(&mut self) -> Vec<PathBuf> {
-        std::mem::take(&mut self.pending_images)
+        self.composer.take_pending_images()
     }
 
     pub(crate) fn restore_pending_images(&mut self, images: Vec<PathBuf>) {
-        self.pending_images = images;
+        self.composer.restore_pending_images(images);
     }
 
     pub(crate) fn set_queued_submissions(&mut self, submissions: Vec<QueuedSubmission>) {
@@ -371,7 +452,7 @@ impl App {
         submission: QueuedSubmission,
     ) -> bool {
         if !self.composer.is_empty()
-            || !self.pending_images.is_empty()
+            || self.composer.has_pending_images()
             || !can_restore_submission(&submission)
         {
             return false;
@@ -393,7 +474,7 @@ impl App {
         self.queued_submissions
             .retain(|queued| queued.id != submission_id);
         self.replace_composer(text);
-        self.pending_images = images;
+        self.composer.restore_pending_images(images);
         true
     }
 
@@ -455,6 +536,15 @@ impl App {
                 AppAction::None
             }
             SlashCommand::Copy => AppAction::CopyLastResponse,
+            SlashCommand::Agents => {
+                self.open_agents_overview();
+                AppAction::RefreshAgentsOverview
+            }
+            SlashCommand::MultiAgents => {
+                self.open_agent_picker();
+                AppAction::None
+            }
+            SlashCommand::Resume => AppAction::OpenResumePicker,
             _ => return None,
         };
         self.composer.replace(String::new());
@@ -480,513 +570,4 @@ impl App {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use app_server_protocol::RequestId;
-    use app_server_protocol::protocol::v2::{
-        CommandExecutionApprovalDecision, CommandExecutionRequestApprovalParams, ServerRequest,
-        UserInput,
-    };
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    #[test]
-    fn active_bottom_pane_receives_input_before_the_chat_composer() {
-        let mut app = App::default();
-        app.composer.insert("draft");
-        app.bottom_pane
-            .enqueue(ServerRequest::ItemCommandExecutionRequestApproval {
-                id: RequestId::Integer(7),
-                params: CommandExecutionRequestApprovalParams {
-                    thread_id: "thread-1".to_string(),
-                    turn_id: "turn-1".to_string(),
-                    item_id: "command-1".to_string(),
-                    started_at_ms: 1,
-                    approval_id: None,
-                    reason: None,
-                    network_approval_context: None,
-                    command: Some("cargo test".to_string()),
-                    cwd: Some("/workspace".to_string()),
-                    available_decisions: None,
-                },
-            })
-            .expect("queue approval");
-
-        let ignored = app.handle_terminal_event(Event::Key(KeyEvent::new(
-            KeyCode::Char('x'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(ignored, AppAction::None);
-        assert_eq!(app.composer.text(), "draft");
-
-        let response = app.handle_terminal_event(Event::Key(KeyEvent::new(
-            KeyCode::Enter,
-            KeyModifiers::NONE,
-        )));
-        assert!(matches!(
-            response,
-            AppAction::Respond(AppServerResponse::Command {
-                response:
-                    app_server_protocol::protocol::v2::CommandExecutionRequestApprovalResponse {
-                        decision: CommandExecutionApprovalDecision::Accept,
-                    },
-                ..
-            })
-        ));
-        assert!(!app.bottom_pane.is_active());
-        assert_eq!(app.composer.text(), "draft");
-    }
-
-    #[test]
-    fn tab_queues_a_follow_up_without_submitting_the_active_turn() {
-        let mut app = App::default();
-        app.composer.insert("follow up");
-        app.projection.apply(
-            app_server_protocol::protocol::v2::ServerNotification::TurnStarted(
-                app_server_protocol::protocol::v2::TurnStartedNotification {
-                    thread_id: "thread-1".to_string(),
-                    turn: app_server_protocol::protocol::v2::Turn {
-                        id: "turn-1".to_string(),
-                        items: Vec::new(),
-                        items_view: Default::default(),
-                        status: app_server_protocol::protocol::v2::TurnStatus::InProgress,
-                        error: None,
-                        started_at: None,
-                        completed_at: None,
-                        duration_ms: None,
-                    },
-                },
-            ),
-        );
-
-        let action =
-            app.handle_terminal_event(Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)));
-
-        assert_eq!(action, AppAction::Queue("follow up".to_string()));
-        assert!(app.composer.is_empty());
-    }
-
-    #[test]
-    fn escape_interrupts_only_an_active_turn_and_preserves_the_draft() {
-        let mut app = App::default();
-        app.composer.insert("keep this draft");
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE,))),
-            AppAction::None
-        );
-
-        app.start_turn("turn-1".to_string());
-        assert!(app.active_turn_elapsed(Instant::now()).is_some());
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE,))),
-            AppAction::Interrupt
-        );
-        assert_eq!(app.composer.text(), "keep this draft");
-    }
-
-    #[test]
-    fn turn_completion_clears_the_active_status_timer() {
-        use app_server_protocol::protocol::v2::{
-            Turn, TurnCompletedNotification, TurnItemsView, TurnStatus,
-        };
-
-        let mut app = App::default();
-        app.start_turn("turn-1".to_string());
-        app.apply_notification(ServerNotification::TurnCompleted(
-            TurnCompletedNotification {
-                thread_id: "thread-1".to_string(),
-                turn: Turn {
-                    id: "turn-1".to_string(),
-                    items: Vec::new(),
-                    items_view: TurnItemsView::Full,
-                    status: TurnStatus::Completed,
-                    error: None,
-                    started_at: Some(1),
-                    completed_at: Some(2),
-                    duration_ms: Some(1),
-                },
-            },
-        ));
-
-        assert!(app.projection.active_turn_id().is_none());
-        assert!(app.active_turn_elapsed(Instant::now()).is_none());
-    }
-
-    #[test]
-    fn permission_profile_catalog_is_trimmed_deduplicated_and_used_for_cycles() {
-        let mut app = App::default();
-        app.set_permission_profiles([
-            " custom-read ".to_string(),
-            "custom-write".to_string(),
-            "custom-read".to_string(),
-            "".to_string(),
-        ]);
-
-        assert_eq!(
-            app.permission_profiles,
-            vec!["custom-read".to_string(), "custom-write".to_string()]
-        );
-        assert_eq!(
-            app.cycle_permission_profile(Some("custom-read"), 1),
-            "custom-write"
-        );
-        assert_eq!(
-            app.cycle_permission_profile(Some("custom-write"), 1),
-            "custom-read"
-        );
-
-        app.set_permission_profiles([" ".to_string(), "custom-read".to_string()]);
-        assert_eq!(app.permission_profiles, vec!["custom-read".to_string()]);
-        app.set_permission_profiles(std::iter::empty::<String>());
-        assert!(app.permission_profiles.is_empty());
-        assert_eq!(
-            app.cycle_permission_profile(Some(":read-only"), 1),
-            ":workspace"
-        );
-    }
-
-    #[test]
-    fn an_open_popup_owns_escape_before_active_turn_interruption() {
-        let mut app = App::default();
-        app.start_turn("turn-1".to_string());
-        app.handle_terminal_event(Event::Key(KeyEvent::new(
-            KeyCode::Char('/'),
-            KeyModifiers::NONE,
-        )));
-        assert!(app.command_popup.is_some());
-
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE,))),
-            AppAction::None
-        );
-        assert!(app.command_popup.is_none());
-        assert!(app.projection.active_turn_id().is_some());
-    }
-
-    #[test]
-    fn history_search_owns_escape_before_active_turn_interruption() {
-        let mut app = App::default();
-        app.composer.load_history(["previous prompt".to_string()]);
-        app.composer.insert("previous");
-        app.start_turn("turn-1".to_string());
-
-        app.handle_terminal_event(Event::Key(KeyEvent::new(
-            KeyCode::Char('r'),
-            KeyModifiers::CONTROL,
-        )));
-        assert!(app.composer.history_search_active());
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE,))),
-            AppAction::None
-        );
-        assert!(!app.composer.history_search_active());
-        assert_eq!(app.composer.text(), "previous");
-        assert!(app.projection.active_turn_id().is_some());
-    }
-
-    #[test]
-    fn codex_style_effort_and_permission_shortcuts_are_not_inserted_into_draft() {
-        let mut app = App::default();
-        app.composer.insert("draft");
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(
-                KeyCode::Char('.'),
-                KeyModifiers::ALT,
-            ))),
-            AppAction::IncreaseEffort
-        );
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(
-                KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE,)
-            )),
-            AppAction::NextPermissions
-        );
-        assert_eq!(app.composer.text(), "draft");
-    }
-
-    #[test]
-    fn copy_shortcut_and_slash_command_do_not_become_turn_input() {
-        let mut app = App::default();
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(
-                KeyCode::Char('o'),
-                KeyModifiers::CONTROL,
-            ))),
-            AppAction::CopyLastResponse
-        );
-        app.composer.insert("/copy");
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            AppAction::CopyLastResponse
-        );
-        assert!(app.composer.is_empty());
-    }
-
-    #[test]
-    fn slash_popup_filters_and_executes_immediate_commands() {
-        let mut app = App::default();
-        for character in ['/', 'm'] {
-            assert_eq!(
-                app.handle_terminal_event(Event::Key(KeyEvent::new(
-                    KeyCode::Char(character),
-                    KeyModifiers::NONE,
-                ))),
-                AppAction::None
-            );
-        }
-        assert_eq!(
-            app.command_popup.as_ref().and_then(CommandPopup::selected),
-            Some(SlashCommand::Model)
-        );
-
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            AppAction::Submit("/model".to_string())
-        );
-        assert!(app.command_popup.is_none());
-        assert!(app.composer.is_empty());
-    }
-
-    #[test]
-    fn slash_popup_completes_argument_commands_and_reopens_after_cancelled_input_changes() {
-        let mut app = App::default();
-        app.handle_terminal_event(Event::Key(KeyEvent::new(
-            KeyCode::Char('/'),
-            KeyModifiers::NONE,
-        )));
-        assert!(app.command_popup.is_some());
-        app.handle_terminal_event(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
-        assert!(app.command_popup.is_none());
-
-        app.handle_terminal_event(Event::Key(KeyEvent::new(
-            KeyCode::Char('e'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(
-            app.command_popup.as_ref().and_then(CommandPopup::selected),
-            Some(SlashCommand::Effort)
-        );
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            AppAction::None
-        );
-        assert_eq!(app.composer.text(), "/effort ");
-        assert!(app.command_popup.is_none());
-    }
-
-    #[test]
-    fn status_command_opens_an_ephemeral_pager_and_consumes_input_until_closed() {
-        let mut app = App::default();
-        app.composer.insert("real prompt");
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            AppAction::Submit("real prompt".to_string())
-        );
-        app.set_thread_id("thread-1".to_string());
-        app.set_settings(
-            Some("gpt-5".to_string()),
-            Some("openai".to_string()),
-            Some("high".to_string()),
-            Some(":workspace".to_string()),
-        );
-        app.composer.insert("/status");
-
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            AppAction::None
-        );
-        assert!(app.pager_overlay.is_some());
-        assert!(app.composer.is_empty());
-
-        app.handle_terminal_event(Event::Key(KeyEvent::new(
-            KeyCode::Char('x'),
-            KeyModifiers::NONE,
-        )));
-        assert!(app.composer.is_empty());
-        assert!(app.pager_overlay.is_some());
-        app.handle_terminal_event(Event::Key(KeyEvent::new(
-            KeyCode::Char('q'),
-            KeyModifiers::NONE,
-        )));
-        assert!(app.pager_overlay.is_none());
-
-        app.handle_terminal_event(Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)));
-        assert_eq!(app.composer.text(), "real prompt");
-        assert!(app.projection.entries().is_empty());
-    }
-
-    #[test]
-    fn ctrl_t_opens_transcript_without_copying_or_mutating_conversation_state() {
-        let mut app = App::default();
-        app.composer.insert("draft");
-
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(
-                KeyCode::Char('t'),
-                KeyModifiers::CONTROL,
-            ))),
-            AppAction::None
-        );
-        assert!(
-            app.pager_overlay
-                .as_ref()
-                .is_some_and(PagerOverlay::is_transcript)
-        );
-        assert_eq!(app.composer.text(), "draft");
-        assert!(app.projection.entries().is_empty());
-
-        app.handle_terminal_event(Event::Key(KeyEvent::new(
-            KeyCode::Char('t'),
-            KeyModifiers::CONTROL,
-        )));
-        assert!(app.pager_overlay.is_none());
-        assert_eq!(app.composer.text(), "draft");
-    }
-
-    #[test]
-    fn image_shortcut_attaches_and_allows_image_only_submission() {
-        let mut app = App::default();
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(
-                KeyCode::Char('v'),
-                KeyModifiers::CONTROL,
-            ))),
-            AppAction::PasteImage
-        );
-        app.attach_image(PathBuf::from("/tmp/input.png"));
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            ))),
-            AppAction::Submit(String::new())
-        );
-        assert_eq!(
-            app.take_pending_images(),
-            vec![PathBuf::from("/tmp/input.png")]
-        );
-    }
-
-    #[test]
-    fn failed_image_submission_can_restore_pending_attachments() {
-        let mut app = App::default();
-        app.attach_image(PathBuf::from("/tmp/one.png"));
-        app.attach_image(PathBuf::from("/tmp/two.png"));
-
-        let images = app.take_pending_images();
-        assert!(app.pending_images.is_empty());
-        app.restore_pending_images(images);
-
-        assert_eq!(
-            app.pending_images,
-            vec![PathBuf::from("/tmp/one.png"), PathBuf::from("/tmp/two.png")]
-        );
-    }
-
-    #[test]
-    fn queued_submission_projection_updates_by_id_and_clears_on_thread_change() {
-        let queued = |id: &str, text: &str| QueuedSubmission {
-            id: id.to_string(),
-            input: vec![UserInput::Text {
-                text: text.to_string(),
-                text_elements: Vec::new(),
-            }],
-            client_user_message_id: format!("client-{id}"),
-        };
-        let mut app = App::default();
-        app.set_thread_id("thread-1".to_string());
-        app.upsert_queued_submission(queued("queue-1", "first"));
-        app.upsert_queued_submission(queued("queue-1", "revised"));
-        app.upsert_queued_submission(queued("queue-2", "second"));
-
-        assert_eq!(app.queued_submissions.len(), 2);
-        assert!(matches!(
-            app.queued_submissions[0].input.as_slice(),
-            [UserInput::Text { text, .. }] if text == "revised"
-        ));
-
-        app.set_thread_id("thread-2".to_string());
-        assert!(app.queued_submissions.is_empty());
-    }
-
-    #[test]
-    fn alt_up_requests_server_delete_before_restoring_the_last_queued_input() {
-        let submission = QueuedSubmission {
-            id: "queue-1".to_string(),
-            input: vec![
-                UserInput::LocalImage {
-                    detail: None,
-                    path: "/tmp/queued.png".to_string(),
-                },
-                UserInput::Text {
-                    text: "revise this follow-up".to_string(),
-                    text_elements: Vec::new(),
-                },
-            ],
-            client_user_message_id: "client-queue-1".to_string(),
-        };
-        let mut app = App::default();
-        app.set_queued_submissions(vec![submission.clone()]);
-
-        let action =
-            app.handle_terminal_event(Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT)));
-
-        assert_eq!(action, AppAction::EditQueuedSubmission(submission.clone()));
-        assert_eq!(app.queued_submissions, vec![submission.clone()]);
-        assert!(app.composer.is_empty());
-        assert!(app.pending_images.is_empty());
-
-        assert!(app.restore_queued_submission_for_edit(submission));
-        assert!(app.queued_submissions.is_empty());
-        assert_eq!(app.composer.text(), "revise this follow-up");
-        assert_eq!(app.pending_images, vec![PathBuf::from("/tmp/queued.png")]);
-    }
-
-    #[test]
-    fn alt_up_does_not_offer_a_lossy_or_overwriting_queue_edit() {
-        let remote_image = QueuedSubmission {
-            id: "queue-remote".to_string(),
-            input: vec![UserInput::Image {
-                detail: None,
-                url: "https://example.test/input.png".to_string(),
-            }],
-            client_user_message_id: "client-remote".to_string(),
-        };
-        let mut app = App::default();
-        app.set_queued_submissions(vec![remote_image]);
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT,))),
-            AppAction::None
-        );
-
-        app.set_queued_submissions(vec![QueuedSubmission {
-            id: "queue-text".to_string(),
-            input: vec![UserInput::Text {
-                text: "queued".to_string(),
-                text_elements: Vec::new(),
-            }],
-            client_user_message_id: "client-text".to_string(),
-        }]);
-        app.composer.insert("unsent draft");
-        assert_eq!(
-            app.handle_terminal_event(Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT,))),
-            AppAction::None
-        );
-        assert_eq!(app.composer.text(), "unsent draft");
-        assert_eq!(app.queued_submissions.len(), 1);
-    }
-}
+mod tests;

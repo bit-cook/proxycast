@@ -23,6 +23,7 @@ export const {
   shell,
   systemPreferences,
   protocol,
+  safeStorage,
   Tray,
   WebContentsView,
 } = electron;

@@ -114,7 +114,8 @@ if (input.kind === "turnStart") {
     ];
   } else if (
     ${JSON.stringify(scenario)} === "interrupt" ||
-    ${JSON.stringify(scenario)} === "queue-edit"
+    ${JSON.stringify(scenario)} === "queue-edit" ||
+    ${JSON.stringify(scenario)} === "agents-overview"
   ) {
     events = [
       {
@@ -124,7 +125,9 @@ if (input.kind === "turnStart") {
           text:
             ${JSON.stringify(scenario)} === "queue-edit"
               ? "QUEUE_EDIT_READY"
-              : "INTERRUPT_READY",
+              : ${JSON.stringify(scenario)} === "agents-overview"
+                ? "AGENTS_OVERVIEW_READY"
+                : "INTERRUPT_READY",
         },
       },
     ];
@@ -156,6 +159,7 @@ if (input.kind === "turnStart") {
       { type: "turn.completed", payload: { status: "completed" } },
     ];
   }
+  events.unshift({ type: "turn.started", payload: {} });
 } else if (input.kind === "actionRespond") {
   const decision = input.request.decision ?? null;
   const canceled = decision === "cancel";
@@ -213,7 +217,8 @@ console.log(JSON.stringify({ events }));
 if (
   input.kind === "turnStart" &&
   (${JSON.stringify(scenario)} === "interrupt" ||
-    ${JSON.stringify(scenario)} === "queue-edit")
+    ${JSON.stringify(scenario)} === "queue-edit" ||
+    ${JSON.stringify(scenario)} === "agents-overview")
 ) {
   // An unresolved Promise alone does not keep Node's event loop alive. Keep
   // one active handle so the App Server can deliver a real turn/interrupt.

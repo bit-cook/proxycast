@@ -4950,6 +4950,23 @@ test("uses agent-style stdio sidecar launch args", () => {
     "--data-dir",
     "/tmp/content-studio-app-server-data",
   ]);
+  assert.throws(
+    () => stdioSidecar("/tmp/app-server", undefined, "undefined"),
+    /App Server data directory is invalid/,
+  );
+  assert.throws(
+    () => stdioSidecar("/tmp/app-server", undefined, "data"),
+    /App Server data directory must be an absolute path/,
+  );
+  assert.throws(
+    () =>
+      sidecarArgs({
+        binaryPath: "app-server",
+        listenUrl: DEFAULT_LISTEN_URL,
+        dataDir: "undefined",
+      }),
+    /App Server data directory is invalid/,
+  );
   assert.deepEqual(
     sidecarArgs({ binaryPath: "app-server", listenUrl: "stdio://" }),
     ["--stdio", "--backend", "unavailable"],

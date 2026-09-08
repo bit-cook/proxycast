@@ -23,9 +23,9 @@ use tool_runtime::execution_policy::{
 use tool_runtime::execution_policy_service::ToolExecutionResolverInput;
 use tool_runtime::execution_process::{
     live::{LiveExecutionOutputBatch, LiveExecutionOutputQuery, LiveExecutionRequest},
-    start_local_execution_process, ExecutionOutputDelta, ExecutionProcessSnapshot,
-    LiveExecutionProcessRegistry, LocalExecutionProcessControlHandle, LocalExecutionRequest,
-    LocalExecutionSandbox,
+    start_local_execution_process, BoundedProcessOutput, ExecutionOutputDelta,
+    ExecutionProcessSnapshot, LiveExecutionProcessRegistry, LocalExecutionProcessControlHandle,
+    LocalExecutionRequest, LocalExecutionSandbox, ProcessOutputFramers,
 };
 use tool_runtime::sandbox::{
     plan_sandbox_backend, SandboxBackendPlanInput, SandboxBackendPlatform,
@@ -48,8 +48,6 @@ pub struct ExecutionProcessServer {
 #[derive(Debug)]
 struct ExecutionProcessState {
     processes: HashMap<String, ExecutionProcessEntry>,
-    output: VecDeque<ExecutionOutputDelta>,
-    output_bytes: usize,
     next_background_process_id: u64,
 }
 
@@ -57,6 +55,11 @@ struct ExecutionProcessState {
 struct ExecutionProcessEntry {
     handle: Option<LocalExecutionProcessControlHandle>,
     remote_control: Option<RemoteProcessControl>,
+    output_buffer: Option<BoundedProcessOutput>,
+    output_framers: Option<ProcessOutputFramers>,
+    output: VecDeque<ExecutionOutputDelta>,
+    output_bytes: usize,
+    next_output_sequence: u64,
     snapshot: Option<ExecutionProcessSnapshot>,
     final_snapshot: Option<ExecutionProcessSnapshot>,
     background: Option<BackgroundTerminalEntry>,
@@ -89,8 +92,6 @@ impl Default for ExecutionProcessState {
     fn default() -> Self {
         Self {
             processes: HashMap::new(),
-            output: VecDeque::new(),
-            output_bytes: 0,
             next_background_process_id: 1,
         }
     }
@@ -166,6 +167,11 @@ impl ExecutionProcessServer {
             ExecutionProcessEntry {
                 handle: if is_terminal { None } else { Some(handle) },
                 remote_control: None,
+                output_buffer: None,
+                output_framers: None,
+                output: VecDeque::new(),
+                output_bytes: 0,
+                next_output_sequence: 1,
                 snapshot: Some(snapshot.clone()),
                 final_snapshot: if is_terminal { Some(snapshot) } else { None },
                 background: None,
@@ -176,13 +182,14 @@ impl ExecutionProcessServer {
 
     pub fn record_process_output(
         &self,
-        delta: ExecutionOutputDelta,
+        mut delta: ExecutionOutputDelta,
     ) -> Result<(), ExecutionProcessError> {
         let mut state = self.inner.lock().map_err(|_| ExecutionProcessError::Lock)?;
-        if !state.processes.contains_key(&delta.process_id) {
+        let Some(entry) = state.processes.get_mut(&delta.process_id) else {
             return Err(ExecutionProcessError::ProcessNotFound(delta.process_id));
-        }
-        push_output(&mut state, delta);
+        };
+        update_snapshot_output(entry, &mut delta);
+        push_output(entry, delta);
         Ok(())
     }
 
@@ -297,6 +304,11 @@ impl ExecutionProcessServer {
                 ExecutionProcessEntry {
                     handle: None,
                     remote_control: None,
+                    output_buffer: None,
+                    output_framers: None,
+                    output: VecDeque::new(),
+                    output_bytes: 0,
+                    next_output_sequence: 1,
                     snapshot: None,
                     final_snapshot: None,
                     background,
@@ -349,7 +361,9 @@ impl ExecutionProcessServer {
         tokio::spawn(async move {
             while let Some(delta) = handle.recv_output().await {
                 if let Ok(mut state) = inner.lock() {
-                    push_output(&mut state, delta);
+                    if let Some(entry) = state.processes.get_mut(&delta.process_id) {
+                        push_output(entry, delta);
+                    }
                 }
             }
             let final_snapshot = handle.wait().await.ok();
@@ -446,6 +460,11 @@ impl ExecutionProcessServer {
                 ExecutionProcessEntry {
                     handle: None,
                     remote_control: Some(RemoteProcessControl { commands }),
+                    output_buffer: Some(BoundedProcessOutput::default()),
+                    output_framers: Some(ProcessOutputFramers::default()),
+                    output: VecDeque::new(),
+                    output_bytes: 0,
+                    next_output_sequence: 1,
                     snapshot: Some(snapshot.clone()),
                     final_snapshot: None,
                     background,
@@ -719,25 +738,35 @@ impl ExecutionProcessServer {
             .unwrap_or(usize::MAX);
         let after_sequence = query.after_sequence.unwrap_or_default();
         let state = self.inner.lock().map_err(|_| ExecutionProcessError::Lock)?;
+        let process_id = query
+            .process_id
+            .as_deref()
+            .filter(|process_id| !process_id.trim().is_empty())
+            .ok_or_else(|| {
+                ExecutionProcessError::Control(
+                    "execution process output requires a process id".to_string(),
+                )
+            })?;
+        let entry = state
+            .processes
+            .get(process_id)
+            .ok_or_else(|| ExecutionProcessError::ProcessNotFound(process_id.to_string()))?;
         let mut deltas = Vec::new();
         let mut bytes = 0usize;
         let mut next_sequence = query.after_sequence;
 
-        for delta in state.output.iter() {
+        for delta in entry.output.iter() {
             if deltas.len() >= limit {
                 break;
-            }
-            if query
-                .process_id
-                .as_ref()
-                .is_some_and(|process_id| process_id != &delta.process_id)
-            {
-                continue;
             }
             if delta.sequence <= after_sequence {
                 continue;
             }
-            let delta_bytes = delta.delta.len();
+            let delta_bytes = if delta.raw_bytes.is_empty() {
+                delta.delta.len()
+            } else {
+                delta.raw_bytes.len()
+            };
             if !deltas.is_empty() && bytes.saturating_add(delta_bytes) > max_bytes {
                 break;
             }
@@ -1209,33 +1238,35 @@ async fn run_remote_process(
                     } else {
                         tool_runtime::execution_process::ExecutionOutputKind::Stdout
                     };
-                    let delta = tool_runtime::execution_process::ExecutionOutputDelta {
-                        process_id: process_id.clone(),
-                        tool_id: tool_id.clone(),
-                        // Environment process cursors are zero-based; the local
-                        // execution stream reserves sequence 0 as the initial cursor.
-                        sequence: chunk.seq.saturating_add(1),
-                        kind,
-                        delta: String::from_utf8_lossy(&raw_bytes).into_owned(),
-                        bytes: raw_bytes.len() as u64,
-                        omitted_bytes: 0,
-                        truncated: false,
-                        raw_bytes,
-                    };
                     if let Ok(mut state) = inner.lock() {
                         if let Some(entry) = state.processes.get_mut(&process_id) {
-                            if let Some(snapshot) = entry.snapshot.as_mut() {
-                                snapshot.output_bytes = snapshot.output_bytes.saturating_add(delta.bytes);
-                                snapshot.retained_output.push_str(&delta.delta);
-                                if snapshot.retained_output.len() > 128 * 1024 {
-                                    let trim = snapshot.retained_output.len() - 128 * 1024;
-                                    snapshot.retained_output.drain(..trim);
-                                    snapshot.output_omitted_bytes = snapshot.output_omitted_bytes.saturating_add(trim as u64);
-                                    snapshot.output_truncated = true;
-                                }
+                            capture_snapshot_output(entry, &raw_bytes);
+                            // Environment cursors are zero-based; local output
+                            // cursors reserve zero as the initial position.
+                            entry.next_output_sequence = entry
+                                .next_output_sequence
+                                .max(chunk.seq.saturating_add(1));
+                            let frame = entry
+                                .output_framers
+                                .as_mut()
+                                .map(|framers| framers.push(kind, &raw_bytes))
+                                .unwrap_or(raw_bytes);
+                            if !frame.is_empty() {
+                                let mut delta = ExecutionOutputDelta {
+                                    process_id: process_id.clone(),
+                                    tool_id: tool_id.clone(),
+                                    sequence: take_output_sequence(entry),
+                                    kind,
+                                    delta: String::from_utf8_lossy(&frame).into_owned(),
+                                    bytes: 0,
+                                    omitted_bytes: 0,
+                                    truncated: false,
+                                    raw_bytes: frame,
+                                };
+                                apply_snapshot_output_metadata(entry, &mut delta);
+                                push_output(entry, delta);
                             }
                         }
-                        push_output(&mut state, delta);
                     }
                 }
                 if response.exited || response.closed || response.failure.is_some() || response.sandbox_denied {
@@ -1282,6 +1313,7 @@ async fn finish_remote_process(
 ) {
     if let Ok(mut state) = inner.lock() {
         if let Some(entry) = state.processes.get_mut(process_id) {
+            flush_output_framers(entry, process_id, tool_id);
             let mut snapshot = entry
                 .snapshot
                 .clone()
@@ -1313,17 +1345,90 @@ async fn finish_remote_process(
     }
 }
 
-fn push_output(state: &mut ExecutionProcessState, mut delta: ExecutionOutputDelta) {
-    delta.raw_bytes.clear();
-    state.output_bytes = state.output_bytes.saturating_add(delta.delta.len());
-    state.output.push_back(delta);
-    while state.output.len() > OUTPUT_EVENT_CAP || state.output_bytes > OUTPUT_BYTE_CAP {
-        let Some(evicted) = state.output.pop_front() else {
-            state.output_bytes = 0;
+fn push_output(entry: &mut ExecutionProcessEntry, delta: ExecutionOutputDelta) {
+    let delta_bytes = if delta.raw_bytes.is_empty() {
+        delta.delta.len()
+    } else {
+        delta.raw_bytes.len()
+    };
+    entry.next_output_sequence = entry
+        .next_output_sequence
+        .max(delta.sequence.saturating_add(1));
+    entry.output_bytes = entry.output_bytes.saturating_add(delta_bytes);
+    entry.output.push_back(delta);
+    while entry.output.len() > OUTPUT_EVENT_CAP || entry.output_bytes > OUTPUT_BYTE_CAP {
+        let Some(evicted) = entry.output.pop_front() else {
+            entry.output_bytes = 0;
             break;
         };
-        state.output_bytes = state.output_bytes.saturating_sub(evicted.delta.len());
+        let evicted_bytes = if evicted.raw_bytes.is_empty() {
+            evicted.delta.len()
+        } else {
+            evicted.raw_bytes.len()
+        };
+        entry.output_bytes = entry.output_bytes.saturating_sub(evicted_bytes);
     }
+}
+
+fn update_snapshot_output(entry: &mut ExecutionProcessEntry, delta: &mut ExecutionOutputDelta) {
+    let bytes = if delta.raw_bytes.is_empty() {
+        delta.delta.as_bytes()
+    } else {
+        delta.raw_bytes.as_slice()
+    };
+    capture_snapshot_output(entry, bytes);
+    apply_snapshot_output_metadata(entry, delta);
+}
+
+fn capture_snapshot_output(entry: &mut ExecutionProcessEntry, bytes: &[u8]) {
+    let Some(buffer) = entry.output_buffer.as_mut() else {
+        return;
+    };
+    buffer.push(bytes);
+    let snapshot = buffer.snapshot();
+    if let Some(process_snapshot) = entry.snapshot.as_mut() {
+        process_snapshot.output_bytes = snapshot.bytes;
+        process_snapshot.output_omitted_bytes = snapshot.omitted_bytes;
+        process_snapshot.output_truncated = snapshot.truncated;
+        process_snapshot.retained_output = snapshot.text;
+    }
+}
+
+fn apply_snapshot_output_metadata(entry: &ExecutionProcessEntry, delta: &mut ExecutionOutputDelta) {
+    let Some(buffer) = entry.output_buffer.as_ref() else {
+        return;
+    };
+    let snapshot = buffer.snapshot();
+    delta.bytes = snapshot.bytes;
+    delta.omitted_bytes = snapshot.omitted_bytes;
+    delta.truncated = snapshot.truncated;
+}
+
+fn flush_output_framers(entry: &mut ExecutionProcessEntry, process_id: &str, tool_id: &str) {
+    let Some(mut framers) = entry.output_framers.take() else {
+        return;
+    };
+    for (kind, frame) in framers.finish_all() {
+        let mut delta = ExecutionOutputDelta {
+            process_id: process_id.to_string(),
+            tool_id: tool_id.to_string(),
+            sequence: take_output_sequence(entry),
+            kind,
+            delta: String::from_utf8_lossy(&frame).into_owned(),
+            bytes: 0,
+            omitted_bytes: 0,
+            truncated: false,
+            raw_bytes: frame,
+        };
+        apply_snapshot_output_metadata(entry, &mut delta);
+        push_output(entry, delta);
+    }
+}
+
+fn take_output_sequence(entry: &mut ExecutionProcessEntry) -> u64 {
+    let sequence = entry.next_output_sequence;
+    entry.next_output_sequence = entry.next_output_sequence.saturating_add(1);
+    sequence
 }
 
 #[cfg(test)]

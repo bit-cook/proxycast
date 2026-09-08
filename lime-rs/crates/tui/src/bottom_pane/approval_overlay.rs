@@ -1,4 +1,3 @@
-use app_server_protocol::RequestId;
 use app_server_protocol::protocol::v2::{
     CommandExecutionApprovalDecision, CommandExecutionRequestApprovalParams,
     CommandExecutionRequestApprovalResponse, FileChangeApprovalDecision,
@@ -6,6 +5,7 @@ use app_server_protocol::protocol::v2::{
     PermissionGrantScope, PermissionsRequestApprovalParams, PermissionsRequestApprovalResponse,
     ServerRequest,
 };
+use app_server_protocol::RequestId;
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 
 use super::AppServerResponse;

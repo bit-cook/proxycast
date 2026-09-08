@@ -178,6 +178,19 @@ fn command_string(payload: &Value) -> Option<String> {
 }
 
 fn command_exit_item_status(payload: &Value) -> &'static str {
+    if let Some(status) = payload
+        .get("status")
+        .and_then(Value::as_str)
+        .map(|status| status.to_ascii_lowercase())
+    {
+        match status.as_str() {
+            "canceled" | "cancelled" => return "cancelled",
+            "interrupted" => return "interrupted",
+            "failed" | "error" => return "failed",
+            "completed" | "complete" | "success" | "succeeded" | "passed" => return "completed",
+            _ => {}
+        }
+    }
     let exit_code = payload
         .get("exitCode")
         .or_else(|| payload.get("exit_code"))

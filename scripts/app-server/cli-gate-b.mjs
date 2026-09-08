@@ -14,6 +14,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { localAppServerBinaryPath } from "../lib/electron-dev-sidecar.mjs";
+import { buildTerminalGateBinaries } from "./terminal-gate-binaries.mjs";
 import { writeTerminalExternalBackend } from "./terminal-gate-fixture.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,6 +32,7 @@ const prompt = "cli gate b prompt";
 const completedText = "cli gate b completed";
 
 async function main() {
+  await buildTerminalGateBinaries({ env: process.env, repoRoot: rootDir });
   const cliBinaryPath = path.resolve(
     process.env.LIME_CLI_BIN || defaultCliBinaryPath,
   );
@@ -123,7 +125,7 @@ async function main() {
     );
     assertEqual(
       turnStart.eventTypes.join(","),
-      "message.delta,item.started,item.completed,turn.completed",
+      "turn.started,message.delta,item.started,item.completed,turn.completed",
       "runtime event sequence",
     );
 

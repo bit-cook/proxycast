@@ -19,7 +19,7 @@ pub struct RuntimeToolExecutionContextInput {
     pub workspace_sandbox: Option<RuntimeWorkspaceSandboxInput>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RuntimeToolExecutionContext {
     working_directory: PathBuf,
     environment_id: Option<String>,
@@ -30,6 +30,30 @@ pub struct RuntimeToolExecutionContext {
     tool_identity: Option<RuntimeToolExecutionIdentity>,
     execution_attempt: Option<crate::execution_orchestrator::RuntimeToolExecutionAttempt>,
     filesystem_gateway: Option<Arc<dyn crate::filesystem_gateway::RuntimeFileSystemGateway>>,
+    lifecycle_emitter: Option<Arc<dyn crate::tool_lifecycle::ToolLifecycleEmitter>>,
+}
+
+impl std::fmt::Debug for RuntimeToolExecutionContext {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RuntimeToolExecutionContext")
+            .field("working_directory", &self.working_directory)
+            .field("environment_id", &self.environment_id)
+            .field("session_id", &self.session_id)
+            .field("workspace_sandbox", &self.workspace_sandbox)
+            .field("environment", &self.environment)
+            .field("tool_identity", &self.tool_identity)
+            .field("execution_attempt", &self.execution_attempt)
+            .field("filesystem_gateway", &self.filesystem_gateway)
+            .field(
+                "lifecycle_emitter",
+                &self
+                    .lifecycle_emitter
+                    .as_ref()
+                    .map(|_| "<lifecycle-emitter>"),
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +91,7 @@ impl RuntimeToolExecutionContext {
             tool_identity: None,
             execution_attempt: None,
             filesystem_gateway: None,
+            lifecycle_emitter: None,
         }
     }
 
@@ -114,6 +139,12 @@ impl RuntimeToolExecutionContext {
         self.filesystem_gateway.as_ref()
     }
 
+    pub fn lifecycle_emitter(
+        &self,
+    ) -> Option<&Arc<dyn crate::tool_lifecycle::ToolLifecycleEmitter>> {
+        self.lifecycle_emitter.as_ref()
+    }
+
     pub fn with_tool_identity(mut self, identity: RuntimeToolExecutionIdentity) -> Self {
         self.tool_identity = Some(identity);
         self
@@ -135,6 +166,14 @@ impl RuntimeToolExecutionContext {
             Some(gateway) => self.with_filesystem_gateway(gateway),
             None => self,
         }
+    }
+
+    pub(crate) fn with_lifecycle_emitter(
+        mut self,
+        emitter: Arc<dyn crate::tool_lifecycle::ToolLifecycleEmitter>,
+    ) -> Self {
+        self.lifecycle_emitter = Some(emitter);
+        self
     }
 
     fn with_tool_environment(mut self, environment: &crate::tool_call::ToolEnvironment) -> Self {
@@ -252,7 +291,8 @@ impl RuntimeToolExecutorHandle {
             .with_tool_identity(RuntimeToolExecutionIdentity::new(
                 call.call_id(),
                 call.turn_id(),
-            ));
+            ))
+            .with_lifecycle_emitter(call.lifecycle_emitter());
         let context = match call.environments() {
             [] => context,
             [environment] => context.with_tool_environment(environment),

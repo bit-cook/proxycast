@@ -14,11 +14,11 @@ pub(super) enum ArchiveState {
 }
 
 impl PickerState {
-    pub(super) fn archive_shortcut_available(&self) -> bool {
+    pub(crate) fn archive_shortcut_available(&self) -> bool {
         matches!(self.archive_state, ArchiveState::Idle) && self.selected_thread_id().is_some()
     }
 
-    pub(super) fn request_archive_for_selected_session(&mut self) -> Option<String> {
+    pub(crate) fn request_archive_for_selected_session(&mut self) -> Option<String> {
         if !self.archive_shortcut_available() {
             return None;
         }
@@ -30,7 +30,7 @@ impl PickerState {
         Some(thread_id)
     }
 
-    pub(super) fn request_unarchive_for_selected_session(&mut self) -> Option<String> {
+    pub(crate) fn request_unarchive_for_selected_session(&mut self) -> Option<String> {
         if !matches!(self.archive_state, ArchiveState::Idle) {
             return None;
         }
@@ -42,7 +42,7 @@ impl PickerState {
         Some(thread_id)
     }
 
-    pub(super) fn handle_archive_result(&mut self, thread_id: String, result: anyhow::Result<()>) {
+    pub(crate) fn handle_archive_result(&mut self, thread_id: String, result: anyhow::Result<()>) {
         if self.archive_state
             != (ArchiveState::Pending {
                 thread_id: thread_id.clone(),
@@ -60,6 +60,13 @@ impl PickerState {
         self.threads.retain(|thread| thread.id != thread_id);
         self.transcript_previews.remove(&thread_id);
         self.transcripts.remove(&thread_id);
+        if self
+            .transcript_pager
+            .as_ref()
+            .is_some_and(|pager| pager.thread_id == thread_id)
+        {
+            self.transcript_pager = None;
+        }
         if self.expanded_thread_id.as_deref() == Some(thread_id.as_str()) {
             self.expanded_thread_id = None;
         }
@@ -67,7 +74,7 @@ impl PickerState {
         self.status_message = None;
     }
 
-    pub(super) fn handle_unarchive_result(
+    pub(crate) fn handle_unarchive_result(
         &mut self,
         thread_id: String,
         result: anyhow::Result<app_server_protocol::protocol::v2::ThreadUnarchiveResponse>,

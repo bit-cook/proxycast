@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::highlight::{CodeLineHighlighter, exceeds_highlight_limits};
+use crate::highlight::{exceeds_highlight_limits, CodeLineHighlighter};
 use crate::line_truncation::truncate_line_to_width;
 use crate::width::display_width;
 
@@ -226,11 +226,9 @@ fn render_line(line: DiffLine, number_width: usize, width: Option<usize>) -> Vec
             Span::raw(" ".repeat(number_width + 1)),
             Span::styled("⋮", Style::default().fg(Color::DarkGray)),
         ]);
-        return vec![
-            width
-                .map(|width| truncate_line_to_width(marker.clone(), width))
-                .unwrap_or(marker),
-        ];
+        return vec![width
+            .map(|width| truncate_line_to_width(marker.clone(), width))
+            .unwrap_or(marker)];
     }
     let Some(number) = number else {
         return wrap_plain_line(Line::from(Span::styled(text, style)), width);
@@ -667,13 +665,11 @@ mod tests {
         let inserted = &lines[2];
 
         assert!(inserted.spans.len() > 3);
-        assert!(
-            inserted
-                .spans
-                .iter()
-                .skip(2)
-                .any(|span| span.content.contains("fn") && span.style.fg.is_some())
-        );
+        assert!(inserted
+            .spans
+            .iter()
+            .skip(2)
+            .any(|span| span.content.contains("fn") && span.style.fg.is_some()));
     }
 
     #[test]
@@ -712,17 +708,15 @@ mod tests {
             content,
             "pub fn long_name(answer: usize) -> usize { answer + 1 }"
         );
-        assert!(
-            lines
-                .iter()
-                .skip(1)
-                .flat_map(|line| &line.spans)
-                .any(|span| {
-                    span.content.contains("fn")
-                        && span.style.fg.is_some()
-                        && span.style.fg != Some(Color::Green)
-                })
-        );
+        assert!(lines
+            .iter()
+            .skip(1)
+            .flat_map(|line| &line.spans)
+            .any(|span| {
+                span.content.contains("fn")
+                    && span.style.fg.is_some()
+                    && span.style.fg != Some(Color::Green)
+            }));
     }
 
     #[test]
@@ -763,12 +757,10 @@ mod tests {
         let deleted = lines.last().expect("deleted line");
 
         assert!(deleted.spans.len() > 3);
-        assert!(
-            deleted
-                .spans
-                .iter()
-                .skip(2)
-                .any(|span| span.content.contains("fn") && span.style.fg.is_some())
-        );
+        assert!(deleted
+            .spans
+            .iter()
+            .skip(2)
+            .any(|span| span.content.contains("fn") && span.style.fg.is_some()));
     }
 }

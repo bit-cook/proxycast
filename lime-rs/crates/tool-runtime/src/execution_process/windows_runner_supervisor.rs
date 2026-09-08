@@ -14,7 +14,7 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use tokio::sync::{mpsc as tokio_mpsc, oneshot, watch, Mutex};
+use tokio::sync::{broadcast, oneshot, watch, Mutex};
 use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
 use windows_sys::Win32::System::Threading::{TerminateProcess, WaitForSingleObject};
 
@@ -24,7 +24,7 @@ pub(super) fn supervise(
     acl_lease: AclLease,
     null_device_lease: NullDeviceLease,
     process: Arc<Mutex<ExecutionProcess>>,
-    output_tx: tokio_mpsc::UnboundedSender<ExecutionOutputDelta>,
+    output_tx: broadcast::Sender<ExecutionOutputDelta>,
     state_tx: watch::Sender<ExecutionProcessSnapshot>,
     final_tx: oneshot::Sender<ExecutionProcessSnapshot>,
     control_rx: Receiver<LocalExecutionControl>,
@@ -121,8 +121,9 @@ pub(super) fn supervise(
         }
     }
 
-    let final_snapshot = {
+    let (final_deltas, final_snapshot) = {
         let mut guard = process.blocking_lock();
+        let final_deltas = guard.finish_all_output();
         if !guard.status().is_terminal() {
             if let Some(error) = failure.as_ref() {
                 guard.fail(error.clone());
@@ -130,8 +131,11 @@ pub(super) fn supervise(
                 guard.exit(exit_code);
             }
         }
-        guard.snapshot()
+        (final_deltas, guard.snapshot())
     };
+    for delta in final_deltas {
+        let _ = output_tx.send(delta);
+    }
     let _ = state_tx.send(final_snapshot.clone());
     let _ = final_tx.send(final_snapshot);
 
@@ -169,7 +173,7 @@ fn forward_control(
 
 fn append_output(
     process: &Arc<Mutex<ExecutionProcess>>,
-    output_tx: &tokio_mpsc::UnboundedSender<ExecutionOutputDelta>,
+    output_tx: &broadcast::Sender<ExecutionOutputDelta>,
     state_tx: &watch::Sender<ExecutionProcessSnapshot>,
     kind: super::ExecutionOutputKind,
     bytes: &[u8],
@@ -179,7 +183,9 @@ fn append_output(
         let delta = guard.append_output(kind, bytes);
         (delta, guard.snapshot())
     };
-    let _ = output_tx.send(delta);
+    if let Some(delta) = delta {
+        let _ = output_tx.send(delta);
+    }
     let _ = state_tx.send(snapshot);
 }
 

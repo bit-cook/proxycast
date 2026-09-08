@@ -1,8 +1,8 @@
-use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, FrameExt as _, Paragraph};
+use ratatui::Frame;
 
 use crate::app::App;
 use crate::bottom_pane;
@@ -13,11 +13,16 @@ use crate::model_picker;
 use crate::pending_input_preview;
 use crate::status_indicator_widget;
 use crate::terminal_hyperlinks::HyperlinkParagraph;
-use crate::width::{display_width, usable_content_width_u16};
+use crate::width::usable_content_width_u16;
 use std::time::Instant;
 
 pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
+    if let Some(picker) = app.resume_picker.as_ref() {
+        frame.render_widget(Clear, area);
+        crate::resume_picker::render_with_locale(frame, picker, app.locale);
+        return;
+    }
     if let Some(pager) = app.pager_overlay.as_ref() {
         let transcript_lines = if pager.is_transcript() {
             projected_transcript_lines(app, area.width, true)
@@ -51,6 +56,14 @@ pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
     if let Some(picker) = app.model_picker.as_ref() {
         model_picker::render_with_locale(frame, area, picker, app.locale);
     }
+    if let Some(overview) = app.agents_overview.as_ref() {
+        crate::app::agents_overview_view::render(frame, area, &overview.view, app.locale);
+    }
+    if let Some(picker) = app.agent_picker.as_ref() {
+        if app.agents_overview.is_none() {
+            crate::app::agent_picker::render(frame, area, picker, app.locale);
+        }
+    }
 }
 
 fn screen_chunks(area: Rect, app: &App) -> [Rect; 6] {
@@ -68,13 +81,10 @@ fn screen_chunks(area: Rect, app: &App) -> [Rect; 6] {
     } else {
         let desired = app
             .composer
-            .text()
-            .lines()
-            .count()
-            .max(1)
-            .saturating_add(app.pending_images.len())
+            .desired_height(area.width.saturating_sub(2))
+            .saturating_add(u16::try_from(app.composer.pending_image_count()).unwrap_or(u16::MAX))
             .saturating_add(2)
-            .clamp(3, 12) as u16;
+            .clamp(3, 12);
         desired.min(
             area.height
                 .saturating_sub(preview_height)
@@ -178,8 +188,11 @@ fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .borders(Borders::TOP | Borders::BOTTOM)
         .border_style(Style::default().fg(Color::DarkGray));
     let inner = block.inner(area);
-    let mut lines = app
-        .pending_images
+    frame.render_widget(block, area);
+
+    let image_lines = app
+        .composer
+        .pending_images()
         .iter()
         .enumerate()
         .map(|(index, _)| {
@@ -189,35 +202,37 @@ fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
             )
         })
         .collect::<Vec<_>>();
-    lines.extend(app.composer.text().split('\n').map(Line::raw));
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(block)
-            .wrap(Wrap { trim: false }),
-        area,
-    );
-
     if inner.width == 0 || inner.height == 0 {
         return;
     }
-    let before_cursor = &app.composer.text()[..app.composer.cursor()];
-    let row = app
-        .pending_images
-        .len()
-        .saturating_add(before_cursor.chars().filter(|ch| *ch == '\n').count());
-    let column_text = before_cursor.rsplit('\n').next().unwrap_or("");
-    let column = display_width(column_text);
-    let x = inner.x.saturating_add(
-        u16::try_from(column)
-            .unwrap_or(u16::MAX)
-            .min(inner.width.saturating_sub(1)),
+
+    let image_height = u16::try_from(image_lines.len())
+        .unwrap_or(u16::MAX)
+        .min(inner.height);
+    if image_height > 0 {
+        let image_area = Rect::new(inner.x, inner.y, inner.width, image_height);
+        frame.render_widget(Paragraph::new(image_lines), image_area);
+    }
+
+    let text_area = Rect::new(
+        inner.x,
+        inner.y.saturating_add(image_height),
+        inner.width,
+        inner.height.saturating_sub(image_height),
     );
-    let y = inner.y.saturating_add(
-        u16::try_from(row)
-            .unwrap_or(u16::MAX)
-            .min(inner.height.saturating_sub(1)),
-    );
-    frame.set_cursor_position(Position::new(x, y));
+    if text_area.is_empty() {
+        return;
+    }
+    let cursor = {
+        let mut state = app.composer.textarea_state_mut();
+        frame.render_stateful_widget_ref(app.composer.textarea(), text_area, &mut *state);
+        app.composer
+            .textarea()
+            .cursor_pos_with_state(text_area, *state)
+    };
+    if let Some((x, y)) = cursor {
+        frame.set_cursor_position(Position::new(x, y));
+    }
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -238,9 +253,17 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .active_turn_id()
         .map(|turn| format!(" {} {turn}", app.locale.turn_label()))
         .unwrap_or_default();
+    let active_agent = app
+        .agent_navigation
+        .active_agent_label(app.thread_id.as_deref(), app.primary_thread_id.as_deref())
+        .map(|label| format!("  {label}"))
+        .unwrap_or_default();
     let width = usable_content_width_u16(area.width, 1).unwrap_or_default();
     let line = truncate_line_with_ellipsis_if_overflow(
-        Line::styled(format!(" {active}"), Style::default().fg(Color::DarkGray)),
+        Line::styled(
+            format!(" {active}{active_agent}"),
+            Style::default().fg(Color::DarkGray),
+        ),
         width,
     );
     frame.render_widget(Paragraph::new(line), area);
@@ -257,7 +280,6 @@ fn status_text(app: &App) -> String {
 mod tests {
     use super::*;
     use crate::locale::Locale;
-    use app_server_protocol::RequestId;
     use app_server_protocol::protocol::v2::{
         AgentMessageDeltaNotification, CommandExecutionOutputDeltaNotification,
         CommandExecutionRequestApprovalParams, CommandExecutionSource, FileUpdateChange,
@@ -266,9 +288,25 @@ mod tests {
         ToolRequestUserInputParams, ToolRequestUserInputQuestion, TurnDiffUpdatedNotification,
         TurnPlanStep, TurnPlanStepStatus, TurnPlanUpdatedNotification, UserInput,
     };
+    use app_server_protocol::RequestId;
     use crossterm::event::Event;
-    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::widgets::Wrap;
+    use ratatui::Terminal;
+
+    fn dispatch_connected_input(app: &mut App, event: Event) -> crate::app::AppAction {
+        let event = match event {
+            Event::Key(key) => crate::tui::TuiEvent::Key(key),
+            Event::Paste(text) => crate::tui::TuiEvent::Paste(text),
+            Event::Resize(width, height) => {
+                crate::tui::TuiEvent::Resize(ratatui::layout::Size { width, height })
+            }
+            Event::FocusGained => crate::tui::TuiEvent::FocusGained,
+            Event::FocusLost => crate::tui::TuiEvent::FocusLost,
+            _ => crate::tui::TuiEvent::Draw,
+        };
+        app.handle_tui_event(event, true)
+    }
 
     #[test]
     fn wrapped_transcript_scroll_uses_visual_rows() {
@@ -417,6 +455,23 @@ mod tests {
     }
 
     #[test]
+    fn footer_renders_the_active_agent_label() {
+        let mut app = App::default();
+        app.set_thread_id("main".to_string());
+        app.agent_navigation.upsert(
+            "agent-1",
+            Some("Robie".to_string()),
+            Some("explorer".to_string()),
+            false,
+        );
+        app.set_thread_id("agent-1".to_string());
+
+        let mut terminal = Terminal::new(TestBackend::new(64, 8)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        assert!(buffer_text(&terminal).contains("Robie [explorer]"));
+    }
+
+    #[test]
     fn active_turn_status_does_not_overflow_a_tiny_terminal() {
         let mut app = App::default();
         app.start_turn("turn-1".to_string());
@@ -445,15 +500,21 @@ mod tests {
         app.set_locale(Locale::ZhCn);
         app.composer.load_history(["git status".to_string()]);
         app.composer.insert("git");
-        app.handle_terminal_event(Event::Key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('r'),
-            crossterm::event::KeyModifiers::CONTROL,
-        )));
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('r'),
+                crossterm::event::KeyModifiers::CONTROL,
+            )),
+        );
         for character in "git".chars() {
-            app.handle_terminal_event(Event::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char(character),
-                crossterm::event::KeyModifiers::NONE,
-            )));
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::Char(character),
+                    crossterm::event::KeyModifiers::NONE,
+                )),
+            );
         }
         let mut terminal = Terminal::new(TestBackend::new(48, 8)).expect("terminal");
 
@@ -472,11 +533,14 @@ mod tests {
     fn test_backend_renders_filtered_slash_command_popup_above_composer() {
         let mut app = App::default();
         app.set_locale(Locale::ZhCn);
-        for character in ['/', 'p'] {
-            app.handle_terminal_event(Event::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char(character),
-                crossterm::event::KeyModifiers::NONE,
-            )));
+        for character in ['/', 'p', 'e'] {
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::Char(character),
+                    crossterm::event::KeyModifiers::NONE,
+                )),
+            );
         }
         let mut terminal = Terminal::new(TestBackend::new(48, 10)).expect("terminal");
 
@@ -490,7 +554,7 @@ mod tests {
         assert!(text.contains("> /permissions"));
         assert!(compact.contains("设置权限配置"), "{text}");
         assert!(!text.contains("/model"));
-        assert!(text.contains("/p"));
+        assert!(text.contains("/pe"));
     }
 
     #[test]
@@ -505,10 +569,13 @@ mod tests {
             Some(":workspace".to_string()),
         );
         app.composer.insert("/status");
-        app.handle_terminal_event(Event::Key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Enter,
-            crossterm::event::KeyModifiers::NONE,
-        )));
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Enter,
+                crossterm::event::KeyModifiers::NONE,
+            )),
+        );
         let mut terminal = Terminal::new(TestBackend::new(72, 12)).expect("terminal");
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
@@ -541,10 +608,13 @@ mod tests {
                 delta: format!("**first** [link]({destination})"),
             },
         ));
-        app.handle_terminal_event(Event::Key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('t'),
-            crossterm::event::KeyModifiers::CONTROL,
-        )));
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('t'),
+                crossterm::event::KeyModifiers::CONTROL,
+            )),
+        );
         let mut terminal = Terminal::new(TestBackend::new(48, 9)).expect("terminal");
         terminal.draw(|frame| render(frame, &app)).expect("draw");
 
@@ -896,10 +966,13 @@ mod tests {
     #[test]
     fn approval_hides_an_open_slash_command_popup() {
         let mut app = App::default();
-        app.handle_terminal_event(Event::Key(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('/'),
-            crossterm::event::KeyModifiers::NONE,
-        )));
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('/'),
+                crossterm::event::KeyModifiers::NONE,
+            )),
+        );
         app.bottom_pane
             .enqueue(ServerRequest::ItemCommandExecutionRequestApproval {
                 id: RequestId::Integer(9),
@@ -949,7 +1022,7 @@ mod tests {
                 },
             })
             .expect("queue user input");
-        app.handle_terminal_event(Event::Paste("sensitive".to_string()));
+        dispatch_connected_input(&mut app, Event::Paste("sensitive".to_string()));
         let mut terminal = Terminal::new(TestBackend::new(40, 10)).expect("terminal");
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");

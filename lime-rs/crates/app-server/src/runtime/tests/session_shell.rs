@@ -76,6 +76,7 @@ async fn idle_shell_command_persists_a_standalone_turn_and_output() {
             "turn.accepted",
             "turn.started",
             "command.started",
+            "command.output",
             "command.exited",
             "turn.completed",
         ],
@@ -113,6 +114,16 @@ async fn idle_shell_command_persists_a_standalone_turn_and_output() {
     assert_eq!(*exit_code, Some(0));
     assert_eq!(item.metadata["commandExecutionSource"], json!("userShell"));
     assert!(item.metadata["processId"].as_str().is_some());
+    let output_event = events
+        .iter()
+        .find(|event| event.event_type == "command.output")
+        .expect("shell output delta");
+    assert_eq!(output_event.payload["commandId"], item.item_id.as_str());
+    assert_eq!(output_event.payload["delta"], "shell-loop-ready");
+    assert_eq!(
+        output_event.payload["metadata"]["executionProcessControlStatus"],
+        "registered"
+    );
 
     let restarted = RuntimeCore::with_backend(Arc::new(MockBackend))
         .with_execution_process_server(ExecutionProcessServer::default())
@@ -180,10 +191,17 @@ async fn active_shell_command_reuses_the_current_turn() {
         .iter()
         .filter(|event| event.event_type.starts_with("command."))
         .collect::<Vec<_>>();
-    assert_eq!(command_events.len(), 2);
+    assert_eq!(command_events.len(), 3);
     assert!(command_events
         .iter()
         .all(|event| event.turn_id.as_deref() == Some("turn-shell-active")));
+    assert_eq!(
+        command_events
+            .iter()
+            .map(|event| event.event_type.as_str())
+            .collect::<Vec<_>>(),
+        vec!["command.started", "command.output", "command.exited"]
+    );
     let thread = read_full_thread(&core, "thread-shell-active").await;
     assert_eq!(thread.turns.len(), 1);
     assert_eq!(thread.turns[0].turn_id.as_str(), "turn-shell-active");

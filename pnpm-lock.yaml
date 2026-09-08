@@ -416,7 +416,11 @@ importers:
         specifier: 0.1.0
         version: link:../agent-capability-catalog
 
-  packages/app-server-client: {}
+  packages/app-server-client:
+    dependencies:
+      ws:
+        specifier: ^8.18.3
+        version: 8.18.3
 
   packages/cli: {}
 

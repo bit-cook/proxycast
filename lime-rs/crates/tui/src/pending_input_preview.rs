@@ -1,13 +1,13 @@
 use app_server_protocol::protocol::v2::{QueuedSubmission, UserInput};
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
+use ratatui::Frame;
 
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
-use crate::terminal_hyperlinks::{HyperlinkLine, wrap_hyperlink_line};
+use crate::terminal_hyperlinks::{wrap_hyperlink_line, HyperlinkLine};
 
 const MAX_VISIBLE_SUBMISSIONS: usize = 2;
 const MAX_LINES_PER_SUBMISSION: usize = 2;
@@ -270,13 +270,11 @@ mod tests {
         assert!(can_restore_submission(&local));
         assert!(!can_restore_submission(&remote));
         assert!(!can_restore_submission(&structured));
-        assert!(
-            !preview_lines(&[remote], 80, Locale::EnUs)
-                .iter()
-                .map(line_text)
-                .collect::<String>()
-                .contains("Alt+Up")
-        );
+        assert!(!preview_lines(&[remote], 80, Locale::EnUs)
+            .iter()
+            .map(line_text)
+            .collect::<String>()
+            .contains("Alt+Up"));
     }
 
     #[test]

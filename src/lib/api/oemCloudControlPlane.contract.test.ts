@@ -26,6 +26,7 @@ import {
   rotateClientAccessToken,
   updateClientSceneSkillPreferences,
 } from "./oemCloudControlPlane";
+import { parseAppServerConfig } from "./oemCloudControlPlaneCoreParsers";
 
 describe("oemCloudControlPlane desktop auth", () => {
   beforeEach(() => {
@@ -248,6 +249,15 @@ describe("oemCloudControlPlane desktop auth", () => {
             needsValidation: false,
             updatedAt: "2026-04-28T00:00:00.000Z",
           },
+          appServer: {
+            enabled: true,
+            endpoint: "wss://llm.limeai.run/v1/app-server",
+            transport: "websocket",
+            protocol: "appserver.v0",
+            authorizationHeader: "Authorization",
+            authorizationScheme: "Bearer",
+            tenantHeader: "X-Lime-Tenant-ID",
+          },
           features: {
             referralEnabled: true,
           },
@@ -298,6 +308,15 @@ describe("oemCloudControlPlane desktop auth", () => {
       }),
     );
     expect(bootstrap.features.referralEnabled).toBe(true);
+    expect(bootstrap.appServer).toEqual({
+      enabled: true,
+      endpoint: "wss://llm.limeai.run/v1/app-server",
+      transport: "websocket",
+      protocol: "appserver.v0",
+      authorizationHeader: "Authorization",
+      authorizationScheme: "Bearer",
+      tenantHeader: "X-Lime-Tenant-ID",
+    });
     expect(bootstrap.referral?.share).toMatchObject({
       brandName: "Lime",
       code: "LIME-2026",
@@ -305,6 +324,23 @@ describe("oemCloudControlPlane desktop auth", () => {
     });
   });
 
+  it("应拒绝带凭证或 query 的 App Server endpoint", () => {
+    expect(() =>
+      parseAppServerConfig({
+        enabled: true,
+        endpoint:
+          "wss://user:secret@llm.example.com/v1/app-server?token=secret",
+      }),
+    ).toThrow("App Server endpoint");
+  });
+
+  it("旧 bootstrap 缺少 appServer 时应保持显式关闭", () => {
+    expect(parseAppServerConfig(undefined)).toMatchObject({
+      enabled: false,
+      transport: "websocket",
+      protocol: "appserver.v0",
+    });
+  });
 
   it("应读取并更新首页场景技能偏好", async () => {
     window.__LIME_SESSION_TOKEN__ = "session-token-001";

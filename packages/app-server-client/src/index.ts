@@ -6,4 +6,5 @@ export * from "./connection.js";
 export * from "./agent-runtime.js";
 export * from "./server-notifications.js";
 export * from "./model-route.js";
+export * from "./remote.js";
 export * from "./sidecar.js";

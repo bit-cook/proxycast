@@ -1,39 +1,40 @@
-## Lime v1.141.0
+## Lime v1.142.0
 
 ### 新功能
 
-- 新增独立 Code Mode protocol、runtime、host 与 session facade crate，统一承载 stdio/gRPC、V8 执行、typed content、取消、重连和 session lease 生命周期。
-- CLI/TUI 继续扩展为统一 App Server 产品面：支持 Thread 恢复与管理、MCP/Skills/Plugin 查询、模型与权限控制、JSON/JSONL、prompt history、审批、request_user_input 和队列输入编辑。
-- 新增远程 WebSocket session transport，支持 `ws/wss`、Bearer token、协议身份校验、ping/pong 与 fail-closed 认证策略；CLI/TUI 复用同一 session facade，不复制 runtime 或持久化。
-- TUI 新增 Codex 对齐的 Markdown、Diff、语法高亮、OSC 8 链接、宽度感知表格、剪贴板/图片粘贴、slash command popup、static pager、transcript overlay 和 queued follow-up 预览。
+- TUI/CLI 继续按 Codex 形状拆分 current owner：多 Agent 导航与概览、模型目录、协作模式、恢复会话分页与 transcript pager、composer textarea、历史搜索、viewport 和五语言终端文案。
+- App Server 增加统一执行进程生命周期与 command event mirror，向 canonical Thread/Turn/Item 投影 command started、实时输出、完成状态和测试运行信息。
+- `@limecloud/app-server-client` 提供同一 JSON-RPC session 的认证 WebSocket foundation，支持 `ws/wss`、Bearer token、租户 header、身份/协议握手、ping/pong 和消息大小上限。
+- Electron 增加基于 `safeStorage` 的 Cloud session credential store 与 set/status/delete IPC；状态只返回 metadata，不提供 token 读取。
 
 ### 修复
 
-- 收紧 App Server `command/exec` 权限边界，拒绝客户端注入的授权字段并保持 typed lowering fail-closed。
-- 修复 Code Mode host/client 的断线、重复 execution、stale cell、pending callback 和 session close 清理，避免旧代际状态泄漏到重连会话。
-- 修复 CLI/TUI 终端生命周期、external editor、Unicode 光标、窄终端截断、队列恢复与失败终态投影边界。
-- 修复文件系统 watch、Agent Runtime typed content、MCP 通知投影和工具生命周期摘要的回归断言。
+- 统一 pipe、PTY、Windows restricted runner、远程 Environment 和 unified exec 的有界输出捕获，保留稳定 head/tail、UTF-8 边界和 omission 统计，避免大输出阻塞或跨进程串流。
+- 修复 App Server process owner 的连接隔离、重复 active `processId`、断连清理、stdin/resize/terminate 生命周期和逐进程 output replay。
+- 修复 TUI 终端恢复、断线编辑、Unicode 光标、窄终端换行、队列恢复、历史 hydration、审批/输入请求和多 Agent 状态投影边界。
+- 收紧 sidecar `dataDir` 与 Cloud App Server endpoint 校验，拒绝 `undefined`/相对路径、URL 凭证、query/fragment 和不安全的公开 WebSocket token 连接。
 
 ### 优化与重构
 
-- 将 Code Mode 旧 `tool-runtime` 内嵌 process/V8 实现物理迁出并删除，生产调用统一切换到四层 current crate；旧路径仅保留显式兼容导出。
-- CLI Rust 目录与命令 owner 按 Codex 形状收敛，npm 根包/平台包 launcher、native payload、signal forwarding 与发布顺序统一到 `packages/cli`。
-- TUI 交互、渲染和终端算法按 snapshot inventory 分层迁移，保持 canonical Thread/Turn/Item 为唯一会话事实源。
-- 补充 CLI/TUI/Code Mode、远程 transport、Windows restricted execution、Electron release workflow 和治理边界守卫；Cloud 仅保留经认证 transport 的扩展点，不进入生产路径。
+- 将 TUI 聚合状态迁入 `app/`、`chat_composer/`、`textarea/`、`viewport` 等唯一 current owner，继续以 App Server canonical projection 为会话事实源。
+- App Server 与 tool-runtime 的执行输出改用 per-process bounded queue 和统一 framer，删除全局 FIFO、tail-only capture 与逐 chunk lossy UTF-8 语义。
+- DeepSWE harness 支持隔离 Docker CLI 配置和当前 Docker context endpoint 注入，避免本地 daemon 配置污染 verifier。
+- Cloud transport 保持 foundation-only：凭证、租户隔离、重连、限流、审计和生产 endpoint 仍需 Cloud 服务完成后才能启用。
 
 ### 测试与质量
 
-- 新增 Code Mode protocol/runtime/host/facade 生命周期、typed content、gRPC、重连与取消测试，并补齐 App Server 权限边界回归。
-- 扩展 CLI Gate B、TUI Gate B、真实 stdio/PTY、npm packaged launcher、远程认证、snapshot inventory、终端渲染和跨平台发布守卫。
-- 保持五语言文案、协议生成、脚本/CLI 边界、Electron Forge、版本一致性和 legacy 治理检查为发布门禁。
+- `tui` Rust 单元测试 390/390 通过；`@limecloud/app-server-client` 11 个测试文件、139 项通过。
+- CLI Gate B、TUI Gate B、Agent Runtime current Electron fixture、App Server client contracts、结构 inventory、harness、legacy governance 和脚本边界检查通过。
+- 保持五语言文案、协议生成、Electron Forge、版本一致性、真实 PTY/stdio 和 canonical Thread/Turn/Item identity 为发布门禁。
 
 ### 文档
 
-- 更新架构、命令、治理、质量工作流与 CLI/TUI、Code Mode 执行计划，记录 Product Surface -> App Server JSON-RPC -> RuntimeCore -> Thread/Turn/Item 的唯一业务主链及 Cloud transport 边界。
+- 更新架构、命令、质量、路线图与 TUI/CLI 执行计划，记录执行进程、远程 transport、凭证存储和唯一 Product Surface -> App Server JSON-RPC -> RuntimeCore 主链边界。
 
 ### 其他
 
-- 将根应用、CLI npm 包、Rust workspace 与 Cargo.lock 版本统一提升到 `1.141.0`。
-- 本次发布候选排除 `undefined/` 下本地 SQLite/WAL、runtime 数据库和 `.DS_Store` 运行产物；Code Mode 旧物理实现归 `dead/deleted`，不新增平行 runtime、compat 或 deprecated owner。
+- 将根应用、CLI npm 包、Rust workspace 与 Cargo.lock 版本统一提升到 `1.142.0`。
+- 本地 `rusty_v8 v150.4.0` Darwin/aarch64 预构建 archive 返回 404，包含 V8 的 workspace 完整编译未在本机完成；Windows 真机矩阵、签名/公证和完整 Forge 产物留给对应平台 runner。
+- 发布候选排除未跟踪的本机 Mach-O `rust_out` 与被忽略的本地生成目录；不删除、不覆盖既有 v1.141.0 tag。
 
-**完整变更**: `v1.140.0` -> `v1.141.0`
+**完整变更**: `v1.141.0` -> `v1.142.0`

@@ -92,12 +92,13 @@ export function stdioSidecar(
   appPolicyPath?: string,
   dataDir?: string,
 ): SidecarLaunchConfig {
+  const normalizedDataDir = normalizeSidecarDataDir(dataDir);
   return {
     binaryPath,
     listenUrl: DEFAULT_LISTEN_URL,
     backendMode: DEFAULT_STANDALONE_BACKEND_MODE,
     ...(appPolicyPath ? { appPolicyPath } : {}),
-    ...(dataDir ? { dataDir } : {}),
+    ...(normalizedDataDir ? { dataDir: normalizedDataDir } : {}),
   };
 }
 
@@ -109,12 +110,13 @@ export function sidecarFromReleaseArtifact(
   appPolicyPath?: string,
   dataDir?: string,
 ): SidecarLaunchConfig {
+  const normalizedDataDir = normalizeSidecarDataDir(dataDir);
   return {
     binaryPath,
     listenUrl,
     backendMode,
     ...(appPolicyPath ? { appPolicyPath } : {}),
-    ...(dataDir ? { dataDir } : {}),
+    ...(normalizedDataDir ? { dataDir: normalizedDataDir } : {}),
     expectedSha256: artifact.sha256,
     artifact,
   };
@@ -143,8 +145,9 @@ export function sidecarArgs(config: SidecarLaunchConfig): string[] {
   if (config.appPolicyPath) {
     args.push("--app-policy", config.appPolicyPath);
   }
-  if (config.dataDir) {
-    args.push("--data-dir", config.dataDir);
+  const dataDir = normalizeSidecarDataDir(config.dataDir);
+  if (dataDir) {
+    args.push("--data-dir", dataDir);
   }
   return args;
 }
@@ -196,6 +199,8 @@ export function resolveSidecarFromReleaseManifest(
     return undefined;
   }
 
+  const dataDir = normalizeSidecarDataDir(options.dataDir);
+
   return {
     config: {
       binaryPath: binaryPath.binaryPath,
@@ -211,7 +216,7 @@ export function resolveSidecarFromReleaseManifest(
       ...(options.appPolicyPath
         ? { appPolicyPath: options.appPolicyPath }
         : {}),
-      ...(options.dataDir ? { dataDir: options.dataDir } : {}),
+      ...(dataDir ? { dataDir } : {}),
       expectedSha256:
         binaryPath.source === "resources" ? artifact.sha256 : undefined,
       artifact,
@@ -219,6 +224,31 @@ export function resolveSidecarFromReleaseManifest(
     artifact,
     binaryPathSource: binaryPath.source,
   };
+}
+
+/**
+ * A sidecar data root must be an explicit filesystem path. In particular,
+ * stringified optional values such as "undefined" must never become a
+ * relative path under the caller's working directory.
+ */
+function normalizeSidecarDataDir(dataDir: string | undefined): string | undefined {
+  if (dataDir === undefined) {
+    return undefined;
+  }
+  const normalized = dataDir.trim();
+  if (!normalized) {
+    throw new Error("App Server data directory must not be empty");
+  }
+  if (normalized === "undefined" || normalized === "null") {
+    throw new Error("App Server data directory is invalid");
+  }
+  if (/[\u0000-\u001f\u007f]/u.test(normalized)) {
+    throw new Error("App Server data directory contains control characters");
+  }
+  if (!path.isAbsolute(normalized) && !path.win32.isAbsolute(normalized)) {
+    throw new Error("App Server data directory must be an absolute path");
+  }
+  return normalized;
 }
 
 export async function readReleaseManifest(

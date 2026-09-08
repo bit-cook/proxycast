@@ -1,5 +1,16 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use std::cell::RefMut;
 use unicode_segmentation::UnicodeSegmentation;
+
+mod attachment_state;
+mod draft_state;
+mod history_search;
+mod reconnect;
+
+use self::attachment_state::AttachmentState;
+use self::draft_state::DraftState;
+use self::history_search::HistorySearchState;
+use crate::bottom_pane::textarea::{TextArea, TextAreaState};
 
 const MAX_HISTORY_ENTRIES: usize = 200;
 
@@ -19,33 +30,70 @@ pub(crate) enum InputResult {
 }
 
 #[derive(Debug, Default)]
-struct HistorySearchState {
-    query: String,
-    draft: String,
-    selected_index: Option<usize>,
-}
-
-#[derive(Debug, Default)]
 pub(crate) struct ChatComposer {
-    text: String,
-    cursor: usize,
+    draft: DraftState,
+    attachments: AttachmentState,
     history: Vec<String>,
     history_index: Option<usize>,
-    saved_draft: Option<String>,
     history_search: Option<HistorySearchState>,
 }
 
 impl ChatComposer {
+    pub(crate) fn textarea(&self) -> &TextArea {
+        &self.draft.textarea
+    }
+
+    pub(crate) fn textarea_state_mut(&self) -> RefMut<'_, TextAreaState> {
+        self.draft.textarea_state_mut()
+    }
+
     pub(crate) fn text(&self) -> &str {
-        &self.text
+        self.draft.textarea.text()
     }
 
     pub(crate) fn cursor(&self) -> usize {
-        self.cursor
+        self.draft.textarea.cursor()
+    }
+
+    pub(crate) fn desired_height(&self, width: u16) -> u16 {
+        self.draft.textarea.desired_height(width)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn cursor_position(&self, width: u16) -> Option<(usize, usize)> {
+        self.draft.textarea.cursor_position(width)
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.text.is_empty()
+        self.draft.textarea.is_empty()
+    }
+
+    pub(crate) fn pending_image_count(&self) -> usize {
+        self.attachments.len()
+    }
+
+    pub(crate) fn pending_images(&self) -> &[std::path::PathBuf] {
+        self.attachments.paths()
+    }
+
+    pub(crate) fn has_pending_images(&self) -> bool {
+        !self.attachments.is_empty()
+    }
+
+    pub(crate) fn attach_image(&mut self, path: std::path::PathBuf) {
+        self.attachments.attach(path);
+    }
+
+    pub(crate) fn take_pending_images(&mut self) -> Vec<std::path::PathBuf> {
+        self.attachments.take()
+    }
+
+    pub(crate) fn restore_pending_images(&mut self, images: Vec<std::path::PathBuf>) {
+        self.attachments.restore(images);
+    }
+
+    pub(crate) fn remove_last_pending_image(&mut self) -> bool {
+        self.attachments.remove_last()
     }
 
     pub(crate) fn history_search_active(&self) -> bool {
@@ -77,19 +125,34 @@ impl ChatComposer {
             self.history.drain(..keep_from);
         }
         self.history_index = None;
-        self.saved_draft = None;
+        self.draft.saved_draft = None;
         self.history_search = None;
     }
 
     pub(crate) fn insert(&mut self, value: &str) {
-        self.text.insert_str(self.cursor, value);
-        self.cursor += value.len();
+        self.draft.textarea.insert(value);
         self.reset_history_navigation();
     }
 
     pub(crate) fn handle_key_event(&mut self, key: KeyEvent) -> InputResult {
+        if matches!(key.kind, KeyEventKind::Release) {
+            return InputResult::None;
+        }
         if self.history_search.is_some() {
             return self.handle_history_search_key(key);
+        }
+
+        let editor_key = matches!(key.code, KeyCode::Char('b' | 'f' | 'w' | 'k' | 'u' | 'y'))
+            && key.modifiers == KeyModifiers::CONTROL
+            || matches!(key.code, KeyCode::Char('d')) && key.modifiers == KeyModifiers::ALT
+            || matches!(key.code, KeyCode::Backspace | KeyCode::Delete)
+                && key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+        if editor_key {
+            self.draft.textarea.input(key);
+            self.reset_history_navigation();
+            return InputResult::Changed;
         }
 
         if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -101,11 +164,11 @@ impl ChatComposer {
                     InputResult::Changed
                 }
                 KeyCode::Char('a') => {
-                    self.cursor = self.line_start();
+                    self.draft.textarea.move_line_start();
                     InputResult::Changed
                 }
                 KeyCode::Char('e') => {
-                    self.cursor = self.line_end();
+                    self.draft.textarea.move_line_end();
                     InputResult::Changed
                 }
                 KeyCode::Char('g') => InputResult::OpenExternalEditor,
@@ -133,42 +196,25 @@ impl ChatComposer {
                 InputResult::Changed
             }
             KeyCode::Enter => self.submit(),
-            KeyCode::Char(ch) => {
-                self.insert(&ch.to_string());
-                InputResult::Changed
-            }
-            KeyCode::Backspace => {
-                if self.remove_previous_grapheme() {
+            KeyCode::Up if !self.draft.textarea.text().contains('\n') => self.history_previous(),
+            KeyCode::Down if !self.draft.textarea.text().contains('\n') => self.history_next(),
+            KeyCode::Char(_)
+            | KeyCode::Backspace
+            | KeyCode::Delete
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Home
+            | KeyCode::End => {
+                let before = (self.draft.textarea.text().to_string(), self.cursor());
+                self.draft.textarea.input(key);
+                let changed = before.0 != self.draft.textarea.text() || before.1 != self.cursor();
+                if changed {
+                    self.reset_history_navigation();
                     InputResult::Changed
                 } else {
                     InputResult::None
                 }
             }
-            KeyCode::Delete => {
-                if self.remove_next_grapheme() {
-                    InputResult::Changed
-                } else {
-                    InputResult::None
-                }
-            }
-            KeyCode::Left => {
-                self.cursor = self.previous_grapheme_start();
-                InputResult::Changed
-            }
-            KeyCode::Right => {
-                self.cursor = self.next_grapheme_end();
-                InputResult::Changed
-            }
-            KeyCode::Home => {
-                self.cursor = self.line_start();
-                InputResult::Changed
-            }
-            KeyCode::End => {
-                self.cursor = self.line_end();
-                InputResult::Changed
-            }
-            KeyCode::Up if !self.text.contains('\n') => self.history_previous(),
-            KeyCode::Down if !self.text.contains('\n') => self.history_next(),
             _ => InputResult::None,
         }
     }
@@ -185,27 +231,26 @@ impl ChatComposer {
     where
         F: FnOnce(String) -> InputResult,
     {
-        if self.text.trim().is_empty() {
+        if self.draft.textarea.text().trim().is_empty() {
             return InputResult::None;
         }
-        let submitted = std::mem::take(&mut self.text);
-        self.cursor = 0;
+        let submitted = self.draft.textarea.take();
         self.history.push(submitted.clone());
         if self.history.len() > MAX_HISTORY_ENTRIES {
             self.history.remove(0);
         }
         self.history_index = None;
-        self.saved_draft = None;
+        self.draft.saved_draft = None;
         self.history_search = None;
         action(submitted)
     }
 
     fn start_history_search(&mut self) -> InputResult {
         self.history_index = None;
-        self.saved_draft = None;
+        self.draft.saved_draft = None;
         self.history_search = Some(HistorySearchState {
             query: String::new(),
-            draft: self.text.clone(),
+            draft: self.draft.textarea.text().to_string(),
             selected_index: None,
         });
         InputResult::Changed
@@ -302,24 +347,7 @@ impl ChatComposer {
             return;
         };
         let selected_index = search.selected_index;
-        let query = search.query.to_lowercase();
-        if query.is_empty() {
-            return;
-        }
-        let start = selected_index
-            .map(|index| {
-                if older {
-                    index.saturating_sub(1)
-                } else {
-                    index
-                }
-            })
-            .unwrap_or_else(|| self.history.len().saturating_sub(1));
-        let found = (0..=start).rev().find(|index| {
-            self.history
-                .get(*index)
-                .is_some_and(|entry| entry.to_lowercase().contains(&query))
-        });
+        let found = history_search::find_match(&self.history, &search.query, selected_index, older);
         if let Some(index) = found {
             if let Some(search) = self.history_search.as_mut() {
                 search.selected_index = Some(index);
@@ -339,18 +367,7 @@ impl ChatComposer {
         let Some(search) = self.history_search.as_ref() else {
             return;
         };
-        let Some(current) = search.selected_index else {
-            return;
-        };
-        let query = search.query.to_lowercase();
-        if query.is_empty() {
-            return;
-        }
-        let found = ((current + 1)..self.history.len()).find(|index| {
-            self.history
-                .get(*index)
-                .is_some_and(|entry| entry.to_lowercase().contains(&query))
-        });
+        let found = history_search::find_newer(&self.history, &search.query, search.selected_index);
         if let Some(index) = found {
             if let Some(search) = self.history_search.as_mut() {
                 search.selected_index = Some(index);
@@ -359,63 +376,12 @@ impl ChatComposer {
         }
     }
 
-    fn previous_grapheme_start(&self) -> usize {
-        self.text[..self.cursor]
-            .grapheme_indices(true)
-            .next_back()
-            .map(|(index, _)| index)
-            .unwrap_or(0)
-    }
-
-    fn next_grapheme_end(&self) -> usize {
-        self.text[self.cursor..]
-            .graphemes(true)
-            .next()
-            .map(|grapheme| self.cursor + grapheme.len())
-            .unwrap_or(self.text.len())
-    }
-
-    fn remove_previous_grapheme(&mut self) -> bool {
-        if self.cursor == 0 {
-            return false;
-        }
-        let start = self.previous_grapheme_start();
-        self.text.replace_range(start..self.cursor, "");
-        self.cursor = start;
-        self.reset_history_navigation();
-        true
-    }
-
-    fn remove_next_grapheme(&mut self) -> bool {
-        if self.cursor == self.text.len() {
-            return false;
-        }
-        let end = self.next_grapheme_end();
-        self.text.replace_range(self.cursor..end, "");
-        self.reset_history_navigation();
-        true
-    }
-
-    fn line_start(&self) -> usize {
-        self.text[..self.cursor]
-            .rfind('\n')
-            .map(|index| index + 1)
-            .unwrap_or(0)
-    }
-
-    fn line_end(&self) -> usize {
-        self.text[self.cursor..]
-            .find('\n')
-            .map(|index| self.cursor + index)
-            .unwrap_or(self.text.len())
-    }
-
     fn history_previous(&mut self) -> InputResult {
         if self.history.is_empty() {
             return InputResult::None;
         }
         if self.history_index.is_none() {
-            self.saved_draft = Some(self.text.clone());
+            self.draft.saved_draft = Some(self.draft.textarea.text().to_string());
         }
         let index = self
             .history_index
@@ -436,20 +402,19 @@ impl ChatComposer {
             self.replace_text(self.history[next].clone());
         } else {
             self.history_index = None;
-            let draft = self.saved_draft.take().unwrap_or_default();
+            let draft = self.draft.saved_draft.take().unwrap_or_default();
             self.replace_text(draft);
         }
         InputResult::Changed
     }
 
     fn replace_text(&mut self, text: String) {
-        self.text = text;
-        self.cursor = self.text.len();
+        self.draft.textarea.replace(text);
     }
 
     fn reset_history_navigation(&mut self) {
         self.history_index = None;
-        self.saved_draft = None;
+        self.draft.saved_draft = None;
         self.history_search = None;
     }
 }
@@ -512,6 +477,38 @@ mod tests {
             composer.handle_key_event(key(KeyCode::Enter)),
             InputResult::Submitted("first\nsecond".to_string())
         );
+    }
+
+    #[test]
+    fn editor_word_and_kill_shortcuts_share_textarea_semantics() {
+        let mut composer = ChatComposer::default();
+        composer.insert("alpha beta");
+
+        composer.handle_key_event(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL));
+        assert_eq!(composer.text(), "alpha ");
+
+        composer.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL));
+        assert_eq!(composer.text(), "alpha beta");
+
+        composer.handle_key_event(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));
+        composer.handle_key_event(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert_eq!(composer.text(), "alpha bet");
+    }
+
+    #[test]
+    fn key_release_does_not_insert_or_submit() {
+        let mut composer = ChatComposer::default();
+        let mut release = key(KeyCode::Char('x'));
+        release.kind = KeyEventKind::Release;
+
+        assert_eq!(composer.handle_key_event(release), InputResult::None);
+        assert!(composer.is_empty());
+
+        composer.insert("draft");
+        let mut submit_release = key(KeyCode::Enter);
+        submit_release.kind = KeyEventKind::Release;
+        assert_eq!(composer.handle_key_event(submit_release), InputResult::None);
+        assert_eq!(composer.text(), "draft");
     }
 
     #[test]

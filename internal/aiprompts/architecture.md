@@ -51,9 +51,9 @@ Future Cloud -> authenticated transport ----> LimeCore gateway
                                                 -> ThreadStore + Thread/Turn/Item projection
 ```
 
-`Product Surface`、`Host/Transport` 与业务 runtime 是三层边界。Desktop、TUI、CLI 可以拥有各自的窗口/终端生命周期、输入法、快捷键和展示投影，但不能拥有 provider loop、工具 registry、approval authority、Thread/Turn/Item 状态机或持久化副本。`app-server-protocol` 是跨 surface 合同，`app-server-client` 是 Rust surface 的连接/session owner；本地 stdio 是当前实现，未来 Cloud 通过同一 session facade 接入认证后的远端 transport。TUI 的 `resume` picker 只读取 App Server `thread/list`，选中后进入标准 `thread/resume`；连接中断只由 TUI session owner 做 bounded reconnect，并以原 Thread id hydrate canonical history，composer draft 保持在 surface 内存中，旧 connection 的 pending approval 丢弃且不得跨连接回放。TUI 的 effort/permission 快捷键只 lowering 到 `thread/settings/update`；`/model` picker 只消费 typed `model/list` 的可见 catalog，并在选择后 lowering 到同一 settings method，不复制 Codex 配置或 provider catalog。
+`Product Surface`、`Host/Transport` 与业务 runtime 是三层边界。Desktop、TUI、CLI 可以拥有各自的窗口/终端生命周期、输入法、快捷键和展示投影，但不能拥有 provider loop、工具 registry、approval authority、Thread/Turn/Item 状态机或持久化副本。`app-server-protocol` 是跨 surface 合同，`app-server-client` 是 Rust surface 的连接/session owner；本地 stdio 是当前实现，未来 Cloud 通过同一 session facade 接入认证后的远端 transport。TUI 的 `resume` picker 与 Codex-shaped `Agents Overview` 只读取 App Server `thread/list`，选中后进入标准 `thread/resume`；Overview 的状态分组、子线程状态冒泡与刷新仅投影 canonical Thread/notification，不访问私有 daemon/state DB。Overview 的新任务、改名和停止操作分别 lowering 到现有 `thread/start` + `turn/start`、`thread/name/set` 与 `turn/interrupt`，不复制 Codex agents daemon；刷新请求使用单一 request identity，合并 pending 请求并重放刷新期间到达的最新 thread notification。TUI 在 `app/app_server_event_targets.rs` 复用 Codex 同名 `server_notification_thread_target`、`server_request_thread_id` 与 `ServerNotificationThreadTarget`：Thread-scoped notification 可以更新 Overview/导航，但只有当前 Thread 能写入当前 `ConversationProjection`；foreign Thread 的可交互 server request 进入对应 `ThreadEventStore` 的 bounded replay channel，`pending_interactive_replay` 只允许仍未解决的 request 在 `thread/resume` 后重放；Dynamic Tool 与 MCP elicitation 当前没有 TUI consumer，立即 fail closed，buffer 满时也直接 reject，不得落入当前 Thread 的 BottomPane。连接中断只由 TUI `app/reconnect.rs` session owner 做 bounded reconnect，并以原 Thread id hydrate canonical history，composer draft 保持在 surface 内存中，旧 connection 的 pending approval 丢弃且不得跨连接回放。TUI 的 `app/app_server_events.rs` 只负责 transport event 分流和 notification dispatch；`app/app_server_requests.rs` 负责 reverse server request routing 与 reject/queue 语义；`app/thread_events.rs` 负责 canonical Thread/Turn/Item notification projection 和 agent liveness；`app/pending_interactive_replay.rs` 负责 Codex 对齐的 pending request identity；`app/thread_settings.rs` 负责当前 thread 的 model/provider、effort、permission profile 与 collaboration mode read model；`app/event_dispatch.rs` 的 `App::handle_event` 负责 App Server-backed settings、协作模式、权限和 Agents Overview action。TUI 的 effort/permission 快捷键只 lowering 到 `thread/settings/update`；`/model` picker 只消费 typed `model/list` 的可见 catalog，并在选择后 lowering 到同一 settings method，不复制 Codex 配置或 provider catalog。
 
-TUI 的终端输入与绘制调度 owner 对齐 Codex `tui`：`tui::EventBroker` 统一持有可暂停/恢复的 crossterm 输入源，`tui::TuiEventStream` 将 key、paste、resize、focus 和 draw 归一化后交给 runtime；`tui::FrameRequester` 与 `frame_rate_limiter` 合并异步重绘并限制频率。`TerminalGuard` 只负责 terminal mode 生命周期，并在外部编辑器或恢复流程中暂停 broker，确保 stdin 不被后台 reader 占用。该层不得承接 App Server 请求、Thread 状态或第二套业务事件总线。
+TUI 的终端输入与绘制调度 owner 对齐 Codex `tui`：`tui::EventBroker` 统一持有可暂停/恢复的 crossterm 输入源，`tui::TuiEventStream` 将 key、paste、resize、focus 和 draw 归一化后交给 runtime；`tui::FrameRequester` 与 `frame_rate_limiter` 合并异步重绘并限制频率。workspace 级 crossterm 固定使用 Codex 同源的 `openai-oss-forks/crossterm` revision `45fecb9508105988f42fe6ff0441783ed3717f92`，其 terminal readiness 和外部消费输入修复是 external editor 交接的唯一依赖事实源。`tui::Tui` 只负责 terminal mode 生命周期，并在外部编辑器或恢复流程中暂停 broker，确保 stdin 不被后台 reader 占用。该层不得承接 App Server 请求、Thread 状态或第二套业务事件总线。真实 TUI Gate B 使用 PTY 驱动键盘和 alternate screen，并按 Codex 测试依赖使用 `vt100::Parser` 还原关闭前的实际屏幕；不能用删除 ANSI 后的字节拼接冒充用户可见状态。
 
 CLI 的 npm 分发边界对齐 `/Users/coso/Documents/dev/rust/codex/codex-cli`：`@limecloud/lime` 根包只发布 ESM launcher，并通过 optional dependency alias 选择平台包；平台包在 `vendor/<target-triple>/bin` 原子携带 `lime`、`app-server`、`code-mode-host`、Windows sandbox helpers 与 App Server 所需动态运行库。launcher 只负责平台解析、包管理器归属、参数/stdin/stdout 转发、signal forwarding 和退出原因镜像，不下载 release asset、不回退 `cargo run`，也不承接 App Server 业务。平台包必须先于根包串行发布，避免根包引用尚不存在的载荷版本；尚无真实构建/运行证据的平台不进入 optional dependency catalog。
 
@@ -113,6 +113,7 @@ Renderer 可以临时保存输入框、选择态、展开态和 optimistic UI；
 | `electron/preload.ts`                  | `contextBridge`、最小暴露面和 IPC 调用入口。                                                           |
 | `electron/ipcChannels.ts`              | IPC channel 常量与协议白名单。                                                                         |
 | `electron/*Host.ts`                    | 一个桌面能力一个 owner，例如 App Server sidecar、文件/项目壳、窗口、通知、更新、浏览器、语音。         |
+| `electron/secureCredentialStore.ts`    | 使用 Electron `safeStorage` 保存受管 Cloud session credential；只向 IPC 投影存在性和 metadata。        |
 | `electron/desktopResourceReadiness.ts` | 运行时读取并校验 macOS/Windows desktop resource manifest 的身份与必需资源存在性；不替代发布 verifier。 |
 | `electron/appServerHost.ts`            | sidecar 生命周期与 `app_server_handle_json_lines` 的宿主边界。                                         |
 | `electron/forge/`、`forge.config.mjs`  | Forge 打包、maker、签名和 release 事实源。                                                             |
@@ -120,6 +121,12 @@ Renderer 可以临时保存输入框、选择态、展开态和 optimistic UI；
 Electron 负责窗口、托盘、Dock、系统文件选择、权限、外部链接、自动更新和 sidecar 生命周期。它不得保存业务 session、解释 provider response、执行模型工具、拼 Thread/Turn/Item 或提供业务 mock fallback。
 
 新增 Electron 命令前先判断是否只是已有 `app_server_handle_json_lines` 的转发。只有系统宿主能力才新增 IPC；业务能力一律优先新增 App Server JSON-RPC。
+
+Cloud session credential 是 Desktop Host 的平台能力，不是 Renderer 或 App Server 的第二份
+业务状态。`secureCredentialStore` 只接受经过校验的 `ws/wss` endpoint 和非空 token，使用
+`safeStorage` 加密写入 `AppDataRoot/credentials`；Renderer 只能写入、读取 metadata 或删除，
+不能通过 IPC 读取 token。safeStorage 不可用时 fail closed，且本能力不会改变 Cloud endpoint
+默认关闭的裁决。
 
 App Server 发起的 reverse JSON-RPC request 仍复用同一 JSONL/stdio、`app_server_drain_events` 与 `app_server_handle_json_lines` 通道。Electron 只负责从 typed connection drain notification/request，并把 Renderer 的 Response/Error 原样写回 sidecar；不得解释 server request method、生成业务 decision、持有 pending waiter 或把 request 降级成 Electron IPC 业务命令。
 
@@ -904,12 +911,12 @@ Pending 必须在 canonical/projected/in-memory 的 Thread/session read/list、r
 
 | Crate                                            | 准入                                                                                                           |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `config`、`infra`、`core`                        | 配置、平台无关基础设施和稳定公共模型；不接受默认塞入的新 runtime 逻辑。                                        |
-| `services`、`processor`                          | 有明确领域 owner 的服务与处理器；中心 facade 只做 dispatch。                                                   |
-| `knowledge`、`embedding`、`document-preview`     | 独立领域能力。                                                                                                 |
-| `gateway`、`websocket`、`server`、`server-utils` | 网络/服务边界。                                                                                                |
-| `providers` / `lime-providers`                   | `dead / deleted / forbidden-to-restore`；provider 网络、wire lowering、stream、catalog 只归 `model-provider`。 |
-| `scheduler`、`automation_execution` 对应 owner   | 调度与自动化领域，不承接 turn loop。                                                                           |
+| `config`、`infra`、`core`                        | 配置、平台无关基础设施和稳定公共模型；不接受默认塞入的新 runtime 逻辑。                                                                               |
+| `services`、`processor`                          | 有明确领域 owner 的服务与处理器；中心 facade 只做 dispatch。                                                                                          |
+| `knowledge`、`embedding`、`document-preview`     | 独立领域能力。                                                                                                                                        |
+| `gateway`、`websocket`、`server`、`server-utils` | 网络/服务边界。                                                                                                                                       |
+| `providers` / `lime-providers`                   | `dead / deleted / forbidden-to-restore`；provider 网络、wire lowering、stream、catalog 只归 `model-provider`。                                        |
+| `scheduler`、`automation_execution` 对应 owner   | 调度与自动化领域，不承接 turn loop。                                                                                                                  |
 | `cli`                                            | Rust CLI 入口，只通过 `app-server-client` 消费 App Server 产品协议；`execpolicy check` 只读取规则文件并输出匹配结果，不承接执行或 sandbox authority。 |
 
 新增 Rust crate 必须说明：现有 domain 为什么不适合、公开 contract 是什么、依赖方向是什么、如何避免落入 `core`/`services` 平铺层。
@@ -2382,13 +2389,27 @@ Renderer commandExec gateway
   -> typed App Server client
   -> command/exec
   -> App Server CommandExecServer keyed by (ConnectionId, processId)
+  -> App Server ExecutionProcessServer keyed by connection-scoped internal owner id
   -> tool-runtime LocalExecutionProcessHandle
 
-command/exec/write|resize|terminate
+command/exec/write|terminate
   -> same (ConnectionId, processId)
+  -> ExecutionProcessServer owner for stdin/terminate/timeout
+  -> same supervisor control handle
+command/exec/resize
+  -> same (ConnectionId, processId)
+  -> same session control handle
 command/exec/outputDelta
   -> same owner connection, raw bytes as deltaBase64
 ```
+
+公开 `processId` 仍只在 originating `ConnectionId` 内有效；为避免不同连接复用公开 ID 时污染全局执行索引，
+`CommandExecServer` 将其 lowering 为 `command-exec-{connectionId}-{processId}` base internal owner id；当该 base
+owner 仍被终态 snapshot/output 保留时，为下一次合法复用追加 instance UUID。该 internal id 不进入 command/exec
+response 或 notification，但启动、stdout/stderr delta、终态 snapshot、超时终止、stdin 写入和断连清理均通过同一
+`ExecutionProcessServer` owner；PTY resize 继续使用同一 session control handle。这样 command/exec 与 Thread shell、
+unified exec 和 background terminal 共享 process lifecycle/status/output owner，而不复制协议层 session 映射或改变
+公开 connection-scoped 语义。
 
 `permissionProfile` 是唯一允许的 profile 选择入口。App Server 在 `command/exec` ingress 根据当前 YAML
 `default_permissions`、named profile inheritance、请求 cwd 和平台 sandbox readiness 解析 profile，再把
@@ -2403,14 +2424,33 @@ output cap 为 1 MiB，超时退出码为 `124`；PTY resize 只允许正数尺�
 Desktop terminal 只消费 `src/lib/api/commandExec.ts`，通过 xterm 展示真实 outputDelta，不在 Renderer 伪造 prompt、
 session reconnect、明文 stdin 或 fallback output。Electron 仅承担既有 JSONL sidecar 转发职责。
 
-v2 protocol/schema、CommandExecServer、connection cleanup、typed client、Renderer gateway、GUI terminal 和负向回流
-guard 为 `current`；旧 `project_shell_*`、`run_project_shell_command`、Project Shell v0 DTO/schema、旧 gateway 与
-Electron host 为 `dead / deleted / forbidden-to-restore`；`compat` 与 `deprecated` 均为空。
+v2 protocol/schema、CommandExecServer、connection cleanup、`ExecutionProcessServer` lifecycle owner、typed client、
+Renderer gateway、GUI terminal 和负向回流 guard 为 `current`；旧 `project_shell_*`、`run_project_shell_command`、
+Project Shell v0 DTO/schema、旧 gateway 与 Electron host 为 `dead / deleted / forbidden-to-restore`；`compat` 与
+`deprecated` 均为空。
 
-Architecture impact: major because a public JSON-RPC command family replaced the private Project Shell IPC/session owner.
-Architecture map updated: sections 6.1, 33.1 and command boundary document. Responsible developer confirmation: root,
-2026-08-08. Confirmation content: 已核对 Desktop/App Server/runtime owner、ConnectionId 隔离、notification 顺序、
-raw bytes lowering、删除边界和 GUI/contract 验证门禁。
+Architecture impact: major because a public JSON-RPC command family replaced the private Project Shell IPC/session owner,
+and command/exec lifecycle now converges on the shared App Server process owner. Architecture map updated: sections 6.1,
+33.1 and command boundary document. Responsible developer confirmation: root, 2026-09-06. Confirmation content: 已核对
+Desktop/App Server/runtime owner、公开与 internal process ID 隔离、notification 顺序、raw bytes lowering、删除边界和
+GUI/contract 验证门禁。
+
+### 33.2 Unified exec command/test lifecycle
+
+Thread 内的 Codex `exec_command` 不再把 `Command` Item 当成只在终态读取的 batch outcome。`tool-runtime::unified_exec`
+从同一个 `RuntimeLiveExecutionGateway` 读取 `ExecutionProcessSnapshot`，把 `processId`、`executionProcessStatus`、
+`stdinWritable`、bounded output counters、exit code 与 `executionSurface=unified_exec` 写入每次 canonical result；
+因此短命令、yield 后仍运行的命令和 `write_stdin` 续接都保留同一 process identity。App Server
+`runtime_backend::coding_events::CodingEventMirror` 消费 `Command` Item 的 `ItemStarted -> ItemUpdated ->
+ItemCompleted`，统一产出 `command.started/output/exited` 与 test command 的 `test.started/completed`，Workbench/read
+model 不再只依赖最后一个 ToolEnd metadata。需要 workspace sandbox backend 的命令仍由 Agent sandbox executor 承接；
+unified exec 只能通过 `RuntimeLiveExecutionGateway -> ExecutionProcessServer`，不能降级裸进程或创建并行 owner。
+
+这一变更仍沿用 `Product Surface -> App Server JSON-RPC -> RuntimeCore -> Thread/Turn/Item projection`，不新增协议方法、
+不把 process owner 暴露为第二套 Renderer API。architecture impact: major because canonical command/test lifecycle 的
+事实源从终态 batch metadata 收敛为共享 process snapshot + Item lifecycle。Responsible developer confirmation: root,
+2026-09-06. Confirmation content: 已核对 unified exec、ExecutionProcessServer、Command Item lifecycle、sandbox fail-closed
+分支、read model hydrate 与现有 command/exec owner 的依赖方向。
 
 ## 34. Exact Filesystem Owner
 

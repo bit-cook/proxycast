@@ -6,7 +6,7 @@ exclude = [
 resolver = "2"
 
 [workspace.package]
-version = "1.141.0"
+version = "1.142.0"
 edition = "2021"
 authors = ["coso"]
 repository = "https://github.com/aiclientproxy/lime"
@@ -165,6 +165,7 @@ rustls-pemfile = "2"
 
 # 终端
 portable-pty = "0.8"
+vt100 = "0.16.2"
 
 # App Server remote client transport
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "native-tls"] }
@@ -234,3 +235,6 @@ version = "0.2"
 [workspace.lints.clippy]
 uninlined_format_args = "allow"
 string_slice = "warn"
+
+[patch.crates-io]
+crossterm = { git = "https://github.com/openai-oss-forks/crossterm", rev = "45fecb9508105988f42fe6ff0441783ed3717f92" }

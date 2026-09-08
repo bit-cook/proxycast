@@ -26,6 +26,7 @@ import {
 import { ElectronBrowserTabHost, isBrowserTabCommand } from "./browserTabHost";
 import { ElectronDevHttpBridge } from "./devHttpBridge";
 import { ElectronHostCommands } from "./hostCommands";
+import { ElectronSecureCredentialStore } from "./secureCredentialStore";
 import {
   buildMainWindowChromeOptions,
   buildMainWindowStartupHtml,
@@ -57,6 +58,7 @@ import {
   powerMonitor,
   screen,
   session,
+  safeStorage,
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
   protocol,
@@ -144,6 +146,10 @@ const hostCommands = new ElectronHostCommands(
   app.getPath("userData"),
   broadcast,
   desktopStorageRoots.appDataRoot,
+  new ElectronSecureCredentialStore(
+    desktopStorageRoots.appDataRoot,
+    safeStorage,
+  ),
 );
 const updateHost = new ElectronUpdateHost(broadcast, {
   open: openUpdateNotificationWindow,

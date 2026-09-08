@@ -79,6 +79,10 @@ impl ToolCall {
         &self.environments
     }
 
+    pub(crate) fn lifecycle_emitter(&self) -> Arc<dyn ToolLifecycleEmitter> {
+        Arc::clone(&self.lifecycle_emitter)
+    }
+
     pub async fn emit_started(&self) {
         self.lifecycle_emitter
             .emit(ToolLifecycleEvent::started(self))

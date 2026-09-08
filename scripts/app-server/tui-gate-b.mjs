@@ -3,6 +3,7 @@
 import { execFile } from "node:child_process";
 import {
   access,
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
@@ -15,6 +16,7 @@ import process from "node:process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { localAppServerBinaryPath } from "../lib/electron-dev-sidecar.mjs";
+import { buildTerminalGateBinaries } from "./terminal-gate-binaries.mjs";
 import { writeTerminalExternalBackend } from "./terminal-gate-fixture.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -34,13 +36,14 @@ const queuePrompt = "queued follow-up for editing";
 const completedText = "TUI_GATE_B_COMPLETED";
 const scenarios = (
   process.env.LIME_TUI_GATE_B_SCENARIOS ||
-  "complete,approval,user-input,interrupt,failure,queue-edit"
+  "complete,approval,user-input,interrupt,failure,queue-edit,agents-overview"
 )
   .split(",")
   .map((scenario) => scenario.trim())
   .filter(Boolean);
 
 async function main() {
+  await buildTerminalGateBinaries({ env: process.env, repoRoot: rootDir });
   const cliBinaryPath = path.resolve(
     process.env.LIME_CLI_BIN || defaultCliBinaryPath,
   );
@@ -69,7 +72,11 @@ async function main() {
         "",
       ].join("\n"),
     );
+    const scenarioDirs = new Map();
     for (const scenario of scenarios) {
+      const scenarioDir = path.join(tempDir, scenario);
+      await mkdir(scenarioDir, { recursive: true });
+      scenarioDirs.set(scenario, scenarioDir);
       await writeTerminalExternalBackend(backendPath, {
         completedText,
         command: "printf tui-gate-b",
@@ -100,7 +107,7 @@ async function main() {
             LIME_TEST_APP_SERVER_BIN: appServerBinaryPath,
             LIME_TEST_TERMINAL_BACKEND: backendPath,
             LIME_TEST_TERMINAL_LEDGER: ledgerPath,
-            LIME_TEST_TERMINAL_CWD: tempDir,
+            LIME_TEST_TERMINAL_CWD: scenarioDir,
             LIME_TEST_NODE_BIN: process.execPath,
             LIME_TEST_TERMINAL_PROMPT: prompt,
             LIME_TEST_TERMINAL_QUEUE_PROMPT: queuePrompt,
@@ -119,7 +126,9 @@ async function main() {
     const turnStarts = scenarios.map((scenario) => {
       const entry = ledger.find(
         (candidate) =>
-          candidate?.kind === "turnStart" && candidate.scenario === scenario,
+          candidate?.kind === "turnStart" &&
+          candidate.scenario === scenario &&
+          candidate.inputText === prompt,
       );
       if (!entry)
         throw new Error(
@@ -131,12 +140,14 @@ async function main() {
       return entry;
     });
     const expectedSequences = {
-      complete: "message.delta,item.started,item.completed,turn.completed",
-      approval: "item.started,action.required",
-      "user-input": "item.started,action.required",
-      interrupt: "message.delta",
-      failure: "runtime.error,turn.failed",
-      "queue-edit": "message.delta",
+      complete:
+        "turn.started,message.delta,item.started,item.completed,turn.completed",
+      approval: "turn.started,item.started,action.required",
+      "user-input": "turn.started,item.started,action.required",
+      interrupt: "turn.started,message.delta",
+      failure: "turn.started,runtime.error,turn.failed",
+      "queue-edit": "turn.started,message.delta",
+      "agents-overview": "turn.started,message.delta",
     };
     for (const [index, scenario] of scenarios.entries()) {
       assertEqual(
@@ -189,7 +200,9 @@ async function main() {
           "queue-edit cleanup interrupt did not reach App Server backend",
         );
       }
-      const runtimeEvents = await readRuntimeEvents(tempDir);
+      const runtimeEvents = await readRuntimeEvents(
+        scenarioDirs.get("queue-edit"),
+      );
       const queueAdded = runtimeEvents.find(
         (event) =>
           event?.type === "queue.added" &&
@@ -230,7 +243,24 @@ async function main() {
         );
       }
     }
-    const turnStart = turnStarts[0];
+    if (scenarios.includes("agents-overview")) {
+      const overviewTurnStart = turnStarts.find(
+        (entry) => entry.scenario === "agents-overview",
+      );
+      const overviewCancel = ledger.find(
+        (entry) =>
+          entry?.kind === "turnCancel" &&
+          entry.scenario === "agents-overview" &&
+          entry.threadId === overviewTurnStart.threadId &&
+          entry.turnId === overviewTurnStart.turnId,
+      );
+      if (!overviewCancel) {
+        throw new Error(
+          "agents overview stop did not reach the same App Server thread and turn",
+        );
+      }
+    }
+    const turnStart = turnStarts.find(Boolean);
 
     console.log(
       [
@@ -241,6 +271,7 @@ async function main() {
         `turn=${turnStart.turnId}`,
         `events=${turnStart.eventTypes.join(",")}`,
         scenarios.includes("queue-edit") ? "queue-edit=ok" : null,
+        scenarios.includes("agents-overview") ? "agents-overview=ok" : null,
         "terminal=restored",
       ]
         .filter(Boolean)

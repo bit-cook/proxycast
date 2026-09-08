@@ -1,41 +1,42 @@
-## Lime v1.141.0
+## Lime v1.142.0
 
 Simplified Chinese release notes are the primary version.
 
 ### New Features
 
-- Added dedicated Code Mode protocol, runtime, host, and session-facade crates for stdio/gRPC, V8 execution, typed content, cancellation, reconnect, and session-lease lifecycles.
-- Extended the shared App Server CLI/TUI surface with thread resume and management, MCP/Skills/Plugin queries, model and permission controls, JSON/JSONL, prompt history, approvals, request-user-input, and queued-input editing.
-- Added authenticated remote WebSocket session transport with `ws/wss`, Bearer tokens, protocol identity checks, ping/pong, and fail-closed policy; CLI/TUI reuse the same session facade without duplicating runtime or persistence.
-- Added Codex-aligned TUI Markdown, diff, syntax highlighting, OSC 8 links, width-aware tables, clipboard/image paste, slash-command popup, static pager, transcript overlay, and queued follow-up preview.
+- Continued Codex-shaped current owners across TUI/CLI: multi-agent navigation and overview, model catalog, collaboration modes, paginated resume sessions and transcript pager, composer textarea, history search, viewport handling, and five-language terminal copy.
+- Added unified App Server execution-process lifecycle and command-event mirroring for canonical Thread/Turn/Item command-start, live-output, completion, and test-run projection.
+- Added an authenticated WebSocket foundation to `@limecloud/app-server-client` for the same JSON-RPC session, with `ws/wss`, Bearer token, tenant headers, identity/protocol handshake, ping/pong, and message limits.
+- Added Electron `safeStorage`-backed Cloud session credential storage with set/status/delete IPC; status exposes metadata only and never reads back tokens.
 
 ### Fixes
 
-- Tightened the App Server `command/exec` permission boundary to reject client-supplied grants and preserve fail-closed typed lowering.
-- Fixed Code Mode host/client disconnect, duplicate execution, stale-cell, pending-callback, and session-close cleanup so old-generation state cannot leak into reconnects.
-- Fixed CLI/TUI terminal lifecycle, external-editor handoff, Unicode cursor, narrow-terminal truncation, queue recovery, and failed-terminal projection boundaries.
-- Fixed regressions in file-system watching, Agent Runtime typed content, MCP notification projection, and tool-lifecycle summaries.
+- Unified bounded output capture across pipe, PTY, Windows restricted runner, remote Environment, and unified exec with stable head/tail retention, UTF-8 boundaries, and omission accounting.
+- Fixed App Server process-owner connection isolation, duplicate active `processId` rejection, disconnect cleanup, stdin/resize/terminate lifecycle, and per-process output replay.
+- Fixed TUI terminal restoration, disconnected editing, Unicode cursor behavior, narrow-terminal wrapping, queue recovery, history hydration, approval/input requests, and multi-agent projection boundaries.
+- Hardened sidecar `dataDir` and Cloud App Server endpoint validation against `undefined`/relative paths, URL credentials, query/fragment leakage, and insecure public WebSocket token connections.
 
 ### Improvements and Refactoring
 
-- Migrated Code Mode out of the old `tool-runtime` embedded process/V8 implementation; production calls now use the four current crates, with only explicit compatibility exports left at the old boundary.
-- Converged CLI Rust command owners and Codex-shaped modules, and aligned npm root/platform launchers, native payload staging, signal forwarding, and release ordering under `packages/cli`.
-- Migrated TUI interaction, rendering, and terminal algorithms by snapshot-inventory classification while keeping canonical Thread/Turn/Item as the only session source of truth.
-- Added CLI/TUI/Code Mode, remote transport, Windows restricted-execution, Electron release-workflow, and governance guards; Cloud remains only an authenticated-transport extension point, not a production path.
+- Moved TUI aggregate state into unique `app/`, `chat_composer/`, `textarea/`, and `viewport` owners while retaining the App Server canonical projection as the sole session source of truth.
+- Reworked App Server and tool-runtime execution output around per-process bounded queues and a shared framer, removing global FIFO, tail-only capture, and lossy per-chunk UTF-8 semantics.
+- Added isolated Docker CLI configuration and active Docker-context endpoint injection to the DeepSWE harness.
+- Kept Cloud transport foundation-only: credentials, tenant isolation, reconnect, rate limits, audit, and a production endpoint remain Cloud-service prerequisites.
 
 ### Testing and Quality
 
-- Added Code Mode protocol/runtime/host/facade lifecycle, typed-content, gRPC, reconnect, and cancellation tests, plus App Server permission-boundary regressions.
-- Expanded CLI Gate B, TUI Gate B, real stdio/PTY, npm packaged launcher, remote-auth, snapshot-inventory, terminal-rendering, and cross-platform release guards.
-- Kept five-language copy, protocol generation, script/CLI boundaries, Electron Forge, version consistency, and legacy-governance checks in the release gate.
+- `tui` Rust unit tests: 390/390 passed; `@limecloud/app-server-client`: 11 test files and 139 tests passed.
+- CLI Gate B, TUI Gate B, Agent Runtime current Electron fixtures, App Server client contracts, structure inventory, harness, legacy governance, and script-boundary checks passed.
+- Preserved five-language copy, generated protocol, Electron Forge, version-consistency, real PTY/stdio, and canonical Thread/Turn/Item identity gates.
 
 ### Documentation
 
-- Updated architecture, command, governance, quality-workflow, and CLI/TUI/Code Mode execution-plan documentation to record the single Product Surface -> App Server JSON-RPC -> RuntimeCore -> Thread/Turn/Item path and the Cloud transport boundary.
+- Updated architecture, command, quality, roadmap, and TUI/CLI execution-plan documentation for execution processes, remote transport, credential storage, and the single Product Surface -> App Server JSON-RPC -> RuntimeCore path.
 
 ### Other
 
-- Bumped the root app, CLI npm package, Rust workspace, and Cargo.lock versions to `1.141.0`.
-- Excluded local SQLite/WAL, runtime database, and `.DS_Store` artifacts under `undefined/` from this release candidate; the old Code Mode implementation is `dead/deleted`, with no parallel runtime, compat, or deprecated owner added.
+- Bumped the root app, CLI npm package, Rust workspace, and Cargo.lock versions to `1.142.0`.
+- The local `rusty_v8 v150.4.0` Darwin/aarch64 prebuilt archive returned 404, so the V8-dependent workspace full build was not completed locally; Windows hardware matrix, signing/notarization, and full Forge artifacts remain platform-runner evidence.
+- Excluded the untracked local Mach-O `rust_out` and ignored local build directories from the release candidate; the existing v1.141.0 tag was not deleted or overwritten.
 
-**Full changes**: `v1.140.0` -> `v1.141.0`
+**Full changes**: `v1.141.0` -> `v1.142.0`

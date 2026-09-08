@@ -1,6 +1,6 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
-use crate::slash_command::{SlashCommand, command_from_prompt};
+use crate::slash_command::{command_from_prompt, SlashCommand};
 
 pub(crate) const EFFORTS: [&str; 3] = ["low", "medium", "high"];
 pub(crate) const PERMISSION_PROFILES: [&str; 3] =
@@ -9,6 +9,7 @@ pub(crate) const PERMISSION_PROFILES: [&str; 3] =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SettingsCommand {
     ModelPicker,
+    Plan,
     Model {
         model: String,
         provider: Option<String>,
@@ -29,6 +30,11 @@ pub(crate) fn parse_settings_command(prompt: &str) -> Option<Result<SettingsComm
                 provider: parts.next().map(ToString::to_string),
             })
         })),
+        SlashCommand::Plan => Some(if value.is_some() {
+            Err(anyhow!("usage: /plan"))
+        } else {
+            Ok(SettingsCommand::Plan)
+        }),
         SlashCommand::Effort => Some(value.map_or_else(
             || Err(anyhow!("usage: /effort <low|medium|high>")),
             |effort| Ok(SettingsCommand::Effort(effort.to_string())),
@@ -37,7 +43,11 @@ pub(crate) fn parse_settings_command(prompt: &str) -> Option<Result<SettingsComm
             || Err(anyhow!("usage: /permissions <profile>")),
             |permissions| Ok(SettingsCommand::Permissions(permissions.to_string())),
         )),
-        SlashCommand::Status | SlashCommand::Copy => None,
+        SlashCommand::Status
+        | SlashCommand::Copy
+        | SlashCommand::Agents
+        | SlashCommand::MultiAgents
+        | SlashCommand::Resume => None,
     }
 }
 
@@ -84,6 +94,10 @@ mod tests {
         assert!(matches!(
             parse_settings_command("/model"),
             Some(Ok(SettingsCommand::ModelPicker))
+        ));
+        assert!(matches!(
+            parse_settings_command("/plan"),
+            Some(Ok(SettingsCommand::Plan))
         ));
         assert!(matches!(
             parse_settings_command("/model grok-test grok"),

@@ -56,7 +56,7 @@ pub(super) fn start_local_pty_execution_process(
     let process_state = ExecutionProcess::start(start);
     let initial_snapshot = process_state.snapshot();
     let process = Arc::new(Mutex::new(process_state));
-    let (output_tx, output_rx) = mpsc::unbounded_channel();
+    let (output_tx, output_rx) = broadcast::channel(PROCESS_OUTPUT_CHANNEL_CAPACITY);
     let (control_tx, control_rx) = std::sync::mpsc::channel();
     let (state_tx, state_rx) = watch::channel(initial_snapshot);
     let (final_tx, final_rx) = oneshot::channel();
@@ -91,7 +91,7 @@ pub(super) fn start_local_pty_execution_process(
 fn read_pty_process_stream(
     mut reader: Box<dyn io::Read + Send>,
     process: Arc<Mutex<ExecutionProcess>>,
-    output_tx: mpsc::UnboundedSender<ExecutionOutputDelta>,
+    output_tx: broadcast::Sender<ExecutionOutputDelta>,
     state_tx: watch::Sender<ExecutionProcessSnapshot>,
 ) {
     let mut buffer = vec![0; PROCESS_OUTPUT_CHUNK_BYTES];
@@ -108,8 +108,16 @@ fn read_pty_process_stream(
             let snapshot = guard.snapshot();
             (delta, snapshot)
         };
-        let _ = output_tx.send(delta);
+        if let Some(delta) = delta {
+            let _ = output_tx.send(delta);
+        }
         let _ = state_tx.send(snapshot);
+    }
+    let final_delta = process
+        .blocking_lock()
+        .finish_output(ExecutionOutputKind::Combined);
+    if let Some(delta) = final_delta {
+        let _ = output_tx.send(delta);
     }
 }
 

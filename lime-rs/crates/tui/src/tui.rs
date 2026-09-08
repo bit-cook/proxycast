@@ -1,18 +1,22 @@
-use std::io::{self, Stdout, stdout};
+use std::future::Future;
+use std::io::{self, stdout, Stdout};
 use std::panic;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Once;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossterm::cursor::Show;
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste, KeyEvent};
 use crossterm::execute;
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::{Position, Size};
+use ratatui::Terminal as RatatuiTerminal;
 use tokio::sync::broadcast;
+
+use crate::viewport::ViewportState;
 
 pub(crate) mod event_stream;
 mod frame_rate_limiter;
@@ -34,7 +38,7 @@ pub enum TuiEvent {
     FocusLost,
 }
 
-pub(crate) type TuiTerminal = Terminal<CrosstermBackend<Stdout>>;
+pub(crate) type Terminal = RatatuiTerminal<CrosstermBackend<Stdout>>;
 
 static PANIC_HOOK: Once = Once::new();
 static TERMINAL_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -66,8 +70,56 @@ fn restore_terminal_state() -> io::Result<()> {
     }
 }
 
-pub(crate) struct TerminalGuard {
-    terminal: TuiTerminal,
+fn set_modes() -> io::Result<()> {
+    execute!(stdout(), EnableBracketedPaste)?;
+    enable_raw_mode()
+}
+
+fn restore_keep_raw() -> io::Result<()> {
+    let mut output = stdout();
+    let mut first_error = execute!(output, DisableBracketedPaste).err();
+    if let Err(error) = execute!(output, Show) {
+        first_error.get_or_insert(error);
+    }
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+#[cfg(unix)]
+fn flush_terminal_input_buffer() {
+    // SAFETY: flushing the stdin input queue does not transfer ownership.
+    let result = unsafe { libc::tcflush(libc::STDIN_FILENO, libc::TCIFLUSH) };
+    if result != 0 {
+        tracing::warn!(
+            error = %io::Error::last_os_error(),
+            "failed to flush terminal input buffer"
+        );
+    }
+}
+
+#[cfg(windows)]
+fn flush_terminal_input_buffer() {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Console::{
+        FlushConsoleInputBuffer, GetStdHandle, STD_INPUT_HANDLE,
+    };
+
+    unsafe {
+        let handle = GetStdHandle(STD_INPUT_HANDLE);
+        if handle != 0 && handle != INVALID_HANDLE_VALUE && FlushConsoleInputBuffer(handle) == 0 {
+            tracing::warn!("failed to flush terminal input buffer");
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn flush_terminal_input_buffer() {}
+
+pub(crate) struct Tui {
+    terminal: Terminal,
+    viewport: ViewportState,
     restored: bool,
     event_broker: Arc<EventBroker>,
     draw_tx: broadcast::Sender<()>,
@@ -75,7 +127,7 @@ pub(crate) struct TerminalGuard {
     terminal_focused: Arc<AtomicBool>,
 }
 
-impl TerminalGuard {
+impl Tui {
     pub(crate) fn enter() -> io::Result<Self> {
         install_panic_hook();
         enable_raw_mode()?;
@@ -84,7 +136,7 @@ impl TerminalGuard {
             let _ = disable_raw_mode();
             return Err(error);
         }
-        let terminal = match Terminal::new(CrosstermBackend::new(output)) {
+        let terminal = match RatatuiTerminal::new(CrosstermBackend::new(output)) {
             Ok(terminal) => terminal,
             Err(error) => {
                 let mut output = stdout();
@@ -93,6 +145,9 @@ impl TerminalGuard {
                 return Err(error);
             }
         };
+        let size = terminal.size()?;
+        let mut viewport = ViewportState::new(size, Position::new(0, 0));
+        viewport.enter_alternate_screen(size);
         let event_broker = Arc::new(EventBroker::new());
         let (draw_tx, _) = broadcast::channel(8);
         let frame_requester = FrameRequester::new(draw_tx.clone());
@@ -100,6 +155,7 @@ impl TerminalGuard {
         TERMINAL_ACTIVE.store(true, Ordering::Release);
         Ok(Self {
             terminal,
+            viewport,
             restored: false,
             event_broker,
             draw_tx,
@@ -108,8 +164,23 @@ impl TerminalGuard {
         })
     }
 
-    pub(crate) fn terminal_mut(&mut self) -> &mut TuiTerminal {
+    pub(crate) fn terminal_mut(&mut self) -> &mut Terminal {
         &mut self.terminal
+    }
+
+    pub(crate) fn update_viewport(&mut self, screen_size: Size, content_height: u16) {
+        self.viewport.update_inline(screen_size, content_height);
+    }
+
+    pub(crate) fn sync_viewport(&mut self) -> io::Result<()> {
+        let screen_size = self.terminal.size()?;
+        self.update_viewport(screen_size, screen_size.height);
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn viewport_area(&self) -> ratatui::layout::Rect {
+        self.viewport.area()
     }
 
     pub(crate) fn event_stream(&self) -> TuiEventStream {
@@ -138,46 +209,41 @@ impl TerminalGuard {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub(crate) fn suspend(&mut self) -> io::Result<()> {
-        if self.restored {
-            return Ok(());
-        }
+    /// Temporarily restore terminal state while an external interactive program runs.
+    pub(crate) async fn with_restored<R, F, Fut>(&mut self, f: F) -> R
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = R>,
+    {
         self.pause_events();
-        let result = (|| {
-            self.terminal.show_cursor()?;
-            execute!(
-                self.terminal.backend_mut(),
-                DisableBracketedPaste,
-                LeaveAlternateScreen
-            )?;
-            disable_raw_mode()?;
-            TERMINAL_ACTIVE.store(false, Ordering::Release);
-            Ok(())
-        })();
-        if result.is_err() {
-            self.resume_events();
-        }
-        result
-    }
 
-    pub(crate) fn resume(&mut self) -> io::Result<()> {
-        if self.restored {
-            return Ok(());
+        let was_alt_screen = self.viewport.is_alt_screen_active();
+        if was_alt_screen {
+            let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+            self.viewport.leave_alternate_screen();
         }
-        enable_raw_mode()?;
-        if let Err(error) = execute!(
-            self.terminal.backend_mut(),
-            EnterAlternateScreen,
-            EnableBracketedPaste
-        ) {
-            let _ = disable_raw_mode();
-            return Err(error);
+
+        if let Err(error) = restore_keep_raw() {
+            tracing::warn!(%error, "failed to restore terminal modes before external program");
         }
-        // Re-entering the alternate screen restores the previous surface; the next draw
-        // reconciles the current frame without synchronously querying stdin.
-        self.event_broker.resume_events();
-        TERMINAL_ACTIVE.store(true, Ordering::Release);
-        Ok(())
+
+        let output = f().await;
+
+        if let Err(error) = set_modes() {
+            tracing::warn!(%error, "failed to re-enable terminal modes after external program");
+        }
+        flush_terminal_input_buffer();
+
+        if was_alt_screen {
+            let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
+            if let Ok(size) = self.terminal.size() {
+                self.viewport.enter_alternate_screen(size);
+            }
+        }
+
+        self.resume_events();
+        self.frame_requester.schedule_frame();
+        output
     }
 
     pub(crate) fn restore(&mut self) -> io::Result<()> {
@@ -195,6 +261,7 @@ impl TerminalGuard {
         ) {
             first_error.get_or_insert(error);
         }
+        self.viewport.leave_alternate_screen();
         if let Err(error) = disable_raw_mode() {
             first_error.get_or_insert(error);
         }
@@ -203,9 +270,23 @@ impl TerminalGuard {
             None => Ok(()),
         }
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn enter_alternate_screen(&mut self) -> io::Result<()> {
+        execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
+        self.viewport.enter_alternate_screen(self.terminal.size()?);
+        self.terminal.clear()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn leave_alternate_screen(&mut self) -> io::Result<()> {
+        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+        self.viewport.leave_alternate_screen();
+        self.terminal.clear()
+    }
 }
 
-impl Drop for TerminalGuard {
+impl Drop for Tui {
     fn drop(&mut self) {
         let _ = self.restore();
     }

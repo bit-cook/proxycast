@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
 #[test]
 fn real_pty_restores_terminal_after_visible_turn_completion() {
@@ -30,7 +30,10 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         std::env::var("LIME_TEST_TERMINAL_SCENARIO").unwrap_or_else(|_| "complete".to_string());
     // Keep the interrupt backend alive long enough for the real PTY event
     // loop to deliver turn/interrupt before the fixture timeout fires.
-    let backend_timeout_ms = if matches!(scenario.as_str(), "interrupt" | "queue-edit") {
+    let backend_timeout_ms = if matches!(
+        scenario.as_str(),
+        "interrupt" | "queue-edit" | "agents-overview"
+    ) {
         "30000"
     } else {
         "5000"
@@ -110,14 +113,123 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
                     }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => break,
+                Err(error) => {
+                    let _ = output_tx.send(format!("PTY_READER_ERROR: {error}\n").into_bytes());
+                    break;
+                }
             }
         }
     });
     let mut output = String::new();
+    let mut agents_overview_screen = None;
+    let mut agents_overview_renamed_screen = None;
+    let mut agents_overview_resumed_screen = None;
 
     wait_for_marker(&output_rx, &mut output, "ready", Duration::from_secs(10));
-    if scenario == "complete" {
+    if scenario == "agents-overview" {
+        writer
+            .write_all(b"/agents\r")
+            .expect("open agents overview");
+        writer.flush().expect("flush agents overview command");
+        wait_for_marker(
+            &output_rx,
+            &mut output,
+            "Agent command center",
+            Duration::from_secs(10),
+        );
+
+        writer.write_all(&[14]).expect("start new task with Ctrl-N");
+        writer.flush().expect("flush Ctrl-N");
+        wait_for_marker(
+            &output_rx,
+            &mut output,
+            "New task:",
+            Duration::from_secs(10),
+        );
+        writer
+            .write_all(prompt.as_bytes())
+            .expect("write overview task prompt");
+        writer.write_all(b"\r").expect("submit overview task");
+        writer.flush().expect("flush overview task");
+        wait_for_ledger_kind_and_scenario(
+            &ledger_path,
+            "turnStart",
+            &scenario,
+            Duration::from_secs(10),
+        );
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "background task started",
+            Duration::from_secs(10),
+        );
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "1 working",
+            Duration::from_secs(10),
+        );
+        agents_overview_screen = Some(terminal_screen_text(&output));
+
+        writer
+            .write_all(b"\x1b[B")
+            .expect("select background thread");
+        writer.write_all(&[18]).expect("rename with Ctrl-R");
+        writer.flush().expect("flush overview rename shortcut");
+        wait_for_screen_marker(&output_rx, &mut output, "Rename:", Duration::from_secs(10));
+        writer
+            .write_all(&[127; 32])
+            .expect("clear existing task name");
+        writer
+            .write_all(b"Gate B background")
+            .expect("write background task name");
+        writer
+            .write_all(b"\r")
+            .expect("submit background task name");
+        writer.flush().expect("flush background task rename");
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "Gate B background",
+            Duration::from_secs(10),
+        );
+        agents_overview_renamed_screen = Some(terminal_screen_text(&output));
+
+        let stop_output_at = output.len();
+        writer.write_all(&[24]).expect("stop with Ctrl-X");
+        writer.flush().expect("flush overview stop shortcut");
+        wait_for_ledger_kind_and_scenario(
+            &ledger_path,
+            "turnCancel",
+            &scenario,
+            Duration::from_secs(10),
+        );
+        wait_for_marker_after(
+            &output_rx,
+            &mut output,
+            stop_output_at,
+            "stopping",
+            Duration::from_secs(10),
+        );
+
+        writer.write_all(b"\r").expect("resume background thread");
+        writer.flush().expect("flush background thread resume");
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "switched agent",
+            Duration::from_secs(10),
+        );
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "AGENTS_OVERVIEW_READY",
+            Duration::from_secs(10),
+        );
+        agents_overview_resumed_screen = Some(terminal_screen_text(&output));
+        writer.write_all(&[4]).expect("exit TUI");
+        writer.flush().expect("flush TUI exit");
+    } else if scenario == "complete" {
         writer.write_all(b"/status\r").expect("open status pager");
         writer.flush().expect("flush status command");
         wait_for_marker(&output_rx, &mut output, "/ STATUS", Duration::from_secs(10));
@@ -148,140 +260,145 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
     } else {
         writer.write_all(prompt.as_bytes()).expect("write prompt");
     }
-    writer.write_all(b"\r").expect("submit prompt");
-    writer.flush().expect("flush prompt");
-    let marker = match scenario.as_str() {
-        "approval" => "Allow terminal command?",
-        // Cursor-addressed renders may split the full question across writes; the
-        // stable question title is sufficient to prove the prompt is visible.
-        "user-input" => "Choose",
-        "interrupt" => "INTERRUPT_READY",
-        "queue-edit" => "QUEUE_EDIT_READY",
-        "failure" => "fixture backend failure",
-        _ => &completed_text,
-    };
+    if scenario != "agents-overview" {
+        writer.write_all(b"\r").expect("submit prompt");
+        writer.flush().expect("flush prompt");
+    }
     let visible_result = match scenario.as_str() {
+        "agents-overview" => "Agent command center",
         "interrupt" => "INTERRUPT_READY",
         "queue-edit" => &queue_prompt,
         "failure" => "fixture backend failure",
         _ => &completed_text,
     };
-    wait_for_marker(&output_rx, &mut output, marker, Duration::from_secs(10));
-    if scenario == "approval" {
-        writer.write_all(b"y").expect("approve command");
-        writer.flush().expect("flush approval");
-        wait_for_marker(
-            &output_rx,
-            &mut output,
-            &completed_text,
-            Duration::from_secs(10),
-        );
-    } else if scenario == "user-input" {
-        writer.write_all(b"\r").expect("answer user input");
-        writer.flush().expect("flush user input");
-        wait_for_marker(
-            &output_rx,
-            &mut output,
-            &completed_text,
-            Duration::from_secs(10),
-        );
-    }
-    if scenario == "complete" {
-        let transcript_at = output.len();
-        writer.write_all(&[20]).expect("open transcript Ctrl-T");
-        writer.flush().expect("flush transcript shortcut");
-        wait_for_marker_after(
-            &output_rx,
-            &mut output,
-            transcript_at,
-            "Ctrl+T/Esc/Q close",
-            Duration::from_secs(10),
-        );
-        wait_for_marker_after(
-            &output_rx,
-            &mut output,
-            transcript_at,
-            &completed_text,
-            Duration::from_secs(10),
-        );
-        writer.write_all(&[20]).expect("close transcript Ctrl-T");
-        writer.flush().expect("flush transcript close");
-    }
-    if scenario == "queue-edit" {
-        let queued_at = output.len();
-        writer
-            .write_all(queue_prompt.as_bytes())
-            .expect("write queued follow-up");
-        writer.write_all(b"\t").expect("queue follow-up with Tab");
-        writer.flush().expect("flush queued follow-up");
-        wait_for_marker_after(
-            &output_rx,
-            &mut output,
-            queued_at,
-            "queued (1)",
-            Duration::from_secs(10),
-        );
-        wait_for_marker_after(
-            &output_rx,
-            &mut output,
-            queued_at,
-            &queue_prompt,
-            Duration::from_secs(10),
-        );
-        wait_for_marker_after(
-            &output_rx,
-            &mut output,
-            queued_at,
-            "Alt+Up edit last queued input",
-            Duration::from_secs(10),
-        );
+    if scenario != "agents-overview" {
+        let marker = match scenario.as_str() {
+            "approval" => "Allow terminal command?",
+            // Cursor-addressed renders may split the full question across writes; the
+            // stable question title is sufficient to prove the prompt is visible.
+            "user-input" => "Choose",
+            "interrupt" => "INTERRUPT_READY",
+            "queue-edit" => "QUEUE_EDIT_READY",
+            "failure" => "fixture backend failure",
+            _ => &completed_text,
+        };
+        wait_for_marker(&output_rx, &mut output, marker, Duration::from_secs(10));
+        if scenario == "approval" {
+            writer.write_all(b"y").expect("approve command");
+            writer.flush().expect("flush approval");
+            wait_for_marker(
+                &output_rx,
+                &mut output,
+                &completed_text,
+                Duration::from_secs(10),
+            );
+        } else if scenario == "user-input" {
+            writer.write_all(b"\r").expect("answer user input");
+            writer.flush().expect("flush user input");
+            wait_for_marker(
+                &output_rx,
+                &mut output,
+                &completed_text,
+                Duration::from_secs(10),
+            );
+        }
+        if scenario == "complete" {
+            let transcript_at = output.len();
+            writer.write_all(&[20]).expect("open transcript Ctrl-T");
+            writer.flush().expect("flush transcript shortcut");
+            wait_for_marker_after(
+                &output_rx,
+                &mut output,
+                transcript_at,
+                "Ctrl+T/Esc/Q close",
+                Duration::from_secs(10),
+            );
+            wait_for_marker_after(
+                &output_rx,
+                &mut output,
+                transcript_at,
+                &completed_text,
+                Duration::from_secs(10),
+            );
+            writer.write_all(&[20]).expect("close transcript Ctrl-T");
+            writer.flush().expect("flush transcript close");
+        }
+        if scenario == "queue-edit" {
+            let queued_at = output.len();
+            writer
+                .write_all(queue_prompt.as_bytes())
+                .expect("write queued follow-up");
+            writer.write_all(b"\t").expect("queue follow-up with Tab");
+            writer.flush().expect("flush queued follow-up");
+            wait_for_marker_after(
+                &output_rx,
+                &mut output,
+                queued_at,
+                "queued (1)",
+                Duration::from_secs(10),
+            );
+            wait_for_marker_after(
+                &output_rx,
+                &mut output,
+                queued_at,
+                &queue_prompt,
+                Duration::from_secs(10),
+            );
+            wait_for_marker_after(
+                &output_rx,
+                &mut output,
+                queued_at,
+                "Alt+Up edit last queued input",
+                Duration::from_secs(10),
+            );
 
-        let edit_at = output.len();
-        writer
-            .write_all(b"\x1b[1;3A")
-            .expect("edit queued follow-up with Alt-Up");
-        writer.flush().expect("flush Alt-Up queue edit");
-        wait_for_marker_after(
-            &output_rx,
-            &mut output,
-            edit_at,
-            "editing queued",
-            Duration::from_secs(10),
-        );
-        wait_for_marker_after(
-            &output_rx,
-            &mut output,
-            edit_at,
-            "follow-up",
-            Duration::from_secs(10),
-        );
-    }
-    if matches!(scenario.as_str(), "interrupt" | "queue-edit") {
-        wait_for_marker(
-            &output_rx,
-            &mut output,
-            "esc to interrupt",
-            Duration::from_secs(5),
-        );
-        writer.write_all(b"\x1b").expect("interrupt with Escape");
-        writer.flush().expect("flush Escape interrupt");
-        wait_for_marker(
-            &output_rx,
-            &mut output,
-            "interrupting",
-            Duration::from_secs(5),
-        );
-        wait_for_ledger_kind_and_scenario(
-            &ledger_path,
-            "turnCancel",
-            &scenario,
-            Duration::from_secs(5),
-        );
-        writer.write_all(&[3]).expect("send quit Ctrl-C");
-        writer.flush().expect("flush quit Ctrl-C");
-    } else {
-        writer.write_all(&[4]).expect("exit TUI");
-        writer.flush().expect("flush TUI exit");
+            let edit_at = output.len();
+            writer
+                .write_all(b"\x1b[1;3A")
+                .expect("edit queued follow-up with Alt-Up");
+            writer.flush().expect("flush Alt-Up queue edit");
+            wait_for_marker_after(
+                &output_rx,
+                &mut output,
+                edit_at,
+                "editing queued",
+                Duration::from_secs(10),
+            );
+            wait_for_marker_after(
+                &output_rx,
+                &mut output,
+                edit_at,
+                "follow-up",
+                Duration::from_secs(10),
+            );
+        }
+        if matches!(scenario.as_str(), "interrupt" | "queue-edit") {
+            wait_for_marker(
+                &output_rx,
+                &mut output,
+                "esc to interrupt",
+                Duration::from_secs(5),
+            );
+            writer.write_all(b"\x1b").expect("interrupt with Escape");
+            writer.flush().expect("flush Escape interrupt");
+            wait_for_marker(
+                &output_rx,
+                &mut output,
+                "interrupting",
+                Duration::from_secs(5),
+            );
+            wait_for_ledger_kind_and_scenario(
+                &ledger_path,
+                "turnCancel",
+                &scenario,
+                Duration::from_secs(5),
+            );
+            writer.write_all(&[3]).expect("send quit Ctrl-C");
+            writer.flush().expect("flush quit Ctrl-C");
+        } else {
+            writer.write_all(&[4]).expect("exit TUI");
+            writer.flush().expect("flush TUI exit");
+        }
     }
 
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -334,6 +451,32 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         assert!(
             visible.contains("editing queued"),
             "queued input was not restored to the composer"
+        );
+    }
+    if scenario == "agents-overview" {
+        let visible = agents_overview_screen.expect("agents overview screen");
+        assert!(
+            visible.contains("Agent command center"),
+            "agents overview was not visible"
+        );
+        assert!(
+            visible.contains("background task started"),
+            "server-backed overview task start was not visible"
+        );
+        assert!(
+            agents_overview_renamed_screen
+                .expect("renamed agents overview screen")
+                .contains("Gate B background"),
+            "renamed background task was not visible"
+        );
+        let resumed = agents_overview_resumed_screen.expect("resumed background thread screen");
+        assert!(
+            resumed.contains("switched agent"),
+            "background thread resume status was not visible"
+        );
+        assert!(
+            resumed.contains("AGENTS_OVERVIEW_READY"),
+            "background thread transcript was not restored"
         );
     }
     assert!(
@@ -441,6 +584,31 @@ fn wait_for_marker_after(
             .unwrap_or_else(|_| panic!("PTY closed before new {marker:?}; output: {output}"));
         output.push_str(&String::from_utf8_lossy(&chunk));
     }
+}
+
+fn wait_for_screen_marker(
+    output_rx: &mpsc::Receiver<Vec<u8>>,
+    output: &mut String,
+    marker: &str,
+    timeout: Duration,
+) {
+    let deadline = Instant::now() + timeout;
+    while !terminal_screen_text(output).contains(marker) {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            panic!("timed out waiting for screen marker {marker:?}; output: {output}");
+        }
+        let chunk = output_rx.recv_timeout(remaining).unwrap_or_else(|_| {
+            panic!("PTY closed before screen marker {marker:?}; output: {output}")
+        });
+        output.push_str(&String::from_utf8_lossy(&chunk));
+    }
+}
+
+fn terminal_screen_text(output: &str) -> String {
+    let mut parser = vt100::Parser::new(24, 100, 0);
+    parser.process(output.as_bytes());
+    parser.screen().contents()
 }
 
 fn wait_for_ledger_kind_and_scenario(

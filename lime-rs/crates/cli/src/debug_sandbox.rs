@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
-use app_server_client::{ClientSession, SessionEvent, StdioTransportConfig};
+use app_server_client::{AppServerEvent, ClientSession, StdioTransportConfig};
 use app_server_protocol::protocol::v2::{
     CommandExecOutputStream, CommandExecParams, CommandExecResponse, CommandExecWriteParams,
     ServerNotification, ServerRequest, METHOD_COMMAND_EXEC, METHOD_COMMAND_EXEC_WRITE,
@@ -208,7 +208,7 @@ async fn run_with_inherited_stdio(
                 return response.context("App Server command/exec failed");
             }
             event = session.next_event() => match event {
-                Some(SessionEvent::Notification(notification)) => {
+                Some(AppServerEvent::ServerNotification(notification)) => {
                     if let ServerNotification::CommandExecOutputDelta(delta) = *notification {
                         if delta.process_id != process_id {
                             continue;
@@ -226,25 +226,13 @@ async fn run_with_inherited_stdio(
                         }
                     }
                 }
-                Some(SessionEvent::ServerRequest(request)) => {
+                Some(AppServerEvent::ServerRequest(request)) => {
                     reject_unexpected_server_request(&request_handle, &request).await?;
                 }
-                Some(SessionEvent::RawServerRequest(request)) => {
-                    request_handle
-                        .reject(
-                            request.id,
-                            JsonRpcError::new(
-                                error_codes::METHOD_NOT_FOUND,
-                                "lime sandbox does not support server requests",
-                            ),
-                        )
-                        .await
-                        .context("failed to reject unexpected App Server request")?;
-                }
-                Some(SessionEvent::Disconnected { message }) => {
+                Some(AppServerEvent::Disconnected { message }) => {
                     bail!("App Server disconnected during sandbox execution: {message}");
                 }
-                Some(SessionEvent::RawNotification(_)) => {}
+                Some(AppServerEvent::Lagged { .. }) => {}
                 None => bail!("App Server event stream closed during sandbox execution"),
             },
             read = stdin.read(&mut input), if stdin_open => {

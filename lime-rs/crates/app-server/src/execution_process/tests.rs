@@ -19,7 +19,7 @@ use tool_runtime::execution_process::{
         LiveExecutionOutputBatch, LiveExecutionOutputQuery, LiveExecutionRequest,
         RuntimeLiveExecutionGateway,
     },
-    ExecutionProcessStatus,
+    ExecutionProcessStatus, DEFAULT_OUTPUT_RETAIN_BYTES,
 };
 use tool_runtime::tool_executor::{RuntimeToolExecutionIdentity, RuntimeToolExecutionResult};
 use tool_runtime::unified_exec::{
@@ -88,6 +88,47 @@ impl RuntimeToolAttemptRunner for ProcessAttemptRunner {
     }
 }
 
+struct InteractiveProcessAttemptRunner {
+    server: ExecutionProcessServer,
+    process_id: &'static str,
+}
+
+impl RuntimeToolAttemptRunner for InteractiveProcessAttemptRunner {
+    fn run<'a>(&'a self, attempt: RuntimeToolExecutionAttempt) -> RuntimeToolAttemptFuture<'a> {
+        Box::pin(async move {
+            let snapshot = RuntimeLiveExecutionGateway::start_process(
+                &self.server,
+                "test-thread",
+                "interactive sandbox command",
+                LiveExecutionRequest {
+                    process_id: self.process_id.to_string(),
+                    tool_id: attempt.identity().call_id().to_string(),
+                    tool_name: "exec_command".to_string(),
+                    environment_id: "local".to_string(),
+                    command: interactive_stdin_command(),
+                    working_directory: current_directory(),
+                    tty: false,
+                    approval_policy: Some("on-request".to_string()),
+                    sandbox_policy: attempt
+                        .effective_sandbox_policy()
+                        .label()
+                        .map(str::to_string),
+                    runtime_metadata: None,
+                    env: HashMap::new(),
+                    attempt: Some(attempt),
+                },
+            )
+            .await?;
+            Ok(RuntimeToolExecutionResult::new(
+                true,
+                snapshot.process_id,
+                None,
+                HashMap::new(),
+            ))
+        })
+    }
+}
+
 fn process_orchestration_input(
     initial_approval: RuntimeToolInitialApproval,
     sandbox_policy: RuntimeToolSandboxPolicy,
@@ -138,6 +179,61 @@ async fn orchestrated_process_does_not_repeat_policy_approval() {
     assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
     let snapshot = wait_for_terminal_snapshot(&runner.server, "orchestrated-process-1").await;
     assert_eq!(snapshot.status, ExecutionProcessStatus::Exited);
+}
+
+#[tokio::test]
+async fn orchestrated_sandbox_process_reuses_execution_process_control_owner() {
+    let runner = InteractiveProcessAttemptRunner {
+        server: ExecutionProcessServer::default(),
+        process_id: "orchestrated-sandbox-control-process",
+    };
+    let result = orchestrate_runtime_tool_execution(
+        process_orchestration_input(
+            RuntimeToolInitialApproval::Required(RuntimeToolApprovalKind::User),
+            RuntimeToolSandboxPolicy::WorkspaceWrite,
+            None,
+            false,
+        ),
+        &RecordingProcessApprovals::default(),
+        &runner,
+    )
+    .await
+    .expect("sandbox process should start after approval");
+
+    assert_eq!(result.output, runner.process_id);
+    assert_eq!(result.metadata.get("toolAttemptNumber"), Some(&json!(1)));
+    assert_eq!(
+        result.metadata.get("effectiveSandboxPolicy"),
+        Some(&json!("workspace-write"))
+    );
+
+    let process_id = runner.process_id;
+    let initial = runner
+        .server
+        .status(process_id)
+        .expect("sandbox process snapshot should be available");
+    assert_eq!(initial.status, ExecutionProcessStatus::Running);
+    assert_eq!(initial.tool_id, "orchestrated-call");
+
+    let ready = wait_for_output(&runner.server, process_id, "READY").await;
+    assert!(ready
+        .deltas
+        .iter()
+        .all(|delta| delta.tool_id == "orchestrated-call"));
+    runner
+        .server
+        .write_stdin(process_id, b"from-control\n")
+        .expect("sandbox process stdin should use the shared control owner");
+
+    let received = wait_for_output(&runner.server, process_id, "RECEIVED:from-control").await;
+    assert!(received
+        .deltas
+        .iter()
+        .all(|delta| delta.tool_id == "orchestrated-call"));
+    let final_snapshot = wait_for_terminal_snapshot(&runner.server, process_id).await;
+    assert_eq!(final_snapshot.status, ExecutionProcessStatus::Exited);
+    assert_eq!(final_snapshot.exit_code, Some(0));
+    assert_eq!(final_snapshot.tool_id, "orchestrated-call");
 }
 
 #[tokio::test]
@@ -233,9 +329,11 @@ async fn unified_exec_yields_active_session_then_poll_observes_terminal_process(
             working_directory: current_directory(),
             environment: HashMap::new(),
             tool_call_id: "unified-exec-call".to_string(),
+            turn_id: "unified-exec-turn".to_string(),
             cancel_token: None,
             turn_context: None,
             attempt: None,
+            output_sink: None,
         },
     )
     .await
@@ -263,9 +361,11 @@ async fn unified_exec_yields_active_session_then_poll_observes_terminal_process(
             working_directory: current_directory(),
             environment: HashMap::new(),
             tool_call_id: "unified-exec-poll".to_string(),
+            turn_id: "unified-exec-turn".to_string(),
             cancel_token: None,
             turn_context: None,
             attempt: None,
+            output_sink: None,
         },
     )
     .await
@@ -308,9 +408,11 @@ async fn unified_exec_reports_silent_non_zero_exit_as_terminal() {
             working_directory: current_directory(),
             environment: HashMap::new(),
             tool_call_id: "unified-exec-silent-failure-call".to_string(),
+            turn_id: "unified-exec-silent-failure-turn".to_string(),
             cancel_token: None,
             turn_context: None,
             attempt: None,
+            output_sink: None,
         },
     )
     .await
@@ -354,9 +456,11 @@ async fn unified_exec_starts_short_command_after_repeated_terminal_commands() {
                     working_directory: current_directory(),
                     environment: HashMap::new(),
                     tool_call_id: format!("unified-exec-sequence-{index}"),
+                    turn_id: "unified-exec-sequence-turn".to_string(),
                     cancel_token: None,
                     turn_context: None,
                     attempt: None,
+                    output_sink: None,
                 },
             ),
         )
@@ -385,9 +489,11 @@ async fn unified_exec_starts_short_command_after_repeated_terminal_commands() {
                 working_directory: current_directory(),
                 environment: HashMap::new(),
                 tool_call_id: "unified-exec-sequence-read".to_string(),
+                turn_id: "unified-exec-sequence-turn".to_string(),
                 cancel_token: None,
                 turn_context: None,
                 attempt: None,
+                output_sink: None,
             },
         ),
     )
@@ -434,6 +540,15 @@ async fn execution_process_server_uses_environment_process_transport() {
         .await
         .expect("remote exec fixture bind");
     let address = listener.local_addr().expect("remote exec fixture address");
+    let remote_output = format!(
+        "REMOTE-HEAD\n\u{1f600}\n{}\nREMOTE-TAIL",
+        "x".repeat(DEFAULT_OUTPUT_RETAIN_BYTES + 64 * 1024)
+    );
+    let fixture_output = remote_output.clone();
+    let fixture_split = fixture_output
+        .find('\u{1f600}')
+        .expect("remote fixture emoji")
+        + 2;
     let read_count = Arc::new(AtomicUsize::new(0));
     let fixture_read_count = Arc::clone(&read_count);
     let fixture = tokio::spawn(async move {
@@ -466,12 +581,19 @@ async fn execution_process_server_uses_environment_process_transport() {
                     let read = fixture_read_count.fetch_add(1, Ordering::SeqCst);
                     if read == 0 {
                         json!({
-                            "chunks": [{
-                                "seq": 0,
-                                "stream": "stdout",
-                                "chunk": base64::engine::general_purpose::STANDARD.encode("remote-output")
-                            }],
-                            "nextSeq": 1,
+                            "chunks": [
+                                {
+                                    "seq": 0,
+                                    "stream": "stdout",
+                                    "chunk": base64::engine::general_purpose::STANDARD.encode(&fixture_output.as_bytes()[..fixture_split])
+                                },
+                                {
+                                    "seq": 1,
+                                    "stream": "stdout",
+                                    "chunk": base64::engine::general_purpose::STANDARD.encode(&fixture_output.as_bytes()[fixture_split..])
+                                }
+                            ],
+                            "nextSeq": 2,
                             "exited": true,
                             "exitCode": 0,
                             "closed": false,
@@ -549,14 +671,42 @@ async fn execution_process_server_uses_environment_process_transport() {
         .signal("process-remote-fixture")
         .expect("remote signal should use process/signal");
 
-    let output = wait_for_output(&server, "process-remote-fixture", "remote-output").await;
+    let output = wait_for_output(&server, "process-remote-fixture", "REMOTE-TAIL").await;
+    assert_eq!(
+        output
+            .deltas
+            .iter()
+            .map(|delta| delta.delta.as_str())
+            .collect::<String>(),
+        remote_output
+    );
     assert!(output
         .deltas
         .iter()
-        .any(|delta| delta.delta.contains("remote-output")));
+        .all(|delta| !delta.delta.contains('\u{fffd}')));
+    let delta = output.deltas.last().expect("remote output delta");
+    assert_eq!(delta.bytes, remote_output.len() as u64);
+    assert_eq!(
+        delta.omitted_bytes,
+        remote_output
+            .len()
+            .saturating_sub(DEFAULT_OUTPUT_RETAIN_BYTES) as u64
+    );
+    assert!(delta.truncated);
     let snapshot = wait_for_terminal_snapshot(&server, "process-remote-fixture").await;
     assert_eq!(snapshot.status, ExecutionProcessStatus::Exited);
     assert_eq!(snapshot.exit_code, Some(0));
+    assert_eq!(snapshot.output_bytes, remote_output.len() as u64);
+    assert_eq!(snapshot.output_omitted_bytes, delta.omitted_bytes);
+    assert!(snapshot.output_truncated);
+    let omission_marker = format!("... {} bytes omitted ...", delta.omitted_bytes);
+    assert_eq!(
+        snapshot.retained_output.len(),
+        DEFAULT_OUTPUT_RETAIN_BYTES + omission_marker.len() + 2
+    );
+    assert!(snapshot.retained_output.starts_with("REMOTE-HEAD\n"));
+    assert!(snapshot.retained_output.contains(&omission_marker));
+    assert!(snapshot.retained_output.ends_with("\nREMOTE-TAIL"));
     assert!(read_count.load(Ordering::SeqCst) >= 1);
 
     fixture.abort();
@@ -614,6 +764,63 @@ async fn execution_process_output_replays_until_cursor_advances() {
         .expect("cursor read should succeed");
     assert!(after_cursor.deltas.is_empty());
     assert_eq!(after_cursor.next_sequence, Some(cursor));
+}
+
+#[test]
+fn execution_process_output_replay_is_isolated_per_process() {
+    let server = ExecutionProcessServer::default();
+    let entry = || ExecutionProcessEntry {
+        handle: None,
+        remote_control: None,
+        output_buffer: None,
+        output_framers: None,
+        output: VecDeque::new(),
+        output_bytes: 0,
+        next_output_sequence: 1,
+        snapshot: None,
+        final_snapshot: None,
+        background: None,
+    };
+    {
+        let mut state = server.inner.lock().expect("execution process state");
+        state.processes.insert("first".to_string(), entry());
+        state.processes.insert("second".to_string(), entry());
+        push_output(
+            state.processes.get_mut("first").expect("first process"),
+            replay_delta("first", 1, "first-output"),
+        );
+        for sequence in 1..=(OUTPUT_EVENT_CAP as u64 + 1) {
+            push_output(
+                state.processes.get_mut("second").expect("second process"),
+                replay_delta("second", sequence, "x"),
+            );
+        }
+    }
+
+    let first = server
+        .drain_output(LiveExecutionOutputQuery {
+            process_id: Some("first".to_string()),
+            after_sequence: None,
+            limit: None,
+            max_bytes: None,
+        })
+        .expect("first process output");
+    assert_eq!(first.deltas.len(), 1);
+    assert_eq!(first.deltas[0].delta, "first-output");
+}
+
+fn replay_delta(process_id: &str, sequence: u64, output: &str) -> ExecutionOutputDelta {
+    ExecutionOutputDelta {
+        process_id: process_id.to_string(),
+        tool_id: format!("tool-{process_id}"),
+        sequence,
+        kind: tool_runtime::execution_process::ExecutionOutputKind::Stdout,
+        delta: output.to_string(),
+        bytes: output.len() as u64,
+        omitted_bytes: 0,
+        truncated: false,
+        raw_bytes: output.as_bytes().to_vec(),
+    }
 }
 
 #[tokio::test]
@@ -859,6 +1066,25 @@ fn shell_output_command(output: &str) -> Vec<String> {
             "sh".to_string(),
             "-c".to_string(),
             format!("printf {output}"),
+        ]
+    }
+}
+
+fn interactive_stdin_command() -> Vec<String> {
+    if cfg!(windows) {
+        vec![
+            "cmd.exe".to_string(),
+            "/D".to_string(),
+            "/V:ON".to_string(),
+            "/S".to_string(),
+            "/C".to_string(),
+            "echo|set /p=READY & set /p value= & echo RECEIVED:!value!".to_string(),
+        ]
+    } else {
+        vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            "printf READY; IFS= read -r value; printf 'RECEIVED:%s' \"$value\"".to_string(),
         ]
     }
 }

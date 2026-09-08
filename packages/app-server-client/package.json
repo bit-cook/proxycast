@@ -35,6 +35,9 @@
     "dist",
     "README.md"
   ],
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --noEmit --project tsconfig.json",

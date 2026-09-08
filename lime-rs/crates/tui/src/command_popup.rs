@@ -1,13 +1,13 @@
 use crossterm::event::{Event, KeyCode, KeyEventKind};
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
+use ratatui::Frame;
 
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
-use crate::slash_command::{SlashCommand, command_filter};
+use crate::slash_command::{command_filter, SlashCommand};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CommandPopupAction {
@@ -158,8 +158,8 @@ pub(crate) fn render(
 mod tests {
     use super::*;
     use crossterm::event::{KeyEvent, KeyModifiers};
-    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
 
     #[test]
     fn filters_by_prefix_and_wraps_selection() {
@@ -169,8 +169,8 @@ mod tests {
             popup.handle_event(&Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE,))),
             CommandPopupAction::Consumed
         );
-        assert_eq!(popup.selected(), Some(SlashCommand::Copy));
-        assert!(popup.update("/p"));
+        assert_eq!(popup.selected(), Some(SlashCommand::Resume));
+        assert!(popup.update("/per"));
         assert_eq!(popup.commands(), vec![SlashCommand::Permissions]);
         assert_eq!(popup.selected(), Some(SlashCommand::Permissions));
         assert!(!popup.update("/unknown"));
@@ -194,9 +194,9 @@ mod tests {
     #[test]
     fn test_backend_renders_commands_and_localized_descriptions() {
         let popup = CommandPopup::for_composer("/").expect("popup");
-        let mut terminal = Terminal::new(TestBackend::new(72, 8)).expect("terminal");
+        let mut terminal = Terminal::new(TestBackend::new(72, 10)).expect("terminal");
         terminal
-            .draw(|frame| render(frame, Rect::new(0, 5, 72, 3), &popup, Locale::ZhCn))
+            .draw(|frame| render(frame, Rect::new(0, 8, 72, 2), &popup, Locale::ZhCn))
             .expect("draw");
         let buffer = terminal.backend().buffer();
         let text = (0..buffer.area.height)

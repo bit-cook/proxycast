@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context};
 #[cfg(windows)]
-use app_server_client::SessionEvent;
+use app_server_client::AppServerEvent;
 #[cfg(windows)]
 use app_server_protocol::protocol::v2::{
     ServerNotification, WindowsSandboxSetupMode, WindowsSandboxSetupStartParams,
@@ -129,7 +129,7 @@ async fn run_elevated(
         Ok(response) if response.started => tokio::time::timeout(Duration::from_secs(130), async {
             loop {
                 match session.next_event().await {
-                    Some(SessionEvent::Notification(notification)) => match *notification {
+                    Some(AppServerEvent::ServerNotification(notification)) => match *notification {
                         ServerNotification::WindowsSandboxSetupCompleted(completed)
                             if completed.mode == mode =>
                         {
@@ -137,7 +137,7 @@ async fn run_elevated(
                         }
                         _ => {}
                     },
-                    Some(SessionEvent::Disconnected { message }) => {
+                    Some(AppServerEvent::Disconnected { message }) => {
                         break Err(anyhow::anyhow!(
                             "App Server disconnected during Windows sandbox setup: {message}"
                         ));

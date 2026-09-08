@@ -6,20 +6,20 @@
 
 ## 结论
 
-Lime 的 coding 骨架已经不是缺“能不能改文件”的问题；P1-P4 current 主链、Workbench projection、policy metadata、output refs、patch/file/command/test facts、Windows sandbox setup/readiness、双 mode restricted-token runner、P2-A 执行端有界输出捕获，以及 P2-B no-sandbox shell live process 都已落地。Windows runner schema v3 `7/7` 与复验 run 已形成平台 evidence。继续对比后，真正高价值遗漏集中在两条骨干和一个策略体验增强：
+Lime 的 coding 骨架已经不是缺“能不能改文件”的问题；P1-P4 current 主链、Workbench projection、policy metadata、output refs、patch/file/command/test facts、Windows sandbox setup/readiness、双 mode restricted-token runner、P2-A bounded output boundary 与 P2-B canonical sandbox-aware process owner 都已落地。Windows runner schema v3 `7/7` 与复验 run 已形成历史平台 evidence；当前 SHA 的 Windows 大输出复验仍需由 Windows runner 补证。继续对比后，真正高价值遗漏集中在正式 verifier/distribution evidence 和一个策略体验增强：
 
-1. **统一进程生命周期 owner**：上游有可 write / interrupt / terminate / stream / poll 的 unified exec process；Lime 已有 process owner、本地 runner、App Server `executionProcess/*` 控制面与 no-sandbox shell live process，但 command/test 默认执行尚未切到 sandbox-aware control owner。
+1. **统一进程生命周期 owner**：上游有可 write / interrupt / terminate / stream / poll 的 unified exec process；Lime 已有 process owner、本地 runner、App Server `executionProcess/*` 控制面与 unified exec canonical command/test path，且回归证明带 `RuntimeToolExecutionAttempt` 的 workspace sandbox command 复用同一 control owner；P2-B owner 缺口已关闭。
 2. **Windows sandbox 完整性**：Lime 已有 backend plan/readiness contract，以及 elevated sandbox-account、unelevated current-user restricted-token runner、短生命周期 ACL lease、TokenDefaultDacl、Job Object、ConPTY、显式 handle allowlist、Firewall/WFP 和有界 pipe reader；Windows runner schema v3 `7/7` 与复验 run 已完成当前平台 evidence。后续仅在 token/ACL/network 改动时回归。
 3. **审批缓存与重试体验**：Lime 已有 `action.required` 和多来源策略，但缺 session-scope approval key、sandbox denied 后安全升级重试和规则草案沉淀。
 
-这些不是 UI polish，也不是旧路清理；它们直接决定 coding turn 在长命令、大输出、Windows 和审批重跑场景下是否可持续。
+这些不是 UI polish，也不是旧路清理；它们直接决定 coding turn 在大输出、Windows 和审批重跑场景下是否可持续。
 
 ## 对比证据
 
 | 上游参考能力          | 上游证据                                                                                                                                                                                 | Lime current 状态                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | 缺口判断                                                                                                                                           |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 统一进程对象          | `core/src/unified_exec/process.rs` 暴露 write / terminate / interrupt / output receiver / state；`tools/runtimes/unified_exec.rs` 把审批、sandbox、network 与 process manager 接在一起。 | `tool-runtime::execution_process` 已提供 process snapshot、stdout/stderr delta、有界 retained output、stdin write、interrupt、terminate、status 与本地 process runner；App Server current 已提供 `executionProcess/start`、`writeStdin`、`interrupt`、`terminate`、`status`、`drainOutput` 控制面；no-sandbox shell path 已在 Lime preflight 与 Agent registry permission/safety preflight 之后走 live process；`executionProcess/start` 已收紧为受控 current 入口，workspace sandbox backend required / enforced 时 fail-closed，不再允许 `cwd` 覆盖 policy 判定后的实际工作目录。 | P2-B no-sandbox 路径和 App Server 受控启动已落地；缺口收缩为“command/test 默认执行切到 sandbox-aware process runner/control owner，并接 UI 控制”。 |
-| Head/tail 输出缓冲    | `core/src/unified_exec/head_tail_buffer.rs` 在进程读取阶段限制保留字节，保留头尾并记录 omitted bytes。                                                                                   | `tool-runtime::execution_process::BoundedProcessOutput` 限制 live process retained output并记录 omitted bytes；Windows restricted-token blocking pipe reader 已复用同一 owner。                                                                                                                                                                                                                                                                                                                                                                                                        | current foundation 已覆盖 Windows 有界读取；仍需 Windows 真机大输出证据。                                                                          |
+| 统一进程对象          | `core/src/unified_exec/process.rs` 暴露 write / terminate / interrupt / output receiver / state；`tools/runtimes/unified_exec.rs` 把审批、sandbox、network 与 process manager 接在一起。 | `tool-runtime::execution_process` 已提供 process snapshot、stdout/stderr delta、1 MiB head/tail retained output、stdin write、interrupt、terminate、status 与本地 process runner；App Server current 已提供 `executionProcess/start`、`writeStdin`、`interrupt`、`terminate`、`status`、`drainOutput` 控制面；unified exec canonical command/test path 已经消费 `RuntimeToolExecutionAttempt`，workspace sandbox 交互回归覆盖 snapshot、drain、stdin、terminal status 与 call identity。 | P2-B owner 与 P2-A output boundary 已落地；剩余是正式 verifier/distribution evidence。 |
+| Head/tail 输出缓冲    | `core/src/unified_exec/head_tail_buffer.rs` 在进程读取阶段限制保留字节，保留头尾并记录 omitted bytes；`async_watcher.rs` 使用 64-slot broadcast 并在 UTF-8 scalar 边界发 delta。                | `tool-runtime::execution_process::BoundedProcessOutput` 统一限制 pipe、PTY、Seatbelt、Bubblewrap、Windows restricted runner 与远端 Environment 输出；默认保留 1 MiB，稳定保留 head/latest tail、精确记录 omitted bytes、插入 omission marker，并用 `ProcessOutputFramers` 在 UTF-8 边界发 delta。App Server replay 按进程隔离，unified exec observation 同样有界。 | P2-A `completed / current`；Windows 当前 SHA 的真机大输出仍需平台 evidence，不影响 owner 完成判定。 |
 | 审批缓存与重试        | `core/src/tools/sandboxing.rs` 有 approval cache、sandbox override、denied-read preservation；`tools/orchestrator.rs` 有 approval -> sandbox -> attempt -> denied retry。                | Lime 有 `ToolExecutionPolicyService` 多来源规则、`action.required`、审批后续跑测试和 sandbox blocked metadata。                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 缺“同一命令 approval key 复用 / sandbox denied 后升级重试 / proposed rule amendment”这一条统一执行语义。                                           |
 | 持久 capability SID   | `windows-sandbox-rs/src/cap.rs` 按 workspace / writable root 持久化 SID，并用 canonical path key 去重。                                                                                  | current foundation 使用每次运行创建的 capability SID 与短生命周期 ACL lease，尚未持久化。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 在真机验证临时 lease 正确后，再裁决是否需要持久 SID owner。                                                                                         |
 | TokenDefaultDacl      | `windows-sandbox-rs/src/token.rs` 设置 token default DACL，避免受限 token 创建管道 / IPC 对象失败。                                                                                      | current foundation 已设置 restricted token default DACL，但仅有非 Windows 测试和 SDK 源码核对。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 需要 Windows 真机 PowerShell pipeline 与子进程 IPC 证据。                                                                                           |
@@ -33,17 +33,23 @@ Lime 的 coding 骨架已经不是缺“能不能改文件”的问题；P1-P4 c
 
 目标：在 executor / tool outcome 进入 RuntimeCore 前就限制内存增长。
 
-状态：`partial / live-process retained output only`。
+状态：`completed / current`。
 
 落点：
 
 - `lime-rs/crates/tool-runtime/src/execution_process.rs`
+- `lime-rs/crates/tool-runtime/src/execution_process/output_buffer.rs`
+- `lime-rs/crates/tool-runtime/src/unified_exec.rs`
+- `lime-rs/crates/app-server/src/execution_process.rs`
 - `lime-rs/crates/app-server/src/runtime/output_refs.rs`
 
 已落动作：
 
-- live process retained output 已使用有界 buffer，并输出 `outputBytes / outputOmittedBytes / outputTruncated`。
-- Windows restricted-token blocking pipe reader 已接入同一有界输出语义；仍缺 Windows 真机大输出和 omitted-bytes 证据。
+- 本地 pipe、PTY、Seatbelt、Bubblewrap、Windows restricted runner 与远端 Environment 已共享 `BoundedProcessOutput`；默认保留 1 MiB，稳定保留 head/latest tail、精确记录 omitted bytes 并插入 omission marker。
+- reader 到 process handle 使用 64-slot bounded broadcast；慢消费者可 lag，但权威 terminal transcript 不丢失，未消费 delta 的大输出进程也能完成。
+- `ProcessOutputFramers` 按 stdout/stderr/combined 独立保留最多 3 个不完整 UTF-8 字节，完整 scalar 才进入 lifecycle delta，EOF flush 不完整后缀；raw byte、snapshot 与 omission 统计只计一次。
+- unified exec 每次 observation 使用同一有界 buffer；App Server replay 下沉到逐进程 queue，避免跨进程互相驱逐。
+- Windows restricted-token blocking pipe reader 已接入同一语义；当前 SHA 仍缺 Windows 真机大输出和 omitted-bytes 复验证据，不能用非 Windows 测试代替。
 - RuntimeCore 继续负责 snapshot；executor 不直接写 App Server sidecar，避免跨层依赖。
 
 收益：解决大输出在进入 output ref 之前压爆内存的问题，直接服务 command/test coding 主线。
@@ -52,11 +58,11 @@ Lime 的 coding 骨架已经不是缺“能不能改文件”的问题；P1-P4 c
 
 目标：让 command/test execution 从“批处理终态”升级为“可观察、可中断、可续写”的进程对象。
 
-状态：`in_progress / no-sandbox live process done`。
+状态：`completed / canonical command-test sandbox-aware owner landed`。
 
 落点：
 
-- `lime-rs/crates/agent/src/agent_tools/execution/process.rs`
+- `lime-rs/crates/tool-runtime/src/execution_process.rs`
 - `lime-rs/crates/app-server/src/runtime_backend/coding_events/command.rs`
 - `packages/agent-runtime-projection/src/coding.ts`
 
@@ -66,7 +72,8 @@ Lime 的 coding 骨架已经不是缺“能不能改文件”的问题；P1-P4 c
 - 已把现有 shell batch bridge 接到 process metadata：`processId / executionProcessStatus / outputBytes / outputOmittedBytes / outputTruncated` 透传到 `tool.output.delta` / `command.output` metadata。
 - 已通过 App Server current JSON-RPC 暴露 `executionProcess/start|writeStdin|interrupt|terminate|status|drainOutput`，并同步 protocol schema、processor、client 与 contract guard。
 - no-sandbox shell path 已接入 live process：先过 `ToolExecutionDecision`，再复用 Agent `ToolRegistry::check_tool_permissions`，且需要 workspace sandbox backend 的命令继续走 Agent sandbox executor。
-- 下一刀把 command/test 默认执行切到 sandbox-aware `LocalExecutionProcessHandle` / execution process control owner，并让 Workbench UI 的停止、输入和状态刷新复用同一 current API。
+- `RuntimeToolExecutionAttempt` 的 workspace sandbox command 已通过 App Server `ExecutionProcessServer` 真实回归覆盖启动 snapshot、按 process cursor drain、stdin/control identity 与 terminal status；该证据与 unified exec/current orchestration wiring 一起关闭 command/test 默认 owner 迁移缺口。
+- P2-B 已由 unified exec 将 canonical command/test 默认执行接到 sandbox-aware `LocalExecutionProcessHandle` / App Server execution process control owner，Workbench UI 的停止、输入和状态刷新继续复用同一 current API；P2-A/P2-B 均已闭环，下一刀只补正式 verifier/distribution evidence。
 
 收益：长任务、用户中断、实时日志、测试服务器、交互式 shell 才能成为产品能力，而不是一次性命令结果。
 
@@ -129,4 +136,4 @@ Lime 的 coding 骨架已经不是缺“能不能改文件”的问题；P1-P4 c
 
 ## 下一刀建议
 
-**P2-C Windows restricted-token runner 基线已完成。** readiness、setup mode、elevated sandbox-account、unelevated current-user restricted-token runner、ACL/Job/ConPTY、Firewall/WFP、warning lifecycle 和 readiness read-back 已收敛到 `tool-runtime` current owner；Windows runner schema v3 `7/7`、quality run 与 readiness 复验 run 是平台 evidence，不能用 macOS 结果替代。下一刀回到 P2-B 默认 command/test sandbox-aware process owner，不得用 no-sandbox process 绕过 sandbox。
+**P2-A/P2-B/P2-C current owner 均已完成。** 下一刀直接进入当前工作树的 Pier/DeepSWE verifier 与正式 distribution evidence；Windows runner schema v3 `7/7`、quality run 与 readiness 复验 run 只证明对应历史 SHA，当前 SHA 的 restricted-token 大输出仍必须在 Windows 真机复跑，不能用 macOS 结果替代，也不得用 no-sandbox process 绕过 sandbox。

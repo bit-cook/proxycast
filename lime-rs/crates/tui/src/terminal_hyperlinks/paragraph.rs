@@ -1,6 +1,6 @@
 //! Paragraph rendering that keeps visible text and hyperlink annotations aligned.
 
-use super::{HyperlinkLine, mark_buffer_hyperlinks, visible_lines_ref};
+use super::{mark_buffer_hyperlinks, visible_lines_ref, HyperlinkLine};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Text;

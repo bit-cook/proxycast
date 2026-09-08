@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { parse as parseToml } from "smol-toml";
 
@@ -54,6 +55,10 @@ export const REQUIRED_VERIFIER_FILES = [
   "test-stdout.txt",
 ];
 const PATCH_CAPTURE_MAX_BYTES = 64 * 1024 * 1024;
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 const TERMINAL_TURN_STATUSES = new Set([
   "completed",
@@ -75,6 +80,41 @@ function commandOutput(command, args, options = {}) {
     env: options.env,
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
+}
+
+export function resolveDockerHost(containerBin, env = process.env) {
+  const explicitHost = normalizeString(env.DOCKER_HOST);
+  if (explicitHost) return explicitHost;
+
+  const contextResult = spawnSync(containerBin, ["context", "show"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env,
+    timeout: 15_000,
+  });
+  if (contextResult.status !== 0) return "";
+  const contextName = normalizeString(contextResult.stdout);
+  if (!contextName || contextName === "default") return "";
+
+  const endpointResult = spawnSync(
+    containerBin,
+    [
+      "context",
+      "inspect",
+      "--format",
+      "{{.Endpoints.docker.Host}}",
+      contextName,
+    ],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env,
+      timeout: 15_000,
+    },
+  );
+  return endpointResult.status === 0
+    ? normalizeString(endpointResult.stdout)
+    : "";
 }
 
 function runGit(cwd, args) {
@@ -934,6 +974,11 @@ export function runPierVerifier({
   const pierTempDir = path.join(runDir, "pier-tmp");
   fs.mkdirSync(pierTempDir, { recursive: true });
   const jobName = availablePierJobName(jobsDir, runId);
+  const dockerConfig =
+    process.env.LIME_DEEPSWE_DOCKER_CONFIG ||
+    process.env.DOCKER_CONFIG ||
+    path.join(repoRoot, ".lime/benchmark/tools/docker-cli-config");
+  const dockerHost = resolveDockerHost(containerBin);
   const result = spawnSync(
     pierBin,
     [
@@ -964,6 +1009,8 @@ export function runPierVerifier({
       env: {
         ...process.env,
         TMPDIR: pierTempDir,
+        DOCKER_CONFIG: dockerConfig,
+        ...(dockerHost ? { DOCKER_HOST: dockerHost } : {}),
         PIER_CONTAINER_BIN: containerBin,
       },
     },

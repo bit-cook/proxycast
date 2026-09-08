@@ -107,6 +107,223 @@ fn canonical_test_arguments(arguments: Value) -> Vec<ToolArgument> {
     }
 }
 
+fn command_item_event(
+    call_id: &str,
+    command: &str,
+    status: ItemStatus,
+    output: Option<&str>,
+    exit_code: Option<i32>,
+    metadata: Value,
+) -> RuntimeAgentEvent {
+    let payload = ThreadItemPayload::Command {
+        command: command.to_string(),
+        cwd: Some("/workspace".to_string()),
+        output: output.map(str::to_string),
+        exit_code,
+    };
+    let item = ThreadItem {
+        session_id: SessionId::new("session-test"),
+        thread_id: ThreadId::new("thread-test"),
+        turn_id: TurnId::new("turn-test"),
+        item_id: ItemId::new(call_id),
+        sequence: 1,
+        ordinal: 1,
+        created_at_ms: 1,
+        updated_at_ms: 2,
+        completed_at_ms: status.is_terminal().then_some(2),
+        kind: payload.kind(),
+        status,
+        payload,
+        metadata,
+    };
+    if status.is_terminal() {
+        RuntimeAgentEvent::ItemCompleted { item }
+    } else {
+        RuntimeAgentEvent::ItemUpdated { item }
+    }
+}
+
+fn command_item_started(call_id: &str, command: &str) -> RuntimeAgentEvent {
+    let payload = ThreadItemPayload::Command {
+        command: command.to_string(),
+        cwd: Some("/workspace".to_string()),
+        output: None,
+        exit_code: None,
+    };
+    RuntimeAgentEvent::ItemStarted {
+        item: ThreadItem {
+            session_id: SessionId::new("session-test"),
+            thread_id: ThreadId::new("thread-test"),
+            turn_id: TurnId::new("turn-test"),
+            item_id: ItemId::new(call_id),
+            sequence: 1,
+            ordinal: 1,
+            created_at_ms: 1,
+            updated_at_ms: 2,
+            completed_at_ms: None,
+            kind: payload.kind(),
+            status: ItemStatus::InProgress,
+            payload,
+            metadata: json!({}),
+        },
+    }
+}
+
+#[test]
+fn unified_exec_command_items_emit_command_and_test_lifecycle() {
+    let mut mirror = CodingEventMirror::default();
+    let command = "cargo test -p app-server coding_events";
+
+    let started = mirror.process_event(&command_item_started("exec-call", command));
+    let updated = mirror.process_event(&command_item_event(
+        "exec-call",
+        command,
+        ItemStatus::InProgress,
+        Some("running tests\n"),
+        None,
+        json!({
+            "exec_command_call_id": "exec-call",
+            "processId": "unified-exec-1",
+            "executionProcessStatus": "running",
+            "executionSurface": "unified_exec",
+            "outputBytes": 14,
+            "outputOmittedBytes": 0,
+            "outputTruncated": false,
+            "stdinWritable": true
+        }),
+    ));
+    let completed = mirror.process_event(&command_item_event(
+        "exec-call",
+        command,
+        ItemStatus::Completed,
+        Some("all tests passed\n"),
+        Some(0),
+        json!({
+            "exec_command_call_id": "exec-call",
+            "processId": "unified-exec-1",
+            "executionProcessStatus": "exited",
+            "executionSurface": "unified_exec",
+            "outputBytes": 31,
+            "outputOmittedBytes": 0,
+            "outputTruncated": false,
+            "stdinWritable": false,
+            "exit_code": 0
+        }),
+    ));
+
+    let event_types = started
+        .after_raw
+        .iter()
+        .chain(updated.after_raw.iter())
+        .chain(completed.after_raw.iter())
+        .map(|event| event.event_type.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        event_types,
+        vec![
+            "command.started",
+            "test.started",
+            "command.output",
+            "command.exited",
+            "test.completed"
+        ]
+    );
+    assert_eq!(
+        completed
+            .after_raw
+            .iter()
+            .find(|event| event.event_type == "command.exited")
+            .expect("command.exited")
+            .payload["processId"],
+        "unified-exec-1"
+    );
+    for event in started
+        .after_raw
+        .iter()
+        .chain(updated.after_raw.iter())
+        .chain(completed.after_raw.iter())
+        .filter(|event| event.event_type.starts_with("command."))
+    {
+        assert_eq!(event.payload["commandId"], "exec-call");
+    }
+}
+
+#[test]
+fn completed_command_item_without_started_event_reconstructs_lifecycle() {
+    let mut mirror = CodingEventMirror::default();
+    let completed = mirror.process_event(&command_item_event(
+        "exec-call-cold",
+        "printf done",
+        ItemStatus::Completed,
+        Some("done\n"),
+        Some(0),
+        json!({
+            "exec_command_call_id": "exec-call-cold",
+            "processId": "unified-exec-cold",
+            "executionProcessStatus": "exited",
+            "executionSurface": "unified_exec",
+            "outputBytes": 5,
+            "outputOmittedBytes": 0,
+            "outputTruncated": false,
+            "stdinWritable": false
+        }),
+    ));
+
+    let event_types = completed
+        .after_raw
+        .iter()
+        .map(|event| event.event_type.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        event_types,
+        vec!["command.started", "command.output", "command.exited"]
+    );
+    assert!(completed
+        .after_raw
+        .iter()
+        .all(|event| event.payload["commandId"] == "exec-call-cold"));
+}
+
+#[test]
+fn canceled_command_item_projects_canceled_test_result() {
+    let mut mirror = CodingEventMirror::default();
+    let _ = mirror.process_event(&command_item_started(
+        "exec-call-canceled",
+        "cargo test -p app-server",
+    ));
+    let canceled = mirror.process_event(&command_item_event(
+        "exec-call-canceled",
+        "cargo test -p app-server",
+        ItemStatus::Cancelled,
+        Some("interrupted\n"),
+        None,
+        json!({
+            "exec_command_call_id": "exec-call-canceled",
+            "processId": "unified-exec-canceled",
+            "executionProcessStatus": "terminated",
+            "executionSurface": "unified_exec",
+            "tool_outcome": "aborted",
+            "stdinWritable": false
+        }),
+    ));
+
+    let exited = canceled
+        .after_raw
+        .iter()
+        .find(|event| event.event_type == "command.exited")
+        .expect("command.exited");
+    assert_eq!(exited.payload["status"], "canceled");
+    assert_eq!(
+        canceled
+            .after_raw
+            .iter()
+            .find(|event| event.event_type == "test.completed")
+            .expect("test.completed")
+            .payload["result"],
+        "canceled"
+    );
+}
+
 #[test]
 fn shell_tool_events_emit_command_and_test_lifecycle() {
     let mut mirror = CodingEventMirror::default();
@@ -235,7 +452,7 @@ fn canonical_command_completion_emits_redacted_terminal_interaction_before_raw_i
     assert_eq!(output.before_raw.len(), 1);
     assert!(output.after_raw.is_empty());
     assert_eq!(output.before_raw[0].event_type, "command.interaction");
-    assert_eq!(output.before_raw[0].payload["commandId"], "item_exec-call");
+    assert_eq!(output.before_raw[0].payload["commandId"], "exec-call");
     assert_eq!(output.before_raw[0].payload["processId"], "process-7");
     assert_eq!(output.before_raw[0].payload["stdin"], "sent 9 chars");
     assert!(!output.before_raw[0]

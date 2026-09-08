@@ -156,6 +156,11 @@ impl Locale {
             (Self::EnUs, SlashCommand::Model) => "choose a model",
             (Self::JaJp, SlashCommand::Model) => "モデルを選択",
             (Self::KoKr, SlashCommand::Model) => "모델 선택",
+            (Self::ZhCn, SlashCommand::Plan) => "切换到计划模式",
+            (Self::ZhTw, SlashCommand::Plan) => "切換至計畫模式",
+            (Self::EnUs, SlashCommand::Plan) => "switch to Plan mode",
+            (Self::JaJp, SlashCommand::Plan) => "計画モードに切り替え",
+            (Self::KoKr, SlashCommand::Plan) => "계획 모드로 전환",
             (Self::ZhCn, SlashCommand::Effort) => "设置推理强度",
             (Self::ZhTw, SlashCommand::Effort) => "設定推理強度",
             (Self::EnUs, SlashCommand::Effort) => "set the reasoning effort",
@@ -176,6 +181,25 @@ impl Locale {
             (Self::EnUs, SlashCommand::Copy) => "copy the last response",
             (Self::JaJp, SlashCommand::Copy) => "最後の応答をコピー",
             (Self::KoKr, SlashCommand::Copy) => "마지막 응답 복사",
+            (Self::ZhCn, SlashCommand::Agents) => "查看和切换所有活跃 Agent 会话",
+            (Self::ZhTw, SlashCommand::Agents) => "檢視和切換所有活躍 Agent 工作階段",
+            (Self::EnUs, SlashCommand::Agents) => {
+                "view and switch between all active agent sessions"
+            }
+            (Self::JaJp, SlashCommand::Agents) => {
+                "すべてのアクティブな Agent セッションを表示して切り替え"
+            }
+            (Self::KoKr, SlashCommand::Agents) => "모든 활성 에이전트 세션 보기 및 전환",
+            (Self::ZhCn, SlashCommand::MultiAgents) => "切换子 Agent 会话",
+            (Self::ZhTw, SlashCommand::MultiAgents) => "切換子 Agent 工作階段",
+            (Self::EnUs, SlashCommand::MultiAgents) => "switch between sub-agent threads",
+            (Self::JaJp, SlashCommand::MultiAgents) => "サブ Agent スレッドを切り替え",
+            (Self::KoKr, SlashCommand::MultiAgents) => "하위 에이전트 스레드 전환",
+            (Self::ZhCn, SlashCommand::Resume) => "恢复之前的会话",
+            (Self::ZhTw, SlashCommand::Resume) => "恢復先前的工作階段",
+            (Self::EnUs, SlashCommand::Resume) => "resume a previous session",
+            (Self::JaJp, SlashCommand::Resume) => "以前のセッションを再開",
+            (Self::KoKr, SlashCommand::Resume) => "이전 세션 재개",
         }
     }
 
@@ -317,12 +341,61 @@ impl Locale {
                 Self::JaJp => "失敗",
                 Self::KoKr => "실패",
             },
+            "closed" => match self {
+                Self::ZhCn => "已关闭",
+                Self::ZhTw => "已關閉",
+                Self::EnUs => "closed",
+                Self::JaJp => "終了",
+                Self::KoKr => "닫힘",
+            },
             "interrupted" => match self {
                 Self::ZhCn => "已中断",
                 Self::ZhTw => "已中斷",
                 Self::EnUs => "interrupted",
                 Self::JaJp => "中断",
                 Self::KoKr => "중단됨",
+            },
+            "background task started" => match self {
+                Self::ZhCn => "后台任务已启动",
+                Self::ZhTw => "背景工作已啟動",
+                Self::EnUs => "background task started",
+                Self::JaJp => "バックグラウンドタスクを開始しました",
+                Self::KoKr => "백그라운드 작업 시작됨",
+            },
+            "background task failed" => match self {
+                Self::ZhCn => "后台任务失败",
+                Self::ZhTw => "背景工作失敗",
+                Self::EnUs => "background task failed",
+                Self::JaJp => "バックグラウンドタスクに失敗しました",
+                Self::KoKr => "백그라운드 작업 실패",
+            },
+            "background task is idle" => match self {
+                Self::ZhCn => "后台任务未运行",
+                Self::ZhTw => "背景工作未執行",
+                Self::EnUs => "background task is idle",
+                Self::JaJp => "バックグラウンドタスクは待機中です",
+                Self::KoKr => "백그라운드 작업 대기 중",
+            },
+            "stopping background turn" => match self {
+                Self::ZhCn => "正在停止后台回合",
+                Self::ZhTw => "正在停止背景回合",
+                Self::EnUs => "stopping background turn",
+                Self::JaJp => "バックグラウンドターンを停止中",
+                Self::KoKr => "백그라운드 턴 중지 중",
+            },
+            "agent renamed" => match self {
+                Self::ZhCn => "Agent 已改名",
+                Self::ZhTw => "Agent 已改名",
+                Self::EnUs => "agent renamed",
+                Self::JaJp => "Agent の名前を変更しました",
+                Self::KoKr => "에이전트 이름 변경됨",
+            },
+            "resume picker is available from /resume" => match self {
+                Self::ZhCn => "请使用 /resume 打开会话选择器",
+                Self::ZhTw => "請使用 /resume 開啟工作階段選擇器",
+                Self::EnUs => "resume picker is available from /resume",
+                Self::JaJp => "/resume から再開ピッカーを開けます",
+                Self::KoKr => "/resume에서 재개 선택기를 열 수 있음",
             },
             "declined" => match self {
                 Self::ZhCn => "已拒绝",
@@ -337,6 +410,55 @@ impl Locale {
                 Self::EnUs => "settings updated",
                 Self::JaJp => "設定を更新しました",
                 Self::KoKr => "설정이 업데이트됨",
+            },
+            "collaboration mode updated" => match self {
+                Self::ZhCn => "协作模式已更新",
+                Self::ZhTw => "協作模式已更新",
+                Self::EnUs => "collaboration mode updated",
+                Self::JaJp => "コラボレーションモードを更新しました",
+                Self::KoKr => "협업 모드가 업데이트됨",
+            },
+            "plan mode" => match self {
+                Self::ZhCn => "计划模式",
+                Self::ZhTw => "計畫模式",
+                Self::EnUs => "plan mode",
+                Self::JaJp => "計画モード",
+                Self::KoKr => "계획 모드",
+            },
+            "plan mode unavailable on this server" => match self {
+                Self::ZhCn => "此服务器不支持计划模式",
+                Self::ZhTw => "此伺服器不支援計畫模式",
+                Self::EnUs => "plan mode unavailable on this server",
+                Self::JaJp => "このサーバーでは計画モードを利用できません",
+                Self::KoKr => "이 서버에서는 계획 모드를 사용할 수 없음",
+            },
+            "switched agent" => match self {
+                Self::ZhCn => "已切换 Agent",
+                Self::ZhTw => "已切換 Agent",
+                Self::EnUs => "switched agent",
+                Self::JaJp => "Agent を切り替えました",
+                Self::KoKr => "에이전트 전환됨",
+            },
+            "sub-agent thread is parent-owned" => match self {
+                Self::ZhCn => "子 Agent 会话由父会话控制",
+                Self::ZhTw => "子 Agent 工作階段由父工作階段控制",
+                Self::EnUs => "sub-agent thread is parent-owned",
+                Self::JaJp => "サブ Agent スレッドは親が管理します",
+                Self::KoKr => "하위 에이전트 스레드는 부모가 제어함",
+            },
+            "agent switch failed" => match self {
+                Self::ZhCn => "切换 Agent 失败",
+                Self::ZhTw => "切換 Agent 失敗",
+                Self::EnUs => "agent switch failed",
+                Self::JaJp => "Agent の切り替えに失敗しました",
+                Self::KoKr => "에이전트 전환 실패",
+            },
+            "no sub-agents available" => match self {
+                Self::ZhCn => "暂无可用的子 Agent",
+                Self::ZhTw => "目前沒有可用的子 Agent",
+                Self::EnUs => "no sub-agents available",
+                Self::JaJp => "利用可能なサブ Agent がありません",
+                Self::KoKr => "사용 가능한 하위 에이전트가 없음",
             },
             "choose model" => match self {
                 Self::ZhCn => "请选择模型",
@@ -462,6 +584,69 @@ impl Locale {
             _ => return status.to_string(),
         };
         rest.map_or_else(|| label.to_string(), |rest| format!("{label}: {rest}"))
+    }
+
+    pub(crate) fn multi_agent(self, text: &str) -> String {
+        if text == "Finished waiting" {
+            return match self {
+                Self::ZhCn => "等待完成".to_string(),
+                Self::ZhTw => "等待完成".to_string(),
+                Self::EnUs => text.to_string(),
+                Self::JaJp => "待機が完了しました".to_string(),
+                Self::KoKr => "대기 완료".to_string(),
+            };
+        }
+
+        const PREFIXES: &[(&str, &str, &str, &str, &str)] = &[
+            ("Spawned ", "已启动 ", "已啟動 ", "起動: ", "생성됨 "),
+            (
+                "Sent input to ",
+                "已向其发送输入 ",
+                "已向其傳送輸入 ",
+                "入力送信: ",
+                "입력 전송: ",
+            ),
+            (
+                "Resuming ",
+                "正在恢复 ",
+                "正在恢復 ",
+                "再開中: ",
+                "재개 중: ",
+            ),
+            ("Resumed ", "已恢复 ", "已恢復 ", "再開済み: ", "재개됨 "),
+            (
+                "Waiting for ",
+                "正在等待 ",
+                "正在等待 ",
+                "待機中: ",
+                "대기 중: ",
+            ),
+            ("Closed ", "已关闭 ", "已關閉 ", "終了: ", "닫힘 "),
+            ("Started ", "已开始 ", "已開始 ", "開始: ", "시작됨 "),
+            (
+                "Interacted with ",
+                "已与其交互 ",
+                "已與其互動 ",
+                "操作: ",
+                "상호작용: ",
+            ),
+            ("Interrupted ", "已中断 ", "已中斷 ", "中断: ", "중단됨 "),
+        ];
+        PREFIXES
+            .iter()
+            .find_map(|(prefix, zh_cn, zh_tw, ja, ko)| {
+                text.strip_prefix(prefix).map(|rest| {
+                    let label = match self {
+                        Self::ZhCn => zh_cn,
+                        Self::ZhTw => zh_tw,
+                        Self::EnUs => prefix,
+                        Self::JaJp => ja,
+                        Self::KoKr => ko,
+                    };
+                    format!("{label}{rest}")
+                })
+            })
+            .unwrap_or_else(|| text.to_string())
     }
 
     pub(crate) fn detail(self, detail: &str) -> String {
@@ -726,6 +911,113 @@ impl Locale {
         }
     }
 
+    pub(crate) fn agent_picker_title(self) -> &'static str {
+        match self {
+            Self::ZhCn => "选择 Agent",
+            Self::ZhTw => "選擇 Agent",
+            Self::EnUs => "Choose an agent",
+            Self::JaJp => "Agent を選択",
+            Self::KoKr => "에이전트 선택",
+        }
+    }
+
+    pub(crate) fn agent_picker_empty(self) -> &'static str {
+        match self {
+            Self::ZhCn => "暂无可用的子 Agent。按 Esc 取消",
+            Self::ZhTw => "目前沒有可用的子 Agent。按 Esc 取消",
+            Self::EnUs => "No sub-agents available. Esc cancel",
+            Self::JaJp => "利用可能なサブ Agent がありません。Esc でキャンセル",
+            Self::KoKr => "사용 가능한 하위 에이전트가 없습니다. Esc로 취소",
+        }
+    }
+
+    pub(crate) fn agent_picker_footer(self) -> &'static str {
+        match self {
+            Self::ZhCn => "上下移动  Enter 查看  Esc 取消",
+            Self::ZhTw => "上下移動  Enter 檢視  Esc 取消",
+            Self::EnUs => "Up/Down move  Enter view  Esc cancel",
+            Self::JaJp => "上下移動  Enter 表示  Esc キャンセル",
+            Self::KoKr => "위/아래 이동  Enter 보기  Esc 취소",
+        }
+    }
+
+    pub(crate) fn agents_overview_title(self) -> &'static str {
+        match self {
+            Self::ZhCn => "Agent 控制中心",
+            Self::ZhTw => "Agent 控制中心",
+            Self::EnUs => "Agent command center",
+            Self::JaJp => "Agent コマンドセンター",
+            Self::KoKr => "에이전트 명령 센터",
+        }
+    }
+
+    pub(crate) fn agents_overview_footer(self) -> &'static str {
+        match self {
+            Self::ZhCn => {
+                "上下移动 · Enter 打开 · / 或 Ctrl+F 搜索 · Ctrl+N 新建 · Ctrl+R 改名 · Ctrl+X 停止 · Ctrl+S 分组 · r 刷新 · Esc 返回"
+            }
+            Self::ZhTw => {
+                "上下移動 · Enter 開啟 · / 或 Ctrl+F 搜尋 · Ctrl+N 新建 · Ctrl+R 改名 · Ctrl+X 停止 · Ctrl+S 分組 · r 重新整理 · Esc 返回"
+            }
+            Self::EnUs => {
+                "Up/Down navigate · Enter open · / or Ctrl+F search · Ctrl+N new · Ctrl+R rename · Ctrl+X stop · Ctrl+S group · r refresh · Esc back"
+            }
+            Self::JaJp => {
+                "上下移動 · Enter 開く · / または Ctrl+F 検索 · Ctrl+N 新規 · Ctrl+R 名前変更 · Ctrl+X 停止 · Ctrl+S グループ · r 更新 · Esc 戻る"
+            }
+            Self::KoKr => {
+                "위/아래 이동 · Enter 열기 · / 또는 Ctrl+F 검색 · Ctrl+N 새 작업 · Ctrl+R 이름 변경 · Ctrl+X 중지 · Ctrl+S 그룹 · r 새로 고침 · Esc 뒤로"
+            }
+        }
+    }
+
+    pub(crate) fn agents_overview_input_prefix(self, rename: bool) -> &'static str {
+        match (self, rename) {
+            (Self::ZhCn, true) => "改名",
+            (Self::ZhCn, false) => "新建任务",
+            (Self::ZhTw, true) => "改名",
+            (Self::ZhTw, false) => "新建工作",
+            (Self::EnUs, true) => "Rename",
+            (Self::EnUs, false) => "New task",
+            (Self::JaJp, true) => "名前変更",
+            (Self::JaJp, false) => "新しいタスク",
+            (Self::KoKr, true) => "이름 변경",
+            (Self::KoKr, false) => "새 작업",
+        }
+    }
+
+    pub(crate) fn agents_overview_search_prefix(self) -> &'static str {
+        match self {
+            Self::ZhCn => "搜索",
+            Self::ZhTw => "搜尋",
+            Self::EnUs => "Search",
+            Self::JaJp => "検索",
+            Self::KoKr => "검색",
+        }
+    }
+
+    pub(crate) fn agents_overview_group_label(self, group: &'static str) -> &'static str {
+        match (self, group) {
+            (Self::ZhCn, "need input") => "需要输入",
+            (Self::ZhTw, "need input") => "需要輸入",
+            (Self::JaJp, "need input") => "入力待ち",
+            (Self::KoKr, "need input") => "입력 필요",
+            (Self::ZhCn, "working") => "运行中",
+            (Self::ZhTw, "working") => "執行中",
+            (Self::JaJp, "working") => "実行中",
+            (Self::KoKr, "working") => "작업 중",
+            (Self::ZhCn, "ready") => "就绪",
+            (Self::ZhTw, "ready") => "就緒",
+            (Self::JaJp, "ready") => "準備完了",
+            (Self::KoKr, "ready") => "준비됨",
+            (Self::ZhCn, "finished") => "已完成",
+            (Self::ZhTw, "finished") => "已完成",
+            (Self::JaJp, "finished") => "完了",
+            (Self::KoKr, "finished") => "완료",
+            (_, value) => value,
+        }
+    }
+
     pub(crate) fn resume_title(self) -> &'static str {
         match self {
             Self::ZhCn => "选择会话",
@@ -933,6 +1225,16 @@ impl Locale {
         }
     }
 
+    pub(crate) fn resume_transcript_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "Ctrl+T 查看完整记录",
+            Self::ZhTw => "Ctrl+T 檢視完整記錄",
+            Self::EnUs => "Ctrl+T view full transcript",
+            Self::JaJp => "Ctrl+T 完全な履歴を表示",
+            Self::KoKr => "Ctrl+T 전체 대화 기록 보기",
+        }
+    }
+
     pub(crate) fn created_label(self) -> &'static str {
         match self {
             Self::ZhCn => "创建时间",
@@ -1056,6 +1358,93 @@ mod tests {
     }
 
     #[test]
+    fn collaboration_mode_statuses_cover_all_product_locales() {
+        let cases = [
+            (
+                Locale::ZhCn,
+                "协作模式已更新",
+                "计划模式",
+                "此服务器不支持计划模式",
+            ),
+            (
+                Locale::ZhTw,
+                "協作模式已更新",
+                "計畫模式",
+                "此伺服器不支援計畫模式",
+            ),
+            (
+                Locale::EnUs,
+                "collaboration mode updated",
+                "plan mode",
+                "plan mode unavailable on this server",
+            ),
+            (
+                Locale::JaJp,
+                "コラボレーションモードを更新しました",
+                "計画モード",
+                "このサーバーでは計画モードを利用できません",
+            ),
+            (
+                Locale::KoKr,
+                "협업 모드가 업데이트됨",
+                "계획 모드",
+                "이 서버에서는 계획 모드를 사용할 수 없음",
+            ),
+        ];
+
+        for (locale, updated, plan, unavailable) in cases {
+            assert_eq!(locale.status("collaboration mode updated"), updated);
+            assert_eq!(locale.status("plan mode"), plan);
+            assert_eq!(
+                locale.status("plan mode unavailable on this server"),
+                unavailable
+            );
+        }
+    }
+
+    #[test]
+    fn multi_agent_titles_cover_all_product_locales() {
+        let cases = [
+            (
+                Locale::ZhCn,
+                "已启动 agent-1",
+                "等待完成",
+                "已中断 `agent-1`",
+            ),
+            (
+                Locale::ZhTw,
+                "已啟動 agent-1",
+                "等待完成",
+                "已中斷 `agent-1`",
+            ),
+            (
+                Locale::EnUs,
+                "Spawned agent-1",
+                "Finished waiting",
+                "Interrupted `agent-1`",
+            ),
+            (
+                Locale::JaJp,
+                "起動: agent-1",
+                "待機が完了しました",
+                "中断: `agent-1`",
+            ),
+            (
+                Locale::KoKr,
+                "생성됨 agent-1",
+                "대기 완료",
+                "중단됨 `agent-1`",
+            ),
+        ];
+        for (locale, spawned, waiting, interrupted) in cases {
+            assert_eq!(locale.multi_agent("Spawned agent-1"), spawned);
+            assert_eq!(locale.multi_agent("Finished waiting"), waiting);
+            assert_eq!(locale.multi_agent("Interrupted `agent-1`"), interrupted);
+        }
+        assert_eq!(Locale::EnUs.multi_agent("unknown event"), "unknown event");
+    }
+
+    #[test]
     fn command_output_omission_markers_cover_all_product_locales() {
         let line_markers = [
             (Locale::ZhCn, "已省略 2 行"),
@@ -1077,6 +1466,44 @@ mod tests {
         }
         for (locale, marker) in byte_markers {
             assert!(locale.output_omitted_bytes(3).contains(marker));
+        }
+    }
+
+    #[test]
+    fn agents_overview_controls_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            assert!(!locale.agents_overview_title().is_empty());
+            assert!(!locale.agents_overview_footer().is_empty());
+            assert!(!locale.agents_overview_search_prefix().is_empty());
+            assert!(!locale.agents_overview_group_label("need input").is_empty());
+        }
+    }
+
+    #[test]
+    fn agents_overview_task_statuses_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            assert!(!locale.agents_overview_input_prefix(false).is_empty());
+            assert!(!locale.agents_overview_input_prefix(true).is_empty());
+            assert!(!locale
+                .status("background task started: thread-1")
+                .is_empty());
+            assert!(!locale.status("background task failed: offline").is_empty());
+            assert!(!locale.status("agent renamed").is_empty());
+            assert!(!locale
+                .status("resume picker is available from /resume")
+                .is_empty());
         }
     }
 
@@ -1265,6 +1692,7 @@ mod tests {
             assert!(!locale.resume_density_label(false).is_empty());
             assert!(!locale.resume_density_label(true).is_empty());
             assert!(!locale.resume_expand_hint().is_empty());
+            assert!(!locale.resume_transcript_hint().is_empty());
             assert!(!locale.created_label().is_empty());
             assert!(!locale.updated_label().is_empty());
             assert!(!locale.resume_transcript_loading().is_empty());

@@ -2,6 +2,7 @@ pub use app_server_protocol::app_server_method_catalog;
 pub use app_server_protocol::is_app_server_notification_method;
 pub use app_server_protocol::is_app_server_request_method;
 pub use app_server_protocol::protocol::v2::ServerNotification;
+use app_server_protocol::protocol::v2::ServerRequest;
 pub use app_server_protocol::protocol::v2::ThreadRevertParams;
 pub use app_server_protocol::protocol::v2::ThreadRevertResponse;
 pub use app_server_protocol::protocol::v2::ThreadRevertedNotification;
@@ -402,8 +403,16 @@ mod session;
 mod transport;
 
 pub use remote::{RemoteTransport, RemoteTransportConfig};
-pub use session::{ClientSession, RequestHandle, SessionError, SessionEvent};
+pub use session::{ClientSession, RequestHandle, SessionError};
 pub use transport::{SessionTransport, StdioTransport, StdioTransportConfig};
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AppServerEvent {
+    Lagged { skipped: usize },
+    ServerNotification(Box<ServerNotification>),
+    ServerRequest(Box<ServerRequest>),
+    Disconnected { message: String },
+}
 
 #[derive(Debug, Error)]
 pub enum ClientError {
