@@ -1,7 +1,7 @@
 use super::session_lifecycle::stored_session_hidden_from_user_recents;
 use super::status::{agent_turn_blocks_queue_resume, agent_turn_is_active};
 use super::{ProjectionStore, RuntimeCore, RuntimeCoreError};
-use agent_protocol::PageCursor;
+use agent_protocol::{PageCursor, SortDirection, TurnItemsView};
 use app_server_protocol::protocol::v2::{
     ThreadLoadedListParams, ThreadLoadedListResponse, ThreadMetadataGitInfoUpdateParams,
     ThreadMetadataUpdateParams, ThreadSearchOccurrence, ThreadSearchOccurrencesParams,
@@ -714,6 +714,43 @@ impl RuntimeCore {
             next_cursor: page.next_cursor.map(StoreCursor::into_string),
             backwards_cursor: page.backwards_cursor.map(StoreCursor::into_string),
         })
+    }
+
+    pub(crate) async fn paginated_resume_backwards_cursors(
+        &self,
+        thread_id: agent_protocol::ThreadId,
+    ) -> Result<(Option<String>, Option<String>), RuntimeCoreError> {
+        let store = self.canonical_thread_store()?;
+        let turns_page = store
+            .list_turns(ListTurnsParams {
+                thread_id: thread_id.clone(),
+                include_archived: true,
+                page: PageRequest {
+                    cursor: None,
+                    limit: 1,
+                    sort_direction: SortDirection::Desc,
+                },
+                items_view: TurnItemsView::NotLoaded,
+            })
+            .await
+            .map_err(store_error)?;
+        let items_page = store
+            .list_items(ListItemsParams {
+                thread_id,
+                turn_id: None,
+                include_archived: true,
+                page: PageRequest {
+                    cursor: None,
+                    limit: 1,
+                    sort_direction: SortDirection::Desc,
+                },
+            })
+            .await
+            .map_err(store_error)?;
+        Ok((
+            turns_page.backwards_cursor.map(StoreCursor::into_string),
+            items_page.backwards_cursor.map(StoreCursor::into_string),
+        ))
     }
 
     pub async fn search_thread_occurrences(

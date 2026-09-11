@@ -450,7 +450,14 @@ fn canonical_command_completion_emits_redacted_terminal_interaction_before_raw_i
     let output = mirror.process_event(&RuntimeAgentEvent::ItemCompleted { item });
 
     assert_eq!(output.before_raw.len(), 1);
-    assert!(output.after_raw.is_empty());
+    assert_eq!(
+        output
+            .after_raw
+            .iter()
+            .map(|event| event.event_type.as_str())
+            .collect::<Vec<_>>(),
+        vec!["command.started", "command.output", "command.exited"]
+    );
     assert_eq!(output.before_raw[0].event_type, "command.interaction");
     assert_eq!(output.before_raw[0].payload["commandId"], "exec-call");
     assert_eq!(output.before_raw[0].payload["processId"], "process-7");

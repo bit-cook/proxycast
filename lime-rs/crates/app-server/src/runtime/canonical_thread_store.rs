@@ -740,12 +740,11 @@ impl ProjectionStore {
             .flatten()
             .map(|(_, ordinal, id)| encode_cursor(CursorKind::Turns, *ordinal, id))
             .transpose()?;
-        let backwards_cursor = params
-            .page
-            .cursor
-            .as_ref()
-            .and_then(|_| rows.first())
-            .map(|(_, ordinal, id)| encode_cursor(CursorKind::Turns, *ordinal, id))
+        let backwards_cursor = rows
+            .first()
+            .map(|(_, ordinal, id)| {
+                encode_cursor_with_inclusive(CursorKind::Turns, *ordinal, id, true)
+            })
             .transpose()?;
         Ok(TurnPage {
             data: rows.into_iter().map(|(turn, _, _)| turn).collect(),
@@ -774,12 +773,11 @@ impl ProjectionStore {
             .flatten()
             .map(|(_, ordinal, id)| encode_cursor(CursorKind::Items, *ordinal, id))
             .transpose()?;
-        let backwards_cursor = params
-            .page
-            .cursor
-            .as_ref()
-            .and_then(|_| rows.first())
-            .map(|(_, ordinal, id)| encode_cursor(CursorKind::Items, *ordinal, id))
+        let backwards_cursor = rows
+            .first()
+            .map(|(_, ordinal, id)| {
+                encode_cursor_with_inclusive(CursorKind::Items, *ordinal, id, true)
+            })
             .transpose()?;
         Ok(ItemPage {
             data: rows.into_iter().map(|(item, _, _)| item).collect(),

@@ -7,20 +7,24 @@ pub(crate) enum SlashCommand {
     Effort,
     Permissions,
     Status,
+    Pwd,
     Copy,
+    Export,
     Agents,
     MultiAgents,
     Resume,
 }
 
 impl SlashCommand {
-    pub(crate) const ALL: [Self; 9] = [
+    pub(crate) const ALL: [Self; 11] = [
         Self::Model,
         Self::Plan,
         Self::Effort,
         Self::Permissions,
         Self::Status,
+        Self::Pwd,
         Self::Copy,
+        Self::Export,
         Self::Agents,
         Self::MultiAgents,
         Self::Resume,
@@ -33,7 +37,9 @@ impl SlashCommand {
             Self::Effort => "effort",
             Self::Permissions => "permissions",
             Self::Status => "status",
+            Self::Pwd => "pwd",
             Self::Copy => "copy",
+            Self::Export => "export",
             Self::Agents => "agents",
             Self::MultiAgents => "subagents",
             Self::Resume => "resume",
@@ -49,6 +55,9 @@ impl SlashCommand {
     }
 
     pub(crate) fn from_name(name: &str) -> Option<Self> {
+        if name == "cwd" {
+            return Some(Self::Pwd);
+        }
         Self::ALL
             .into_iter()
             .find(|command| command.command() == name)
@@ -92,7 +101,9 @@ mod tests {
                 "effort",
                 "permissions",
                 "status",
+                "pwd",
                 "copy",
+                "export",
                 "agents",
                 "subagents",
                 "resume",
@@ -104,5 +115,6 @@ mod tests {
         }
         assert_eq!(command_from_prompt("/unknown"), None);
         assert_eq!(command_from_prompt("ordinary input"), None);
+        assert_eq!(command_from_prompt("/cwd"), Some(SlashCommand::Pwd));
     }
 }

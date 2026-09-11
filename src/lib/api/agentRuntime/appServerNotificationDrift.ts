@@ -121,6 +121,8 @@ const PROJECTED_NOTIFICATION_METHODS = new Set([
   "thread/project/updated",
   "thread/queue/changed",
   "thread/reverted",
+  "thread/goal/updated",
+  "thread/goal/cleared",
   "turn/diff/updated",
   "turn/moderationMetadata",
 ]);

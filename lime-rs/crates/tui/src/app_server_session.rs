@@ -1,4 +1,8 @@
-use std::collections::HashSet;
+mod history;
+
+pub(crate) use history::HISTORY_ITEM_PAGE_LIMIT;
+
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,8 +15,8 @@ use app_server_protocol::protocol::v2::{
     CurrentTimeReadResponse, ModelListParams, ModelListResponse, PermissionProfileListParams,
     PermissionProfileListResponse, PromptHistoryAppendParams, PromptHistoryAppendResponse,
     PromptHistoryReadParams, PromptHistoryReadResponse, QueuedSubmission, ServerRequest,
-    ThreadForkParams, ThreadForkResponse, ThreadListParams, ThreadListResponse,
-    ThreadQueueAddParams, ThreadQueueAddResponse, ThreadQueueDeleteParams,
+    SkillsListParams, SkillsListResponse, ThreadForkParams, ThreadForkResponse, ThreadListParams,
+    ThreadListResponse, ThreadQueueAddParams, ThreadQueueAddResponse, ThreadQueueDeleteParams,
     ThreadQueueDeleteResponse, ThreadQueueListParams, ThreadQueueListResponse, ThreadReadParams,
     ThreadReadResponse, ThreadResumeParams, ThreadResumeResponse, ThreadSetNameParams,
     ThreadSetNameResponse, ThreadSettingsUpdateParams, ThreadSettingsUpdateResponse,
@@ -20,7 +24,7 @@ use app_server_protocol::protocol::v2::{
     ThreadUnarchiveResponse, TurnInterruptParams, TurnInterruptResponse, TurnStartParams,
     TurnStartResponse, TurnSteerParams, TurnSteerResponse, UserInput,
     METHOD_COLLABORATION_MODE_LIST, METHOD_PERMISSION_PROFILE_LIST, METHOD_PROMPT_HISTORY_APPEND,
-    METHOD_PROMPT_HISTORY_READ, METHOD_THREAD_ARCHIVE, METHOD_THREAD_QUEUE_ADD,
+    METHOD_PROMPT_HISTORY_READ, METHOD_SKILLS_LIST, METHOD_THREAD_ARCHIVE, METHOD_THREAD_QUEUE_ADD,
     METHOD_THREAD_QUEUE_DELETE, METHOD_THREAD_QUEUE_LIST, METHOD_THREAD_READ, METHOD_THREAD_RESUME,
     METHOD_THREAD_SETTINGS_UPDATE, METHOD_THREAD_START, METHOD_TURN_INTERRUPT, METHOD_TURN_START,
     METHOD_TURN_STEER,
@@ -47,6 +51,7 @@ pub(crate) struct AppServerSession {
     thread_id: Option<String>,
     session_id: Option<String>,
     active_permission_profile: Option<String>,
+    history_pagination: HashMap<String, history::ThreadHistoryPagination>,
 }
 
 impl AppServerSession {
@@ -66,6 +71,7 @@ impl AppServerSession {
             thread_id: None,
             session_id: None,
             active_permission_profile: None,
+            history_pagination: HashMap::new(),
         })
     }
 
@@ -82,6 +88,7 @@ impl AppServerSession {
             thread_id: None,
             session_id: None,
             active_permission_profile: None,
+            history_pagination: HashMap::new(),
         })
     }
 
@@ -134,17 +141,28 @@ impl AppServerSession {
         &mut self,
         thread_id: String,
     ) -> Result<ThreadResumeResponse> {
-        let response: ThreadResumeResponse = self
+        let mut response: ThreadResumeResponse = self
             .request_handle
             .request(
                 METHOD_THREAD_RESUME,
                 ThreadResumeParams {
-                    thread_id,
+                    thread_id: thread_id.clone(),
+                    exclude_turns: true,
                     ..ThreadResumeParams::default()
                 },
             )
             .await
             .context("failed to resume App Server thread")?;
+        if response.thread.history_mode
+            == app_server_protocol::protocol::v2::ThreadHistoryMode::Legacy
+            && response.thread.turns.is_empty()
+        {
+            response.thread = self
+                .thread_read(thread_id, true)
+                .await
+                .context("failed to hydrate legacy App Server thread history")?
+                .thread;
+        }
         self.thread_id = Some(response.thread.id.clone());
         self.session_id = Some(response.thread.session_id.clone());
         self.active_permission_profile = response
@@ -334,6 +352,19 @@ impl AppServerSession {
             cursor = Some(next_cursor);
         }
         bail!("model list pagination exceeded 16 pages")
+    }
+
+    pub(crate) async fn list_skills(&self, cwds: Vec<PathBuf>) -> Result<SkillsListResponse> {
+        self.request_handle
+            .request(
+                METHOD_SKILLS_LIST,
+                SkillsListParams {
+                    cwds,
+                    force_reload: false,
+                },
+            )
+            .await
+            .context("failed to list App Server skills")
     }
 
     /// Discover optional collaboration modes from the App Server catalog.

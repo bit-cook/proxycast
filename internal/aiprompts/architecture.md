@@ -55,6 +55,38 @@ Future Cloud -> authenticated transport ----> LimeCore gateway
 
 TUI 的终端输入与绘制调度 owner 对齐 Codex `tui`：`tui::EventBroker` 统一持有可暂停/恢复的 crossterm 输入源，`tui::TuiEventStream` 将 key、paste、resize、focus 和 draw 归一化后交给 runtime；`tui::FrameRequester` 与 `frame_rate_limiter` 合并异步重绘并限制频率。workspace 级 crossterm 固定使用 Codex 同源的 `openai-oss-forks/crossterm` revision `45fecb9508105988f42fe6ff0441783ed3717f92`，其 terminal readiness 和外部消费输入修复是 external editor 交接的唯一依赖事实源。`tui::Tui` 只负责 terminal mode 生命周期，并在外部编辑器或恢复流程中暂停 broker，确保 stdin 不被后台 reader 占用。该层不得承接 App Server 请求、Thread 状态或第二套业务事件总线。真实 TUI Gate B 使用 PTY 驱动键盘和 alternate screen，并按 Codex 测试依赖使用 `vt100::Parser` 还原关闭前的实际屏幕；不能用删除 ANSI 后的字节拼接冒充用户可见状态。
 
+终端历史回放继续以 Codex `insert_history` 为唯一算法基线：`tui::insert_history` 负责 scroll region、full-screen raw replay、软换行、OSC 8 和 viewport 上方 history rows；`HistoryTerminal` 只抽象终端写入与 viewport bookkeeping，具体宿主仍是 `tui::Tui`，测试宿主使用真实 `vt100::Parser`。`ViewportState` 只记录几何、cursor anchor、alternate-screen round trip 和 visible history rows，不复制 Thread/Turn/Item 或 history DB。任何需要恢复 transcript 的能力必须从 App Server canonical projection 生成 `Line`，再进入该 owner；不得在 TUI 另建 Codex `custom_terminal` 或持久化滚动缓冲。
+
+TUI transcript presentation 继续按 Codex 的 `history_cell/` 与 `exec_cell/` 目录收敛：
+`history_cell::HistoryCell` 是单个 canonical `TranscriptEntry` 的终端 presentation owner，
+`TranscriptHistoryCell` 只做 Lime projection adapter；`exec_cell::{CommandOutput,
+OutputLines,OutputLinesParams,LiveCommandOutput}` 负责 command output 的 bounded preview、
+head/tail 保留、UTF-8 行截断和 omission marker。`entry.rs` 只能负责 canonical entry 到
+history-cell 输入的兼容投影，不得重新实现 command output 限制。两组 owner 均不持有
+provider、runtime loop、ThreadStore 或第二份 transcript/read model；未来 Cloud 只在
+`app-server-client` transport 边界接入同一 canonical projection。
+
+`app/history_ui.rs` 是主 transcript、Ctrl+T pager 和 resume transcript 的统一投影入口；
+`app/transcript_export.rs` 是 `/export` 的 current owner，导出只消费当前
+`ConversationProjection` 的 canonical entries，支持剪贴板复制和显式路径写入，并通过
+noclobber 保护拒绝覆盖已有文件。该 owner 不读取本地 rollout/history DB，也不在导出边界
+重新拼装 Thread/Turn/Item。
+
+`app/history_pagination.rs` 是 TUI 历史分页状态机 owner。它只保存 App Server 返回的
+opaque `thread/items/list` cursor、loading 状态和去重集合；PageUp 触发的 older-history
+请求必须经 `AppServerSession` 的 `RequestHandle` 发送，返回的 `ThreadItemEntry` 先 lowering
+为 `TranscriptEntry` 再 prepend 到 `ConversationProjection`。分页不能在 TUI 创建本地
+history store；legacy thread 继续使用 `thread/read(includeTurns=true)`，paginated thread
+使用 `thread/resume(excludeTurns=true)` 加 `thread/items/list`，直到 `nextCursor` 为 null。
+paginated metadata-only resume 的 head cursor 由
+`RuntimeCore::paginated_resume_backwards_cursors` 通过 canonical ThreadStore 的
+`list_turns/list_items(sort=desc, limit=1)` 生成；store 从页首行编码 inclusive
+`backwardsCursor`，cursor 内容不离开 store 解析边界。`thread/resume` 返回稳定的 turn/item
+head cursor，TUI 从 item cursor 开始 bounded hydration；重复或不前进的分页 cursor 按
+Codex `advancing_cursor` 语义终止，不转成第二套错误协议或本地 cursor。
+当前 overlay 的 bounded reflow 和 Codex 专用 review/MCP/file-activity 过滤仍属于
+`defer`，未伪造为 Lime current 语义。
+
 CLI 的 npm 分发边界对齐 `/Users/coso/Documents/dev/rust/codex/codex-cli`：`@limecloud/lime` 根包只发布 ESM launcher，并通过 optional dependency alias 选择平台包；平台包在 `vendor/<target-triple>/bin` 原子携带 `lime`、`app-server`、`code-mode-host`、Windows sandbox helpers 与 App Server 所需动态运行库。launcher 只负责平台解析、包管理器归属、参数/stdin/stdout 转发、signal forwarding 和退出原因镜像，不下载 release asset、不回退 `cargo run`，也不承接 App Server 业务。平台包必须先于根包串行发布，避免根包引用尚不存在的载荷版本；尚无真实构建/运行证据的平台不进入 optional dependency catalog。
 
 Cloud 当前落地 `app-server-client` 的 authenticated transport foundation，以及 LimeCore gateway 到 control-plane 租户 runtime registry 的受管 endpoint 解析；默认仍不启用 production endpoint，不创建认证 fallback、共享租户默认值或第二套 schema。foundation 在发送 `initialized` 前校验 `app-server` 服务端身份和 `appserver.v0` 协议版本；Bearer token 只进入 `Authorization` 请求头，配置 Debug 和 remote URL 均不得暴露凭证。gateway 只消费 control-plane 返回的已激活租户 `ws/wss` endpoint，静态模板不能作为生产隔离事实源。这些检查仍不等价于 Cloud 租户实例/数据根隔离；进入 production Cloud 前必须补齐 tenant-owned runtime 编排、凭证轮换、协议恢复、限流和审计，并继续让 App Server/RuntimeCore 成为唯一业务 owner。
@@ -1551,6 +1583,8 @@ JSON-RPC thread/resume
   -> RequestProcessor::handle_thread_resume_v2
   -> RuntimeCore::resume_thread
   -> canonical ThreadStore read + session hydration
+  -> RuntimeCore::paginated_resume_backwards_cursors
+  -> canonical ThreadStore descending turn/item head pages
   -> Thread/Turn/Item projection and optional turns page
   -> per-thread listener generation
   -> subscribe exact transport connection
@@ -1590,6 +1624,17 @@ completed/failed/canceled 已幂等入账，`provider.usage` 中间快照已覆�
 跨重启 provider history lowering、outbox crash-drain 和 Codex
 thread-scoped first-terminal MCP 语义仍是明确 follow-up，不能把本切片报告为完整 Codex resume
 parity。
+
+2026-09-10 extension confirmation: paginated metadata-only resume now returns store-owned,
+inclusive turn/item head cursors. Public JSON-RPC coverage proves empty embedded turns, stable
+cursor values across rejoin, and cursor-based reread of the newest canonical Turn and Item. TUI
+history hydration consumes the same item cursor through `app-server-client`; no Renderer, TUI or
+Cloud surface parses or mints a store cursor.
+
+Architecture extension impact: major; this completes the paginated resume/history cursor edge
+between App Server, RuntimeCore, ThreadStore and TUI without changing provider, tool or transport
+ownership. Architecture diagram updated: this section and the TUI pagination chain above.
+Responsible developer confirmation: root, 2026-09-10.
 
 ## 15. Model Reroute Transient Notification Boundary
 

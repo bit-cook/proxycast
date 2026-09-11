@@ -13,8 +13,9 @@ use app_server_protocol::protocol::v2::{
     METHOD_THREAD_UNARCHIVE,
 };
 use app_server_protocol::{
-    error_codes, METHOD_INITIALIZE, METHOD_INITIALIZED, METHOD_THREAD_READ, METHOD_THREAD_RESUME,
-    METHOD_THREAD_START, METHOD_THREAD_TURNS_LIST, METHOD_TURN_START, PROTOCOL_VERSION,
+    error_codes, METHOD_INITIALIZE, METHOD_INITIALIZED, METHOD_THREAD_ITEMS_LIST,
+    METHOD_THREAD_READ, METHOD_THREAD_RESUME, METHOD_THREAD_START, METHOD_THREAD_TURNS_LIST,
+    METHOD_TURN_START, PROTOCOL_VERSION,
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -1232,6 +1233,131 @@ async fn thread_resume_enforces_paginated_history_constraints() {
         metadata_only.pointer("/result/thread/historyMode"),
         Some(&json!("paginated"))
     );
+}
+
+#[tokio::test]
+async fn paginated_resume_returns_stable_backwards_cursors() {
+    let temp = TempDir::new().expect("paginated resume cursor temp dir");
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let projection_store = Arc::new(
+        ProjectionStore::initialize(temp.path().join("projection.sqlite"))
+            .expect("paginated resume cursor projection store"),
+    );
+    let runtime = RuntimeCore::with_backend(Arc::new(BlockingTurnBackend {
+        started: Arc::clone(&started),
+        release: Arc::clone(&release),
+    }))
+    .with_projection_store(projection_store);
+    let server = AppServer::with_runtime(runtime);
+    initialize_server(&server).await;
+
+    let thread_start = request(
+        &server,
+        2,
+        METHOD_THREAD_START,
+        json!({
+            "model": "fixture-model",
+            "modelProvider": "fixture-provider",
+            "historyMode": "paginated"
+        }),
+    )
+    .await;
+    let thread_id = thread_start
+        .pointer("/result/thread/id")
+        .and_then(Value::as_str)
+        .expect("thread/start id")
+        .to_string();
+    let turn_start = request(
+        &server,
+        3,
+        METHOD_TURN_START,
+        json!({
+            "threadId": thread_id,
+            "input": [{"type": "text", "text": "seed paginated history"}],
+            "model": "fixture-model",
+            "approvalPolicy": "never",
+            "sandboxPolicy": "workspace-write"
+        }),
+    )
+    .await;
+    timeout(Duration::from_secs(2), started.notified())
+        .await
+        .expect("backend must hold an active turn");
+    let turn_id = turn_start
+        .pointer("/result/turn/id")
+        .and_then(Value::as_str)
+        .expect("turn/start id")
+        .to_string();
+
+    let resumed = request(
+        &server,
+        4,
+        METHOD_THREAD_RESUME,
+        json!({"threadId": thread_id, "excludeTurns": true}),
+    )
+    .await;
+    assert_eq!(resumed.pointer("/result/thread/turns"), Some(&json!([])));
+    let turns_backwards_cursor = resumed
+        .pointer("/result/turnsBackwardsCursor")
+        .and_then(Value::as_str)
+        .expect("resume should return a turn head cursor")
+        .to_string();
+    let items_backwards_cursor = resumed
+        .pointer("/result/itemsBackwardsCursor")
+        .and_then(Value::as_str)
+        .expect("resume should return an item head cursor")
+        .to_string();
+
+    let rejoined = request(
+        &server,
+        5,
+        METHOD_THREAD_RESUME,
+        json!({"threadId": thread_id, "excludeTurns": true}),
+    )
+    .await;
+    assert_eq!(
+        rejoined.pointer("/result/turnsBackwardsCursor"),
+        Some(&json!(turns_backwards_cursor))
+    );
+    assert_eq!(
+        rejoined.pointer("/result/itemsBackwardsCursor"),
+        Some(&json!(items_backwards_cursor))
+    );
+
+    let turns = request(
+        &server,
+        6,
+        METHOD_THREAD_TURNS_LIST,
+        json!({
+            "threadId": thread_id,
+            "cursor": turns_backwards_cursor,
+            "limit": 1,
+            "sortDirection": "desc",
+            "itemsView": "notLoaded"
+        }),
+    )
+    .await;
+    assert_eq!(turns.pointer("/result/data/0/id"), Some(&json!(turn_id)));
+
+    let items = request(
+        &server,
+        7,
+        METHOD_THREAD_ITEMS_LIST,
+        json!({
+            "threadId": thread_id,
+            "cursor": items_backwards_cursor,
+            "limit": 1,
+            "sortDirection": "desc"
+        }),
+    )
+    .await;
+    assert_eq!(
+        items.pointer("/result/data/0/turnId"),
+        Some(&json!(turn_id))
+    );
+
+    release.notify_one();
 }
 
 #[tokio::test]

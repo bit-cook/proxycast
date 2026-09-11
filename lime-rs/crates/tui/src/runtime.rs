@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::app::event_dispatch::{EventContext, EventDispatch};
 use crate::app::reconnect::{reconnect_session, ReconnectedSession};
-use crate::app::{App, AppAction};
+use crate::app::{App, AppAction, ExternalEditorState};
 use crate::app_server_session::AppServerSession;
 use crate::bottom_pane::AppServerResponse;
 use crate::clipboard_copy::copy_to_clipboard;
@@ -74,120 +74,28 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
     let mut app = App::default();
     app.set_cwd(options.cwd.clone());
     app.set_locale(Locale::resolve(options.locale.as_deref()));
-    let mut model = options.model.clone();
-    let mut model_provider = options.model_provider.clone();
-    let mut effort = options.reasoning_effort.clone();
-    let mut permissions = options.permissions.clone();
-    let setup_result: Result<()> = async {
-        let mut permission_cwd = options.cwd.to_string_lossy().into_owned();
-        if let Some(thread_id) = options.resume_thread.clone() {
-            let response = session
-                .as_mut()
-                .expect("session available during setup")
-                .resume_thread(thread_id)
-                .await?;
-            permission_cwd = response.cwd.clone();
-            app.hydrate_thread(response.thread);
-            if model.is_none() {
-                model = Some(response.model);
-            }
-            if model_provider.is_none() {
-                model_provider = Some(response.model_provider);
-            }
-            if effort.is_none() {
-                effort = response.reasoning_effort;
-            }
-        } else {
-            let response = session
-                .as_mut()
-                .expect("session available during setup")
-                .start_thread(options.cwd.clone(), model.clone(), model_provider.clone())
-                .await?;
-            if model.is_none() {
-                model = Some(response.model);
-            }
-            if model_provider.is_none() {
-                model_provider = Some(response.model_provider);
-            }
-            if effort.is_none() {
-                effort = response.reasoning_effort;
-            }
-        }
-        let permission_profiles = session
-            .as_ref()
-            .expect("session available during setup")
-            .list_permission_profiles(Some(permission_cwd))
-            .await?;
-        app.set_permission_profiles(
-            permission_profiles
-                .data
-                .into_iter()
-                .filter(|profile| profile.allowed)
-                .map(|profile| profile.id),
-        );
-        if permissions.is_none() {
-            permissions = session
-                .as_ref()
-                .expect("session available during setup")
-                .active_permission_profile()
-                .map(str::to_string);
-        }
-        app.set_thread_id(
-            session
-                .as_ref()
-                .expect("session available during setup")
-                .thread_id()?
-                .to_string(),
-        );
-        let collaboration_modes = session
-            .as_ref()
-            .expect("session available during setup")
-            .list_collaboration_modes()
-            .await
-            .unwrap_or_default();
-        app.set_collaboration_modes(collaboration_modes);
-        session
-            .as_ref()
-            .expect("session available during setup")
-            .update_settings(
-                model.clone(),
-                model_provider.clone(),
-                effort.clone(),
-                permissions.clone(),
-            )
-            .await?;
-        app.set_settings(
-            model.clone(),
-            model_provider.clone(),
-            effort.clone(),
-            permissions.clone(),
-        );
-        match session
-            .as_ref()
-            .expect("session available during setup")
-            .read_prompt_history(200)
-            .await
-        {
-            Ok(history) => app
-                .composer
-                .load_history(history.data.into_iter().map(|entry| entry.text)),
-            Err(error) => app
-                .projection
-                .set_status(format!("prompt history unavailable: {error}")),
-        }
-        app.refresh_queued_submissions(session.as_ref().expect("session available during setup"))
-            .await;
-        Ok(())
-    }
+    let setup_result = crate::app::startup::initialize_session(
+        &options,
+        session.as_mut().expect("session available during setup"),
+        &mut app,
+    )
     .await;
-    if let Err(error) = setup_result {
-        let _ = session
-            .take()
-            .expect("session available after setup failure")
-            .shutdown()
-            .await;
-        return Err(error);
-    }
+    let (mut model, mut model_provider, mut effort, mut permissions) = match setup_result {
+        Ok(state) => (
+            state.model,
+            state.model_provider,
+            state.effort,
+            state.permissions,
+        ),
+        Err(error) => {
+            let _ = session
+                .take()
+                .expect("session available after setup failure")
+                .shutdown()
+                .await;
+            return Err(error);
+        }
+    };
     let mut terminal = match Tui::enter().context("failed to initialize terminal") {
         Ok(terminal) => terminal,
         Err(error) => {
@@ -212,6 +120,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
         let mut reconnect: Option<Pin<Box<dyn Future<Output = Result<ReconnectedSession>>>>> = None;
         let mut reconnect_thread_id: Option<String> = None;
         let mut reconnect_failed = false;
+        let mut pending_tui_event: Option<TuiEvent> = None;
         loop {
             if session.is_none() && reconnect.is_none() && !reconnect_failed {
                 if let Some(thread_id) = reconnect_thread_id.as_deref() {
@@ -250,6 +159,25 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                 .terminal_mut()
                 .draw(|frame| view::render(frame, &app))
                 .context("failed to render terminal")?;
+
+            if app.external_editor_state() == ExternalEditorState::Requested {
+                app.set_external_editor_state(ExternalEditorState::Active);
+                let draft = app.composer.text().to_string();
+                let edited = terminal
+                    .with_restored(|| edit_draft(&draft, &options.cwd))
+                    .await;
+                app.reset_external_editor_state();
+                match edited {
+                    Ok(Some(text)) => app.replace_composer(text),
+                    Ok(None) => app.projection.set_status("editor draft empty"),
+                    Err(error) => app.projection.set_status(error.to_string()),
+                }
+                let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+                if let std::task::Poll::Ready(event) = input.poll_crossterm_event(&mut context) {
+                    pending_tui_event = event;
+                }
+                continue;
+            }
 
             tokio::select! {
                 resume_event = async {
@@ -331,7 +259,13 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                 _ = status_tick.tick(), if app.projection.active_turn_id().is_some() => {
                     frame_requester.schedule_frame();
                 }
-                event = input.next() => {
+                event = async {
+                    match pending_tui_event.clone() {
+                        Some(event) => Some(event),
+                        None => input.next().await,
+                    }
+                } => {
+                    pending_tui_event = None;
                     let Some(event) = event else { break };
                     let event = match event {
                         TuiEvent::Draw => {
@@ -621,6 +555,9 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                         AppAction::CopyLastResponse => {
                             copy_last_response_with(&mut app, copy_to_clipboard);
                         }
+                        AppAction::ExportTranscript { path } => {
+                            export_transcript_with(&mut app, path, copy_to_clipboard);
+                        }
                         AppAction::PasteImage => match paste_image_to_temp_png() {
                             Ok((path, info)) => {
                                 app.attach_image(path);
@@ -650,20 +587,22 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 break;
                             }
                         }
-                        AppAction::OpenExternalEditor => {
-                            let draft = app.composer.text().to_string();
-                            let edited = terminal
-                                .with_restored(|| edit_draft(&draft, &options.cwd))
-                                .await;
-                            match edited {
-                                Ok(Some(text)) => app.replace_composer(text),
-                                Ok(None) => app.projection.set_status("editor draft empty"),
-                                Err(error) => app.projection.set_status(error.to_string()),
-                            }
-                        }
                         AppAction::ScrollUp => {
                             let page_size = current_transcript_page_size(&mut terminal, &app)?;
                             app.scroll_up(page_size);
+                            if app.scrollback_has_older_history {
+                                if let Err(error) = app
+                                    .request_older_history_page(
+                                        session
+                                            .as_mut()
+                                            .expect("session available during TUI"),
+                                    )
+                                    .await
+                                {
+                                    app.projection
+                                        .set_status(format!("history page failed: {error}"));
+                                }
+                            }
                         }
                         AppAction::ScrollDown => {
                             let page_size = current_transcript_page_size(&mut terminal, &app)?;
@@ -869,7 +808,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                     )
                     .await;
                     if disconnected_message.is_some() {
-                            let thread_id = session
+                        let thread_id = session
                                 .as_ref()
                                 .expect("session available during TUI")
                                 .thread_id()?
@@ -900,6 +839,10 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 .active_permission_profile()
                                 .map(str::to_string);
                             app.hydrate_thread(reconnected.thread);
+                            app.set_cwd(reconnected.cwd);
+                            app.projection.prepend_items(reconnected.history_items);
+                            app.scrollback_has_older_history =
+                                reconnected.scrollback_has_older_history;
                             app.set_permission_profiles(reconnected.permission_profiles);
                             app.set_collaboration_modes(
                                 reconnected
@@ -1018,6 +961,39 @@ fn copy_last_response_with(
             app.projection.set_status("copied last response");
         }
         Err(error) => app.projection.set_status(format!("copy failed: {error}")),
+    }
+}
+
+fn export_transcript_with(
+    app: &mut App,
+    path: Option<std::path::PathBuf>,
+    copy: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
+) {
+    let markdown =
+        match crate::app::transcript_export::render_markdown_transcript(app.projection.entries()) {
+            Ok(markdown) => markdown,
+            Err(error) => {
+                app.projection.set_status(format!("export failed: {error}"));
+                return;
+            }
+        };
+    match path {
+        Some(path) => {
+            match crate::app::transcript_export::write_transcript(&app.cwd, &path, &markdown) {
+                Ok(path) => app
+                    .projection
+                    .set_status(format!("exported conversation to {}", path.display())),
+                Err(error) => app.projection.set_status(format!("export failed: {error}")),
+            }
+        }
+        None => match copy(&markdown) {
+            Ok(lease) => {
+                app.clipboard_lease = lease;
+                app.projection
+                    .set_status("exported conversation to clipboard");
+            }
+            Err(error) => app.projection.set_status(format!("export failed: {error}")),
+        },
     }
 }
 

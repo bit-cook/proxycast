@@ -345,7 +345,7 @@ async function main() {
         "exec",
         "queue seed",
         "--json",
-        "--cwd",
+        "--cd",
         tempDir,
         "--model",
         "fixture-model",

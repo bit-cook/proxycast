@@ -7,7 +7,6 @@ use ratatui::Frame;
 use crate::app::App;
 use crate::bottom_pane;
 use crate::command_popup;
-use crate::entry;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::model_picker;
 use crate::pending_input_preview;
@@ -25,7 +24,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
     }
     if let Some(pager) = app.pager_overlay.as_ref() {
         let transcript_lines = if pager.is_transcript() {
-            projected_transcript_lines(app, area.width, true)
+            crate::app::history_ui::render_transcript_content_lines(app, area.width, true)
         } else {
             Vec::new()
         };
@@ -142,7 +141,7 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
 }
 
 fn render_transcript(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let lines = projected_transcript_lines(app, area.width, false);
+    let lines = crate::app::history_ui::render_transcript_content_lines(app, area.width, false);
     let paragraph = HyperlinkParagraph::new(&lines);
     let scroll = transcript_scroll_offset(
         paragraph.line_count(area.width),
@@ -150,27 +149,6 @@ fn render_transcript(frame: &mut Frame<'_>, area: Rect, app: &App) {
         app.transcript_scroll,
     );
     frame.render_widget(paragraph.scroll(scroll), area);
-}
-
-fn projected_transcript_lines(
-    app: &App,
-    viewport_width: u16,
-    separate_entries: bool,
-) -> Vec<crate::terminal_hyperlinks::HyperlinkLine> {
-    let content_width = Some(usize::from(viewport_width.saturating_sub(2).max(1)));
-    let mut lines = Vec::new();
-    for entry in app.projection.entries() {
-        if separate_entries && !lines.is_empty() {
-            lines.push(crate::terminal_hyperlinks::HyperlinkLine::default());
-        }
-        lines.extend(entry::hyperlink_lines_with_locale(
-            entry,
-            app.locale,
-            content_width,
-            &app.cwd,
-        ));
-    }
-    lines
 }
 
 fn transcript_scroll_offset(

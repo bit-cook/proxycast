@@ -76,6 +76,10 @@ impl ConversationProjection {
         self.status = status.into();
     }
 
+    pub(crate) fn add_system_message(&mut self, message: impl Into<String>) {
+        self.push_system(message.into());
+    }
+
     pub(crate) fn start_turn(&mut self, turn_id: String) {
         self.active_turn_id = Some(turn_id);
         self.status = "running".to_string();
@@ -88,6 +92,20 @@ impl ConversationProjection {
             .find(|entry| entry.kind == EntryKind::Assistant && !entry.text.is_empty())
             .map(|entry| entry.text.clone())
             .unwrap_or_default()
+    }
+
+    /// Prepend older canonical items while preserving transcript order.
+    pub(crate) fn prepend_items(&mut self, items: impl IntoIterator<Item = ThreadItem>) {
+        let mut older = items
+            .into_iter()
+            .filter_map(|item| project_item(&item, false))
+            .filter(|entry| !self.entries.iter().any(|current| current.id == entry.id))
+            .collect::<Vec<_>>();
+        if older.is_empty() {
+            return;
+        }
+        older.append(&mut self.entries);
+        self.entries = older;
     }
 
     pub(crate) fn hydrate_thread(&mut self, thread: Thread) {

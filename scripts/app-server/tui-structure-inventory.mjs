@@ -13,6 +13,8 @@ const codexRoot = path.resolve(
 );
 const codexRootDir = path.join(codexRoot, "codex-rs/tui/src");
 const limeRootDir = path.join(rootDir, "lime-rs/crates/tui/src");
+const codexTestsDir = path.join(codexRoot, "codex-rs/tui/tests");
+const limeTestsDir = path.join(rootDir, "lime-rs/crates/tui/tests");
 const outputPath = path.join(
   rootDir,
   "internal/exec-plans/tui-structure-inventory.json",
@@ -21,13 +23,20 @@ const outputPath = path.join(
 async function main() {
   const codex = await inspectTree(codexRootDir);
   const lime = await inspectTree(limeRootDir);
+  const codexTests = await inspectTree(codexTestsDir, isTuiTestFile);
+  const limeTests = await inspectTree(limeTestsDir, isTuiTestFile);
   const inventory = {
     schemaVersion: 1,
     source: {
       codexRoot,
       codexTuiCommit: await gitHead(path.join(codexRoot, "codex-rs/tui")),
     },
-    trees: { "codex-rs/tui/src": codex, "lime-rs/crates/tui/src": lime },
+    trees: {
+      "codex-rs/tui/src": codex,
+      "lime-rs/crates/tui/src": lime,
+      "codex-rs/tui/tests": codexTests,
+      "lime-rs/crates/tui/tests": limeTests,
+    },
     comparisons: {
       filesMissingInLime: difference(codex.files, lime.files),
       filesOnlyInLime: difference(lime.files, codex.files),
@@ -39,6 +48,8 @@ async function main() {
         lime.symbols.map((symbol) => symbol.name),
         codex.symbols.map((symbol) => symbol.name),
       ),
+      testFilesMissingInLime: difference(codexTests.files, limeTests.files),
+      testFilesOnlyInLime: difference(limeTests.files, codexTests.files),
     },
     rules: [
       "Codex TUI directory, module, type and function names are the baseline.",
@@ -56,9 +67,9 @@ async function main() {
   );
 }
 
-async function inspectTree(directory) {
+async function inspectTree(directory, include = (file) => file.endsWith(".rs")) {
   const files = (await walk(directory))
-    .filter((file) => file.endsWith(".rs"))
+    .filter(include)
     .map((file) => path.relative(directory, file).split(path.sep).join("/"))
     .sort();
   const symbols = [];
@@ -76,6 +87,10 @@ async function inspectTree(directory) {
     symbols,
     treeSha256: sha256(`${contentHashes.join("\n")}\n`),
   };
+}
+
+function isTuiTestFile(file) {
+  return file.endsWith(".rs") || file.endsWith(".jsonl");
 }
 
 function extractSymbols(source, relativePath) {

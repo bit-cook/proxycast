@@ -16,6 +16,7 @@ pub(crate) struct ViewportState {
     alt_saved_viewport: Option<Rect>,
     alt_screen_active: bool,
     viewport_invalidated: bool,
+    visible_history_rows: u16,
 }
 
 impl ViewportState {
@@ -27,6 +28,7 @@ impl ViewportState {
             alt_saved_viewport: None,
             alt_screen_active: false,
             viewport_invalidated: false,
+            visible_history_rows: 0,
         }
     }
 
@@ -94,6 +96,18 @@ impl ViewportState {
     #[allow(dead_code)]
     pub(crate) fn invalidate_viewport(&mut self) {
         self.viewport_invalidated = true;
+    }
+
+    pub(crate) fn note_history_rows_inserted(&mut self, rows: u16) {
+        self.visible_history_rows = self
+            .visible_history_rows
+            .saturating_add(rows)
+            .min(self.viewport_area.top());
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const fn visible_history_rows(&self) -> u16 {
+        self.visible_history_rows
     }
 
     #[allow(dead_code)]

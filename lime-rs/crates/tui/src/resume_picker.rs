@@ -16,17 +16,19 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 
+use crate::app::history_ui::render_transcript_entry_lines_wrapped;
 use crate::clipboard_paste::normalize_pasted_search_query;
 use crate::entry;
 use crate::locale::Locale;
 use crate::pager_overlay::{PagerAction, PagerOverlay};
-use crate::projection::{EntryKind, TranscriptEntry};
+#[cfg(test)]
+use crate::projection::EntryKind;
+use crate::projection::TranscriptEntry;
 use crate::runtime::{connect_session, TuiOptions};
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::text_formatting::center_truncate_path;
 use crate::tui::{Tui, TuiEvent};
 use crate::width::display_width;
-use crate::wrapping::{adaptive_wrap_line, RtOptions};
 
 mod archive;
 mod page_loading;
@@ -1215,7 +1217,16 @@ fn render_expanded_session_details(
                 Style::default().add_modifier(Modifier::BOLD),
             )));
             for entry in entries {
-                lines.extend(render_transcript_content_lines(entry, width));
+                lines.extend(
+                    render_transcript_entry_lines_wrapped(
+                        entry,
+                        u16::try_from(width).unwrap_or(u16::MAX),
+                        locale,
+                        &thread.cwd,
+                    )
+                    .into_iter()
+                    .map(|line| line.line),
+                );
             }
         }
         None => {}
@@ -1230,42 +1241,6 @@ fn metadata_line(label: &str, value: &str, width: usize) -> Line<'static> {
         Span::styled(prefix, Style::default().fg(Color::DarkGray)),
         Span::raw(truncate_display(value, available)),
     ])
-}
-
-fn render_transcript_content_lines(entry: &TranscriptEntry, width: usize) -> Vec<Line<'static>> {
-    let (prefix, style) = match entry.kind {
-        EntryKind::User => ("  you  ", Style::default().fg(Color::Cyan)),
-        EntryKind::Assistant => ("  assistant  ", Style::default().fg(Color::Green)),
-        EntryKind::Reasoning => ("  reasoning  ", Style::default().fg(Color::DarkGray)),
-        EntryKind::Command => ("  command  ", Style::default().fg(Color::Yellow)),
-        _ => ("  event  ", Style::default().fg(Color::DarkGray)),
-    };
-    let content_width = width.saturating_sub(display_width(prefix)).max(1);
-    let mut output = Vec::new();
-    for text in entry.text.lines() {
-        let source_line = Line::from(Span::raw(text.to_string()));
-        let wrapped = adaptive_wrap_line(&source_line, RtOptions::new(content_width));
-        if wrapped.is_empty() {
-            output.push(Line::from(Span::styled(prefix, style)));
-            continue;
-        }
-        for (index, line) in wrapped.into_iter().enumerate() {
-            let line_text = line.to_string();
-            let marker = if index == 0 {
-                prefix.to_string()
-            } else {
-                " ".repeat(display_width(prefix))
-            };
-            output.push(Line::from(vec![
-                Span::styled(marker, style),
-                Span::raw(line_text),
-            ]));
-        }
-    }
-    if output.is_empty() {
-        output.push(Line::from(Span::styled(prefix, style)));
-    }
-    output
 }
 
 fn thread_line_with_preview(

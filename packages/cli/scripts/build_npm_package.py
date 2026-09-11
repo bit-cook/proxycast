@@ -200,14 +200,36 @@ def validate_native_payload(target_root: Path, platform: dict[str, str]) -> None
 def run_npm_pack(staging_dir: Path, output_path: Path) -> Path:
     resolved_output = output_path.resolve()
     resolved_output.parent.mkdir(parents=True, exist_ok=True)
+    npm_executable = shutil.which("npm.cmd" if os.name == "nt" else "npm")
+    if npm_executable is None:
+        raise RuntimeError("npm executable was not found on PATH")
+
+    npm_args = [
+        npm_executable,
+        "pack",
+        "--json",
+        "--pack-destination",
+    ]
 
     with tempfile.TemporaryDirectory(prefix="lime-npm-pack-") as pack_dir_name:
         pack_dir = Path(pack_dir_name)
         env = os.environ.copy()
         env["NPM_CONFIG_CACHE"] = str(pack_dir / "npm-cache")
         env["NPM_CONFIG_LOGS_DIR"] = str(pack_dir / "npm-logs")
+        npm_args.append(str(pack_dir))
+        if os.name == "nt":
+            # Windows cannot launch .cmd files through CreateProcess directly.
+            command = [
+                os.environ.get("COMSPEC", "cmd.exe"),
+                "/d",
+                "/s",
+                "/c",
+                subprocess.list2cmdline(npm_args),
+            ]
+        else:
+            command = npm_args
         stdout = subprocess.check_output(
-            ["npm", "pack", "--json", "--pack-destination", str(pack_dir)],
+            command,
             cwd=staging_dir,
             env=env,
             text=True,

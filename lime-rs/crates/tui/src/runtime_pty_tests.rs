@@ -44,7 +44,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
     let mut command = CommandBuilder::new(cli_bin);
     for argument in [
         OsString::from("tui"),
-        OsString::from("--cwd"),
+        OsString::from("--cd"),
         cwd.as_os_str().to_os_string(),
         OsString::from("--model"),
         OsString::from("fixture-model"),
@@ -256,7 +256,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         );
         // Re-entering the alternate screen must not synchronously query the PTY. The next
         // draw is responsible for reconciling the restored surface and showing the composer.
-        wait_for_marker(&output_rx, &mut output, "prompt", Duration::from_secs(10));
+        wait_for_screen_marker(&output_rx, &mut output, &prompt, Duration::from_secs(10));
     } else {
         writer.write_all(prompt.as_bytes()).expect("write prompt");
     }

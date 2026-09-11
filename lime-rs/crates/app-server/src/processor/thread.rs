@@ -593,6 +593,17 @@ impl RequestProcessor {
         if let Some(page) = initial_turns_page.as_mut() {
             normalize_resume_turns(&mut page.data, active_turn_id);
         }
+        let (turns_backwards_cursor, items_backwards_cursor) =
+            if matches!(thread.history_mode, ThreadHistoryMode::Paginated) {
+                self.runtime
+                    .paginated_resume_backwards_cursors(agent_protocol::ThreadId::new(
+                        thread_id.clone(),
+                    ))
+                    .await
+                    .map_err(to_jsonrpc_error)?
+            } else {
+                (None, None)
+            };
         let metadata = thread.extra.as_ref().unwrap_or(&serde_json::Value::Null);
         let model = required_metadata_string(metadata, &["modelName", "model"], "model")?;
         let model_provider = required_thread_resume_value(&thread.model_provider, "modelProvider")?;
@@ -618,8 +629,8 @@ impl RequestProcessor {
             reasoning_effort: metadata_optional_string(metadata, "reasoningEffort"),
             multi_agent_mode: agent_protocol::MultiAgentMode::default(),
             initial_turns_page,
-            turns_backwards_cursor: None,
-            items_backwards_cursor: None,
+            turns_backwards_cursor,
+            items_backwards_cursor,
             thread,
             model,
             model_provider,

@@ -4,8 +4,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::highlight::{exceeds_highlight_limits, CodeLineHighlighter};
 use crate::line_truncation::truncate_line_to_width;
+use crate::render::highlight::{exceeds_highlight_limits, CodeLineHighlighter};
 use crate::width::display_width;
 
 const TAB_REPLACEMENT: &str = "    ";
@@ -726,7 +726,7 @@ mod tests {
             None,
             Path::new(""),
         );
-        let expected = crate::highlight::highlight_code_to_styled_spans(
+        let expected = crate::render::highlight::highlight_code_to_styled_spans(
             "fn demo() {\nlet value = \"hello\nworld\";\n}",
             "rust",
         )
@@ -762,5 +762,258 @@ mod tests {
             .iter()
             .skip(2)
             .any(|span| span.content.contains("fn") && span.style.fg.is_some()));
+    }
+
+    #[test]
+    fn add_details() {
+        let lines = render("added src/new.rs\n+one", None, Path::new(""));
+        assert_eq!(plain(&lines)[0], "added src/new.rs (+1 -0)");
+        assert!(plain(&lines).iter().any(|line| line.contains("one")));
+    }
+
+    #[test]
+    fn ansi16_insert_delete_no_background() {
+        let lines = render("@@ -1 +1 @@\n-old\n+new", None, Path::new(""));
+        assert!(lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .all(|span| span.style.bg.is_none()));
+        assert_eq!(lines[0].spans[1].style.fg, Some(Color::Red));
+        assert_eq!(lines[1].spans[1].style.fg, Some(Color::Green));
+    }
+
+    #[test]
+    fn apply_add_block() {
+        let lines = render("added new_file.txt\n+alpha\n+beta", None, Path::new(""));
+        assert_eq!(
+            plain(&lines),
+            vec!["added new_file.txt (+2 -0)", "   1 +alpha", "   2 +beta",]
+        );
+    }
+
+    #[test]
+    fn apply_delete_block() {
+        let lines = render("deleted old_file.txt\n-first\n-second", None, Path::new(""));
+        assert!(plain(&lines)[0].contains("deleted old_file.txt"));
+        assert!(plain(&lines).iter().any(|line| line.contains("first")));
+        assert!(plain(&lines).iter().any(|line| line.contains("second")));
+    }
+
+    #[test]
+    fn apply_multiple_files_block() {
+        let lines = render(
+            "updated a.txt\n@@ -1 +1 @@\n-one\n+one changed\nadded b.txt\n+new",
+            None,
+            Path::new(""),
+        );
+        let text = plain(&lines).join("\n");
+        assert!(text.contains("updated a.txt"));
+        assert!(text.contains("added b.txt"));
+        assert!(text.contains("one changed"));
+    }
+
+    #[test]
+    fn apply_update_block() {
+        let lines = render(
+            "updated example.txt\n@@ -1,3 +1,3 @@\n line one\n-line two\n+line two changed\n line three",
+            None,
+            Path::new(""),
+        );
+        assert!(plain(&lines)
+            .iter()
+            .any(|line| line.contains("line two changed")));
+        assert!(plain(&lines).iter().any(|line| line.contains("line three")));
+    }
+
+    #[test]
+    fn apply_update_block_line_numbers_three_digits_text() {
+        let lines = render(
+            "updated hundreds.txt\n@@ -100 +100 @@\n-old\n+new",
+            None,
+            Path::new(""),
+        );
+        assert!(plain(&lines).iter().any(|line| line.contains("100 -old")));
+        assert!(plain(&lines).iter().any(|line| line.contains("100 +new")));
+    }
+
+    #[test]
+    fn apply_update_block_relativizes_path() {
+        let lines = render(
+            "updated /workspace/src/lib.rs\n@@ -1 +1 @@\n-old\n+new",
+            None,
+            Path::new("/workspace"),
+        );
+        assert!(plain(&lines)[0].contains("src/lib.rs"));
+        assert!(!plain(&lines)[0].contains("/workspace/src"));
+    }
+
+    #[test]
+    fn apply_update_block_wraps_long_lines() {
+        let lines = render(
+            "added long.txt\n+this is a very long line that must wrap across several terminal columns",
+            Some(24),
+            Path::new(""),
+        );
+        assert!(lines.len() > 2);
+        assert!(lines.iter().all(|line| {
+            line.spans
+                .iter()
+                .map(|span| display_width(span.content.as_ref()))
+                .sum::<usize>()
+                <= 24
+        }));
+    }
+
+    #[test]
+    fn apply_update_block_wraps_long_lines_text() {
+        let lines = render(
+            "added wrap.txt\n+abcdefghijklmnopqrstuvwxyz",
+            Some(12),
+            Path::new(""),
+        );
+        assert!(lines.len() > 2);
+        assert!(lines.iter().all(|line| {
+            line.spans
+                .iter()
+                .map(|span| display_width(span.content.as_ref()))
+                .sum::<usize>()
+                <= 12
+        }));
+    }
+
+    #[test]
+    fn apply_update_with_rename_block() {
+        let lines = render(
+            "updated old_name.rs → new_name.rs\n@@ -1 +1 @@\n-old\n+new",
+            None,
+            Path::new(""),
+        );
+        assert!(plain(&lines)[0].contains("old_name.rs → new_name.rs"));
+    }
+
+    #[test]
+    fn blank_context_line() {
+        let lines = render("@@ -1,2 +1,2 @@\n \n+new", None, Path::new(""));
+        assert!(lines.len() >= 2);
+        assert!(plain(&lines).iter().any(|line| line.contains("new")));
+    }
+
+    #[test]
+    fn cpp_module_extension_highlighting() {
+        let lines = render(
+            "added src/module.ixx\n+export module demo;",
+            None,
+            Path::new(""),
+        );
+        assert!(lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .any(|span| { span.content.contains("export") && span.style.fg.is_some() }));
+    }
+
+    fn assert_gallery(width: usize) {
+        let lines = render(
+            "updated src/lib.rs\n@@ -1 +1 @@\n-old\n+new\nadded README.txt\n+hello",
+            Some(width),
+            Path::new(""),
+        );
+        assert!(!lines.is_empty());
+        assert!(lines.iter().all(|line| {
+            line.spans
+                .iter()
+                .map(|span| display_width(span.content.as_ref()))
+                .sum::<usize>()
+                <= width
+        }));
+    }
+
+    #[test]
+    fn diff_gallery_120x40() {
+        assert_gallery(120);
+    }
+
+    #[test]
+    fn diff_gallery_80x24() {
+        assert_gallery(80);
+    }
+
+    #[test]
+    fn diff_gallery_94x35() {
+        assert_gallery(94);
+    }
+
+    #[test]
+    fn single_line_replacement_counts() {
+        let lines = render(
+            "updated example.txt\n@@ -1 +1 @@\n-old\n+new",
+            None,
+            Path::new(""),
+        );
+        assert!(plain(&lines)[0].contains("(+1 -1)"));
+    }
+
+    #[test]
+    fn syntax_highlighted_insert_wraps() {
+        let lines = render(
+            "added src/lib.rs\n+pub fn long_name(answer: usize) -> usize { answer + 1 }",
+            Some(32),
+            Path::new(""),
+        );
+        assert!(lines.len() > 2);
+    }
+
+    #[test]
+    fn syntax_highlighted_insert_wraps_text() {
+        let lines = render(
+            "added src/lib.rs\n+pub fn long_name(answer: usize) -> usize { answer + 1 }",
+            Some(32),
+            Path::new(""),
+        );
+        let text = plain(&lines).join("\n");
+        assert!(text.contains("long_name"));
+        assert!(text.contains("answer"));
+    }
+
+    #[test]
+    fn theme_scope_background_resolution() {
+        let lines = render("added src/lib.rs\n+fn main() {}", None, Path::new(""));
+        assert!(lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .all(|span| span.style.bg.is_none()));
+    }
+
+    #[test]
+    fn update_details_with_rename() {
+        let lines = render(
+            "updated old.txt → new.rs\n@@ -1 +1 @@\n-old\n+fn new() {}",
+            None,
+            Path::new(""),
+        );
+        assert!(plain(&lines)[0].contains("old.txt → new.rs"));
+        assert!(lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .any(|span| { span.content.contains("fn") && span.style.fg.is_some() }));
+    }
+
+    #[test]
+    fn vertical_ellipsis_between_hunks() {
+        let lines = render(
+            "updated example.txt\n@@ -1 +1 @@\n-old\n+new\n@@ -8 +8 @@\n-old\n+new",
+            None,
+            Path::new(""),
+        );
+        assert!(plain(&lines).iter().any(|line| line.trim() == "⋮"));
+    }
+
+    #[test]
+    fn wrap_behavior_insert() {
+        let lines = render(
+            "added src/lib.rs\n+this is a very long inserted line that should wrap across terminal columns",
+            Some(20),
+            Path::new(""),
+        );
+        assert!(lines.len() > 2);
     }
 }

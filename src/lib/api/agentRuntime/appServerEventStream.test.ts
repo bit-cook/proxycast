@@ -109,6 +109,29 @@ describe("appServerEventStream", () => {
     });
   });
 
+  it.each(["thread/goal/updated", "thread/goal/cleared"])(
+    "%s stays with the thread goal header projection",
+    (method) => {
+      expect(
+        projectAppServerAgentEventPayload({
+          method,
+          params: {
+            threadId: "thread-goal",
+            ...(method === "thread/goal/updated"
+              ? {
+                  goal: {
+                    threadId: "thread-goal",
+                    objective: "完成当前任务",
+                    status: "active",
+                  },
+                }
+              : {}),
+          },
+        }),
+      ).toBeNull();
+    },
+  );
+
   it("保留图片任务创建与缺参 raw side-channel", () => {
     expect(
       projectAppServerAgentEventPayload(

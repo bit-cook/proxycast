@@ -72,6 +72,47 @@ fn active_bottom_pane_receives_input_before_the_chat_composer() {
 }
 
 #[test]
+fn ctrl_g_requests_external_editor_after_the_current_draw() {
+    let mut app = App::default();
+
+    let action = dispatch_connected_input(
+        &mut app,
+        Event::Key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL)),
+    );
+
+    assert_eq!(action, AppAction::None);
+    assert_eq!(app.external_editor_state(), ExternalEditorState::Requested);
+}
+
+#[test]
+fn slash_pwd_and_cwd_alias_display_current_working_directory_from_composer() {
+    let mut output = Vec::new();
+    for command in ["/pwd", "/cwd", "/pwd x"] {
+        let mut app = App::default();
+        app.set_cwd(std::path::PathBuf::from("/tmp/project"));
+        app.set_locale(Locale::EnUs);
+        app.replace_composer(command.to_string());
+
+        let action = dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        );
+
+        assert_eq!(action, AppAction::None);
+        output.push(app.projection.status().to_string());
+    }
+
+    assert_eq!(
+        output,
+        vec![
+            "Current working directory: /tmp/project",
+            "Current working directory: /tmp/project",
+            "Usage: /pwd",
+        ]
+    );
+}
+
+#[test]
 fn tab_queues_a_follow_up_without_submitting_the_active_turn() {
     let mut app = App::default();
     app.composer.insert("follow up");
@@ -259,15 +300,17 @@ fn backtab_cycles_server_collaboration_modes_only_when_idle() {
 
 #[test]
 fn settings_updates_keep_the_active_collaboration_mode_in_sync() {
-    let mut app = App::default();
-    app.collaboration_mode = Some(agent_protocol::CollaborationMode {
-        mode: agent_protocol::ModeKind::Plan,
-        settings: agent_protocol::CollaborationModeSettings {
-            model: "old-model".to_string(),
-            reasoning_effort: Some("high".to_string()),
-            developer_instructions: None,
-        },
-    });
+    let mut app = App {
+        collaboration_mode: Some(agent_protocol::CollaborationMode {
+            mode: agent_protocol::ModeKind::Plan,
+            settings: agent_protocol::CollaborationModeSettings {
+                model: "old-model".to_string(),
+                reasoning_effort: Some("high".to_string()),
+                developer_instructions: None,
+            },
+        }),
+        ..App::default()
+    };
 
     app.set_settings(
         Some("new-model".to_string()),
@@ -374,6 +417,32 @@ fn copy_shortcut_and_slash_command_do_not_become_turn_input() {
             Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE,))
         ),
         AppAction::CopyLastResponse
+    );
+    assert!(app.composer.is_empty());
+}
+
+#[test]
+fn export_slash_command_targets_the_canonical_transcript() {
+    let mut app = App::default();
+    app.composer.insert("/export");
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE,))
+        ),
+        AppAction::ExportTranscript { path: None }
+    );
+    assert!(app.composer.is_empty());
+
+    app.composer.insert("/export transcript.md");
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE,))
+        ),
+        AppAction::ExportTranscript {
+            path: Some(std::path::PathBuf::from("transcript.md")),
+        }
     );
     assert!(app.composer.is_empty());
 }
@@ -702,14 +771,16 @@ fn disconnected_paste_and_ctrl_c_are_handled_at_the_app_boundary() {
 
 #[test]
 fn resume_picker_owns_input_until_cancelled() {
-    let mut app = App::default();
-    app.resume_picker = Some(PickerState::new(
-        Vec::new(),
-        crate::resume_picker::SessionPickerAction::Resume,
-        crate::resume_picker::SessionStatus::Active,
-        None,
-        true,
-    ));
+    let mut app = App {
+        resume_picker: Some(PickerState::new(
+            Vec::new(),
+            crate::resume_picker::SessionPickerAction::Resume,
+            crate::resume_picker::SessionStatus::Active,
+            None,
+            true,
+        )),
+        ..App::default()
+    };
 
     assert_eq!(
         dispatch_connected_input(

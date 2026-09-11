@@ -9,6 +9,15 @@ use crate::collaboration_modes;
 use crate::settings::{cycle_setting, PERMISSION_PROFILES};
 
 impl App {
+    pub(crate) fn set_model_catalog(
+        &mut self,
+        models: Vec<app_server_protocol::protocol::v2::Model>,
+    ) {
+        self.model_catalog = ModelCatalog::new(models)
+            .with_collaboration_modes(self.model_catalog.collaboration_modes.clone());
+        self.sync_default_collaboration_mode();
+    }
+
     pub(crate) fn set_settings(
         &mut self,
         model: Option<String>,
@@ -54,8 +63,7 @@ impl App {
         &mut self,
         models: Vec<app_server_protocol::protocol::v2::Model>,
     ) {
-        self.model_catalog = ModelCatalog::new(models)
-            .with_collaboration_modes(self.model_catalog.collaboration_modes.clone());
+        self.set_model_catalog(models);
         let models = self.model_catalog.try_list_models().unwrap_or_default();
         self.model_picker = Some(ModelPicker::new(models));
     }

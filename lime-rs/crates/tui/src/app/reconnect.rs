@@ -4,10 +4,11 @@
 //! to the shared runtime boundary; this module only restores the canonical thread session and
 //! its server-backed settings.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{bail, Result};
-use app_server_protocol::protocol::v2::Thread;
+use app_server_protocol::protocol::v2::{Thread, ThreadHistoryMode, ThreadItem};
 
 use crate::app_server_session::AppServerSession;
 use crate::runtime::{connect_session, TuiOptions};
@@ -23,6 +24,9 @@ const RECONNECT_DELAYS: [Duration; 4] = [
 pub(crate) struct ReconnectedSession {
     pub(crate) session: AppServerSession,
     pub(crate) thread: Thread,
+    pub(crate) cwd: PathBuf,
+    pub(crate) history_items: Vec<ThreadItem>,
+    pub(crate) scrollback_has_older_history: bool,
     pub(crate) permission_profiles: Vec<String>,
 }
 
@@ -48,6 +52,30 @@ pub(crate) async fn reconnect_session(
         };
         match candidate.resume_thread(thread_id.clone()).await {
             Ok(response) => {
+                let cwd = PathBuf::from(&response.cwd);
+                let thread_id_for_history = response.thread.id.clone();
+                let paginated_history =
+                    response.thread.history_mode == ThreadHistoryMode::Paginated;
+                let history_items = if paginated_history {
+                    match candidate
+                        .hydrate_initial_thread_history(
+                            thread_id_for_history.clone(),
+                            response.items_backwards_cursor.clone(),
+                        )
+                        .await
+                    {
+                        Ok(items) => items,
+                        Err(error) => {
+                            let _ = candidate.shutdown().await;
+                            last_error = Some(error);
+                            continue;
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
+                let scrollback_has_older_history =
+                    candidate.has_older_history(&thread_id_for_history);
                 let permission_profiles = candidate
                     .list_permission_profiles(Some(response.cwd.clone()))
                     .await;
@@ -75,6 +103,9 @@ pub(crate) async fn reconnect_session(
                 return Ok(ReconnectedSession {
                     session: candidate,
                     thread: response.thread,
+                    cwd,
+                    history_items,
+                    scrollback_has_older_history,
                     permission_profiles: permission_profiles
                         .data
                         .into_iter()

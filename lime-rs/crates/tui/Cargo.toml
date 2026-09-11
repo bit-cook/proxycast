@@ -12,6 +12,7 @@ doctest = false
 
 [dependencies]
 agent-protocol.workspace = true
+ansi-escape.workspace = true
 anyhow.workspace = true
 app-server-client.workspace = true
 app-server-protocol.workspace = true
@@ -20,7 +21,12 @@ base64.workspace = true
 crossterm = { workspace = true, features = ["bracketed-paste", "event-stream"] }
 futures.workspace = true
 image = { version = "0.25.9", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
-ratatui = { workspace = true, features = ["unstable-rendered-line-info", "unstable-widget-ref"] }
+ratatui = { workspace = true, features = [
+    "scrolling-regions",
+    "unstable-backend-writer",
+    "unstable-rendered-line-info",
+    "unstable-widget-ref",
+] }
 pulldown-cmark.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order"] }
@@ -45,7 +51,9 @@ windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_
 which.workspace = true
 
 [dev-dependencies]
+app-server-transport.workspace = true
 portable-pty.workspace = true
 pretty_assertions.workspace = true
+tokio-tungstenite.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 vt100.workspace = true

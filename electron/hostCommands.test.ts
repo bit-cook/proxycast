@@ -332,21 +332,18 @@ describe("ElectronHostCommands secure Cloud credential boundary", () => {
       endpoint: "wss://gateway.example.test/v1/app-server",
       updatedAt: "2026-09-06T00:00:00.000Z",
     });
-    await expect(
-      host.invoke("cloud_session_credential_status"),
-    ).resolves.toEqual({
+    const status = await host.invoke("cloud_session_credential_status");
+    expect(status).toEqual({
       available: true,
       exists: true,
       tenantId: "tenant-001",
       endpoint: "wss://gateway.example.test/v1/app-server",
       updatedAt: "2026-09-06T00:00:00.000Z",
     });
+    expect(JSON.stringify(status)).not.toContain("session-secret");
     await expect(
       host.invoke("cloud_session_credential_delete"),
     ).resolves.toEqual({ deleted: true });
-    expect(
-      JSON.stringify(store.getCloudSessionCredentialMetadata),
-    ).not.toContain("session-secret");
     expect(store.readCloudSessionCredential).not.toHaveBeenCalled();
   });
 

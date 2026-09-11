@@ -7,14 +7,20 @@ pub(crate) mod app_server_event_targets;
 mod app_server_events;
 pub(crate) mod app_server_requests;
 pub(crate) mod event_dispatch;
+pub(crate) mod history_pagination;
+pub(crate) mod history_ui;
 mod input;
 mod pending_interactive_replay;
 pub(crate) mod reconnect;
 mod replay_filter;
 mod session_lifecycle;
+pub(crate) mod startup;
+#[allow(dead_code)]
+pub(crate) mod startup_prompts;
 mod thread_event_buffer;
 mod thread_events;
 mod thread_settings;
+pub(crate) mod transcript_export;
 
 #[cfg(test)]
 use app_server_protocol::protocol::v2::ServerNotification;
@@ -55,9 +61,11 @@ pub(crate) enum AppAction {
     PreviousPermissions,
     NextPermissions,
     CopyLastResponse,
+    ExportTranscript {
+        path: Option<PathBuf>,
+    },
     PasteImage,
     EditQueuedSubmission(QueuedSubmission),
-    OpenExternalEditor,
     ScrollUp,
     ScrollDown,
     ScrollTop,
@@ -83,6 +91,14 @@ pub(crate) enum AppAction {
     Quit,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ExternalEditorState {
+    #[default]
+    Closed,
+    Requested,
+    Active,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct App {
     pub(crate) bottom_pane: BottomPane,
@@ -93,6 +109,7 @@ pub(crate) struct App {
     pub(crate) agents_overview: Option<AgentsOverviewState>,
     pub(crate) resume_picker: Option<PickerState>,
     pub(crate) model_catalog: ModelCatalog,
+    pub(crate) skill_load_warnings: startup_prompts::SkillLoadWarningState,
     pub(crate) collaboration_mode: Option<agent_protocol::CollaborationMode>,
     pub(crate) command_popup: Option<CommandPopup>,
     pub(crate) pager_overlay: Option<PagerOverlay>,
@@ -106,11 +123,13 @@ pub(crate) struct App {
     pub(crate) permissions: Option<String>,
     pub(crate) permission_profiles: Vec<String>,
     pub(crate) transcript_scroll: usize,
+    pub(crate) scrollback_has_older_history: bool,
     pub(crate) locale: Locale,
     pub(crate) cwd: PathBuf,
     pub(crate) clipboard_lease: Option<crate::clipboard_copy::ClipboardLease>,
     pub(crate) queued_submissions: Vec<QueuedSubmission>,
     pub(crate) thread_input_states: HashMap<String, String>,
+    external_editor_state: ExternalEditorState,
     active_turn_started_at: Option<Instant>,
 }
 
@@ -180,6 +199,7 @@ impl App {
             }
         }
         self.projection.hydrate_thread(thread);
+        self.scrollback_has_older_history = false;
         self.active_turn_started_at = self
             .projection
             .active_turn_id()
@@ -223,6 +243,24 @@ impl App {
     pub(crate) fn replace_composer(&mut self, text: String) {
         self.composer.replace(text);
         self.sync_command_popup();
+    }
+
+    pub(crate) fn external_editor_state(&self) -> ExternalEditorState {
+        self.external_editor_state
+    }
+
+    pub(crate) fn request_external_editor_launch(&mut self) {
+        if self.external_editor_state == ExternalEditorState::Closed {
+            self.external_editor_state = ExternalEditorState::Requested;
+        }
+    }
+
+    pub(crate) fn set_external_editor_state(&mut self, state: ExternalEditorState) {
+        self.external_editor_state = state;
+    }
+
+    pub(crate) fn reset_external_editor_state(&mut self) {
+        self.external_editor_state = ExternalEditorState::Closed;
     }
 
     pub(crate) fn handle_tui_event(&mut self, event: TuiEvent, connected: bool) -> AppAction {
@@ -493,7 +531,10 @@ impl App {
             InputResult::IncreaseEffort => AppAction::IncreaseEffort,
             InputResult::PreviousPermissions => AppAction::PreviousPermissions,
             InputResult::NextPermissions => AppAction::NextPermissions,
-            InputResult::OpenExternalEditor => AppAction::OpenExternalEditor,
+            InputResult::OpenExternalEditor => {
+                self.request_external_editor_launch();
+                AppAction::None
+            }
             InputResult::Quit => AppAction::Quit,
             InputResult::Changed => {
                 if self.composer.history_search_active() {
@@ -526,16 +567,22 @@ impl App {
     }
 
     fn run_local_command(&mut self) -> Option<AppAction> {
-        if self.composer.text().split_whitespace().count() != 1 {
-            return None;
-        }
-        let command = command_from_prompt(self.composer.text())?;
+        let text = self.composer.text().trim();
+        let command = command_from_prompt(text)?;
         let action = match command {
             SlashCommand::Status => {
                 self.open_status_pager();
                 AppAction::None
             }
             SlashCommand::Copy => AppAction::CopyLastResponse,
+            SlashCommand::Export => {
+                let path = text
+                    .strip_prefix("/export")
+                    .map(str::trim)
+                    .filter(|path| !path.is_empty())
+                    .map(PathBuf::from);
+                AppAction::ExportTranscript { path }
+            }
             SlashCommand::Agents => {
                 self.open_agents_overview();
                 AppAction::RefreshAgentsOverview
@@ -545,6 +592,16 @@ impl App {
                 AppAction::None
             }
             SlashCommand::Resume => AppAction::OpenResumePicker,
+            SlashCommand::Pwd => {
+                if text.split_whitespace().count() != 1 {
+                    self.projection.set_status(self.locale.pwd_usage());
+                } else {
+                    let cwd = self.cwd.to_string_lossy();
+                    self.projection
+                        .set_status(self.locale.current_working_directory_message(&cwd));
+                }
+                AppAction::None
+            }
             _ => return None,
         };
         self.composer.replace(String::new());

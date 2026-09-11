@@ -123,7 +123,7 @@ App Server release manifest 与 sidecar smoke 脚本已迁到 `scripts/app-serve
 
 `npm run smoke:cli-gate-b` 使用真实 `lime exec`、真实 App Server stdio 进程和测试专用 external backend，核对同一 canonical Thread/Turn identity、Item 事件序列、JSON/JSONL、pipe stdin、失败退出码与 shell completion；它不调用正式 Provider，也不允许 mock backend 或固定 timer 合成完成态。交互式 alternate-screen/PTY 证据归独立的 TUI Gate B，不用该 CLI smoke 冒充。
 
-`npm run smoke:tui-gate-b` 使用 `portable-pty` 启动真实 `lime tui` 与真实 App Server stdio 进程，在可见 ready 状态后输入 prompt，等待 canonical `turn.completed` 投影出的完成文本，再通过 Ctrl-C 退出；`complete` 场景还通过 Ctrl-G 启动继承前台 PTY 的 external editor，验证草稿回写、标准 DSR 恢复与 alternate screen 重新进入。该测试不调用正式 Provider，也不使用 mock backend。
+`npm run smoke:tui-gate-b` 使用 `portable-pty` 启动真实 `lime tui` 与真实 App Server stdio 进程，在可见 ready 状态后输入 prompt，等待 canonical `turn.completed` 投影出的完成文本，再通过 Ctrl-C 退出；`complete` 场景还通过 Ctrl-G 启动继承前台 PTY 的 external editor，验证草稿回写、标准 DSR 恢复与 alternate screen 重新进入；独立 `focus-palette` 场景验证启动期 OSC 10/11 查询只执行一次、FocusGained 后立即输入和延迟输入均不丢失，并恢复 alternate screen；`reconnect` 场景通过真实 PTY 启动 `lime tui --remote`，让 loopback App Server JSON-RPC WebSocket 断线并恢复，验证草稿保留、`thread/resume` 路由、恢复后的通知和终端恢复。该测试不调用正式 Provider，也不使用生产 mock backend。
 
 `npm run inventory:tui-codex` 从 `CODEX_TUI_REFERENCE`（默认本机 `/Users/coso/Documents/dev/rust/codex/codex-rs/tui`）读取上游 snapshot，刷新 `internal/exec-plans/tui-codex-snapshot-inventory.json`。账本为每个 snapshot 保存相对路径、SHA-256 和 `direct/merge/contract/defer/dead` 分类；CI 只校验已提交账本，不要求存在外部 Codex checkout。
 

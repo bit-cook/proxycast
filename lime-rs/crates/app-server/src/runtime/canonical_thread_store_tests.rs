@@ -1785,8 +1785,21 @@ fn opaque_cursors_page_threads_turns_and_items_stably() {
     .expect("turn page");
     assert_eq!(turns.data[0].turn_id.as_str(), "turn-1");
     assert!(turns.next_cursor.is_some());
+    assert!(turns.backwards_cursor.is_some());
+    let turn_head = block_on(store.list_turns(ListTurnsParams {
+        thread_id: source.thread_id.clone(),
+        include_archived: false,
+        page: PageRequest {
+            cursor: turns.backwards_cursor.clone(),
+            limit: 1,
+            sort_direction: SortDirection::Asc,
+        },
+        items_view: TurnItemsView::NotLoaded,
+    }))
+    .expect("read turn head from inclusive backwards cursor");
+    assert_eq!(turn_head.data[0].turn_id.as_str(), "turn-1");
     let items = block_on(store.list_items(ListItemsParams {
-        thread_id: source.thread_id,
+        thread_id: source.thread_id.clone(),
         turn_id: None,
         include_archived: false,
         page: page(SortDirection::Desc, 1),
@@ -1794,6 +1807,19 @@ fn opaque_cursors_page_threads_turns_and_items_stably() {
     .expect("item page");
     assert_eq!(items.data[0].item_id.as_str(), "item_item-2");
     assert!(items.next_cursor.is_some());
+    assert!(items.backwards_cursor.is_some());
+    let item_head = block_on(store.list_items(ListItemsParams {
+        thread_id: source.thread_id,
+        turn_id: None,
+        include_archived: false,
+        page: PageRequest {
+            cursor: items.backwards_cursor,
+            limit: 1,
+            sort_direction: SortDirection::Desc,
+        },
+    }))
+    .expect("read item head from inclusive backwards cursor");
+    assert_eq!(item_head.data[0].item_id.as_str(), "item_item-2");
 }
 
 #[test]

@@ -118,6 +118,10 @@ pub(crate) fn visible_lines_ref(lines: &[HyperlinkLine]) -> Vec<Line<'static>> {
     lines.iter().map(|line| line.line.clone()).collect()
 }
 
+pub(crate) fn plain_hyperlink_lines(lines: Vec<Line<'static>>) -> Vec<HyperlinkLine> {
+    lines.into_iter().map(HyperlinkLine::new).collect()
+}
+
 pub(crate) fn prefix_hyperlink_lines(
     lines: Vec<HyperlinkLine>,
     initial_prefix: Span<'static>,
@@ -140,6 +144,71 @@ pub(crate) fn prefix_hyperlink_lines(
             line
         })
         .collect()
+}
+
+pub(crate) fn decorate_spans(line: &HyperlinkLine) -> Vec<Span<'static>> {
+    if line.hyperlinks.is_empty() {
+        return line.line.spans.clone();
+    }
+
+    let mut out = Vec::new();
+    let mut column = 0usize;
+    let mut link_index = 0usize;
+    let mut active_link_index = None;
+    let mut active_destination = None;
+    for span in &line.line.spans {
+        for grapheme in span.content.graphemes(true) {
+            let width = display_width(grapheme);
+            while line
+                .hyperlinks
+                .get(link_index)
+                .is_some_and(|link| link.columns.end <= column)
+            {
+                link_index += 1;
+            }
+            let selected = line
+                .hyperlinks
+                .get(link_index)
+                .and_then(|link| link.columns.contains(&column).then_some(link_index));
+            if active_link_index != selected {
+                if active_destination.is_some() {
+                    append_to_last_span(&mut out, "\x1b]8;;\x07");
+                }
+                active_destination =
+                    selected.and_then(|index| web_destination(&line.hyperlinks[index].destination));
+                if let Some(destination) = active_destination.as_ref() {
+                    push_styled_content(
+                        &mut out,
+                        &format!("\x1b]8;;{destination}\x07"),
+                        span.style,
+                    );
+                }
+                active_link_index = selected;
+            }
+            push_styled_content(&mut out, grapheme, span.style);
+            column += width;
+        }
+    }
+    if active_destination.is_some() {
+        append_to_last_span(&mut out, "\x1b]8;;\x07");
+    }
+    out
+}
+
+fn push_styled_content(out: &mut Vec<Span<'static>>, content: &str, style: ratatui::style::Style) {
+    if let Some(last) = out.last_mut() {
+        if last.style == style {
+            last.content.to_mut().push_str(content);
+            return;
+        }
+    }
+    out.push(Span::styled(content.to_string(), style));
+}
+
+fn append_to_last_span(out: &mut [Span<'static>], content: &str) {
+    if let Some(last) = out.last_mut() {
+        last.content.to_mut().push_str(content);
+    }
 }
 
 /// Re-attach source hyperlink ranges after visible-text wrapping has split a line.
@@ -565,7 +634,7 @@ mod tests {
     }
 
     #[test]
-    fn forced_width_hyperlinks_preserve_wide_and_halfwidth_cells() {
+    fn forced_width_hyperlinks_render_wide_and_halfwidth_cells_snapshot() {
         let destination = "https://example.com/rendered";
         let mut line = HyperlinkLine::new(Line::from("prefix "));
         line.push_span("漢字 ｶﾞ".into(), Some(destination));

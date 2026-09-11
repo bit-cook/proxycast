@@ -2,7 +2,7 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Par
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
-use crate::highlight::highlight_code_to_lines;
+use crate::render::highlight::highlight_code_to_lines;
 use crate::terminal_hyperlinks::HyperlinkLine;
 
 mod local_links;
@@ -747,5 +747,205 @@ mod tests {
         let lines = render_unconstrained("- outer\n    - inner", Style::default());
 
         assert_eq!(plain(&lines), vec!["- outer", "    - inner"]);
+    }
+
+    #[test]
+    fn label_only_and_fallback_presentations_snapshot() {
+        let lines = render_unconstrained(
+            "[docs](https://example.com/docs) [mail](mailto:a@example.com)",
+            Style::default(),
+        );
+        let text = plain(&lines).join("\n");
+        assert!(text.contains("docs (https://example.com/docs)"));
+        assert!(text.contains("mail"));
+        assert!(lines.iter().flat_map(|line| &line.hyperlinks).count() >= 1);
+    }
+
+    #[test]
+    fn bare_url_with_tilde_keeps_complete_hyperlink() {
+        let lines = render_unconstrained("See https://example.com/a~b.", Style::default());
+        assert_eq!(
+            lines[0].hyperlinks[0].destination,
+            "https://example.com/a~b"
+        );
+    }
+
+    #[test]
+    fn file_link_compares_path_spellings_without_changing_display() {
+        let lines = render_unconstrained("[src/lib.rs](./src/lib.rs)", Style::default());
+        assert_eq!(plain(&lines), vec!["./src/lib.rs"]);
+        assert!(lines[0].hyperlinks.is_empty());
+    }
+
+    #[test]
+    fn file_link_ignores_trailing_separators_when_comparing_paths() {
+        let lines = render_unconstrained("[src/lib.rs](./src/lib.rs/)", Style::default());
+        assert!(plain(&lines)[0].contains("src/lib.rs"));
+        assert!(lines[0].hyperlinks.is_empty());
+    }
+
+    #[test]
+    fn file_link_keeps_descriptive_label_and_target() {
+        let lines = render_unconstrained(
+            "[open generated source](file:///tmp/My%20File.rs#L12C3)",
+            Style::default(),
+        );
+        assert_eq!(
+            plain(&lines),
+            vec!["open generated source (/tmp/My File.rs:12:3)"]
+        );
+    }
+
+    #[test]
+    fn file_link_keeps_unrelated_relative_label_with_matching_suffix() {
+        let lines = render_unconstrained("[other/lib.rs](./src/lib.rs)", Style::default());
+        assert!(plain(&lines)[0].contains("other/lib.rs (./src/lib.rs)"));
+    }
+
+    #[test]
+    fn file_link_preserves_labels_with_invalid_percent_encoding() {
+        let lines = render_unconstrained("[bad](/tmp/bad%FF.rs)", Style::default());
+        assert!(plain(&lines)[0].contains("bad (/tmp/bad%FF.rs)"));
+    }
+
+    #[test]
+    fn file_link_preserves_tilde_and_absolute_destinations() {
+        let lines = render_unconstrained(
+            "[notes](~/notes) [share](file://server/share/My%20File.rs)",
+            Style::default(),
+        );
+        let text = plain(&lines).join("\n");
+        assert!(text.contains("~/notes"));
+        assert!(text.contains("//server/share/My File.rs"));
+    }
+
+    #[test]
+    fn list_item_after_code_block_keeps_blank_separator() {
+        let lines = render_unconstrained("```text\ncode\n```\n\n- item", Style::default());
+        let text = plain(&lines);
+        assert!(text.iter().any(|line| line.contains("code")));
+        assert!(text.iter().any(|line| line.contains("- item")));
+        assert!(text.windows(2).any(|pair| pair[0].is_empty()));
+    }
+
+    #[test]
+    fn markdown_render_complex_snapshot() {
+        let lines = render_unconstrained(
+            "# Heading\n\n**bold** *emphasis* `code`\n\n> quote\n\n- one\n- two",
+            Style::default(),
+        );
+        let text = plain(&lines).join("\n");
+        for fragment in ["Heading", "bold", "emphasis", "code", "quote", "- one"] {
+            assert!(text.contains(fragment), "missing {fragment} in {text:?}");
+        }
+    }
+
+    #[test]
+    fn markdown_render_file_link_snapshot() {
+        let lines = render_unconstrained("[source](./src/main.rs)", Style::default());
+        assert_eq!(plain(&lines), vec!["source (./src/main.rs)"]);
+    }
+
+    #[test]
+    fn mixed_url_markdown_wraps_prose_without_splitting_words_snapshot() {
+        let lines = render(
+            "Read https://example.com/a/very/long/path for more details",
+            Style::default(),
+            Some(18),
+        );
+        assert!(lines
+            .iter()
+            .filter(|line| line.hyperlinks.is_empty())
+            .all(|line| line.width() <= 18));
+        assert!(lines.iter().any(|line| !line.hyperlinks.is_empty()));
+        assert!(lines
+            .iter()
+            .flat_map(|line| &line.hyperlinks)
+            .all(|link| { link.destination == "https://example.com/a/very/long/path" }));
+    }
+
+    #[test]
+    fn multiline_finding_items_are_separated_snapshot() {
+        let lines =
+            render_unconstrained("- first line\n  second line\n- next item", Style::default());
+        let text = plain(&lines);
+        assert!(text.iter().any(|line| line.contains("first line")));
+        assert!(text.iter().any(|line| line.contains("second line")));
+        assert!(text.iter().any(|line| line.contains("next item")));
+    }
+
+    #[test]
+    fn table_keeps_grid_when_only_one_compact_record_fragments_snapshot() {
+        let lines = render(
+            "| Name | Value |\n| --- | --- |\n| alpha | beta |",
+            Style::default(),
+            Some(18),
+        );
+        assert!(lines.iter().all(|line| line.width() <= 18));
+        assert!(plain(&lines).iter().any(|line| line.contains("Name")));
+    }
+
+    #[test]
+    fn table_renders_halfwidth_sound_marks_at_constrained_width_snapshot() {
+        let lines = render(
+            "| Kana | Value |\n| --- | --- |\n| ｶﾞﾊﾟ | ｶﾞﾊﾟtail |",
+            Style::default(),
+            Some(18),
+        );
+        assert!(lines.iter().all(|line| line.width() <= 18));
+        assert!(plain(&lines).join("\n").contains("ｶﾞﾊﾟ"));
+    }
+
+    #[test]
+    fn table_renders_key_value_records_when_compact_fragmentation_is_systemic_snapshot() {
+        let lines = render(
+            "| c1 | c2 | c3 | c4 |\n| --- | --- | --- | --- |\n| alpha-long-token | beta-long-token | gamma-long-token | delta-long-token |",
+            Style::default(),
+            Some(16),
+        );
+        assert!(lines.iter().all(|line| line.width() <= 16));
+        assert!(plain(&lines).join("\n").contains("alpha"));
+    }
+
+    #[test]
+    fn table_renders_records_when_multiple_prose_columns_are_starved_snapshot() {
+        let lines = render(
+            "| Path | Summary | Notes |\n| --- | --- | --- |\n| src/main.rs | a long summary | more details |",
+            Style::default(),
+            Some(20),
+        );
+        assert!(lines.len() > 3);
+        assert!(lines.iter().all(|line| line.width() <= 20));
+    }
+
+    #[test]
+    fn table_renders_stacked_key_value_records_when_path_column_becomes_too_narrow_snapshot() {
+        let lines = render(
+            "| Path | Description |\n| --- | --- |\n| src/very_long_file_name.rs | details |",
+            Style::default(),
+            Some(14),
+        );
+        assert!(lines.iter().all(|line| line.width() <= 14));
+        assert!(plain(&lines).join("\n").contains("src/"));
+    }
+
+    #[test]
+    fn table_wraps_file_paths_before_collapsing_narrative_columns_snapshot() {
+        let lines = render(
+            "| File | Description |\n| --- | --- |\n| src/very/long/path/to/file.rs | readable details |",
+            Style::default(),
+            Some(24),
+        );
+        assert!(lines.iter().all(|line| line.width() <= 24));
+        assert!(plain(&lines).join("\n").contains("file.rs"));
+    }
+
+    #[test]
+    fn web_link_labels_have_a_visible_underline_snapshot() {
+        let lines = render_unconstrained("[guide](https://example.com/guide)", Style::default());
+        assert!(lines[0].line.spans.iter().any(|span| {
+            span.content.contains("https://example.com/guide")
+                && span.style.add_modifier.contains(Modifier::UNDERLINED)
+        }));
     }
 }

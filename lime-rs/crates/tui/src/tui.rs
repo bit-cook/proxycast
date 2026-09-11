@@ -1,16 +1,19 @@
 use std::future::Future;
-use std::io::{self, stdout, Stdout};
+use std::io::{self, stdout, Stdout, Write};
 use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Once;
 
 use crossterm::cursor::Show;
-use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste, KeyEvent};
+#[cfg(not(windows))]
+use crossterm::event::EnableFocusChange;
+use crossterm::event::{DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, KeyEvent};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
+use ratatui::backend::Backend;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Position, Size};
 use ratatui::Terminal as RatatuiTerminal;
@@ -58,7 +61,12 @@ fn install_panic_hook() {
 fn restore_terminal_state() -> io::Result<()> {
     let mut output = stdout();
     let mut first_error = crossterm::execute!(output, Show).err();
-    if let Err(error) = crossterm::execute!(output, DisableBracketedPaste, LeaveAlternateScreen) {
+    if let Err(error) = crossterm::execute!(
+        output,
+        DisableBracketedPaste,
+        DisableFocusChange,
+        LeaveAlternateScreen
+    ) {
         first_error.get_or_insert(error);
     }
     if let Err(error) = disable_raw_mode() {
@@ -71,13 +79,16 @@ fn restore_terminal_state() -> io::Result<()> {
 }
 
 fn set_modes() -> io::Result<()> {
+    #[cfg(not(windows))]
+    execute!(stdout(), EnableBracketedPaste, EnableFocusChange)?;
+    #[cfg(windows)]
     execute!(stdout(), EnableBracketedPaste)?;
     enable_raw_mode()
 }
 
 fn restore_keep_raw() -> io::Result<()> {
     let mut output = stdout();
-    let mut first_error = execute!(output, DisableBracketedPaste).err();
+    let mut first_error = execute!(output, DisableBracketedPaste, DisableFocusChange).err();
     if let Err(error) = execute!(output, Show) {
         first_error.get_or_insert(error);
     }
@@ -132,7 +143,16 @@ impl Tui {
         install_panic_hook();
         enable_raw_mode()?;
         let mut output = stdout();
-        if let Err(error) = execute!(output, EnterAlternateScreen, EnableBracketedPaste) {
+        #[cfg(not(windows))]
+        let mode_result = execute!(
+            output,
+            EnterAlternateScreen,
+            EnableBracketedPaste,
+            EnableFocusChange
+        );
+        #[cfg(windows)]
+        let mode_result = execute!(output, EnterAlternateScreen, EnableBracketedPaste);
+        if let Err(error) = mode_result {
             let _ = disable_raw_mode();
             return Err(error);
         }
@@ -140,13 +160,62 @@ impl Tui {
             Ok(terminal) => terminal,
             Err(error) => {
                 let mut output = stdout();
+                #[cfg(not(windows))]
+                let _ = execute!(
+                    output,
+                    DisableBracketedPaste,
+                    DisableFocusChange,
+                    LeaveAlternateScreen
+                );
+                #[cfg(windows)]
                 let _ = execute!(output, DisableBracketedPaste, LeaveAlternateScreen);
                 let _ = disable_raw_mode();
                 return Err(error);
             }
         };
         let size = terminal.size()?;
-        let mut viewport = ViewportState::new(size, Position::new(0, 0));
+        #[cfg(unix)]
+        let startup_probe = match crate::terminal_probe::startup(
+            crate::terminal_probe::DEFAULT_TIMEOUT,
+            crate::terminal_probe::StartupKeyboardEnhancementProbe::Skip,
+        ) {
+            Ok(probe) => {
+                tracing::debug!(
+                    cursor_position = probe.cursor_position.is_some(),
+                    default_colors = probe.default_colors.is_some(),
+                    "terminal startup probes completed"
+                );
+                probe
+            }
+            Err(error) => {
+                tracing::debug!(%error, "terminal startup probes unavailable");
+                crate::terminal_probe::StartupProbe {
+                    cursor_position: None,
+                    default_colors: None,
+                    keyboard_enhancement_supported: None,
+                }
+            }
+        };
+        #[cfg(unix)]
+        crate::terminal_palette::set_default_colors_from_startup_probe(
+            startup_probe.default_colors,
+        );
+        #[cfg(windows)]
+        crate::terminal_palette::set_default_colors_from_startup_probe(
+            crate::terminal_probe::default_colors(crate::terminal_probe::DEFAULT_TIMEOUT)
+                .ok()
+                .flatten(),
+        );
+        let mut viewport = ViewportState::new(size, {
+            #[cfg(unix)]
+            {
+                startup_probe.cursor_position.unwrap_or(Position::ORIGIN)
+            }
+            #[cfg(not(unix))]
+            {
+                Position::ORIGIN
+            }
+        });
         viewport.enter_alternate_screen(size);
         let event_broker = Arc::new(EventBroker::new());
         let (draw_tx, _) = broadcast::channel(8);
@@ -166,6 +235,31 @@ impl Tui {
 
     pub(crate) fn terminal_mut(&mut self) -> &mut Terminal {
         &mut self.terminal
+    }
+
+    pub(crate) fn screen_size(&self) -> Size {
+        self.terminal
+            .size()
+            .unwrap_or_else(|_| self.viewport.area().as_size())
+    }
+
+    pub(crate) fn last_known_cursor_position(&mut self) -> Position {
+        self.terminal
+            .backend_mut()
+            .get_cursor_position()
+            .unwrap_or(Position::ORIGIN)
+    }
+
+    pub(crate) fn write_ansi(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.terminal.backend_mut().write_all(bytes)
+    }
+
+    pub(crate) fn set_viewport_area(&mut self, area: ratatui::layout::Rect) {
+        self.viewport.set_viewport_area(area);
+    }
+
+    pub(crate) fn note_history_rows_inserted(&mut self, rows: u16) {
+        self.viewport.note_history_rows_inserted(rows);
     }
 
     pub(crate) fn update_viewport(&mut self, screen_size: Size, content_height: u16) {
@@ -219,8 +313,7 @@ impl Tui {
 
         let was_alt_screen = self.viewport.is_alt_screen_active();
         if was_alt_screen {
-            let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
-            self.viewport.leave_alternate_screen();
+            let _ = self.leave_alt_screen();
         }
 
         if let Err(error) = restore_keep_raw() {
@@ -235,10 +328,7 @@ impl Tui {
         flush_terminal_input_buffer();
 
         if was_alt_screen {
-            let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
-            if let Ok(size) = self.terminal.size() {
-                self.viewport.enter_alternate_screen(size);
-            }
+            let _ = self.enter_alt_screen();
         }
 
         self.resume_events();
@@ -257,6 +347,7 @@ impl Tui {
         if let Err(error) = execute!(
             self.terminal.backend_mut(),
             DisableBracketedPaste,
+            DisableFocusChange,
             LeaveAlternateScreen
         ) {
             first_error.get_or_insert(error);
@@ -272,17 +363,23 @@ impl Tui {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn enter_alternate_screen(&mut self) -> io::Result<()> {
-        execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
-        self.viewport.enter_alternate_screen(self.terminal.size()?);
-        self.terminal.clear()
+    /// Enter alternate screen and expand the viewport to full terminal size, saving the current
+    /// inline viewport for restoration when leaving.
+    pub(crate) fn enter_alt_screen(&mut self) -> io::Result<()> {
+        let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
+        if let Ok(size) = self.terminal.size() {
+            self.viewport.enter_alternate_screen(size);
+            self.terminal
+                .resize(ratatui::layout::Rect::new(0, 0, size.width, size.height))?;
+        }
+        Ok(())
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn leave_alternate_screen(&mut self) -> io::Result<()> {
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+    /// Leave alternate screen and restore the previously saved inline viewport, if any.
+    pub(crate) fn leave_alt_screen(&mut self) -> io::Result<()> {
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         self.viewport.leave_alternate_screen();
-        self.terminal.clear()
+        Ok(())
     }
 }
 

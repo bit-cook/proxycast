@@ -181,6 +181,11 @@ impl Locale {
             (Self::EnUs, SlashCommand::Copy) => "copy the last response",
             (Self::JaJp, SlashCommand::Copy) => "最後の応答をコピー",
             (Self::KoKr, SlashCommand::Copy) => "마지막 응답 복사",
+            (Self::ZhCn, SlashCommand::Export) => "导出完整对话",
+            (Self::ZhTw, SlashCommand::Export) => "匯出完整對話",
+            (Self::EnUs, SlashCommand::Export) => "export the complete conversation",
+            (Self::JaJp, SlashCommand::Export) => "完全な会話をエクスポート",
+            (Self::KoKr, SlashCommand::Export) => "전체 대화 내보내기",
             (Self::ZhCn, SlashCommand::Agents) => "查看和切换所有活跃 Agent 会话",
             (Self::ZhTw, SlashCommand::Agents) => "檢視和切換所有活躍 Agent 工作階段",
             (Self::EnUs, SlashCommand::Agents) => {
@@ -200,6 +205,55 @@ impl Locale {
             (Self::EnUs, SlashCommand::Resume) => "resume a previous session",
             (Self::JaJp, SlashCommand::Resume) => "以前のセッションを再開",
             (Self::KoKr, SlashCommand::Resume) => "이전 세션 재개",
+            (Self::ZhCn, SlashCommand::Pwd) => "显示当前工作目录",
+            (Self::ZhTw, SlashCommand::Pwd) => "顯示目前工作目錄",
+            (Self::EnUs, SlashCommand::Pwd) => "show the current working directory",
+            (Self::JaJp, SlashCommand::Pwd) => "現在の作業ディレクトリを表示",
+            (Self::KoKr, SlashCommand::Pwd) => "현재 작업 디렉터리 표시",
+        }
+    }
+
+    pub(crate) fn current_working_directory_message(self, cwd: &str) -> String {
+        match self {
+            Self::ZhCn => format!("当前工作目录：{cwd}"),
+            Self::ZhTw => format!("目前工作目錄：{cwd}"),
+            Self::EnUs => format!("Current working directory: {cwd}"),
+            Self::JaJp => format!("現在の作業ディレクトリ：{cwd}"),
+            Self::KoKr => format!("현재 작업 디렉터리: {cwd}"),
+        }
+    }
+
+    pub(crate) fn pwd_usage(self) -> &'static str {
+        match self {
+            Self::ZhCn => "用法：/pwd",
+            Self::ZhTw => "用法：/pwd",
+            Self::EnUs => "Usage: /pwd",
+            Self::JaJp => "使い方：/pwd",
+            Self::KoKr => "사용법: /pwd",
+        }
+    }
+
+    pub(crate) fn skipped_skills_message(self, count: usize) -> String {
+        match self {
+            Self::ZhCn => format!("由于 SKILL.md 无效，已跳过加载 {count} 个技能。"),
+            Self::ZhTw => format!("由於 SKILL.md 無效，已略過載入 {count} 個技能。"),
+            Self::EnUs => {
+                format!("Skipped loading {count} skill(s) due to invalid SKILL.md files.")
+            }
+            Self::JaJp => {
+                format!("無効な SKILL.md のため、{count} 件のスキルをスキップしました。")
+            }
+            Self::KoKr => format!("잘못된 SKILL.md로 인해 기술 {count}개를 건너뛰었습니다."),
+        }
+    }
+
+    pub(crate) fn skill_load_error_message(self, path: &str, message: &str) -> String {
+        match self {
+            Self::ZhCn => format!("技能加载错误：{path}：{message}"),
+            Self::ZhTw => format!("技能載入錯誤：{path}：{message}"),
+            Self::EnUs => format!("{path}: {message}"),
+            Self::JaJp => format!("スキル読み込みエラー：{path}：{message}"),
+            Self::KoKr => format!("기술 로드 오류: {path}: {message}"),
         }
     }
 
@@ -543,6 +597,27 @@ impl Locale {
                 Self::EnUs => "copy failed",
                 Self::JaJp => "コピーに失敗しました",
                 Self::KoKr => "복사 실패",
+            },
+            "exported conversation to clipboard" => match self {
+                Self::ZhCn => "已将完整对话复制到剪贴板",
+                Self::ZhTw => "已將完整對話複製到剪貼簿",
+                Self::EnUs => "exported conversation to clipboard",
+                Self::JaJp => "完全な会話をクリップボードにコピーしました",
+                Self::KoKr => "전체 대화를 클립보드에 복사함",
+            },
+            "exported conversation to" => match self {
+                Self::ZhCn => "完整对话已导出到",
+                Self::ZhTw => "完整對話已匯出到",
+                Self::EnUs => "exported conversation to",
+                Self::JaJp => "完全な会話をエクスポートしました",
+                Self::KoKr => "전체 대화를 내보냄",
+            },
+            "export failed" => match self {
+                Self::ZhCn => "导出失败",
+                Self::ZhTw => "匯出失敗",
+                Self::EnUs => "export failed",
+                Self::JaJp => "エクスポートに失敗しました",
+                Self::KoKr => "내보내기 실패",
             },
             "image attached" => match self {
                 Self::ZhCn => "已附加图片",
@@ -1631,6 +1706,39 @@ mod tests {
             for command in SlashCommand::ALL {
                 assert!(!locale.slash_command_description(command).is_empty());
             }
+        }
+    }
+
+    #[test]
+    fn working_directory_messages_cover_all_product_locales() {
+        let cwd = "/tmp/project";
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            let message = locale.current_working_directory_message(cwd);
+            assert!(message.contains(cwd));
+            assert!(!locale.pwd_usage().is_empty());
+        }
+    }
+
+    #[test]
+    fn skill_warning_messages_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            let summary = locale.skipped_skills_message(2);
+            let detail = locale.skill_load_error_message("/tmp/SKILL.md", "invalid");
+            assert!(summary.contains('2'));
+            assert!(detail.contains("/tmp/SKILL.md"));
+            assert!(detail.contains("invalid"));
         }
     }
 

@@ -71,7 +71,7 @@ async function main() {
       "exec",
       prompt,
       "--json",
-      "--cwd",
+      "--cd",
       tempDir,
       "--model",
       "fixture-model",

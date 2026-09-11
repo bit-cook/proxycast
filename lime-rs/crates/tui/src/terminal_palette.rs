@@ -1,9 +1,9 @@
 //! Terminal color capability and palette helpers.
 //!
-//! The public names mirror Codex TUI. Lime does not have Codex's startup
-//! terminal probe, so default foreground/background queries intentionally
-//! return `None` until a current probe owner exists. Color quantization itself
-//! remains deterministic and safe for snapshot tests.
+//! The public names mirror Codex TUI. Startup foreground/background probes are
+//! cached by the terminal lifecycle owner, while unsupported terminals fail
+//! closed to conservative defaults. Color quantization remains deterministic
+//! and safe for snapshot tests.
 
 use ratatui::style::Color;
 
@@ -44,6 +44,11 @@ pub(crate) fn stdout_color_level() -> StdoutColorLevel {
 
 #[allow(dead_code)]
 pub(crate) fn effective_stdout_color_level() -> StdoutColorLevel {
+    #[cfg(test)]
+    if TEST_DEFAULT_COLORS.with(|colors| colors.get().is_some()) {
+        return StdoutColorLevel::TrueColor;
+    }
+
     stdout_color_level()
 }
 
@@ -59,7 +64,7 @@ pub(crate) fn indexed_color(index: u8) -> Color {
 
 #[allow(dead_code)]
 pub(crate) fn best_color(target: (u8, u8, u8)) -> Color {
-    best_color_for_level(target, stdout_color_level())
+    best_color_for_level(target, effective_stdout_color_level())
 }
 
 pub(crate) fn best_color_for_level(target: (u8, u8, u8), level: StdoutColorLevel) -> Color {
@@ -77,16 +82,26 @@ fn best_color_for_color_level(target: (u8, u8, u8), level: StdoutColorLevel) -> 
     }
 }
 
-/// Terminal default colors are not available without a current probe owner.
-#[allow(dead_code)]
 pub(crate) fn default_colors() -> Option<DefaultColors> {
-    None
+    #[cfg(test)]
+    if let Some(colors) = TEST_DEFAULT_COLORS.with(std::cell::Cell::get) {
+        return Some(colors);
+    }
+
+    imp::default_colors()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct DefaultColors {
     pub(crate) fg: (u8, u8, u8),
     pub(crate) bg: (u8, u8, u8),
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_DEFAULT_COLORS: std::cell::Cell<Option<DefaultColors>> = const {
+        std::cell::Cell::new(None)
+    };
 }
 
 #[allow(dead_code)]
@@ -100,12 +115,142 @@ pub(crate) fn default_bg() -> Option<(u8, u8, u8)> {
 }
 
 #[allow(dead_code)]
-pub(crate) fn with_test_default_colors<T>(render: impl FnOnce() -> T) -> T {
-    render()
+pub(crate) fn with_test_default_colors<T>(
+    colors: crate::terminal_probe::DefaultColors,
+    render: impl FnOnce() -> T,
+) -> T {
+    #[cfg(test)]
+    return TEST_DEFAULT_COLORS.with(|override_colors| {
+        let previous = override_colors.replace(Some(DefaultColors {
+            fg: colors.fg,
+            bg: colors.bg,
+        }));
+        let result = render();
+        override_colors.set(previous);
+        result
+    });
+
+    #[cfg(not(test))]
+    {
+        let _ = colors;
+        render()
+    }
 }
 
 #[allow(dead_code)]
-pub(crate) fn set_default_colors_from_startup_probe(_colors: Option<DefaultColors>) {}
+pub(crate) fn set_default_colors_from_startup_probe(
+    colors: Option<crate::terminal_probe::DefaultColors>,
+) {
+    imp::set_default_colors_from_startup_probe(colors);
+}
+
+#[cfg(all(unix, not(test)))]
+mod imp {
+    use super::DefaultColors;
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
+
+    #[derive(Default)]
+    struct Cache {
+        attempted: bool,
+        value: Option<DefaultColors>,
+    }
+
+    fn default_colors_cache() -> &'static Mutex<Cache> {
+        static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+        CACHE.get_or_init(|| Mutex::new(Cache::default()))
+    }
+
+    pub(super) fn default_colors() -> Option<DefaultColors> {
+        let cache = default_colors_cache();
+        let mut cache = cache.lock().ok()?;
+        if !cache.attempted {
+            cache.value =
+                crate::terminal_probe::default_colors(crate::terminal_probe::DEFAULT_TIMEOUT)
+                    .ok()
+                    .flatten()
+                    .map(|colors| DefaultColors {
+                        fg: colors.fg,
+                        bg: colors.bg,
+                    });
+            cache.attempted = true;
+        }
+        cache.value
+    }
+
+    pub(super) fn set_default_colors_from_startup_probe(
+        colors: Option<crate::terminal_probe::DefaultColors>,
+    ) {
+        if let Ok(mut cache) = default_colors_cache().lock() {
+            cache.value = colors.map(|colors| DefaultColors {
+                fg: colors.fg,
+                bg: colors.bg,
+            });
+            cache.attempted = true;
+        }
+    }
+}
+
+#[cfg(windows)]
+mod imp {
+    use super::DefaultColors;
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
+
+    #[derive(Default)]
+    struct Cache {
+        attempted: bool,
+        value: Option<DefaultColors>,
+    }
+
+    fn default_colors_cache() -> &'static Mutex<Cache> {
+        static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+        CACHE.get_or_init(|| Mutex::new(Cache::default()))
+    }
+
+    pub(super) fn default_colors() -> Option<DefaultColors> {
+        let cache = default_colors_cache();
+        let mut cache = cache.lock().ok()?;
+        if !cache.attempted {
+            cache.value =
+                crate::terminal_probe::default_colors(crate::terminal_probe::DEFAULT_TIMEOUT)
+                    .ok()
+                    .flatten()
+                    .map(|colors| DefaultColors {
+                        fg: colors.fg,
+                        bg: colors.bg,
+                    });
+            cache.attempted = true;
+        }
+        cache.value
+    }
+
+    pub(super) fn set_default_colors_from_startup_probe(
+        colors: Option<crate::terminal_probe::DefaultColors>,
+    ) {
+        if let Ok(mut cache) = default_colors_cache().lock() {
+            cache.value = colors.map(|colors| DefaultColors {
+                fg: colors.fg,
+                bg: colors.bg,
+            });
+            cache.attempted = true;
+        }
+    }
+}
+
+#[cfg(not(any(all(unix, not(test)), windows)))]
+mod imp {
+    use super::DefaultColors;
+
+    pub(super) fn default_colors() -> Option<DefaultColors> {
+        None
+    }
+
+    pub(super) fn set_default_colors_from_startup_probe(
+        _colors: Option<crate::terminal_probe::DefaultColors>,
+    ) {
+    }
+}
 
 fn color_distance(left: (u8, u8, u8), right: (u8, u8, u8)) -> u32 {
     let red = i32::from(left.0) - i32::from(right.0);

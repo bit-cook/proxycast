@@ -178,6 +178,29 @@ describe("App Server notification drift", () => {
     expect(projectAppServerNotificationDriftPayload(source)).toBeNull();
   });
 
+  it.each(["thread/goal/updated", "thread/goal/cleared"])(
+    "%s is projected by the thread goal header owner",
+    (method) => {
+      const source = notification(method, {
+        threadId: "thread-goal",
+        ...(method === "thread/goal/updated"
+          ? {
+              goal: {
+                threadId: "thread-goal",
+                objective: "完成当前任务",
+                status: "active",
+              },
+            }
+          : {}),
+      });
+
+      expect(readAppServerNotificationDrift(source).disposition).toBe(
+        "known_projected",
+      );
+      expect(projectAppServerNotificationDriftPayload(source)).toBeNull();
+    },
+  );
+
   it("classifies turn moderation metadata as projected without logging values", () => {
     const source = notification("turn/moderationMetadata", {
       threadId: "thread-1",

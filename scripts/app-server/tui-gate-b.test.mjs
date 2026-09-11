@@ -15,6 +15,18 @@ const ptyTestSource = readFileSync(
   path.resolve(process.cwd(), "lime-rs/crates/tui/src/runtime_pty_tests.rs"),
   "utf8",
 );
+const focusTestSource = readFileSync(
+  path.resolve(process.cwd(), "lime-rs/crates/tui/tests/suite/focus_palette.rs"),
+  "utf8",
+);
+const resizeTestSource = readFileSync(
+  path.resolve(process.cwd(), "lime-rs/crates/tui/tests/suite/resize_reflow.rs"),
+  "utf8",
+);
+const reconnectTestSource = readFileSync(
+  path.resolve(process.cwd(), "lime-rs/crates/tui/tests/suite/reconnect.rs"),
+  "utf8",
+);
 
 describe("TUI Gate B", () => {
   it("drives the real TUI through a portable PTY and current App Server", () => {
@@ -27,6 +39,46 @@ describe("TUI Gate B", () => {
     expect(gateSource).toContain(
       "runtime::pty_tests::real_pty_restores_terminal_after_visible_turn_completion",
     );
+    expect(gateSource).toContain(
+      "suite::focus_palette::focus_gained_with_unanswered_palette_queries_preserves_immediate_input",
+    );
+    expect(gateSource).toContain('"--test",\n        "all"');
+    expect(gateSource).toContain('"focus-palette=ok"');
+    expect(focusTestSource).toContain(
+      "focus_gained_with_unanswered_palette_queries_preserves_immediate_input",
+    );
+    expect(focusTestSource).toContain('b"\\x1b[I"');
+    expect(focusTestSource).toContain(
+      "focus regain queried terminal colors after startup palette was cached",
+    );
+    expect(focusTestSource).toContain('b"\\x1b[?1049l"');
+    expect(gateSource).toContain('"suite::resize_reflow::"');
+    expect(gateSource).toContain('"--test-threads=1"');
+    expect(gateSource).toContain('"resize-reflow=ok"');
+    expect(resizeTestSource).toContain(
+      "tmux_split_preserves_fresh_session_composer_row_after_resize_reflow",
+    );
+    expect(resizeTestSource).toContain("tmux_repeated_resizes_do_not_push_composer_down");
+    expect(resizeTestSource).toContain(
+      "tmux_width_resize_restore_keeps_visible_content_anchored",
+    );
+    expect(resizeTestSource).toContain(
+      "tmux_scrolled_composer_resize_preserves_visible_draft_text",
+    );
+    expect(resizeTestSource).toContain("terminal.resize(");
+    expect(focusTestSource).toContain("self.master.resize");
+    expect(gateSource).toContain(
+      "suite::reconnect::automatic_reconnect_restores_draft_and_routes_new_notifications",
+    );
+    expect(gateSource).toContain('"reconnect=ok"');
+    expect(reconnectTestSource).toContain(
+      "automatic_reconnect_restores_draft_and_routes_new_notifications",
+    );
+    expect(reconnectTestSource).toContain('OsString::from("--remote")');
+    expect(reconnectTestSource).toContain("thread/resume");
+    expect(reconnectTestSource).toContain("fresh-notification-after-reconnect");
+    expect(reconnectTestSource).toContain("preserved-draft!");
+    expect(reconnectTestSource).toContain('b"\\x1b[?1049l"');
     expect(ptyTestSource).toContain("native_pty_system()");
     expect(ptyTestSource).toContain('output.contains("\\u{1b}[?1049h")');
     expect(ptyTestSource).toContain('output.contains("\\u{1b}[?1049l")');

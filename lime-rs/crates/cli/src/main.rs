@@ -49,7 +49,7 @@ pub(crate) struct ConnectionArgs {
     app_server_args: Vec<OsString>,
     #[command(flatten)]
     remote: InteractiveRemoteOptions,
-    #[arg(long, value_name = "DIR")]
+    #[arg(long = "cd", short = 'C', value_name = "DIR")]
     cwd: Option<PathBuf>,
     #[arg(long)]
     model: Option<String>,
@@ -1169,7 +1169,7 @@ mod command_tests {
             "review",
             "this diff",
             "--json",
-            "--cwd",
+            "--cd",
             "/tmp/worktree",
             "--model",
             "gpt-test",
@@ -1199,6 +1199,44 @@ mod command_tests {
             args.connection.app_server_args,
             vec![OsString::from("--backend"), OsString::from("external")]
         );
+    }
+
+    #[test]
+    fn working_directory_flag_matches_codex_cd_shape() {
+        let long_form = crate::MultitoolCli::try_parse_from([
+            "lime",
+            "exec",
+            "check",
+            "--cd",
+            "/tmp/long-form",
+        ])
+        .expect("parse --cd");
+        let short_form =
+            crate::MultitoolCli::try_parse_from(["lime", "exec", "check", "-C", "/tmp/short-form"])
+                .expect("parse -C");
+
+        let Some(crate::Subcommand::Exec(long_args)) = long_form.subcommand else {
+            panic!("expected long-form exec command");
+        };
+        let Some(crate::Subcommand::Exec(short_args)) = short_form.subcommand else {
+            panic!("expected short-form exec command");
+        };
+        assert_eq!(
+            long_args.connection.cwd,
+            Some(PathBuf::from("/tmp/long-form"))
+        );
+        assert_eq!(
+            short_args.connection.cwd,
+            Some(PathBuf::from("/tmp/short-form"))
+        );
+    }
+
+    #[test]
+    fn legacy_cwd_flag_is_rejected() {
+        let error =
+            crate::MultitoolCli::try_parse_from(["lime", "exec", "check", "--cwd", "/tmp/legacy"])
+                .expect_err("legacy --cwd must not remain a current CLI option");
+        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
     }
 
     #[test]
@@ -1374,7 +1412,7 @@ mod command_tests {
             "lime",
             "resume",
             "thread-42",
-            "--cwd",
+            "--cd",
             "/tmp/worktree",
             "--app-server",
             "/tmp/app-server",

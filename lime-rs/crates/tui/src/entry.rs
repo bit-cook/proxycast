@@ -1,18 +1,14 @@
-use std::collections::VecDeque;
 use std::path::Path;
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::diff_render;
+use crate::exec_cell::{output_lines, CommandOutput, OutputLinesParams};
 use crate::locale::Locale;
 use crate::markdown_render;
 use crate::projection::{EntryKind, EntryStatus, TranscriptEntry};
 use crate::terminal_hyperlinks::{prefix_hyperlink_lines, HyperlinkLine};
-
-const COMMAND_OUTPUT_HEAD_LINES: usize = 50;
-const COMMAND_OUTPUT_TAIL_LINES: usize = 50;
-const COMMAND_OUTPUT_MAX_LINE_BYTES: usize = 16 * 1024;
 
 #[cfg(test)]
 pub(crate) fn lines(entry: &TranscriptEntry) -> Vec<Line<'static>> {
@@ -86,8 +82,18 @@ pub(crate) fn hyperlink_lines_with_locale(
         &first,
     ))];
     if entry.kind == EntryKind::Command {
-        let output_lines = bounded_command_output_lines(source, locale);
-        lines.extend(output_lines.iter().map(|line| {
+        let output = CommandOutput::from_lines(source, locale);
+        let rendered_output = output_lines(
+            Some(&output),
+            OutputLinesParams {
+                line_limit: 50,
+                only_err: false,
+                include_angle_pipe: false,
+                include_prefix: false,
+                locale,
+            },
+        );
+        lines.extend(rendered_output.lines.iter().map(|line| {
             HyperlinkLine::new(format_line(
                 entry.kind,
                 "  ",
@@ -118,65 +124,6 @@ pub(crate) fn hyperlink_lines_with_locale(
         ))
     }));
     lines
-}
-
-fn bounded_command_output_lines<'a>(
-    source: impl Iterator<Item = &'a str>,
-    locale: Locale,
-) -> Vec<String> {
-    let mut head = Vec::with_capacity(COMMAND_OUTPUT_HEAD_LINES);
-    let mut tail = VecDeque::with_capacity(COMMAND_OUTPUT_TAIL_LINES);
-    let mut total = 0usize;
-
-    for line in source {
-        total = total.saturating_add(1);
-        let line = truncate_command_output_line(line, locale);
-        if head.len() < COMMAND_OUTPUT_HEAD_LINES {
-            head.push(line);
-        } else {
-            if tail.len() == COMMAND_OUTPUT_TAIL_LINES {
-                tail.pop_front();
-            }
-            tail.push_back(line);
-        }
-    }
-
-    let omitted = total.saturating_sub(head.len().saturating_add(tail.len()));
-    if omitted > 0 {
-        head.push(locale.output_omitted_lines(omitted));
-    }
-    head.extend(tail);
-    head
-}
-
-fn truncate_command_output_line(line: &str, locale: Locale) -> String {
-    if line.len() <= COMMAND_OUTPUT_MAX_LINE_BYTES {
-        return line.to_string();
-    }
-
-    // Budget the localized omission marker as part of the line cap. Using the
-    // full input length for the estimate keeps the marker length conservative
-    // even when the actual UTF-8 boundary adjustment omits a few extra bytes.
-    let marker_budget = locale.output_omitted_bytes(line.len());
-    let retained_budget = COMMAND_OUTPUT_MAX_LINE_BYTES.saturating_sub(marker_budget.len());
-    let head_budget = retained_budget / 2;
-    let tail_budget = retained_budget.saturating_sub(head_budget);
-    let mut head_end = head_budget.min(line.len());
-    while !line.is_char_boundary(head_end) {
-        head_end = head_end.saturating_sub(1);
-    }
-    let mut tail_start = line.len().saturating_sub(tail_budget);
-    while !line.is_char_boundary(tail_start) {
-        tail_start = tail_start.saturating_add(1);
-    }
-    let omitted = tail_start.saturating_sub(head_end);
-
-    format!(
-        "{}{}{}",
-        &line[..head_end],
-        locale.output_omitted_bytes(omitted),
-        &line[tail_start..]
-    )
 }
 
 fn with_status_suffix(text: &str, status: Option<EntryStatus>, locale: Locale) -> String {
@@ -359,49 +306,5 @@ mod tests {
             .iter()
             .flat_map(|line| &line.spans)
             .any(|span| span.content == "src/lib.rs" && span.style.fg == Some(Color::Cyan)));
-    }
-
-    #[test]
-    fn command_output_keeps_head_and_tail_with_omitted_line_marker() {
-        let output = (0..101)
-            .map(|index| format!("line-{index}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let rendered = lines(&entry(EntryKind::Command, &format!("printf\n{output}")));
-        let text = rendered
-            .iter()
-            .flat_map(|line| line.spans.iter())
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
-
-        assert!(text.contains("line-0"));
-        assert!(text.contains("line-49"));
-        assert!(text.contains("… 1 lines omitted …"));
-        assert!(!text.contains("line-50"));
-        assert!(text.contains("line-51"));
-        assert!(text.contains("line-100"));
-    }
-
-    #[test]
-    fn command_output_long_line_preserves_utf8_head_and_tail() {
-        let line = format!("{}尾", "界".repeat(COMMAND_OUTPUT_MAX_LINE_BYTES));
-        let rendered = lines(&entry(EntryKind::Command, &format!("printf\n{line}")));
-        let text = rendered
-            .iter()
-            .flat_map(|line| line.spans.iter())
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
-
-        assert!(text.contains("bytes omitted"));
-        assert!(text.ends_with("尾"));
-    }
-
-    #[test]
-    fn command_output_long_line_includes_marker_in_the_byte_budget() {
-        let line = "界".repeat(COMMAND_OUTPUT_MAX_LINE_BYTES);
-        let truncated = truncate_command_output_line(&line, Locale::EnUs);
-
-        assert!(truncated.len() <= COMMAND_OUTPUT_MAX_LINE_BYTES);
-        assert!(truncated.contains("bytes omitted"));
     }
 }

@@ -1,42 +1,39 @@
-## Lime v1.142.0
+## Lime v1.143.0
 
 Simplified Chinese release notes are the primary version.
 
 ### New Features
 
-- Continued Codex-shaped current owners across TUI/CLI: multi-agent navigation and overview, model catalog, collaboration modes, paginated resume sessions and transcript pager, composer textarea, history search, viewport handling, and five-language terminal copy.
-- Added unified App Server execution-process lifecycle and command-event mirroring for canonical Thread/Turn/Item command-start, live-output, completion, and test-run projection.
-- Added an authenticated WebSocket foundation to `@limecloud/app-server-client` for the same JSON-RPC session, with `ws/wss`, Bearer token, tenant headers, identity/protocol handshake, ping/pong, and message limits.
-- Added Electron `safeStorage`-backed Cloud session credential storage with set/status/delete IPC; status exposes metadata only and never reads back tokens.
+- Added Codex-shaped `history_cell`, `exec_cell`, `render`, history replay, and ANSI terminal owners for TUI transcript, command output, diff rendering, and wide-character handling.
+- Added canonical Thread/Turn/Item history pagination and metadata-only resume cursors. TUI now loads older history through App Server `thread/items/list` and provides transcript pager and `/export` support.
+- Expanded TUI startup, reconnect, resize/reflow, terminal palette/focus, and session recovery paths with real PTY/VT100 Gate B scenarios and stable integration suites.
+- Aligned the CLI working-directory flags with Codex using `--cd` and `-C`, and extended CLI/TUI structure inventory and current-fixture guards.
 
 ### Fixes
 
-- Unified bounded output capture across pipe, PTY, Windows restricted runner, remote Environment, and unified exec with stable head/tail retention, UTF-8 boundaries, and omission accounting.
-- Fixed App Server process-owner connection isolation, duplicate active `processId` rejection, disconnect cleanup, stdin/resize/terminate lifecycle, and per-process output replay.
-- Fixed TUI terminal restoration, disconnected editing, Unicode cursor behavior, narrow-terminal wrapping, queue recovery, history hydration, approval/input requests, and multi-agent projection boundaries.
-- Hardened sidecar `dataDir` and Cloud App Server endpoint validation against `undefined`/relative paths, URL credentials, query/fragment leakage, and insecure public WebSocket token connections.
+- Fixed canonical command completion projection so canceled commands consistently report `canceled`, with regression coverage for raw lifecycle and redacted interaction events.
+- Fixed TUI history hydration, disconnected editing, terminal restoration, Unicode cursor handling, narrow-terminal wrapping, queue recovery, and multi-agent projection boundaries.
+- Fixed Windows CI CLI npm packaging by invoking `npm.cmd` through the Windows command interpreter, and added ALSA development dependencies required by the Linux CLI runner.
+- Corrected the Electron Cloud credential test to ensure renderer-visible metadata never contains the session secret.
 
 ### Improvements and Refactoring
 
-- Moved TUI aggregate state into unique `app/`, `chat_composer/`, `textarea/`, and `viewport` owners while retaining the App Server canonical projection as the sole session source of truth.
-- Reworked App Server and tool-runtime execution output around per-process bounded queues and a shared framer, removing global FIFO, tail-only capture, and lossy per-chunk UTF-8 semantics.
-- Added isolated Docker CLI configuration and active Docker-context endpoint injection to the DeepSWE harness.
-- Kept Cloud transport foundation-only: credentials, tenant isolation, reconnect, rate limits, audit, and a production endpoint remain Cloud-service prerequisites.
+- Split TUI aggregate logic into unique `app/`, `history_cell/`, `exec_cell/`, `render/`, and `terminal_probe/` owners while keeping the App Server canonical projection as the sole session source of truth.
+- Expanded script governance, structure inventory, CLI/TUI Gate B, and five-language terminal regression coverage while preserving real stdio/PTY validation.
 
 ### Testing and Quality
 
-- `tui` Rust unit tests: 390/390 passed; `@limecloud/app-server-client`: 11 test files and 139 tests passed.
-- CLI Gate B, TUI Gate B, Agent Runtime current Electron fixtures, App Server client contracts, structure inventory, harness, legacy governance, and script-boundary checks passed.
-- Preserved five-language copy, generated protocol, Electron Forge, version-consistency, real PTY/stdio, and canonical Thread/Turn/Item identity gates.
+- Version consistency, TypeScript typecheck, protocol contracts, script governance, Rust related (App Server 1780/1780, TUI 510/510), CLI Gate B, TUI Gate B, and the real Electron GUI smoke all passed.
+- TUI Gate B covered default turn, approval, user input, interrupt, failure, queue editing, multi-agent, focus/palette, resize/reflow, reconnect, and terminal restoration; the four real PTY resize/reflow cases passed 80/80 across 20 consecutive rounds.
+- Windows hardware, signing/notarization, and complete Forge artifacts remain platform-runner evidence; any local Rust behavior-test limitation from the `rusty_v8` Darwin/aarch64 prebuilt archive will be recorded at closeout.
 
 ### Documentation
 
-- Updated architecture, command, quality, roadmap, and TUI/CLI execution-plan documentation for execution processes, remote transport, credential storage, and the single Product Surface -> App Server JSON-RPC -> RuntimeCore path.
+- Updated architecture, quality, CLI/TUI execution plans, and structure inventory to document paginated resume cursors, history pagination, and the current TUI Gate B boundary.
 
 ### Other
 
-- Bumped the root app, CLI npm package, Rust workspace, and Cargo.lock versions to `1.142.0`.
-- The local `rusty_v8 v150.4.0` Darwin/aarch64 prebuilt archive returned 404, so the V8-dependent workspace full build was not completed locally; Windows hardware matrix, signing/notarization, and full Forge artifacts remain platform-runner evidence.
-- Excluded the untracked local Mach-O `rust_out` and ignored local build directories from the release candidate; the existing v1.141.0 tag was not deleted or overwritten.
+- Bumped the root app, CLI npm package, Rust workspace, and Cargo.lock versions to `1.143.0`.
+- This candidate includes all currently modified and untracked product, documentation, test, and script changes; the untracked local binary `rust_out` and the old `internal/exec-plans/release-v1.142.1-plan.md` are excluded and untouched.
 
-**Full changes**: `v1.141.0` -> `v1.142.0`
+**Full changes**: `v1.142.0` -> `v1.143.0`

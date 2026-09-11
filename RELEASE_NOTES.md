@@ -1,40 +1,37 @@
-## Lime v1.142.0
+## Lime v1.143.0
 
 ### 新功能
 
-- TUI/CLI 继续按 Codex 形状拆分 current owner：多 Agent 导航与概览、模型目录、协作模式、恢复会话分页与 transcript pager、composer textarea、历史搜索、viewport 和五语言终端文案。
-- App Server 增加统一执行进程生命周期与 command event mirror，向 canonical Thread/Turn/Item 投影 command started、实时输出、完成状态和测试运行信息。
-- `@limecloud/app-server-client` 提供同一 JSON-RPC session 的认证 WebSocket foundation，支持 `ws/wss`、Bearer token、租户 header、身份/协议握手、ping/pong 和消息大小上限。
-- Electron 增加基于 `safeStorage` 的 Cloud session credential store 与 set/status/delete IPC；状态只返回 metadata，不提供 token 读取。
+- TUI 按 Codex 形状补齐 `history_cell`、`exec_cell`、`render`、历史回放与 ANSI 终端能力，统一 transcript、命令输出、差异渲染和宽字符处理的 current owner。
+- 增加 canonical Thread/Turn/Item 的历史分页与 metadata-only resume cursor，TUI 通过 App Server `thread/items/list` 加载 older history，并提供 transcript pager 与 `/export` 导出。
+- 完善 TUI 启动、重连、窗口 resize/reflow、终端 palette/focus 和会话恢复路径，加入真实 PTY/VT100 Gate B 场景与稳定测试套件。
+- CLI 工作目录参数对齐 Codex 形状，支持 `--cd` 与 `-C`；扩展 CLI/TUI 结构 inventory 与 current fixture 守卫。
 
 ### 修复
 
-- 统一 pipe、PTY、Windows restricted runner、远程 Environment 和 unified exec 的有界输出捕获，保留稳定 head/tail、UTF-8 边界和 omission 统计，避免大输出阻塞或跨进程串流。
-- 修复 App Server process owner 的连接隔离、重复 active `processId`、断连清理、stdin/resize/terminate 生命周期和逐进程 output replay。
-- 修复 TUI 终端恢复、断线编辑、Unicode 光标、窄终端换行、队列恢复、历史 hydration、审批/输入请求和多 Agent 状态投影边界。
-- 收紧 sidecar `dataDir` 与 Cloud App Server endpoint 校验，拒绝 `undefined`/相对路径、URL 凭证、query/fragment 和不安全的公开 WebSocket token 连接。
+- 修复 command completion 取消状态的 canonical 投影，统一输出 `canceled`，并补充原始生命周期事件与脱敏交互事件的回归断言。
+- 修复 TUI 历史 hydration、断线编辑、终端恢复、Unicode 光标、窄终端换行、队列恢复和多 Agent 投影边界。
+- 修复 Windows CI CLI npm 平台包对 `npm.cmd` 的启动方式，并补齐 Linux CLI runner 所需 ALSA 开发依赖。
+- 修正 Electron Cloud credential 测试，确保 renderer 可见 metadata 不包含 session secret。
 
 ### 优化与重构
 
-- 将 TUI 聚合状态迁入 `app/`、`chat_composer/`、`textarea/`、`viewport` 等唯一 current owner，继续以 App Server canonical projection 为会话事实源。
-- App Server 与 tool-runtime 的执行输出改用 per-process bounded queue 和统一 framer，删除全局 FIFO、tail-only capture 与逐 chunk lossy UTF-8 语义。
-- DeepSWE harness 支持隔离 Docker CLI 配置和当前 Docker context endpoint 注入，避免本地 daemon 配置污染 verifier。
-- Cloud transport 保持 foundation-only：凭证、租户隔离、重连、限流、审计和生产 endpoint 仍需 Cloud 服务完成后才能启用。
+- 将 TUI 聚合逻辑拆分到 `app/`、`history_cell/`、`exec_cell/`、`render/`、`terminal_probe/` 等唯一 owner，保持 App Server canonical projection 为唯一会话事实源。
+- 扩展脚本治理、结构 inventory、CLI/TUI Gate B 和五语言终端回归覆盖，保持真实 stdio/PTY 主链验证。
 
 ### 测试与质量
 
-- `tui` Rust 单元测试 390/390 通过；`@limecloud/app-server-client` 11 个测试文件、139 项通过。
-- CLI Gate B、TUI Gate B、Agent Runtime current Electron fixture、App Server client contracts、结构 inventory、harness、legacy governance 和脚本边界检查通过。
-- 保持五语言文案、协议生成、Electron Forge、版本一致性、真实 PTY/stdio 和 canonical Thread/Turn/Item identity 为发布门禁。
+- 已通过版本一致性、TypeScript 类型、协议合同、脚本治理、Rust related（App Server 1780/1780、TUI 510/510）、CLI Gate B、TUI Gate B 和真实 Electron GUI smoke。
+- TUI Gate B 覆盖默认回合、审批、用户输入、中断、失败、队列编辑、多 Agent、focus/palette、resize/reflow、reconnect 与终端恢复；resize/reflow 4 个真实 PTY 用例连续 20 轮共 80/80 通过。
+- Windows 真机、签名/公证和完整 Forge 产物仍属于平台 runner 证据；本机 Rust 行为测试若受 `rusty_v8` Darwin/aarch64 预构建包限制，将在收尾明确记录。
 
 ### 文档
 
-- 更新架构、命令、质量、路线图与 TUI/CLI 执行计划，记录执行进程、远程 transport、凭证存储和唯一 Product Surface -> App Server JSON-RPC -> RuntimeCore 主链边界。
+- 更新架构、质量、CLI/TUI 执行计划与结构 inventory，记录 paginated resume cursor、历史分页和 TUI Gate B 的 current 边界。
 
 ### 其他
 
-- 将根应用、CLI npm 包、Rust workspace 与 Cargo.lock 版本统一提升到 `1.142.0`。
-- 本地 `rusty_v8 v150.4.0` Darwin/aarch64 预构建 archive 返回 404，包含 V8 的 workspace 完整编译未在本机完成；Windows 真机矩阵、签名/公证和完整 Forge 产物留给对应平台 runner。
-- 发布候选排除未跟踪的本机 Mach-O `rust_out` 与被忽略的本地生成目录；不删除、不覆盖既有 v1.141.0 tag。
+- 根应用、CLI npm 包、Rust workspace 与 Cargo.lock 版本统一提升到 `1.143.0`。
+- 本次候选包含当前工作树已修改及未跟踪的产品、文档、测试和脚本改动；排除未跟踪本机二进制 `rust_out` 与旧的 `internal/exec-plans/release-v1.142.1-plan.md`，两者均未删除。
 
-**完整变更**: `v1.141.0` -> `v1.142.0`
+**完整变更**: `v1.142.0` -> `v1.143.0`

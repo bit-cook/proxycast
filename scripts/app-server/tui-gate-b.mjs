@@ -122,6 +122,124 @@ async function main() {
       );
     }
 
+    const focusScenarioDir = path.join(tempDir, "focus-palette");
+    await mkdir(focusScenarioDir, { recursive: true });
+    const focusBackendPath = path.join(tempDir, "focus-palette-backend.mjs");
+    const focusLedgerPath = path.join(tempDir, "focus-palette.jsonl");
+    await writeTerminalExternalBackend(focusBackendPath, {
+      completedText,
+      command: "printf tui-focus-palette",
+      scenario: "focus-palette",
+    });
+    await execFileAsync(
+      process.env.CARGO || "cargo",
+      [
+        "test",
+        "--manifest-path",
+        path.join(rootDir, "lime-rs", "Cargo.toml"),
+        "-p",
+        "tui",
+        "--test",
+        "all",
+        "suite::focus_palette::focus_gained_with_unanswered_palette_queries_preserves_immediate_input",
+        "--",
+        "--exact",
+        "--nocapture",
+      ],
+      {
+        cwd: rootDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          LIME_TEST_TUI_GATE_B: "1",
+          LIME_TEST_CLI_BIN: cliBinaryPath,
+          LIME_TEST_APP_SERVER_BIN: appServerBinaryPath,
+          LIME_TEST_TERMINAL_BACKEND: focusBackendPath,
+          LIME_TEST_TERMINAL_LEDGER: focusLedgerPath,
+          LIME_TEST_TERMINAL_CWD: focusScenarioDir,
+          LIME_TEST_NODE_BIN: process.execPath,
+        },
+        maxBuffer: 2 * 1024 * 1024,
+        timeout: 60_000,
+        windowsHide: true,
+      },
+    );
+
+    const reconnectScenarioDir = path.join(tempDir, "reconnect");
+    await mkdir(reconnectScenarioDir, { recursive: true });
+    await execFileAsync(
+      process.env.CARGO || "cargo",
+      [
+        "test",
+        "--manifest-path",
+        path.join(rootDir, "lime-rs", "Cargo.toml"),
+        "-p",
+        "tui",
+        "--test",
+        "all",
+        "suite::reconnect::automatic_reconnect_restores_draft_and_routes_new_notifications",
+        "--",
+        "--exact",
+        "--nocapture",
+      ],
+      {
+        cwd: rootDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          LIME_TEST_TUI_GATE_B: "1",
+          LIME_TEST_CLI_BIN: cliBinaryPath,
+          LIME_TEST_TUI_REMOTE_CWD: reconnectScenarioDir,
+        },
+        maxBuffer: 2 * 1024 * 1024,
+        timeout: 120_000,
+        windowsHide: true,
+      },
+    );
+
+    const resizeScenarioDir = path.join(tempDir, "resize-reflow");
+    await mkdir(resizeScenarioDir, { recursive: true });
+    const resizeBackendPath = path.join(tempDir, "resize-reflow-backend.mjs");
+    const resizeLedgerPath = path.join(tempDir, "resize-reflow.jsonl");
+    await writeTerminalExternalBackend(resizeBackendPath, {
+      completedText,
+      command: "printf tui-resize-reflow",
+      scenario: "resize-reflow",
+    });
+    await execFileAsync(
+      process.env.CARGO || "cargo",
+      [
+        "test",
+        "--manifest-path",
+        path.join(rootDir, "lime-rs", "Cargo.toml"),
+        "-p",
+        "tui",
+        "--test",
+        "all",
+        "suite::resize_reflow::",
+        "--",
+        "--nocapture",
+        "--test-threads=1",
+      ],
+      {
+        cwd: rootDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          LIME_TEST_TUI_GATE_B: "1",
+          LIME_TEST_CLI_BIN: cliBinaryPath,
+          LIME_TEST_APP_SERVER_BIN: appServerBinaryPath,
+          LIME_TEST_TERMINAL_BACKEND: resizeBackendPath,
+          LIME_TEST_TERMINAL_LEDGER: resizeLedgerPath,
+          LIME_TEST_TERMINAL_CWD: resizeScenarioDir,
+          LIME_TEST_NODE_BIN: process.execPath,
+        },
+        maxBuffer: 2 * 1024 * 1024,
+        timeout: 120_000,
+        windowsHide: true,
+      },
+    );
+
     const ledger = await readJsonLines(ledgerPath);
     const turnStarts = scenarios.map((scenario) => {
       const entry = ledger.find(
@@ -272,6 +390,9 @@ async function main() {
         `events=${turnStart.eventTypes.join(",")}`,
         scenarios.includes("queue-edit") ? "queue-edit=ok" : null,
         scenarios.includes("agents-overview") ? "agents-overview=ok" : null,
+        "focus-palette=ok",
+        "resize-reflow=ok",
+        "reconnect=ok",
         "terminal=restored",
       ]
         .filter(Boolean)

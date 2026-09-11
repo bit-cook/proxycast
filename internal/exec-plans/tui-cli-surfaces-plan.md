@@ -416,7 +416,7 @@ Codex 形状的 `handle_key_event(KeyEvent)`。request-user-input 的 `Event` �
 ## 2026-09-04 CLI surface Gate B 与证据账本复验
 
 - `lime-rs/crates/cli/src/queue_cmd.rs` 增加 Codex 形状的 `queue list --thread <THREAD> [--json]`，原有 `queue --thread ... --message ...` 保持 current 入口；队列读写均通过 App Server `thread/queue/list|add`，缺失 Thread 返回非零并 fail closed。
-- `plugin search` 的 marketplace 多 cwd 参数改为 `--plugin-cwd`，避免与公共连接参数 `--cwd` 发生 Clap 重复 option；新增解析回归锁定该命名边界。
+- `plugin search` 的 marketplace 多 cwd 参数改为 `--plugin-cwd`，避免与公共连接参数 `--cd` 发生 Clap 重复 option；新增解析回归锁定该命名边界。
 - `scripts/app-server/cli-surface-gate-b.mjs` 现在以隔离数据目录验证 MCP `list/add/get/remove/start/stop`、features `list/enable/disable`、plugin `add/list/read/search/enable/disable/remove`、debug `models --bundled`/`clear-memories`、queue `add/list` 与不可用 Thread fail-closed、OAuth logout fail-closed；queue fixture 仅使用显式 external backend，不调用正式 Provider或 mock backend。macOS 自动扫描 sherpa 预构建动态库目录并设置 `DYLD_LIBRARY_PATH`。
 - `cli-test-inventory.mjs` 与 `cli-test-inventory.test.mjs` 将有真实 CLI/TUI/Gate B 证据的 current exec/MCP 条目标为 `covered`，当前账本统计 `covered=16 / partial=33 / pending=249 / deferred=60 / excluded=75`；MCP rationale 与脚本文档统一使用 current `mcpServer/list`，并将 `mcpServerStatus/list` 明确为独立 GUI/App Server 运行时状态控制面。
 - 本轮验证：扩展 `smoke:cli-surface-gate-b` 通过；CLI surface/structure/test inventory Vitest `7/7`；`cargo test -p cli -p app-server-client`（29 + 41）；`npm --prefix packages/cli test` `8/8`；`cargo clippy -p cli --no-deps -- -D warnings`；`npm run test:contracts`（299 client checks + command/modality/script/governance/docs）；`npm run governance:legacy-report`（零引用候选、分类漂移、边界违规均为 0）；Prettier、Node syntax 与 `git diff --check` 全部通过。

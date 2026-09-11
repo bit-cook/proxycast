@@ -425,7 +425,11 @@ impl CodingEventMirror {
                     "command": command,
                     "canonicalCommand": command_facts.as_ref().map(|facts| facts.canonical_command.clone()),
                     "commandSummary": command_facts.as_ref().map(|facts| facts.summary.clone()),
-                    "result": if status == "passed" { "passed" } else { "failed" },
+                    "result": match status {
+                        "passed" => "passed",
+                        "canceled" | "cancelled" => "canceled",
+                        _ => "failed",
+                    },
                     "status": status,
                     "exitCode": exit_code,
                     "source": "runtime_tool",
