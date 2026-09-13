@@ -1,37 +1,27 @@
-## Lime v1.144.0
+## Lime v1.144.1
 
 ### 新功能
 
-- TUI 按 Codex 形状补齐 `history_cell`、`exec_cell`、`render`、历史回放与 ANSI 终端能力，统一 transcript、命令输出、差异渲染和宽字符处理的 current owner。
-- 增加 canonical Thread/Turn/Item 的历史分页与 metadata-only resume cursor，TUI 通过 App Server `thread/items/list` 加载 older history，并提供 transcript pager 与 `/export` 导出。
-- 完善 TUI 启动、重连、窗口 resize/reflow、终端 palette/focus、Vim 编辑和会话恢复路径，加入真实 PTY/VT100 Gate B 场景与稳定测试套件。
-- CLI 工作目录参数对齐 Codex 形状，支持 `--cd` 与 `-C`；扩展 CLI/TUI 结构 inventory、current fixture 守卫和 npm launcher 测试。
+- 无。
 
 ### 修复
 
-- 修复 command completion 取消状态的 canonical 投影，统一输出 `canceled`，并补充原始生命周期事件与脱敏交互事件的回归断言。
-- 修复 TUI 历史 hydration、断线编辑、终端恢复、Unicode 光标、窄终端换行、队列恢复、多 Agent 投影和 Vim 搜索边界。
-- 修复 Windows CI CLI npm 平台包对 `npm.cmd` 的启动方式，并补齐 Linux CLI runner 所需 ALSA 开发依赖。
-- 修正 Electron Cloud credential 测试，确保 renderer 可见 metadata 不包含 session secret。
+- 修复 Windows CLI npm 构建缺少 `WriteFile` 所需 `windows-sys` `Win32_System_IO` feature 的问题。
 
 ### 优化与重构
 
-- 将 TUI 聚合逻辑拆分到 `app/`、`history_cell/`、`exec_cell/`、`render/`、`terminal_probe/` 等唯一 owner，保持 App Server canonical projection 为唯一会话事实源。
-- 扩展脚本治理、结构 inventory、CLI/TUI Gate B 和五语言终端回归覆盖，保持真实 stdio/PTY 验证。
+- 无。
 
 ### 测试与质量
 
-- 已通过版本一致性、TypeScript 类型、协议合同、脚本治理、CLI/TUI 定向 Rust 测试、CLI Gate B、TUI Gate B 和 macOS arm64 npm packaged Gate B。
-- TUI Gate B 覆盖默认回合、审批、用户输入、中断、失败、队列编辑、多 Agent、focus/palette、resize/reflow、reconnect 与终端恢复；resize/reflow 4 个真实 PTY 用例连续 20 轮共 80/80 通过。
-- Windows 真机、签名/公证和完整 Forge 产物仍属于平台 runner 证据；本机 Rust 行为测试若受 `rusty_v8` Darwin/aarch64 预构建包限制，将在收尾明确记录。
+- 补跑 TUI Rust 测试、格式检查与版本一致性门禁；跨平台 CLI 产物由 GitHub Actions 验证。
 
 ### 文档
 
-- 更新架构、质量、CLI/TUI 执行计划与结构 inventory，记录 paginated resume cursor、历史分页和 TUI Gate B 的 current 边界。
+- 无。
 
 ### 其他
 
-- 根应用、CLI npm 包、Rust workspace 与 Cargo.lock 版本统一提升到 `1.144.0`。
-- 本次候选包含当前工作树已修改及未跟踪的产品、文档、测试和脚本改动；排除未跟踪本机二进制 `rust_out` 与旧的 `internal/exec-plans/release-v1.142.1-plan.md`，两者均未删除。
+- 修复版不覆盖已发布的 `v1.144.0` tag；CLI npm 发布继续使用 GitHub Actions npm Trusted Publishing。
 
-**完整变更**: `v1.143.0` -> `v1.144.0`
+**完整变更**: `v1.144.0` -> `v1.144.1`
