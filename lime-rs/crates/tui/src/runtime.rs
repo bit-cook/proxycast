@@ -14,12 +14,12 @@ use crate::app::event_dispatch::{EventContext, EventDispatch};
 use crate::app::reconnect::{reconnect_session, ReconnectedSession};
 use crate::app::{App, AppAction, ExternalEditorState};
 use crate::app_server_session::AppServerSession;
-use crate::bottom_pane::AppServerResponse;
+use crate::bottom_pane::{AppServerResponse, FileSearchRequest};
 use crate::clipboard_copy::copy_to_clipboard;
 use crate::clipboard_paste::paste_image_to_temp_png;
 use crate::external_editor::edit_draft;
 use crate::locale::Locale;
-use crate::projection::ConversationProjection;
+use crate::projection::{ConversationProjection, TranscriptEntry};
 use crate::resume_picker::{
     run_resume_picker_with_app_server, PickerAction, PickerLoadEvent, PickerState,
     SessionPickerAction, SessionStatus,
@@ -56,6 +56,13 @@ pub struct ExecResult {
     pub output: String,
 }
 
+#[derive(Debug)]
+struct FileSearchEvent {
+    generation: u64,
+    query: String,
+    files: Vec<app_server_protocol::protocol::v2::FuzzyFileSearchResult>,
+}
+
 fn validate_model_route(options: &TuiOptions) -> Result<()> {
     match (&options.model, &options.model_provider) {
         (Some(model), Some(provider)) if model.trim().is_empty() || provider.trim().is_empty() => {
@@ -68,12 +75,41 @@ fn validate_model_route(options: &TuiOptions) -> Result<()> {
     }
 }
 
+fn spawn_file_search(
+    request_handle: app_server_client::RequestHandle,
+    cwd: PathBuf,
+    request: FileSearchRequest,
+    result_tx: tokio::sync::mpsc::UnboundedSender<FileSearchEvent>,
+) {
+    tokio::spawn(async move {
+        match AppServerSession::fuzzy_file_search_request(
+            request_handle,
+            cwd,
+            request.query.clone(),
+        )
+        .await
+        {
+            Ok(files) => {
+                let _ = result_tx.send(FileSearchEvent {
+                    generation: request.generation,
+                    query: request.query,
+                    files,
+                });
+            }
+            Err(error) => {
+                tracing::debug!("file search request failed: {error}");
+            }
+        }
+    });
+}
+
 pub async fn run_tui(options: TuiOptions) -> Result<()> {
     validate_model_route(&options)?;
     let mut session = Some(connect_session(&options).await?);
     let mut app = App::default();
     app.set_cwd(options.cwd.clone());
     app.set_locale(Locale::resolve(options.locale.as_deref()));
+    app.begin_startup_input_boundary();
     let setup_result = crate::app::startup::initialize_session(
         &options,
         session.as_mut().expect("session available during setup"),
@@ -121,6 +157,8 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
         let mut reconnect_thread_id: Option<String> = None;
         let mut reconnect_failed = false;
         let mut pending_tui_event: Option<TuiEvent> = None;
+        let (file_search_tx, mut file_search_rx) =
+            tokio::sync::mpsc::unbounded_channel::<FileSearchEvent>();
         loop {
             if session.is_none() && reconnect.is_none() && !reconnect_failed {
                 if let Some(thread_id) = reconnect_thread_id.as_deref() {
@@ -180,6 +218,16 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
             }
 
             tokio::select! {
+                file_search_event = file_search_rx.recv() => {
+                    if let Some(file_search_event) = file_search_event {
+                        app.composer.on_file_search_result(
+                            file_search_event.generation,
+                            &file_search_event.query,
+                            file_search_event.files,
+                        );
+                        frame_requester.schedule_frame();
+                    }
+                }
                 resume_event = async {
                     match resume_picker_load_rx.as_mut() {
                         Some(receiver) => receiver.recv().await,
@@ -283,6 +331,19 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                     };
                     let connected = session.is_some();
                     let action = app.handle_tui_event(event, connected);
+                    if connected {
+                        if let Some(request) = app.composer.take_file_search_request() {
+                            spawn_file_search(
+                                session
+                                    .as_ref()
+                                    .expect("session available for file search")
+                                    .request_handle(),
+                                app.cwd.clone(),
+                                request,
+                                file_search_tx.clone(),
+                            );
+                        }
+                    }
                     if !connected {
                         if matches!(action, AppAction::Quit) {
                             break;
@@ -431,7 +492,13 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 continue;
                             }
                             let images = app.take_pending_images();
-                            let turn_input = submission_input(prompt.clone(), &images);
+                            let remote_images = app.take_remote_image_urls();
+                            let turn_input = submission_input_with_skills(
+                                prompt.clone(),
+                                &images,
+                                &remote_images,
+                                app.composer.skills(),
+                            );
                             if let Some(turn_id) = app.projection.active_turn_id().map(str::to_owned) {
                                 match session
                                     .as_ref()
@@ -466,6 +533,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                         }
                                         Err(queue_error) => {
                                             app.restore_pending_images(images);
+                                            app.set_remote_image_urls(remote_images);
                                             app.projection.set_status(format!(
                                                 "{steer_error}; queue failed: {queue_error}"
                                             ));
@@ -490,6 +558,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                     }
                                     Err(error) => {
                                         app.restore_pending_images(images);
+                                        app.set_remote_image_urls(remote_images);
                                         app.projection.set_status(error.to_string());
                                     }
                                 }
@@ -500,7 +569,13 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 continue;
                             }
                             let images = app.take_pending_images();
-                            let input = submission_input(prompt.clone(), &images);
+                            let remote_images = app.take_remote_image_urls();
+                            let input = submission_input_with_skills(
+                                prompt.clone(),
+                                &images,
+                                &remote_images,
+                                app.composer.skills(),
+                            );
                             match session
                                 .as_ref()
                                 .expect("session available during TUI")
@@ -519,6 +594,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 }
                                 Err(error) => {
                                     app.restore_pending_images(images);
+                                    app.set_remote_image_urls(remote_images);
                                     app.projection.set_status(error.to_string());
                                 }
                             }
@@ -556,7 +632,13 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                             copy_last_response_with(&mut app, copy_to_clipboard);
                         }
                         AppAction::ExportTranscript { path } => {
-                            export_transcript_with(&mut app, path, copy_to_clipboard);
+                            export_transcript_with(
+                                &mut app,
+                                session.as_ref().expect("session available during TUI export"),
+                                path,
+                                copy_to_clipboard,
+                            )
+                            .await;
                         }
                         AppAction::PasteImage => match paste_image_to_temp_png() {
                             Ok((path, info)) => {
@@ -839,8 +921,13 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 .active_permission_profile()
                                 .map(str::to_string);
                             app.hydrate_thread(reconnected.thread);
-                            app.set_cwd(reconnected.cwd);
-                            app.projection.prepend_items(reconnected.history_items);
+                            crate::app::working_directory::sync_server_cwd(
+                                &mut app,
+                                reconnected.cwd,
+                            );
+                            if let Some(history_page) = reconnected.history_page {
+                                app.prepend_initial_history_page(history_page);
+                            }
                             app.scrollback_has_older_history =
                                 reconnected.scrollback_has_older_history;
                             app.set_permission_profiles(reconnected.permission_profiles);
@@ -880,6 +967,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
     }
     .await;
 
+    app.end_startup_input_boundary();
     let restore_result = terminal.restore().context("failed to restore terminal");
     let shutdown_result = match session {
         Some(session) => session.shutdown().await,
@@ -929,7 +1017,21 @@ async fn persist_prompt(session: &AppServerSession, app: &mut App, prompt: Strin
     }
 }
 
-fn submission_input(prompt: String, images: &[PathBuf]) -> Vec<UserInput> {
+#[cfg(test)]
+fn submission_input(
+    prompt: String,
+    images: &[PathBuf],
+    remote_images: &[String],
+) -> Vec<UserInput> {
+    submission_input_with_skills(prompt, images, remote_images, &[])
+}
+
+fn submission_input_with_skills(
+    prompt: String,
+    images: &[PathBuf],
+    remote_images: &[String],
+    skills: &[app_server_protocol::protocol::v2::SkillMetadata],
+) -> Vec<UserInput> {
     let mut input = images
         .iter()
         .map(|path| UserInput::LocalImage {
@@ -937,6 +1039,25 @@ fn submission_input(prompt: String, images: &[PathBuf]) -> Vec<UserInput> {
             path: path.to_string_lossy().into_owned(),
         })
         .collect::<Vec<_>>();
+    input.extend(remote_images.iter().map(|url| UserInput::Image {
+        detail: None,
+        url: url.clone(),
+    }));
+    let mut seen = std::collections::HashSet::new();
+    for token in prompt.split_whitespace() {
+        let Some(name) = token.strip_prefix('$') else {
+            continue;
+        };
+        let Some(skill) = skills.iter().find(|skill| skill.name == name) else {
+            continue;
+        };
+        if seen.insert(skill.name.clone()) {
+            input.push(UserInput::Skill {
+                name: skill.name.clone(),
+                path: skill.path.to_string_lossy().into_owned(),
+            });
+        }
+    }
     if !prompt.is_empty() {
         input.push(UserInput::Text {
             text: prompt,
@@ -964,19 +1085,32 @@ fn copy_last_response_with(
     }
 }
 
-fn export_transcript_with(
+async fn export_transcript_with(
     app: &mut App,
+    session: &AppServerSession,
     path: Option<std::path::PathBuf>,
     copy: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
 ) {
-    let markdown =
-        match crate::app::transcript_export::render_markdown_transcript(app.projection.entries()) {
-            Ok(markdown) => markdown,
-            Err(error) => {
-                app.projection.set_status(format!("export failed: {error}"));
-                return;
-            }
-        };
+    let live_entries = app.projection.entries();
+    let entries = match session.thread_id() {
+        Ok(thread_id) => match crate::thread_transcript::load_session_transcript_with_handle(
+            session.request_handle(),
+            thread_id.to_string(),
+        )
+        .await
+        {
+            Ok(entries) => merge_export_entries(entries, live_entries),
+            Err(_) => live_entries.to_vec(),
+        },
+        Err(_) => live_entries.to_vec(),
+    };
+    let markdown = match crate::app::transcript_export::render_markdown_transcript(&entries) {
+        Ok(markdown) => markdown,
+        Err(error) => {
+            app.projection.set_status(format!("export failed: {error}"));
+            return;
+        }
+    };
     match path {
         Some(path) => {
             match crate::app::transcript_export::write_transcript(&app.cwd, &path, &markdown) {
@@ -995,6 +1129,23 @@ fn export_transcript_with(
             Err(error) => app.projection.set_status(format!("export failed: {error}")),
         },
     }
+}
+
+fn merge_export_entries(
+    mut persisted: Vec<TranscriptEntry>,
+    live: &[TranscriptEntry],
+) -> Vec<TranscriptEntry> {
+    for live_entry in live {
+        if let Some(persisted_entry) = persisted
+            .iter_mut()
+            .find(|persisted_entry| persisted_entry.id == live_entry.id)
+        {
+            *persisted_entry = live_entry.clone();
+        } else {
+            persisted.push(live_entry.clone());
+        }
+    }
+    persisted
 }
 
 pub async fn run_exec(options: ExecOptions) -> Result<ExecResult> {
@@ -1124,15 +1275,28 @@ mod pty_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::projection::{EntryKind, EntryStatus};
     use app_server_protocol::protocol::v2::AgentMessageDeltaNotification;
     use std::cell::RefCell;
     use std::ffi::OsString;
+
+    fn transcript_entry(id: &str, text: &str, status: Option<EntryStatus>) -> TranscriptEntry {
+        TranscriptEntry {
+            id: id.to_string(),
+            kind: EntryKind::Assistant,
+            text: text.to_string(),
+            streaming: status == Some(EntryStatus::Running),
+            status,
+            summary: Vec::new(),
+        }
+    }
 
     #[test]
     fn submission_input_keeps_codex_image_then_text_order() {
         let input = submission_input(
             "describe these".to_string(),
             &[PathBuf::from("one.png"), PathBuf::from("two.png")],
+            &["https://example.test/remote.png".to_string()],
         );
 
         assert_eq!(
@@ -1146,6 +1310,10 @@ mod tests {
                     detail: None,
                     path: "two.png".to_string(),
                 },
+                UserInput::Image {
+                    detail: None,
+                    url: "https://example.test/remote.png".to_string(),
+                },
                 UserInput::Text {
                     text: "describe these".to_string(),
                     text_elements: Vec::new(),
@@ -1153,12 +1321,85 @@ mod tests {
             ]
         );
         assert_eq!(
-            submission_input(String::new(), &[PathBuf::from("only.png")]),
+            submission_input(String::new(), &[PathBuf::from("only.png")], &[]),
             vec![UserInput::LocalImage {
                 detail: None,
                 path: "only.png".to_string(),
             }]
         );
+    }
+
+    #[test]
+    fn submission_input_keeps_remote_images_before_text() {
+        assert_eq!(
+            submission_input(
+                "describe".to_string(),
+                &[],
+                &["https://example.test/one.png".to_string()],
+            ),
+            vec![
+                UserInput::Image {
+                    detail: None,
+                    url: "https://example.test/one.png".to_string(),
+                },
+                UserInput::Text {
+                    text: "describe".to_string(),
+                    text_elements: Vec::new(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn submission_input_adds_loaded_skills_without_dropping_prompt_text() {
+        let skill = app_server_protocol::protocol::v2::SkillMetadata {
+            name: "review".to_string(),
+            description: "Review code".to_string(),
+            short_description: None,
+            interface: None,
+            dependencies: None,
+            path: PathBuf::from("/skills/review/SKILL.md"),
+            scope: app_server_protocol::protocol::v2::SkillScope::User,
+            enabled: true,
+        };
+        assert_eq!(
+            submission_input_with_skills("please use $review".to_string(), &[], &[], &[skill],),
+            vec![
+                UserInput::Skill {
+                    name: "review".to_string(),
+                    path: "/skills/review/SKILL.md".to_string(),
+                },
+                UserInput::Text {
+                    text: "please use $review".to_string(),
+                    text_elements: Vec::new(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn export_merge_keeps_persisted_order_and_latest_live_entries() {
+        let persisted = vec![
+            transcript_entry("history", "older", Some(EntryStatus::Completed)),
+            transcript_entry("shared", "persisted", Some(EntryStatus::Completed)),
+        ];
+        let live = vec![
+            transcript_entry("shared", "streaming", Some(EntryStatus::Running)),
+            transcript_entry("live", "new", Some(EntryStatus::Running)),
+        ];
+
+        let merged = merge_export_entries(persisted, &live);
+
+        assert_eq!(
+            merged
+                .iter()
+                .map(|entry| entry.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["history", "shared", "live"]
+        );
+        assert_eq!(merged[1].text, "streaming");
+        assert_eq!(merged[1].status, Some(EntryStatus::Running));
+        assert_eq!(merged[2], live[1]);
     }
 
     #[tokio::test]

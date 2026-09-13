@@ -758,6 +758,41 @@ fn canonical_tool_item(event: &AgentEvent) -> Option<CanonicalToolItem> {
             output,
             ..
         } => (call_id, tool_name, arguments, output),
+        ThreadItemPayload::Command {
+            command,
+            cwd,
+            output,
+            ..
+        } => {
+            // Unified exec projects shell calls as canonical Command items.
+            // Preserve their tool lifecycle identity so streamed output and
+            // terminal events are validated against the originating start.
+            let call_id = event
+                .payload
+                .get("toolCallId")
+                .or_else(|| event.payload.get("commandId"))
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+                .or_else(|| {
+                    item.item_id
+                        .as_str()
+                        .strip_prefix("item_")
+                        .map(ToOwned::to_owned)
+                })?;
+            let mut arguments = Map::new();
+            arguments.insert("cmd".to_string(), Value::String(command));
+            if let Some(cwd) = cwd {
+                arguments.insert("cwd".to_string(), Value::String(cwd));
+            }
+            return Some(CanonicalToolItem {
+                call_id,
+                name: "exec_command".to_string(),
+                arguments: Value::Object(arguments),
+                item_id: item.item_id.to_string(),
+                status: item.status,
+                has_output: output.is_some(),
+            });
+        }
         _ => return None,
     };
     let arguments = arguments

@@ -8,9 +8,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{bail, Result};
-use app_server_protocol::protocol::v2::{Thread, ThreadHistoryMode, ThreadItem};
+use app_server_protocol::protocol::v2::{Thread, ThreadHistoryMode};
 
-use crate::app_server_session::AppServerSession;
+use crate::app_server_session::{AppServerSession, InitialHistoryPage};
 use crate::runtime::{connect_session, TuiOptions};
 
 const RECONNECT_DELAYS: [Duration; 4] = [
@@ -25,7 +25,7 @@ pub(crate) struct ReconnectedSession {
     pub(crate) session: AppServerSession,
     pub(crate) thread: Thread,
     pub(crate) cwd: PathBuf,
-    pub(crate) history_items: Vec<ThreadItem>,
+    pub(crate) history_page: Option<InitialHistoryPage>,
     pub(crate) scrollback_has_older_history: bool,
     pub(crate) permission_profiles: Vec<String>,
 }
@@ -56,7 +56,7 @@ pub(crate) async fn reconnect_session(
                 let thread_id_for_history = response.thread.id.clone();
                 let paginated_history =
                     response.thread.history_mode == ThreadHistoryMode::Paginated;
-                let history_items = if paginated_history {
+                let history_page = if paginated_history {
                     match candidate
                         .hydrate_initial_thread_history(
                             thread_id_for_history.clone(),
@@ -64,7 +64,7 @@ pub(crate) async fn reconnect_session(
                         )
                         .await
                     {
-                        Ok(items) => items,
+                        Ok(page) => Some(page),
                         Err(error) => {
                             let _ = candidate.shutdown().await;
                             last_error = Some(error);
@@ -72,7 +72,7 @@ pub(crate) async fn reconnect_session(
                         }
                     }
                 } else {
-                    Vec::new()
+                    None
                 };
                 let scrollback_has_older_history =
                     candidate.has_older_history(&thread_id_for_history);
@@ -104,7 +104,7 @@ pub(crate) async fn reconnect_session(
                     session: candidate,
                     thread: response.thread,
                     cwd,
-                    history_items,
+                    history_page,
                     scrollback_has_older_history,
                     permission_profiles: permission_profiles
                         .data

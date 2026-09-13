@@ -194,6 +194,9 @@ impl App {
     }
 
     pub(crate) fn apply_notification(&mut self, notification: ServerNotification) {
+        if let ServerNotification::McpServerStatusUpdated(params) = &notification {
+            self.mcp_startup_warnings.observe(params);
+        }
         self.track_agents_overview_notification(&notification);
         self.observe_notification(&notification);
         let target = server_notification_thread_target(&notification);
@@ -226,7 +229,8 @@ impl App {
             crate::bottom_pane::AppServerResponse::Command { id, .. }
             | crate::bottom_pane::AppServerResponse::FileChange { id, .. }
             | crate::bottom_pane::AppServerResponse::Permissions { id, .. }
-            | crate::bottom_pane::AppServerResponse::UserInput { id, .. } => id,
+            | crate::bottom_pane::AppServerResponse::UserInput { id, .. }
+            | crate::bottom_pane::AppServerResponse::McpElicitation { id, .. } => id,
         };
         for channel in self.thread_event_channels.values_mut() {
             channel.store.note_outbound_response(request_id);

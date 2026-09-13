@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
@@ -35,6 +35,11 @@ pub(crate) struct PagerOverlay {
     page_height: Cell<usize>,
     max_scroll: Cell<usize>,
     pinned_to_bottom: Cell<bool>,
+    /// Previous transcript input used to preserve the visible logical anchor when the
+    /// projection prepends history or the terminal width changes. Static pagers do not
+    /// populate this cache.
+    previous_transcript_lines: RefCell<Option<Vec<HyperlinkLine>>>,
+    previous_content_width: Cell<u16>,
 }
 
 impl PagerOverlay {
@@ -77,6 +82,8 @@ impl PagerOverlay {
             page_height: Cell::new(1),
             max_scroll: Cell::new(0),
             pinned_to_bottom: Cell::new(false),
+            previous_transcript_lines: RefCell::new(None),
+            previous_content_width: Cell::new(0),
         }
     }
 
@@ -88,6 +95,8 @@ impl PagerOverlay {
             page_height: Cell::new(1),
             max_scroll: Cell::new(0),
             pinned_to_bottom: Cell::new(true),
+            previous_transcript_lines: RefCell::new(None),
+            previous_content_width: Cell::new(0),
         }
     }
 
@@ -185,6 +194,9 @@ impl PagerOverlay {
         );
 
         let lines = self.static_lines.as_deref().unwrap_or(transcript_lines);
+        if self.is_transcript() {
+            self.remap_transcript_anchor(lines, content.width);
+        }
         let paragraph = HyperlinkParagraph::new(lines);
         let total_height = paragraph.line_count(content.width);
         let page_height = usize::from(content.height);
@@ -254,7 +266,78 @@ impl PagerOverlay {
                 footer,
             );
         }
+        if self.is_transcript() {
+            *self.previous_transcript_lines.borrow_mut() = Some(lines.to_vec());
+            self.previous_content_width.set(content.width);
+        }
     }
+
+    /// Preserve the same logical transcript row across prepended history and width reflow.
+    ///
+    /// `scroll` is measured in wrapped terminal rows, while the projection is a sequence of
+    /// logical `HyperlinkLine`s. We first identify the old logical line and intra-line offset,
+    /// then map that line through a pure prefix/suffix or unchanged-index relationship. If the
+    /// user is pinned to the bottom, normal tail-following remains authoritative.
+    fn remap_transcript_anchor(&self, lines: &[HyperlinkLine], width: u16) {
+        if self.pinned_to_bottom.get() {
+            return;
+        }
+        let Some(previous) = self.previous_transcript_lines.borrow().as_ref().cloned() else {
+            return;
+        };
+        if previous.is_empty() || lines.is_empty() {
+            return;
+        }
+        let old_width = self.previous_content_width.get();
+        if old_width == 0 || width == 0 {
+            return;
+        }
+
+        let old_starts = wrapped_line_starts(&previous, old_width);
+        let old_scroll = self.scroll.get();
+        let old_line = old_starts
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, start)| **start <= old_scroll)
+            .map(|(index, start)| (index, old_scroll.saturating_sub(*start)))
+            .unwrap_or((0, old_scroll));
+
+        let mapped_line = if lines.len() >= previous.len()
+            && lines[lines.len() - previous.len()..] == previous[..]
+        {
+            old_line.0 + lines.len() - previous.len()
+        } else if lines.len() >= previous.len() && lines[..previous.len()] == previous[..] {
+            old_line.0
+        } else {
+            return;
+        };
+
+        let new_starts = wrapped_line_starts(lines, width);
+        let Some(new_start) = new_starts.get(mapped_line).copied() else {
+            return;
+        };
+        let new_height = new_starts
+            .get(mapped_line + 1)
+            .copied()
+            .unwrap_or_else(|| HyperlinkParagraph::new(&lines[mapped_line..]).line_count(width));
+        self.scroll
+            .set(new_start.saturating_add(old_line.1.min(new_height.saturating_sub(1))));
+    }
+}
+
+fn wrapped_line_starts(lines: &[HyperlinkLine], width: u16) -> Vec<usize> {
+    let mut starts = Vec::with_capacity(lines.len());
+    let mut offset = 0usize;
+    for line in lines {
+        starts.push(offset);
+        offset = offset.saturating_add(
+            HyperlinkParagraph::new(std::slice::from_ref(line))
+                .line_count(width)
+                .max(1),
+        );
+    }
+    starts
 }
 
 #[cfg(test)]
@@ -485,6 +568,57 @@ mod tests {
             .expect("updated draw");
 
         assert_eq!(overlay.scroll.get(), manual_scroll);
+        assert!(!overlay.pinned_to_bottom.get());
+    }
+
+    #[test]
+    fn transcript_overlay_preserves_manual_anchor_when_history_is_prepended() {
+        let mut overlay = PagerOverlay::transcript(Locale::EnUs);
+        let initial = (0..20)
+            .map(|index| HyperlinkLine::from(format!("line {index}")))
+            .collect::<Vec<_>>();
+        let mut terminal = Terminal::new(TestBackend::new(24, 6)).expect("terminal");
+        terminal
+            .draw(|frame| overlay.render(frame, frame.area(), Locale::EnUs, &initial))
+            .expect("initial draw");
+        overlay.handle_event(&key(KeyCode::PageUp));
+        let previous_scroll = overlay.scroll.get();
+        assert!(!overlay.pinned_to_bottom.get());
+
+        let mut updated = (0..3)
+            .map(|index| HyperlinkLine::from(format!("older {index}")))
+            .collect::<Vec<_>>();
+        updated.extend(initial);
+        terminal
+            .draw(|frame| overlay.render(frame, frame.area(), Locale::EnUs, &updated))
+            .expect("prepended draw");
+
+        assert_eq!(overlay.scroll.get(), previous_scroll + 3);
+        assert!(!overlay.pinned_to_bottom.get());
+    }
+
+    #[test]
+    fn transcript_overlay_remaps_manual_anchor_when_width_reflows() {
+        let overlay = PagerOverlay::transcript(Locale::EnUs);
+        let mut lines = vec![
+            HyperlinkLine::from("a long first transcript line that wraps after resize"),
+            HyperlinkLine::from("anchor line"),
+        ];
+        lines.extend((0..8).map(|index| HyperlinkLine::from(format!("tail {index}"))));
+        let mut wide = Terminal::new(TestBackend::new(48, 6)).expect("wide terminal");
+        wide.draw(|frame| overlay.render(frame, frame.area(), Locale::EnUs, &lines))
+            .expect("wide draw");
+        overlay.scroll.set(wrapped_line_starts(&lines, 48)[1]);
+        overlay.pinned_to_bottom.set(false);
+
+        let mut narrow = Terminal::new(TestBackend::new(16, 6)).expect("narrow terminal");
+        narrow
+            .draw(|frame| overlay.render(frame, frame.area(), Locale::EnUs, &lines))
+            .expect("narrow draw");
+
+        let expected = wrapped_line_starts(&lines, 16)[1];
+        assert!(expected > 1);
+        assert_eq!(overlay.scroll.get(), expected);
         assert!(!overlay.pinned_to_bottom.get());
     }
 }

@@ -18,7 +18,7 @@ pub(crate) enum CommandPopupAction {
     Execute(SlashCommand),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct CommandPopup {
     filter: String,
     selected: usize,
@@ -169,7 +169,7 @@ mod tests {
             popup.handle_event(&Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE,))),
             CommandPopupAction::Consumed
         );
-        assert_eq!(popup.selected(), Some(SlashCommand::Resume));
+        assert_eq!(popup.selected(), SlashCommand::ALL.last().copied());
         assert!(popup.update("/per"));
         assert_eq!(popup.commands(), vec![SlashCommand::Permissions]);
         assert_eq!(popup.selected(), Some(SlashCommand::Permissions));

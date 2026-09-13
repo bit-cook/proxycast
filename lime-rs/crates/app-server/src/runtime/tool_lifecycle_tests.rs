@@ -23,6 +23,9 @@ fn event(event_id: &str, event_type: &str, payload: Value) -> AgentEvent {
 }
 
 fn canonical_tool_item_payload(event_type: &str, payload: Value) -> Value {
+    if payload.get("item").is_some() {
+        return payload;
+    }
     let call_id = payload
         .get("toolCallId")
         .and_then(Value::as_str)
@@ -147,6 +150,46 @@ fn rejects_tool_output_before_action_resolution() {
     let error = validate_tool_lifecycle_event(&existing, &candidate)
         .expect_err("tool output before approval should fail");
     assert!(error.contains("tool_output_before_action_resolved"));
+}
+
+#[test]
+fn accepts_unified_exec_output_for_canonical_command_item() {
+    let existing = vec![event(
+        "evt_start",
+        "item.started",
+        json!({
+            "toolCallId": "exec-call-1",
+            "item": {
+                "sessionId": "sess_test",
+                "threadId": "thread_test",
+                "turnId": "turn_test",
+                "itemId": "item_exec-call-1",
+                "sequence": 1,
+                "ordinal": 1,
+                "createdAtMs": 1,
+                "updatedAtMs": 1,
+                "kind": "command",
+                "status": "inProgress",
+                "payload": {
+                    "type": "command",
+                    "command": "printf hello"
+                },
+                "metadata": {}
+            }
+        }),
+    )];
+    let candidate = event(
+        "evt_output",
+        "tool.output.delta",
+        json!({
+            "toolCallId": "exec-call-1",
+            "delta": "hello",
+            "outputKind": "stdout"
+        }),
+    );
+
+    validate_tool_lifecycle_event(&existing, &candidate)
+        .expect("unified exec output should match canonical command start");
 }
 
 #[test]

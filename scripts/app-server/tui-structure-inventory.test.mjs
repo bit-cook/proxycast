@@ -61,6 +61,8 @@ describe("Codex TUI structure inventory", () => {
       "bottom_pane/chat_composer/history_search.rs",
       "bottom_pane/chat_composer/reconnect.rs",
       "bottom_pane/chat_composer/reconnect_tests.rs",
+      "bottom_pane/chat_composer/vim_history.rs",
+      "bottom_pane/chat_composer/vim_history_tests.rs",
       "bottom_pane/approval_overlay.rs",
       "bottom_pane/request_user_input/mod.rs",
       "bottom_pane/request_user_input/render.rs",
@@ -91,6 +93,8 @@ describe("Codex TUI structure inventory", () => {
       "terminal_hyperlinks.rs",
       "reconnect.rs",
       "bottom_pane/textarea.rs",
+      "bottom_pane/textarea/hyperlinks.rs",
+      "bottom_pane/textarea/hyperlinks_tests.rs",
       "bottom_pane/textarea/wrapping.rs",
       "bottom_pane/textarea/wrapping_tests.rs",
       "terminal_palette.rs",
@@ -113,8 +117,11 @@ describe("Codex TUI structure inventory", () => {
       "history_cell/plans.rs",
       "history_cell/approvals.rs",
       "history_cell/mcp.rs",
+      "history_cell/hook.rs",
+      "history_cell/mcp_result.rs",
       "history_cell/notices.rs",
       "history_cell/request_user_input.rs",
+      "history_cell/search.rs",
       "history_cell/separators.rs",
       "history_cell/session.rs",
       "exec_cell/mod.rs",
@@ -142,10 +149,12 @@ describe("Codex TUI structure inventory", () => {
       "fmt_elapsed_compact",
       "ChatComposer",
       "InputResult",
+      "VimHistory",
       "AttachmentState",
       "DraftState",
       "TextArea",
       "TextAreaState",
+      "HyperlinkCache",
       "input",
       "delete_backward",
       "delete_forward",
@@ -160,6 +169,8 @@ describe("Codex TUI structure inventory", () => {
       "handle_disconnected_key",
       "cursor_pos_with_state",
       "desired_height",
+      "render_ref_masked",
+      "render_ref_styled_with_highlights",
       "reconnect_session",
       "wrapped_lines",
       "cursor_position",
@@ -211,6 +222,7 @@ describe("Codex TUI structure inventory", () => {
       "EventDispatch",
       "handle_tui_event",
       "handle_key_event",
+      "handle_vim_history_key",
       "open_agent_picker",
       "render_expanded_session_details",
       "render_transcript_content_lines",
@@ -227,6 +239,18 @@ describe("Codex TUI structure inventory", () => {
       "word_wrap_lines",
       "wrap_ranges",
       "wrap_ranges_trim",
+      "ProjectedText",
+      "project_halfwidth_sound_marks",
+      "source_offset",
+      "break_projected_words",
+      "wrap_projected_ranges",
+      "borrowed_slice_range",
+      "map_owned_wrapped_line_to_range",
+      "word_wrap_flattened_line",
+      "MixedUrlWord",
+      "mixed_url_wrap_line",
+      "mixed_url_wrap_ranges",
+      "split_mixed_url_word",
       "url_preserving_wrap_options",
       "line_has_mixed_url_and_non_url_tokens",
       "parse_table_segments",
@@ -372,6 +396,32 @@ describe("Codex TUI structure inventory", () => {
     }
   });
 
+  it("locks Codex textarea hyperlink test names to the current owner", () => {
+    const source = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "lime-rs/crates/tui/src/bottom_pane/textarea/hyperlinks_tests.rs",
+      ),
+      "utf8",
+    );
+    for (const name of [
+      "wrapped_url_fragments_keep_the_complete_destination",
+      "composer_wrapped_url_fragments_keep_the_complete_destination",
+      "scrolled_url_fragments_keep_the_offscreen_destination",
+      "long_drafts_reuse_hyperlink_detection_across_cursor_redraws",
+      "maximum_length_urls_render_without_osc8_annotations",
+      "many_urls_render_with_the_complete_destination",
+      "joined_emoji_preserve_complete_url_cell_ranges",
+      "unicode_whitespace_separates_url_destinations",
+      "masked_url_input_never_exposes_hyperlink_destinations",
+      "url_hyperlinks_preserve_existing_highlight_styles",
+      "distinct_urls_respect_punctuation_wide_prefixes_and_tabs",
+      "hyperlink_cache_is_invalidated_when_text_changes",
+    ]) {
+      expect(source).toMatch(new RegExp(`fn ${name}\\s*\\(`, "u"));
+    }
+  });
+
   it("keeps app-server event routing in the Codex-named owner", () => {
     const appServerEvents = readFileSync(
       path.resolve(
@@ -489,6 +539,26 @@ describe("Codex TUI structure inventory", () => {
     expect(runtime).toContain("crate::app::reconnect::");
     expect(runtime).toContain("reconnect_session");
     expect(runtime).toContain("ReconnectedSession");
+  });
+
+  it("does not reintroduce the retired top-level reconnect module", () => {
+    const lib = readFileSync(
+      path.resolve(process.cwd(), "lime-rs/crates/tui/src/lib.rs"),
+      "utf8",
+    );
+    const app = readFileSync(
+      path.resolve(process.cwd(), "lime-rs/crates/tui/src/app.rs"),
+      "utf8",
+    );
+    const runtime = readFileSync(
+      path.resolve(process.cwd(), "lime-rs/crates/tui/src/runtime.rs"),
+      "utf8",
+    );
+
+    expect(lib).not.toContain("mod reconnect;");
+    expect(lib).not.toContain("crate::reconnect");
+    expect(app).toContain("pub(crate) mod reconnect;");
+    expect(runtime).not.toContain("crate::reconnect::");
   });
 
   it("keeps thread notification projection in the Codex-named owner", () => {

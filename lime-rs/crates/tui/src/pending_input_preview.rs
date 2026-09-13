@@ -81,8 +81,11 @@ pub(crate) fn can_restore_submission(submission: &QueuedSubmission) -> bool {
                 text_count += 1;
                 text_count <= 1 && text_elements.is_empty()
             }
-            UserInput::LocalImage { detail, .. } => detail.is_none(),
-            UserInput::Image { .. } | UserInput::Skill { .. } | UserInput::Mention { .. } => false,
+            UserInput::LocalImage { detail, .. } | UserInput::Image { detail, .. } => {
+                detail.is_none()
+            }
+            UserInput::Skill { .. } => true,
+            UserInput::Mention { .. } => false,
         })
 }
 
@@ -253,6 +256,13 @@ mod tests {
                 url: "https://example.test/image.png".to_string(),
             }],
         );
+        let skill = submission(
+            "skill",
+            vec![UserInput::Skill {
+                name: "review".to_string(),
+                path: "/skills/review/SKILL.md".to_string(),
+            }],
+        );
         let structured = submission(
             "structured",
             vec![
@@ -268,9 +278,10 @@ mod tests {
         );
 
         assert!(can_restore_submission(&local));
-        assert!(!can_restore_submission(&remote));
+        assert!(can_restore_submission(&remote));
+        assert!(can_restore_submission(&skill));
         assert!(!can_restore_submission(&structured));
-        assert!(!preview_lines(&[remote], 80, Locale::EnUs)
+        assert!(preview_lines(&[remote], 80, Locale::EnUs)
             .iter()
             .map(line_text)
             .collect::<String>()

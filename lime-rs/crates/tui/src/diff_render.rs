@@ -483,11 +483,17 @@ fn language_for_path(path: &str) -> Option<String> {
 
 fn display_change_path(path: &str, cwd: &Path) -> String {
     path.split_once(" → ")
-        .map(|(from, to)| format!("{} → {}", display_path(from, cwd), display_path(to, cwd)))
-        .unwrap_or_else(|| display_path(path, cwd))
+        .map(|(from, to)| {
+            format!(
+                "{} → {}",
+                display_path_for(from, cwd),
+                display_path_for(to, cwd)
+            )
+        })
+        .unwrap_or_else(|| display_path_for(path, cwd))
 }
 
-fn display_path(path: &str, cwd: &Path) -> String {
+pub(crate) fn display_path_for(path: &str, cwd: &Path) -> String {
     let path = Path::new(path);
     if path.is_absolute() && !cwd.as_os_str().is_empty() {
         if let Ok(relative) = path.strip_prefix(cwd) {

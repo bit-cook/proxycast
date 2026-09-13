@@ -2,9 +2,11 @@
 
 状态：已建立，迁移进行中  
 上游：`/Users/coso/Documents/dev/rust/codex/codex-rs/tui`  
-基线 commit：`cac96cd7b1756ab42e8925d938817a2ac10ebb6e`  
-snapshot 数量：`802`  
-排序后相对路径 SHA-256：`da5d7b14f30cccefa3132e2c33b4aaf1e0460ce9a342fc571f857ce15a21ef03`
+基线 commit：`c4017a87aacc7558002b7cb510025e967c1d765e`（参考目录当前 checkout）
+
+snapshot 数量：`991`
+
+排序后相对路径 SHA-256：`7367819562c2ff87787e99840ae02494f3869dd429a3b7b2d4974760effb0915`
 
 逐项路径、内容 SHA-256、分类与规则 owner 记录在
 [`tui-codex-snapshot-inventory.json`](./tui-codex-snapshot-inventory.json)。
@@ -25,10 +27,10 @@ snapshot 数量：`802`
 | 分类 | 数量 | 当前处理方式 |
 | --- | ---: | --- |
 | `direct` | 48 | 在 `tui` 内适配纯渲染/终端算法 |
-| `merge` | 579 | 合入现有 App、composer、entry、view 与 picker |
-| `contract` | 80 | 先对齐 App Server canonical contract，再迁 UI |
-| `defer` | 25 | 保留账本，不进入当前 P3 写集 |
-| `dead` | 70 | 禁止迁入 current TUI |
+| `merge` | 702 | 合入现有 App、composer、entry、view 与 picker |
+| `contract` | 136 | 先对齐 App Server canonical contract，再迁 UI |
+| `defer` | 28 | 保留账本，不进入当前 P3 写集 |
+| `dead` | 77 | 禁止迁入 current TUI |
 
 ## 模块裁决
 

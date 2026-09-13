@@ -58,7 +58,11 @@ impl App {
                 code: KeyCode::Esc,
                 kind: KeyEventKind::Press,
                 ..
-            } if self.projection.active_turn_id().is_some() => AppAction::Interrupt,
+            } if self.projection.active_turn_id().is_some()
+                && !self.composer.vim_search_active() =>
+            {
+                AppAction::Interrupt
+            }
             KeyEvent {
                 code: KeyCode::Char(value),
                 modifiers,
@@ -83,7 +87,7 @@ impl App {
                 kind: KeyEventKind::Press,
                 ..
             } if modifiers.contains(KeyModifiers::CONTROL) && value.eq_ignore_ascii_case(&'t') => {
-                self.command_popup = None;
+                self.composer.clear_command_popup();
                 self.pager_overlay = Some(PagerOverlay::transcript(self.locale));
                 AppAction::None
             }
@@ -108,6 +112,7 @@ impl App {
                 ..
             } => {
                 if key_event.code == KeyCode::Enter
+                    && !self.composer.vim_search_active()
                     && !key_event
                         .modifiers
                         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT)
@@ -117,6 +122,7 @@ impl App {
                     }
                 }
                 if matches!(key_event.code, KeyCode::Enter | KeyCode::Tab)
+                    && !self.composer.vim_search_active()
                     && self.composer.is_empty()
                     && self.composer.has_pending_images()
                 {
@@ -127,7 +133,9 @@ impl App {
                     };
                 }
                 if key_event.code == KeyCode::Backspace
+                    && !self.composer.vim_search_active()
                     && self.composer.is_empty()
+                    && !self.composer.has_selected_remote_image()
                     && self.composer.remove_last_pending_image()
                 {
                     return AppAction::None;

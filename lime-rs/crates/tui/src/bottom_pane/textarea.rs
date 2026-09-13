@@ -4,6 +4,7 @@
 //! history, queueing, and attachments while this module owns cursor-safe editing primitives.
 
 use std::borrow::Cow;
+use std::cell::{OnceCell, Ref, RefCell};
 use std::ops::Range;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -13,7 +14,14 @@ use ratatui::style::Style;
 use ratatui::widgets::{StatefulWidgetRef, WidgetRef};
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::width::display_width;
+
+mod hyperlinks;
+mod vim;
+mod vim_search;
 mod wrapping;
+
+use self::vim::VimPending;
 
 const WORD_SEPARATORS: &str = "`~!@#$%^&*()-=+[{]}\\|;:'\",.<>/?";
 
@@ -52,11 +60,30 @@ fn text_for_display(text: &str) -> Cow<'_, str> {
     }
 }
 
+fn editor_display_width(text: &str) -> usize {
+    let display = text_for_display(text);
+    display_width(display.as_ref())
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct TextArea {
     text: String,
     cursor: usize,
     kill_buffer: String,
+    wrap_cache: RefCell<Option<WrapCache>>,
+    preferred_col: Option<usize>,
+    vim_enabled: bool,
+    vim_mode: vim::VimMode,
+    vim_pending: VimPending,
+    vim_search: vim_search::VimSearch,
+    vim_replace_steps: Vec<vim::VimReplaceStep>,
+}
+
+#[derive(Debug)]
+struct WrapCache {
+    width: u16,
+    lines: Vec<Range<usize>>,
+    hyperlinks: OnceCell<hyperlinks::HyperlinkCache>,
 }
 
 /// Viewport state kept outside the editable buffer, matching Codex's stateful textarea widget.
@@ -87,21 +114,39 @@ impl TextArea {
     pub(crate) fn replace(&mut self, text: String) {
         self.text = text;
         self.cursor = self.text.len();
+        self.preferred_col = None;
+        self.vim_pending = VimPending::None;
+        self.vim_search.cancel();
+        self.vim_replace_steps.clear();
+        self.invalidate_wrap_cache();
     }
 
     pub(crate) fn set_text_clearing_elements(&mut self, text: &str) {
         self.text = text.to_string();
         self.cursor = self.nearest_char_boundary(self.cursor.min(self.text.len()));
+        self.preferred_col = None;
+        self.vim_pending = VimPending::None;
+        self.vim_search.cancel();
+        self.vim_replace_steps.clear();
+        self.invalidate_wrap_cache();
     }
 
     pub(crate) fn take(&mut self) -> String {
         self.cursor = 0;
-        std::mem::take(&mut self.text)
+        self.preferred_col = None;
+        self.vim_pending = VimPending::None;
+        self.vim_search.cancel();
+        self.vim_replace_steps.clear();
+        let text = std::mem::take(&mut self.text);
+        self.invalidate_wrap_cache();
+        text
     }
 
     pub(crate) fn insert(&mut self, value: &str) {
         self.text.insert_str(self.cursor, value);
         self.cursor += value.len();
+        self.preferred_col = None;
+        self.invalidate_wrap_cache();
     }
 
     pub(crate) fn insert_str(&mut self, value: &str) {
@@ -114,6 +159,8 @@ impl TextArea {
         if pos <= self.cursor {
             self.cursor += value.len();
         }
+        self.preferred_col = None;
+        self.invalidate_wrap_cache();
     }
 
     pub(crate) fn replace_range(&mut self, range: Range<usize>, value: &str) {
@@ -131,26 +178,182 @@ impl TextArea {
             self.cursor.saturating_sub(end - start) + value.len()
         }
         .min(self.text.len());
+        self.preferred_col = None;
+        self.invalidate_wrap_cache();
     }
 
     pub(crate) fn set_cursor(&mut self, pos: usize) {
         self.cursor = self.nearest_char_boundary(pos.min(self.text.len()));
+        self.preferred_col = None;
     }
 
     pub(crate) fn move_left(&mut self) {
         self.cursor = self.previous_grapheme_start();
+        self.preferred_col = None;
     }
 
     pub(crate) fn move_right(&mut self) {
         self.cursor = self.next_grapheme_end();
+        self.preferred_col = None;
     }
 
     pub(crate) fn move_line_start(&mut self) {
         self.cursor = self.line_start();
+        self.preferred_col = None;
     }
 
     pub(crate) fn move_line_end(&mut self) {
         self.cursor = self.line_end();
+        self.preferred_col = None;
+    }
+
+    /// Move to the adjacent visual line while preserving the terminal column.
+    ///
+    /// When wrapping information is available, navigation follows the same visual rows rendered
+    /// by the textarea. Without a cache (for example before the first render), it falls back to
+    /// logical-line navigation. The target is always chosen on grapheme boundaries, so wide
+    /// characters and combining marks can never leave the cursor inside an UTF-8 sequence.
+    pub(crate) fn move_up(&mut self) {
+        if !self.move_visual_vertical(-1) {
+            self.move_insert_vertical(-1);
+        }
+    }
+
+    pub(crate) fn move_down(&mut self) {
+        if !self.move_visual_vertical(1) {
+            self.move_insert_vertical(1);
+        }
+    }
+
+    /// Returns whether history navigation may consume a vertical key at the current visual row.
+    ///
+    /// Once the textarea has been rendered, wrapped rows are the editor's navigation surface;
+    /// history is only eligible at the outermost row. Before the first render there is no width
+    /// to resolve, so callers retain the legacy boundary behavior.
+    pub(crate) fn is_vertical_boundary(&self, direction: i8) -> bool {
+        let cache_ref = self.wrap_cache.borrow();
+        let Some(cache) = cache_ref.as_ref() else {
+            return true;
+        };
+        let Some((row, _)) =
+            wrapping::cursor_position(&self.text, &cache.lines, cache.width, self.cursor)
+        else {
+            return true;
+        };
+        if direction < 0 {
+            row == 0
+        } else {
+            row + 1 >= cache.lines.len()
+        }
+    }
+
+    /// Move across wrapped rows when the current render width is known.
+    ///
+    /// The returned boolean distinguishes an unavailable cache from a real boundary move. A
+    /// boundary move still consumes the event and resets the saved column, matching Codex's
+    /// behavior when moving above the first or below the last visual row.
+    fn move_visual_vertical(&mut self, direction: i8) -> bool {
+        enum Target {
+            Line {
+                start: usize,
+                end: usize,
+                column: usize,
+            },
+            Boundary(usize),
+        }
+
+        let target = {
+            let cache_ref = self.wrap_cache.borrow();
+            let Some(cache) = cache_ref.as_ref() else {
+                return false;
+            };
+            let Some((row, current_column)) =
+                wrapping::cursor_position(&self.text, &cache.lines, cache.width, self.cursor)
+            else {
+                return false;
+            };
+            let column = self
+                .preferred_col
+                .unwrap_or(current_column)
+                .min(usize::from(cache.width.saturating_sub(1)));
+
+            if direction < 0 {
+                if let Some(previous) = row.checked_sub(1) {
+                    let current = &cache.lines[row];
+                    let previous = &cache.lines[previous];
+                    let start = previous.start;
+                    let mut end = previous.end.saturating_sub(1);
+                    if end == current.start {
+                        end = self.previous_grapheme_start_at(end).max(start);
+                    }
+                    Target::Line { start, end, column }
+                } else {
+                    Target::Boundary(0)
+                }
+            } else if let Some(next) = cache.lines.get(row + 1) {
+                let start = next.start;
+                let mut end = next.end.saturating_sub(1);
+                if cache
+                    .lines
+                    .get(row + 2)
+                    .is_some_and(|following| following.start == end)
+                {
+                    end = self.previous_grapheme_start_at(end).max(start);
+                }
+                Target::Line { start, end, column }
+            } else {
+                Target::Boundary(self.text.len())
+            }
+        };
+
+        match target {
+            Target::Line { start, end, column } => {
+                if self.preferred_col.is_none() {
+                    self.preferred_col = Some(column);
+                }
+                self.move_to_display_col_on_line(start, end, column);
+            }
+            Target::Boundary(cursor) => {
+                self.cursor = cursor;
+                self.preferred_col = None;
+            }
+        }
+        true
+    }
+
+    fn move_insert_vertical(&mut self, direction: i8) {
+        let current_start = self.line_start();
+        let current_column = self
+            .preferred_col
+            .unwrap_or_else(|| editor_display_width(&self.text[current_start..self.cursor]));
+        let target_start = if direction < 0 {
+            if current_start == 0 {
+                self.preferred_col = None;
+                return;
+            }
+            let previous_end = current_start - 1;
+            self.text[..previous_end]
+                .rfind('\n')
+                .map_or(0, |index| index + 1)
+        } else {
+            let current_end = self.line_end();
+            if current_end == self.text.len() {
+                self.preferred_col = None;
+                return;
+            }
+            current_end + 1
+        };
+        let target_end = self.text[target_start..]
+            .find('\n')
+            .map_or(self.text.len(), |offset| target_start + offset);
+        self.cursor = cursor_at_display_column(
+            &self.text[target_start..target_end],
+            target_start,
+            current_column,
+        );
+        if self.preferred_col.is_none() {
+            self.preferred_col = Some(current_column);
+        }
     }
 
     pub(crate) fn remove_previous_grapheme(&mut self) -> bool {
@@ -160,6 +363,8 @@ impl TextArea {
         let start = self.previous_grapheme_start();
         self.text.replace_range(start..self.cursor, "");
         self.cursor = start;
+        self.preferred_col = None;
+        self.invalidate_wrap_cache();
         true
     }
 
@@ -169,6 +374,8 @@ impl TextArea {
         }
         let end = self.next_grapheme_end();
         self.text.replace_range(self.cursor..end, "");
+        self.preferred_col = None;
+        self.invalidate_wrap_cache();
         true
     }
 
@@ -181,13 +388,47 @@ impl TextArea {
             return;
         }
 
+        if self.vim_enabled && self.handle_vim_search_key(event) {
+            return;
+        }
+
+        if self.vim_enabled {
+            self.handle_vim_input(event);
+        } else {
+            self.input_insert_mode(event);
+        }
+    }
+
+    fn input_insert_mode(&mut self, event: KeyEvent) {
         let control = event.modifiers.contains(KeyModifiers::CONTROL);
         let alt = event.modifiers.contains(KeyModifiers::ALT);
+        if crate::key_hint::is_altgr(event.modifiers) {
+            if let KeyCode::Char(ch) = event.code {
+                self.insert_str(&ch.to_string());
+                return;
+            }
+        }
         match event.code {
+            KeyCode::Char('\u{0001}') => self.move_line_start(),
+            KeyCode::Char('\u{0002}') => self.move_left(),
+            KeyCode::Char('\u{0005}') => self.move_line_end(),
+            KeyCode::Char('\u{0006}') => self.move_right(),
+            KeyCode::Char('\u{000a}' | '\u{000d}') => self.insert_str("\n"),
+            KeyCode::Char('\u{000e}') => self.move_down(),
+            KeyCode::Char('\u{0010}') => self.move_up(),
+            KeyCode::Char('\u{0008}') => {
+                self.remove_previous_grapheme();
+            }
+            KeyCode::Char('h') if control => {
+                self.remove_previous_grapheme();
+            }
+            KeyCode::Char('m') if control => self.insert_str("\n"),
             KeyCode::Char('b') if control => self.move_left(),
             KeyCode::Char('f') if control => self.move_right(),
             KeyCode::Char('a') if control => self.move_line_start(),
             KeyCode::Char('e') if control => self.move_line_end(),
+            KeyCode::Char('p') if control => self.move_up(),
+            KeyCode::Char('n') if control => self.move_down(),
             KeyCode::Char('w') if control || alt => self.delete_backward_word(),
             KeyCode::Char('d') if alt => self.delete_forward_word(),
             KeyCode::Char('u') if control => self.kill_to_beginning_of_line(),
@@ -203,9 +444,11 @@ impl TextArea {
             }
             KeyCode::Left => self.move_left(),
             KeyCode::Right => self.move_right(),
+            KeyCode::Up => self.move_up(),
+            KeyCode::Down => self.move_down(),
             KeyCode::Home => self.move_line_start(),
             KeyCode::End => self.move_line_end(),
-            KeyCode::Enter if !control && !alt => self.insert_str("\n"),
+            KeyCode::Enter if !control => self.insert_str("\n"),
             KeyCode::Char(ch)
                 if !control
                     && !alt
@@ -363,8 +606,27 @@ impl TextArea {
         self.replace_range(start..end, "");
     }
 
-    pub(crate) fn wrapped_lines(&self, width: u16) -> Vec<std::ops::Range<usize>> {
-        wrapping::wrapped_lines(&self.text, width)
+    pub(crate) fn wrapped_lines(&self, width: u16) -> Ref<'_, Vec<std::ops::Range<usize>>> {
+        {
+            let mut cache = self.wrap_cache.borrow_mut();
+            let needs_recalc = cache.as_ref().is_none_or(|cache| cache.width != width);
+            if needs_recalc {
+                let display_text = text_for_display(&self.text);
+                *cache = Some(WrapCache {
+                    width,
+                    lines: wrapping::wrapped_lines(display_text.as_ref(), width),
+                    hyperlinks: OnceCell::new(),
+                });
+            }
+        }
+
+        let cache = self.wrap_cache.borrow();
+        Ref::map(cache, |cache| {
+            &cache
+                .as_ref()
+                .expect("textarea wrap cache initialized")
+                .lines
+        })
     }
 
     pub(crate) fn cursor_position(&self, width: u16) -> Option<(usize, usize)> {
@@ -423,6 +685,11 @@ impl TextArea {
         scroll
     }
 
+    fn invalidate_wrap_cache(&mut self) {
+        self.wrap_cache.get_mut().take();
+        self.preferred_col = None;
+    }
+
     fn nearest_char_boundary(&self, mut pos: usize) -> usize {
         while pos > 0 && !self.text.is_char_boundary(pos) {
             pos -= 1;
@@ -449,14 +716,125 @@ impl TextArea {
                 Style::default(),
             );
         }
+        if let Some(wrap_cache) = self.wrap_cache.borrow().as_ref() {
+            wrap_cache
+                .hyperlinks
+                .get_or_init(|| hyperlinks::HyperlinkCache::new(&self.text, lines))
+                .mark(buf, area, &self.text, lines, start..end);
+        }
+    }
+
+    /// Render the textarea with a fixed-width mask without exposing hyperlink destinations.
+    pub(crate) fn render_ref_masked(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        state: &mut TextAreaState,
+        mask_char: char,
+    ) {
+        let lines = self.wrapped_lines(area.width);
+        state.scroll = self.effective_scroll(area, &lines, state.scroll);
+        let start = usize::from(state.scroll);
+        let end = (start + usize::from(area.height)).min(lines.len());
+        let blank = " ".repeat(usize::from(area.width));
+        for row in 0..area.height {
+            buf.set_string(area.x, area.y + row, &blank, Style::default());
+        }
+        for (row, range) in lines[start..end].iter().enumerate() {
+            let content_end = range.end.saturating_sub(1).min(self.text.len());
+            let content_start = range.start.min(content_end);
+            let visible =
+                wrapping::visible_prefix(&self.text[content_start..content_end], area.width);
+            let masked = visible
+                .graphemes(true)
+                .flat_map(|grapheme| {
+                    std::iter::repeat_n(mask_char, crate::width::display_width(grapheme))
+                })
+                .collect::<String>();
+            buf.set_string(area.x, area.y + row as u16, masked, Style::default());
+        }
+    }
+
+    /// Render the textarea with render-only highlight ranges and preserve OSC 8 annotations.
+    pub(crate) fn render_ref_styled_with_highlights(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        state: &mut TextAreaState,
+        base_style: Style,
+        highlights: &[(Range<usize>, Style)],
+    ) {
+        let lines = self.wrapped_lines(area.width);
+        state.scroll = self.effective_scroll(area, &lines, state.scroll);
+        let start = usize::from(state.scroll);
+        let end = (start + usize::from(area.height)).min(lines.len());
+        let blank = " ".repeat(usize::from(area.width));
+        for row in 0..area.height {
+            buf.set_string(area.x, area.y + row, &blank, base_style);
+        }
+        for (row, range) in lines[start..end].iter().enumerate() {
+            let content_end = range.end.saturating_sub(1).min(self.text.len());
+            let content_start = range.start.min(content_end);
+            let visible =
+                wrapping::visible_prefix(&self.text[content_start..content_end], area.width);
+            let line_range = content_start..content_start + visible.len();
+            let y = area.y + row as u16;
+            buf.set_stringn(
+                area.x,
+                y,
+                text_for_display(visible),
+                usize::from(area.width),
+                base_style,
+            );
+            for (highlight_range, style) in highlights {
+                let overlap_start = highlight_range.start.max(line_range.start);
+                let overlap_end = highlight_range.end.min(line_range.end);
+                if overlap_start >= overlap_end {
+                    continue;
+                }
+                let x = area.x
+                    + crate::width::display_width(&self.text[line_range.start..overlap_start])
+                        as u16;
+                buf.set_stringn(
+                    x,
+                    y,
+                    text_for_display(&self.text[overlap_start..overlap_end]),
+                    usize::from(area.width.saturating_sub(x.saturating_sub(area.x))),
+                    *style,
+                );
+            }
+        }
+        if let Some(wrap_cache) = self.wrap_cache.borrow().as_ref() {
+            wrap_cache
+                .hyperlinks
+                .get_or_init(|| hyperlinks::HyperlinkCache::new(&self.text, &lines))
+                .mark(buf, area, &self.text, &lines, start..end);
+        }
     }
 
     fn previous_grapheme_start(&self) -> usize {
-        self.text[..self.cursor]
+        self.previous_grapheme_start_at(self.cursor)
+    }
+
+    fn previous_grapheme_start_at(&self, cursor: usize) -> usize {
+        self.text[..cursor]
             .grapheme_indices(true)
             .next_back()
             .map(|(index, _)| index)
             .unwrap_or(0)
+    }
+
+    fn move_to_display_col_on_line(&mut self, line_start: usize, line_end: usize, target: usize) {
+        let mut column: usize = 0;
+        for (offset, grapheme) in self.text[line_start..line_end].grapheme_indices(true) {
+            let width = editor_display_width(grapheme);
+            if column.saturating_add(width) > target {
+                self.cursor = line_start + offset;
+                return;
+            }
+            column = column.saturating_add(width);
+        }
+        self.cursor = line_end;
     }
 
     fn next_grapheme_end(&self) -> usize {
@@ -484,6 +862,21 @@ impl TextArea {
             .map(|index| self.cursor + index)
             .unwrap_or(self.text.len())
     }
+}
+
+fn cursor_at_display_column(line: &str, line_start: usize, target_column: usize) -> usize {
+    if target_column == 0 {
+        return line_start;
+    }
+
+    let mut column: usize = 0;
+    for (offset, grapheme) in line.grapheme_indices(true) {
+        column = column.saturating_add(editor_display_width(grapheme));
+        if column > target_column {
+            return line_start + offset;
+        }
+    }
+    line_start + line.len()
 }
 
 impl WidgetRef for &TextArea {
@@ -601,6 +994,43 @@ mod tests {
         assert_eq!(textarea.text(), "ab");
         textarea.input(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL));
         assert_eq!(textarea.text(), "abc");
+    }
+
+    #[test]
+    fn codex_control_h_deletes_and_control_m_inserts_newline() {
+        let mut textarea = TextArea::new();
+        textarea.insert_str("ab");
+        textarea.input(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::CONTROL));
+        assert_eq!(textarea.text(), "a");
+        textarea.input(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::CONTROL));
+        assert_eq!(textarea.text(), "a\n");
+    }
+
+    #[test]
+    fn c0_line_feed_and_emacs_vertical_motion_match_codex_textarea_semantics() {
+        let mut textarea = TextArea::new();
+        textarea.insert_str("ab\ncdef");
+        textarea.set_cursor(2);
+        textarea.input(KeyEvent::new(KeyCode::Char('\u{000a}'), KeyModifiers::NONE));
+        assert_eq!(textarea.text(), "ab\n\ncdef");
+
+        textarea.replace("ab\ncdef".to_string());
+        textarea.set_cursor(2);
+        textarea.input(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL));
+        assert_eq!(textarea.cursor(), 5);
+        textarea.input(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+        assert_eq!(textarea.cursor(), 2);
+    }
+
+    #[test]
+    fn vertical_motion_preserves_display_column_for_wide_graphemes() {
+        let mut textarea = TextArea::new();
+        textarea.insert_str("界a\nxy");
+        textarea.set_cursor(3);
+        textarea.move_down();
+        assert_eq!(textarea.cursor(), 7);
+        textarea.move_up();
+        assert_eq!(textarea.cursor(), 3);
     }
 
     #[test]

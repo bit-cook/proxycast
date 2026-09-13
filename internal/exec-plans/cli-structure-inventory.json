@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "source": {
     "codexRoot": "/Users/coso/Documents/dev/rust/codex",
-    "codexRsCliCommit": "cac96cd7b1756ab42e8925d938817a2ac10ebb6e"
+    "codexRsCliCommit": "c4017a87aacc7558002b7cb510025e967c1d765e"
   },
   "trees": {
     "codex-rs/cli": {
       "root": "/Users/coso/Documents/dev/rust/codex/codex-rs/cli",
-      "fileCount": 82,
+      "fileCount": 97,
       "files": [
         "BUILD.bazel",
         "Cargo.toml",
@@ -46,14 +46,19 @@
         "src/doctor/sandbox_tests.rs",
         "src/doctor/security.rs",
         "src/doctor/security_tests.rs",
+        "src/doctor/snapshots/codex__doctor__background__tests__configured_updater.snap",
         "src/doctor/snapshots/codex__doctor__git__tests__reports_git_candidates_and_repo_metadata.snap",
         "src/doctor/snapshots/codex__doctor__output__tests__doctor_human_report_environment_rows.snap",
+        "src/doctor/snapshots/codex__doctor__output__tests__missing_env_diagnostics.snap",
         "src/doctor/system.rs",
         "src/doctor/thread_inventory.rs",
         "src/doctor/title.rs",
         "src/doctor/updates.rs",
         "src/doctor/windows_dev_drive.rs",
         "src/doctor/windows_dev_drive_tests.rs",
+        "src/exec_server_args_tests.rs",
+        "src/exec_server_auth.rs",
+        "src/exec_server_auth_tests.rs",
         "src/exec_server_telemetry.rs",
         "src/exec_server_telemetry_tests.rs",
         "src/exit_status.rs",
@@ -62,14 +67,21 @@
         "src/main.rs",
         "src/marketplace_cmd.rs",
         "src/mcp_cmd.rs",
+        "src/mcp_login.rs",
+        "src/mcp_login_tests.rs",
         "src/migrate_rollouts.rs",
         "src/plugin_cmd.rs",
         "src/queue_cmd.rs",
         "src/remote_control_cmd.rs",
         "src/sandbox_setup.rs",
+        "src/snapshots/codex__doctor__tests__doctor_dumb_non_interactive_human.snap",
+        "src/snapshots/codex__doctor__tests__terminal_check_prioritizes_unreadable_terminfo_over_warnings.snap",
+        "src/snapshots/codex__exec_server_args_tests__exec_server_help_documents_remote_options.snap",
+        "src/snapshots/codex__tests__unsupported_worktree_commands.snap",
         "src/state_db_recovery.rs",
         "src/wsl_paths.rs",
         "tests/app_server.rs",
+        "tests/app_server_daemon.rs",
         "tests/cloud_auth.rs",
         "tests/cloud_config.rs",
         "tests/debug_clear_memories.rs",
@@ -86,13 +98,16 @@
         "tests/marketplace_upgrade.rs",
         "tests/mcp_add_remove.rs",
         "tests/mcp_list.rs",
+        "tests/mcp_login.rs",
         "tests/plugin_cli.rs",
         "tests/queue.rs",
         "tests/sandbox_cloud_config.rs",
         "tests/sandbox_network_proxy.rs",
-        "tests/update.rs"
+        "tests/sandbox_tty.rs",
+        "tests/update.rs",
+        "tests/worktree.rs"
       ],
-      "symbolCount": 903,
+      "symbolCount": 955,
       "symbols": [
         {
           "path": "build.rs",
@@ -1011,6 +1026,21 @@
         },
         {
           "path": "src/doctor/background.rs",
+          "name": "ConfiguredSettings",
+          "kind": "type"
+        },
+        {
+          "path": "src/doctor/background.rs",
+          "name": "ConfiguredUpdater",
+          "kind": "type"
+        },
+        {
+          "path": "src/doctor/background.rs",
+          "name": "push_configured_updater",
+          "kind": "function"
+        },
+        {
+          "path": "src/doctor/background.rs",
           "name": "push_file_detail",
           "kind": "function"
         },
@@ -1612,6 +1642,11 @@
         {
           "path": "src/doctor/output.rs",
           "name": "redact_detail",
+          "kind": "function"
+        },
+        {
+          "path": "src/doctor/output.rs",
+          "name": "redact_identifier",
           "kind": "function"
         },
         {
@@ -2400,6 +2435,76 @@
           "kind": "function"
         },
         {
+          "path": "src/exec_server_args_tests.rs",
+          "name": "exec_server_defaults_preserve_local_and_noise_modes",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_args_tests.rs",
+          "name": "exec_server_direct_forwarding_remains_rejected",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_args_tests.rs",
+          "name": "exec_server_from_args",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_args_tests.rs",
+          "name": "exec_server_help_documents_remote_options",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_args_tests.rs",
+          "name": "exec_server_parses_direct_aws_options",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_args_tests.rs",
+          "name": "exec_server_rejects_missing_or_conflicting_remote_options",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_args_tests.rs",
+          "name": "exec_server_sigv4_does_not_enable_aws_auth_for_noise",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_args_tests.rs",
+          "name": "exec_server_transport_and_aws_options_require_registration_arguments",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_auth.rs",
+          "name": "aws_sigv4_auth_provider",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_auth.rs",
+          "name": "AwsSigV4AuthProvider",
+          "kind": "type"
+        },
+        {
+          "path": "src/exec_server_auth_tests.rs",
+          "name": "invalid_signing_configuration_is_rejected",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_auth_tests.rs",
+          "name": "invalid_signing_request_is_a_permanent_auth_error",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_auth_tests.rs",
+          "name": "signs_requests_without_changing_payload_or_metadata",
+          "kind": "function"
+        },
+        {
+          "path": "src/exec_server_auth_tests.rs",
+          "name": "test_provider",
+          "kind": "function"
+        },
+        {
           "path": "src/exec_server_telemetry.rs",
           "name": "init",
           "kind": "function"
@@ -2711,6 +2816,11 @@
         },
         {
           "path": "src/main.rs",
+          "name": "ExecServerRemoteTransport",
+          "kind": "type"
+        },
+        {
+          "path": "src/main.rs",
           "name": "ExecServerSubcommand",
           "kind": "type"
         },
@@ -2861,11 +2971,6 @@
         },
         {
           "path": "src/main.rs",
-          "name": "McpServerCommand",
-          "kind": "type"
-        },
-        {
-          "path": "src/main.rs",
           "name": "merge_interactive_cli_flags",
           "kind": "function"
         },
@@ -2941,6 +3046,11 @@
         },
         {
           "path": "src/main.rs",
+          "name": "reject_unsupported_worktree_for_subcommand",
+          "kind": "function"
+        },
+        {
+          "path": "src/main.rs",
           "name": "resolve_remote_endpoint",
           "kind": "function"
         },
@@ -2997,11 +3107,6 @@
         {
           "path": "src/main.rs",
           "name": "run_interactive_tui",
-          "kind": "function"
-        },
-        {
-          "path": "src/main.rs",
-          "name": "run_remote_exec_server",
           "kind": "function"
         },
         {
@@ -3241,11 +3346,6 @@
         },
         {
           "path": "src/mcp_cmd.rs",
-          "name": "perform_oauth_login_retry_without_scopes",
-          "kind": "function"
-        },
-        {
-          "path": "src/mcp_cmd.rs",
           "name": "RemoveArgs",
           "kind": "type"
         },
@@ -3287,6 +3387,51 @@
         {
           "path": "src/mcp_cmd.rs",
           "name": "validate_server_name",
+          "kind": "function"
+        },
+        {
+          "path": "src/mcp_login.rs",
+          "name": "McpLoginMode",
+          "kind": "type"
+        },
+        {
+          "path": "src/mcp_login.rs",
+          "name": "perform_oauth_login_retry_without_scopes",
+          "kind": "function"
+        },
+        {
+          "path": "src/mcp_login.rs",
+          "name": "print_callback_prompt",
+          "kind": "function"
+        },
+        {
+          "path": "src/mcp_login.rs",
+          "name": "read_callback",
+          "kind": "function"
+        },
+        {
+          "path": "src/mcp_login.rs",
+          "name": "read_callback_line",
+          "kind": "function"
+        },
+        {
+          "path": "src/mcp_login.rs",
+          "name": "read_terminal_callback",
+          "kind": "function"
+        },
+        {
+          "path": "src/mcp_login.rs",
+          "name": "TerminalInputGuard",
+          "kind": "type"
+        },
+        {
+          "path": "src/mcp_login_tests.rs",
+          "name": "callback_line_accepts_crlf_and_eof_after_input",
+          "kind": "function"
+        },
+        {
+          "path": "src/mcp_login_tests.rs",
+          "name": "callback_line_is_bounded_and_does_not_expose_input_in_errors",
           "kind": "function"
         },
         {
@@ -3775,6 +3920,51 @@
           "kind": "function"
         },
         {
+          "path": "tests/app_server_daemon.rs",
+          "name": "managed_start_keeps_updater_on_marker_mismatch_but_stops_it_for_pin",
+          "kind": "function"
+        },
+        {
+          "path": "tests/app_server_daemon.rs",
+          "name": "managed_start_succeeds_when_updater_record_is_invalid",
+          "kind": "function"
+        },
+        {
+          "path": "tests/app_server_daemon.rs",
+          "name": "managed_starts_ensure_one_updater_and_recover_a_missing_one",
+          "kind": "function"
+        },
+        {
+          "path": "tests/app_server_daemon.rs",
+          "name": "manual_update_rejects_an_unowned_installation",
+          "kind": "function"
+        },
+        {
+          "path": "tests/app_server_daemon.rs",
+          "name": "restart_applies_saved_updater_preference",
+          "kind": "function"
+        },
+        {
+          "path": "tests/app_server_daemon.rs",
+          "name": "signal",
+          "kind": "function"
+        },
+        {
+          "path": "tests/app_server_daemon.rs",
+          "name": "TestDaemon",
+          "kind": "type"
+        },
+        {
+          "path": "tests/app_server_daemon.rs",
+          "name": "unmanaged_app_server_does_not_launch_updater",
+          "kind": "function"
+        },
+        {
+          "path": "tests/app_server_daemon.rs",
+          "name": "wait_for_exit",
+          "kind": "function"
+        },
+        {
           "path": "tests/cloud_auth.rs",
           "name": "cloud_list_only_allows_trusted_credential_destinations",
           "kind": "function"
@@ -3841,6 +4031,11 @@
         },
         {
           "path": "tests/doctor_enterprise_network.rs",
+          "name": "doctor_reports_cloud_filesystem_policy_and_rejects_invalid_requirements",
+          "kind": "function"
+        },
+        {
+          "path": "tests/doctor_enterprise_network.rs",
           "name": "doctor_reports_macos_system_proxy_configuration_and_policy",
           "kind": "function"
         },
@@ -3862,6 +4057,11 @@
         {
           "path": "tests/doctor_path_safety.rs",
           "name": "interactive_tmux_startup_does_not_execute_workspace_helpers",
+          "kind": "function"
+        },
+        {
+          "path": "tests/doctor_path_safety.rs",
+          "name": "non_interactive_dumb_terminal_preserves_other_doctor_failures",
           "kind": "function"
         },
         {
@@ -4245,6 +4445,46 @@
           "kind": "function"
         },
         {
+          "path": "tests/mcp_login.rs",
+          "name": "Fixture",
+          "kind": "type"
+        },
+        {
+          "path": "tests/mcp_login.rs",
+          "name": "Login",
+          "kind": "type"
+        },
+        {
+          "path": "tests/mcp_login.rs",
+          "name": "no_browser_accepts_http_callback_while_terminal_input_remains_open",
+          "kind": "function"
+        },
+        {
+          "path": "tests/mcp_login.rs",
+          "name": "no_browser_exchanges_pasted_callback_and_saves_credentials",
+          "kind": "function"
+        },
+        {
+          "path": "tests/mcp_login.rs",
+          "name": "no_browser_rejects_invalid_callbacks_without_exchanging_tokens",
+          "kind": "function"
+        },
+        {
+          "path": "tests/mcp_login.rs",
+          "name": "no_browser_retries_rejected_discovered_scopes_with_pasteback",
+          "kind": "function"
+        },
+        {
+          "path": "tests/mcp_login.rs",
+          "name": "no_browser_sigint_cancels_token_exchange_after_pasted_or_http_callback",
+          "kind": "function"
+        },
+        {
+          "path": "tests/mcp_login.rs",
+          "name": "read_authorization_url",
+          "kind": "function"
+        },
+        {
           "path": "tests/plugin_cli.rs",
           "name": "assert_configured_marketplace_snapshot_failure",
           "kind": "function"
@@ -4600,6 +4840,16 @@
           "kind": "function"
         },
         {
+          "path": "tests/sandbox_tty.rs",
+          "name": "run_probe",
+          "kind": "function"
+        },
+        {
+          "path": "tests/sandbox_tty.rs",
+          "name": "sandbox_blocks_terminal_input_injection",
+          "kind": "function"
+        },
+        {
           "path": "tests/update.rs",
           "name": "codex_command",
           "kind": "function"
@@ -4608,9 +4858,34 @@
           "path": "tests/update.rs",
           "name": "update_does_not_start_interactive_prompt",
           "kind": "function"
+        },
+        {
+          "path": "tests/worktree.rs",
+          "name": "git",
+          "kind": "function"
+        },
+        {
+          "path": "tests/worktree.rs",
+          "name": "interactive_worktree_start_and_fork_bind_owner_before_turn",
+          "kind": "function"
+        },
+        {
+          "path": "tests/worktree.rs",
+          "name": "rejected_start",
+          "kind": "function"
+        },
+        {
+          "path": "tests/worktree.rs",
+          "name": "terminal_queries_reply_once_across_every_split",
+          "kind": "function"
+        },
+        {
+          "path": "tests/worktree.rs",
+          "name": "TerminalQueries",
+          "kind": "type"
         }
       ],
-      "treeSha256": "a8aba01c42bff5766d968517df67f06dc09c3fb6b9924e6159759d79620a2a63"
+      "treeSha256": "9ed7950a081dbdc6d1b87fd766173d850b1f2fb902df44cca826010d9f6c199f"
     },
     "codex-rs/execpolicy": {
       "root": "/Users/coso/Documents/dev/rust/codex/codex-rs/execpolicy",
@@ -6060,7 +6335,7 @@
           "kind": "function"
         }
       ],
-      "treeSha256": "e95568b3d97e60b421e6e2e91bfeb850f54a1fe15c2a512178e2cf3110461207"
+      "treeSha256": "671c94f227a790c916aa03c84a85a24de2900681a59a0e5c5025c6e9022229ed"
     },
     "lime-rs/crates/execpolicy": {
       "root": "/Users/coso/Documents/dev/ai/aiclientproxy/lime/lime-rs/crates/execpolicy",
@@ -6595,11 +6870,6 @@
         },
         {
           "path": "bin/lime.js",
-          "name": "codexPackageRoot",
-          "kind": "symbol"
-        },
-        {
-          "path": "bin/lime.js",
           "name": "detectPackageManager",
           "kind": "symbol"
         },
@@ -6610,7 +6880,7 @@
         },
         {
           "path": "bin/lime.js",
-          "name": "findCodexExecutable",
+          "name": "findLimeExecutable",
           "kind": "symbol"
         },
         {
@@ -6620,12 +6890,17 @@
         },
         {
           "path": "bin/lime.js",
-          "name": "isPnpmOwnedCodexInstall",
+          "name": "isPnpmOwnedLimeInstall",
           "kind": "symbol"
         },
         {
           "path": "bin/lime.js",
-          "name": "isVitePlusOwnedCodexInstall",
+          "name": "isVitePlusOwnedLimeInstall",
+          "kind": "symbol"
+        },
+        {
+          "path": "bin/lime.js",
+          "name": "limePackageRoot",
           "kind": "symbol"
         },
         {
@@ -6744,7 +7019,7 @@
           "kind": "symbol"
         }
       ],
-      "treeSha256": "79e9c1edc55c2b8ff03b9f47b40f9eb7adf1ed060ce922579c23e64933276cc4"
+      "treeSha256": "9e4a6deea2e7a104ee73d4d0ca1f859a27a695f19e01b62f6cecf62ffdc6a17a"
     }
   },
   "comparisons": {
@@ -6784,22 +7059,34 @@
       "src/doctor/sandbox_tests.rs",
       "src/doctor/security.rs",
       "src/doctor/security_tests.rs",
+      "src/doctor/snapshots/codex__doctor__background__tests__configured_updater.snap",
       "src/doctor/snapshots/codex__doctor__git__tests__reports_git_candidates_and_repo_metadata.snap",
       "src/doctor/snapshots/codex__doctor__output__tests__doctor_human_report_environment_rows.snap",
+      "src/doctor/snapshots/codex__doctor__output__tests__missing_env_diagnostics.snap",
       "src/doctor/system.rs",
       "src/doctor/thread_inventory.rs",
       "src/doctor/title.rs",
       "src/doctor/updates.rs",
       "src/doctor/windows_dev_drive.rs",
       "src/doctor/windows_dev_drive_tests.rs",
+      "src/exec_server_args_tests.rs",
+      "src/exec_server_auth.rs",
+      "src/exec_server_auth_tests.rs",
       "src/exec_server_telemetry.rs",
       "src/exec_server_telemetry_tests.rs",
       "src/login.rs",
       "src/marketplace_cmd.rs",
+      "src/mcp_login.rs",
+      "src/mcp_login_tests.rs",
       "src/migrate_rollouts.rs",
       "src/remote_control_cmd.rs",
+      "src/snapshots/codex__doctor__tests__doctor_dumb_non_interactive_human.snap",
+      "src/snapshots/codex__doctor__tests__terminal_check_prioritizes_unreadable_terminfo_over_warnings.snap",
+      "src/snapshots/codex__exec_server_args_tests__exec_server_help_documents_remote_options.snap",
+      "src/snapshots/codex__tests__unsupported_worktree_commands.snap",
       "src/state_db_recovery.rs",
       "tests/app_server.rs",
+      "tests/app_server_daemon.rs",
       "tests/cloud_auth.rs",
       "tests/cloud_config.rs",
       "tests/debug_clear_memories.rs",
@@ -6815,11 +7102,14 @@
       "tests/marketplace_upgrade.rs",
       "tests/mcp_add_remove.rs",
       "tests/mcp_list.rs",
+      "tests/mcp_login.rs",
       "tests/plugin_cli.rs",
       "tests/queue.rs",
       "tests/sandbox_cloud_config.rs",
       "tests/sandbox_network_proxy.rs",
-      "tests/update.rs"
+      "tests/sandbox_tty.rs",
+      "tests/update.rs",
+      "tests/worktree.rs"
     ],
     "rustFilesOnlyInLime": [],
     "execpolicyFilesMissingInLime": [],
@@ -6844,10 +7134,13 @@
       "AppServerProxyCommand",
       "AppServerSubcommand",
       "Args",
+      "AwsSigV4AuthProvider",
       "Channel",
       "CheckStatus",
       "CloudManagedConfigFixture",
       "ConfiguredMarketplaceSnapshotIssue",
+      "ConfiguredSettings",
+      "ConfiguredUpdater",
       "DebugAppServerCommand",
       "DebugAppServerSendMessageV2Command",
       "DebugAppServerSubcommand",
@@ -6868,6 +7161,7 @@
       "EndpointInspection",
       "Evidence",
       "ExecServerCommand",
+      "ExecServerRemoteTransport",
       "ExecServerSubcommand",
       "FeatureToggles",
       "Fixture",
@@ -6899,13 +7193,14 @@
       "ListMarketplaceArgs",
       "LogFilter",
       "LogLevelThreshold",
+      "Login",
       "LoginCommand",
       "LoginSubcommand",
       "LogoutCommand",
       "MarketplaceCli",
       "MarketplaceSubcommand",
+      "McpLoginMode",
       "McpOAuthClientRegistrationArg",
-      "McpServerCommand",
       "MigrateRolloutsCommand",
       "MigrationCounts",
       "MigrationProgress",
@@ -6952,7 +7247,10 @@
       "StdioToUdsCommand",
       "SystemCheckInputs",
       "TerminalCheckInputs",
+      "TerminalInputGuard",
+      "TerminalQueries",
       "TerminalTitleInputs",
+      "TestDaemon",
       "UnsupportedSandboxArgs",
       "UpgradeMarketplaceArgs",
       "VersionInfo",
@@ -6992,6 +7290,7 @@
       "auth_policy_label",
       "auth_reachability_note",
       "available_space",
+      "aws_sigv4_auth_provider",
       "background_server_check",
       "backup_files_for_fresh_start",
       "backup_folder",
@@ -7001,6 +7300,8 @@
       "build_debug_sandbox_config_with_loader_overrides",
       "build_filter",
       "build_report",
+      "callback_line_accepts_crlf_and_eof_after_input",
+      "callback_line_is_bounded_and_does_not_expose_input_in_errors",
       "candidate_applications_dirs",
       "check",
       "check_with_paths",
@@ -7087,6 +7388,7 @@
       "doctor_managed_by_npm",
       "doctor_progress",
       "doctor_report",
+      "doctor_reports_cloud_filesystem_policy_and_rejects_invalid_requirements",
       "doctor_reports_macos_system_proxy_configuration_and_policy",
       "download_and_install_codex_to_user_applications",
       "download_dmg",
@@ -7106,6 +7408,14 @@
       "event_target",
       "every_source_distinguishes_audits_from_blocks",
       "evidence_is_bounded_redacted_and_correctly_classified",
+      "exec_server_defaults_preserve_local_and_noise_modes",
+      "exec_server_direct_forwarding_remains_rejected",
+      "exec_server_from_args",
+      "exec_server_help_documents_remote_options",
+      "exec_server_parses_direct_aws_options",
+      "exec_server_rejects_missing_or_conflicting_remote_options",
+      "exec_server_sigv4_does_not_enable_aws_auth_for_noise",
+      "exec_server_transport_and_aws_options_require_registration_arguments",
       "executable_file_permission",
       "executable_path_exists",
       "exhaustion_and_unavailable_history_have_actionable_warnings",
@@ -7146,6 +7456,7 @@
       "generated_at",
       "generic_details",
       "get_disabled_server_shows_single_line",
+      "git",
       "git_candidates",
       "git_check",
       "git_check_from_inputs",
@@ -7186,7 +7497,10 @@
       "interactive_remote_default_preserves_remote_working_directory_before_requiring_terminal",
       "interactive_tmux_startup_does_not_execute_workspace_helpers",
       "interactive_validates_config_before_requiring_terminal",
+      "interactive_worktree_start_and_fork_bind_owner_before_turn",
       "invalid_custom_ca_falls_back_to_system_roots",
+      "invalid_signing_configuration_is_rejected",
+      "invalid_signing_request_is_a_permanent_auth_error",
       "is_apple_silicon_mac",
       "is_auto_backup_recoverable",
       "is_codex_app_bundle",
@@ -7244,6 +7558,10 @@
       "looks_copyable",
       "looks_like_path",
       "macos_desktop_update_url",
+      "managed_start_keeps_updater_on_marker_mismatch_but_stops_it_for_pin",
+      "managed_start_succeeds_when_updater_record_is_invalid",
+      "managed_starts_ensure_one_updater_and_recover_a_missing_one",
+      "manual_update_rejects_an_unowned_installation",
       "marketplace_add_json_prints_add_outcome",
       "marketplace_add_local_directory_source",
       "marketplace_add_rejects_local_manifest_file_source",
@@ -7282,7 +7600,13 @@
       "multiple_endpoint_products_each_get_distinct_guidance",
       "multiplexer_name",
       "network_summary",
+      "no_browser_accepts_http_callback_while_terminal_input_remains_open",
+      "no_browser_exchanges_pasted_callback_and_saves_credentials",
+      "no_browser_rejects_invalid_callbacks_without_exchanging_tokens",
+      "no_browser_retries_rejected_discovered_scopes_with_pasteback",
+      "no_browser_sigint_cancels_token_exchange_after_pasted_or_http_callback",
       "no_endpoint_products_require_no_remediation",
+      "non_interactive_dumb_terminal_preserves_other_doctor_failures",
       "non_ok_notes",
       "nonexistent_relative_codex_home_uses_current_directory_capacity",
       "notes_for_report",
@@ -7337,6 +7661,7 @@
       "print_app_server_remote_control_output",
       "print_auto_backup_start",
       "print_backfill",
+      "print_callback_prompt",
       "print_completion",
       "print_diagnostic_guidance",
       "print_foreground_ready_output",
@@ -7370,6 +7695,7 @@
       "provider_url_for_path",
       "proxy_parent_lifetime_relay",
       "push_cached_version_details",
+      "push_configured_updater",
       "push_database_row",
       "push_env_path_detail",
       "push_feature_flags",
@@ -7396,12 +7722,17 @@
       "read_access_token_from_stdin",
       "read_api_key_from_stdin",
       "read_auth_json",
+      "read_authorization_url",
       "read_bounded",
+      "read_callback",
+      "read_callback_line",
       "read_log_segment",
       "read_probe_file",
       "read_stdin_secret",
+      "read_terminal_callback",
       "red",
       "redact_detail",
+      "redact_identifier",
       "redact_url_path",
       "redact_url_token",
       "redact_urls",
@@ -7416,6 +7747,8 @@
       "reject_root_strict_config_for_subcommand",
       "reject_strict_config_for_app_server_subcommand",
       "reject_strict_config_for_unsupported_subcommand",
+      "reject_unsupported_worktree_for_subcommand",
+      "rejected_start",
       "rejects_oversized_setup_failure_reports",
       "remote_control_start_human_lines",
       "remote_control_start_human_message",
@@ -7438,6 +7771,7 @@
       "resolve_sqlite_config",
       "resolve_windows_update_command_from_path",
       "respond_to_queue_request",
+      "restart_applies_saved_updater_preference",
       "rollout_files_and_bytes",
       "rollout_note",
       "rollout_path_key",
@@ -7462,7 +7796,7 @@
       "run_login_with_device_code",
       "run_login_with_device_code_fallback_to_browser",
       "run_mac_app_open_or_install",
-      "run_remote_exec_server",
+      "run_probe",
       "run_remote_queue_command",
       "run_session_archive_cli_command",
       "run_sync_check",
@@ -7478,6 +7812,7 @@
       "runtime_summary",
       "safe_format_key",
       "sample_remote_plugin_bundle",
+      "sandbox_blocks_terminal_input_injection",
       "sandbox_check",
       "sandbox_fetches_and_enforces_cloud_managed_permission_profile",
       "sandbox_note",
@@ -7506,6 +7841,8 @@
       "should_probe_models_route",
       "should_show_progress",
       "shutdown_signal",
+      "signal",
+      "signs_requests_without_changing_payload_or_metadata",
       "socket_status",
       "source_category",
       "spawn_debug_sandbox_child",
@@ -7550,12 +7887,14 @@
       "terminal_env_names",
       "terminal_name",
       "terminal_path_readiness",
+      "terminal_queries_reply_once_across_every_split",
       "terminal_size_issues",
       "terminal_summary",
       "terminal_title_check",
       "terminal_title_check_from_inputs",
       "terminal_title_item_id",
       "terminal_title_project_root",
+      "test_provider",
       "the_windows_system_volume_is_not_a_dev_drive",
       "thread_id_from_rollout",
       "thread_inventory_check",
@@ -7569,6 +7908,7 @@
       "truncate_title_part",
       "unavailable",
       "unavailable_endpoint_inspection_does_not_require_remediation",
+      "unmanaged_app_server_does_not_launch_updater",
       "unsupported_subcommand_name_for_strict_config",
       "update_action_label",
       "update_does_not_start_interactive_prompt",
@@ -7582,6 +7922,7 @@
       "verify_codex_app_bundle",
       "very_dim",
       "volume_flags",
+      "wait_for_exit",
       "wait_for_foreground_app_server",
       "wait_for_foreground_remote_control_ready",
       "wait_for_foreground_remote_control_start",
@@ -7680,6 +8021,10 @@
     "execpolicySymbolNamesMissingInLime": [],
     "execpolicySymbolNamesOnlyInLime": [],
     "npmSymbolNamesMissingInLime": [
+      "codexPackageRoot",
+      "findCodexExecutable",
+      "isPnpmOwnedCodexInstall",
+      "isVitePlusOwnedCodexInstall",
       "run_command",
       "stage_codex_sdk_sources"
     ],
@@ -7689,7 +8034,11 @@
       "PACKAGE_ROOT",
       "createInstalledPackage",
       "currentPlatform",
+      "findLimeExecutable",
       "installFakeNative",
+      "isPnpmOwnedLimeInstall",
+      "isVitePlusOwnedLimeInstall",
+      "limePackageRoot",
       "nativeRuntimeDir",
       "runLauncher",
       "signalHandlers",

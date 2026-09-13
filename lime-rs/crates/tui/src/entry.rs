@@ -55,7 +55,7 @@ pub(crate) fn hyperlink_lines_with_locale(
             }
         }
         rendered.extend(entry.summary.iter().map(|detail| {
-            let detail = format!("- {}", locale.detail(detail));
+            let detail = formatted_summary(entry.kind, detail, locale);
             HyperlinkLine::new(format_line(
                 entry.kind,
                 "  ",
@@ -69,7 +69,7 @@ pub(crate) fn hyperlink_lines_with_locale(
     let mut source = entry.text.lines();
     let first = source.next().unwrap_or("");
     let first = match entry.kind {
-        EntryKind::Tool | EntryKind::System => locale.detail(first),
+        EntryKind::Tool | EntryKind::System => locale.detail(&localized_tool_detail(first, cwd)),
         EntryKind::MultiAgent => locale.multi_agent(first),
         _ => first.to_string(),
     };
@@ -114,7 +114,7 @@ pub(crate) fn hyperlink_lines_with_locale(
         }));
     }
     lines.extend(entry.summary.iter().map(|detail| {
-        let detail = format!("- {}", locale.detail(detail));
+        let detail = formatted_summary(entry.kind, detail, locale);
         HyperlinkLine::new(format_line(
             entry.kind,
             "  ",
@@ -124,6 +124,24 @@ pub(crate) fn hyperlink_lines_with_locale(
         ))
     }));
     lines
+}
+
+fn localized_tool_detail(detail: &str, cwd: &Path) -> String {
+    detail
+        .strip_prefix("view image: ")
+        .map(|path| format!("view image: {}", diff_render::display_path_for(path, cwd)))
+        .unwrap_or_else(|| detail.to_string())
+}
+
+fn formatted_summary(kind: EntryKind, detail: &str, locale: Locale) -> String {
+    if kind == EntryKind::User {
+        if let Some(index) = detail.strip_prefix("image: ") {
+            if !index.is_empty() {
+                return locale.numbered_image_label(index);
+            }
+        }
+    }
+    format!("- {}", locale.detail(detail))
 }
 
 fn with_status_suffix(text: &str, status: Option<EntryStatus>, locale: Locale) -> String {
@@ -253,6 +271,46 @@ mod tests {
             .collect::<String>();
         assert!(text.contains("已启动 agent-1"));
         assert!(!text.contains("Spawned agent-1"));
+    }
+
+    #[test]
+    fn image_view_paths_are_relative_to_the_current_working_directory() {
+        let rendered = hyperlink_lines_with_locale(
+            &entry(EntryKind::Tool, "view image: /workspace/assets/result.png"),
+            Locale::EnUs,
+            Some(80),
+            Path::new("/workspace"),
+        )
+        .into_iter()
+        .map(|line| line.line.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+        assert!(rendered.contains("view image: assets/result.png"));
+        assert!(!rendered.contains("view image: /workspace/assets/result.png"));
+    }
+
+    #[test]
+    fn user_image_summaries_use_numbered_labels_in_all_product_locales() {
+        let mut entry = entry(EntryKind::User, "describe these");
+        entry.summary = vec!["image: 1".to_string(), "image: 2".to_string()];
+
+        for (locale, first, second) in [
+            (Locale::ZhCn, "[图片 #1]", "[图片 #2]"),
+            (Locale::ZhTw, "[圖片 #1]", "[圖片 #2]"),
+            (Locale::EnUs, "[Image #1]", "[Image #2]"),
+            (Locale::JaJp, "[画像 #1]", "[画像 #2]"),
+            (Locale::KoKr, "[이미지 #1]", "[이미지 #2]"),
+        ] {
+            let rendered =
+                hyperlink_lines_with_locale(&entry, locale, Some(80), Path::new("/workspace"))
+                    .into_iter()
+                    .map(|line| line.line.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+            assert!(rendered.contains(first), "missing {first}: {rendered}");
+            assert!(rendered.contains(second), "missing {second}: {rendered}");
+        }
     }
 
     #[test]

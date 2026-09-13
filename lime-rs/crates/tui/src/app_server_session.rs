@@ -1,6 +1,6 @@
 mod history;
 
-pub(crate) use history::HISTORY_ITEM_PAGE_LIMIT;
+pub(crate) use history::{thread_items_page_params, InitialHistoryPage, HISTORY_ITEM_PAGE_LIMIT};
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -12,18 +12,20 @@ use app_server_client::{
 };
 use app_server_protocol::protocol::v2::{
     CollaborationModeListParams, CollaborationModeListResponse, CollaborationModeMask,
-    CurrentTimeReadResponse, ModelListParams, ModelListResponse, PermissionProfileListParams,
-    PermissionProfileListResponse, PromptHistoryAppendParams, PromptHistoryAppendResponse,
-    PromptHistoryReadParams, PromptHistoryReadResponse, QueuedSubmission, ServerRequest,
-    SkillsListParams, SkillsListResponse, ThreadForkParams, ThreadForkResponse, ThreadListParams,
-    ThreadListResponse, ThreadQueueAddParams, ThreadQueueAddResponse, ThreadQueueDeleteParams,
-    ThreadQueueDeleteResponse, ThreadQueueListParams, ThreadQueueListResponse, ThreadReadParams,
-    ThreadReadResponse, ThreadResumeParams, ThreadResumeResponse, ThreadSetNameParams,
-    ThreadSetNameResponse, ThreadSettingsUpdateParams, ThreadSettingsUpdateResponse,
-    ThreadStartParams, ThreadStartResponse, ThreadStartSource, ThreadUnarchiveParams,
-    ThreadUnarchiveResponse, TurnInterruptParams, TurnInterruptResponse, TurnStartParams,
-    TurnStartResponse, TurnSteerParams, TurnSteerResponse, UserInput,
-    METHOD_COLLABORATION_MODE_LIST, METHOD_PERMISSION_PROFILE_LIST, METHOD_PROMPT_HISTORY_APPEND,
+    CurrentTimeReadResponse, FuzzyFileSearchParams, FuzzyFileSearchResponse,
+    McpServerElicitationRequestResponse, ModelListParams, ModelListResponse,
+    PermissionProfileListParams, PermissionProfileListResponse, PromptHistoryAppendParams,
+    PromptHistoryAppendResponse, PromptHistoryReadParams, PromptHistoryReadResponse,
+    QueuedSubmission, ServerRequest, SkillsListParams, SkillsListResponse, ThreadForkParams,
+    ThreadForkResponse, ThreadListParams, ThreadListResponse, ThreadQueueAddParams,
+    ThreadQueueAddResponse, ThreadQueueDeleteParams, ThreadQueueDeleteResponse,
+    ThreadQueueListParams, ThreadQueueListResponse, ThreadReadParams, ThreadReadResponse,
+    ThreadResumeParams, ThreadResumeResponse, ThreadSetNameParams, ThreadSetNameResponse,
+    ThreadSettingsUpdateParams, ThreadSettingsUpdateResponse, ThreadStartParams,
+    ThreadStartResponse, ThreadStartSource, ThreadUnarchiveParams, ThreadUnarchiveResponse,
+    TurnInterruptParams, TurnInterruptResponse, TurnStartParams, TurnStartResponse,
+    TurnSteerParams, TurnSteerResponse, UserInput, METHOD_COLLABORATION_MODE_LIST,
+    METHOD_FUZZY_FILE_SEARCH, METHOD_PERMISSION_PROFILE_LIST, METHOD_PROMPT_HISTORY_APPEND,
     METHOD_PROMPT_HISTORY_READ, METHOD_SKILLS_LIST, METHOD_THREAD_ARCHIVE, METHOD_THREAD_QUEUE_ADD,
     METHOD_THREAD_QUEUE_DELETE, METHOD_THREAD_QUEUE_LIST, METHOD_THREAD_READ, METHOD_THREAD_RESUME,
     METHOD_THREAD_SETTINGS_UPDATE, METHOD_THREAD_START, METHOD_TURN_INTERRUPT, METHOD_TURN_START,
@@ -55,6 +57,33 @@ pub(crate) struct AppServerSession {
 }
 
 impl AppServerSession {
+    /// Search files through the current App Server contract using a cloned request boundary.
+    /// All interactive queries share one cancellation token so newer queries supersede older
+    /// filesystem walks without creating another transport or runtime owner.
+    pub(crate) async fn fuzzy_file_search_request(
+        request_handle: RequestHandle,
+        cwd: PathBuf,
+        query: String,
+    ) -> Result<Vec<app_server_protocol::protocol::v2::FuzzyFileSearchResult>> {
+        let root = cwd
+            .canonicalize()
+            .unwrap_or(cwd)
+            .to_string_lossy()
+            .into_owned();
+        let response: FuzzyFileSearchResponse = request_handle
+            .request(
+                METHOD_FUZZY_FILE_SEARCH,
+                FuzzyFileSearchParams {
+                    query,
+                    roots: vec![root],
+                    cancellation_token: Some("lime-tui-file-search".to_string()),
+                },
+            )
+            .await
+            .context("failed to search files through App Server")?;
+        Ok(response.files)
+    }
+
     pub(crate) async fn connect(config: StdioTransportConfig) -> Result<Self> {
         let app_server_bin = config.app_server_bin.clone();
         let session = ClientSession::start_stdio(config, initialize_params())
@@ -355,14 +384,21 @@ impl AppServerSession {
     }
 
     pub(crate) async fn list_skills(&self, cwds: Vec<PathBuf>) -> Result<SkillsListResponse> {
+        self.list_skills_with_reload(cwds, false).await
+    }
+
+    /// Reload the server-owned skills catalog after a `skills/changed` notification.
+    pub(crate) async fn reload_skills(&self, cwds: Vec<PathBuf>) -> Result<SkillsListResponse> {
+        self.list_skills_with_reload(cwds, true).await
+    }
+
+    async fn list_skills_with_reload(
+        &self,
+        cwds: Vec<PathBuf>,
+        force_reload: bool,
+    ) -> Result<SkillsListResponse> {
         self.request_handle
-            .request(
-                METHOD_SKILLS_LIST,
-                SkillsListParams {
-                    cwds,
-                    force_reload: false,
-                },
-            )
+            .request(METHOD_SKILLS_LIST, SkillsListParams { cwds, force_reload })
             .await
             .context("failed to list App Server skills")
     }
@@ -663,6 +699,11 @@ impl AppServerSession {
             }
             AppServerResponse::UserInput { id, response } => {
                 self.request_handle.respond(id, response).await
+            }
+            AppServerResponse::McpElicitation { id, response } => {
+                self.request_handle
+                    .respond::<McpServerElicitationRequestResponse>(id, response)
+                    .await
             }
         }
         .context("failed to respond to App Server request")

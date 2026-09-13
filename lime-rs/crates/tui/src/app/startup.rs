@@ -9,6 +9,7 @@ use crate::app_server_session::AppServerSession;
 use crate::resume_picker::SessionSelection;
 use crate::runtime::TuiOptions;
 use anyhow::Result;
+use app_server_protocol::protocol::v2::SkillsListResponse;
 
 #[derive(Debug)]
 pub(crate) struct StartupSessionState {
@@ -16,6 +17,26 @@ pub(crate) struct StartupSessionState {
     pub(crate) model_provider: Option<String>,
     pub(crate) effort: Option<String>,
     pub(crate) permissions: Option<String>,
+}
+
+/// Project a server-backed skills response into the composer and startup warning state.
+///
+/// The response remains the App Server fact source; the TUI only keeps the enabled catalog needed
+/// for completion and emits newly observed load errors through the existing startup prompt owner.
+pub(crate) fn apply_skills_list_response(app: &mut App, response: SkillsListResponse) {
+    let skills = response
+        .data
+        .iter()
+        .flat_map(|entry| entry.skills.iter().cloned())
+        .collect::<Vec<_>>();
+    let errors = response
+        .data
+        .into_iter()
+        .flat_map(|entry| entry.errors)
+        .collect::<Vec<_>>();
+    app.composer.set_skills(skills);
+    let newly_active = app.skill_load_warnings.newly_active_errors(&errors);
+    startup_prompts::emit_skill_load_warnings(app, &newly_active);
 }
 
 /// Establish the canonical thread/session state before entering the interactive event loop.
@@ -40,15 +61,18 @@ pub(crate) async fn initialize_session(
             == app_server_protocol::protocol::v2::ThreadHistoryMode::Paginated;
         let initial_cursor = response.items_backwards_cursor.clone();
         let resumed_thread_id = response.thread.id.clone();
-        let initial_items = if paginated_history {
+        let initial_page = if paginated_history {
             session
                 .hydrate_initial_thread_history(resumed_thread_id.clone(), initial_cursor)
                 .await?
         } else {
-            Vec::new()
+            crate::app_server_session::InitialHistoryPage {
+                items: Vec::new(),
+                turns: None,
+            }
         };
         app.hydrate_thread(response.thread);
-        app.projection.prepend_items(initial_items);
+        app.prepend_initial_history_page(initial_page);
         app.scrollback_has_older_history = session.has_older_history(&resumed_thread_id);
         if model.is_none() {
             model = Some(response.model);
@@ -76,9 +100,7 @@ pub(crate) async fn initialize_session(
     }
 
     let skill_cwd = std::path::PathBuf::from(&permission_cwd);
-    if crate::session_resume::cwds_differ(&app.cwd, &skill_cwd) {
-        app.set_cwd(skill_cwd.clone());
-    }
+    crate::app::working_directory::sync_server_cwd(app, &skill_cwd);
     let permission_profiles = session
         .list_permission_profiles(Some(permission_cwd))
         .await?;
@@ -99,15 +121,7 @@ pub(crate) async fn initialize_session(
             .set_status(format!("model catalog unavailable: {error}")),
     }
     match session.list_skills(vec![skill_cwd]).await {
-        Ok(response) => {
-            let errors = response
-                .data
-                .into_iter()
-                .flat_map(|entry| entry.errors)
-                .collect::<Vec<_>>();
-            let newly_active = app.skill_load_warnings.newly_active_errors(&errors);
-            startup_prompts::emit_skill_load_warnings(app, &newly_active);
-        }
+        Ok(response) => apply_skills_list_response(app, response),
         Err(error) => app
             .projection
             .set_status(format!("skills unavailable: {error}")),
@@ -181,6 +195,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::resume_picker::SessionTarget;
+    use app_server_protocol::protocol::v2::{SkillMetadata, SkillScope, SkillsListEntry};
     use std::path::PathBuf;
 
     fn target() -> SessionTarget {
@@ -234,5 +249,50 @@ mod tests {
             false,
             Some("thread-1")
         ));
+    }
+
+    #[test]
+    fn skills_list_projection_keeps_only_enabled_catalog_entries() {
+        let mut app = App::default();
+        apply_skills_list_response(
+            &mut app,
+            SkillsListResponse {
+                data: vec![SkillsListEntry {
+                    cwd: PathBuf::from("/workspace"),
+                    skills: vec![
+                        SkillMetadata {
+                            name: "enabled".to_string(),
+                            description: "available".to_string(),
+                            short_description: None,
+                            interface: None,
+                            dependencies: None,
+                            path: PathBuf::from("/skills/enabled/SKILL.md"),
+                            scope: SkillScope::User,
+                            enabled: true,
+                        },
+                        SkillMetadata {
+                            name: "disabled".to_string(),
+                            description: "hidden".to_string(),
+                            short_description: None,
+                            interface: None,
+                            dependencies: None,
+                            path: PathBuf::from("/skills/disabled/SKILL.md"),
+                            scope: SkillScope::User,
+                            enabled: false,
+                        },
+                    ],
+                    errors: Vec::new(),
+                }],
+            },
+        );
+
+        assert_eq!(
+            app.composer
+                .skills()
+                .iter()
+                .map(|skill| skill.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["enabled"]
+        );
     }
 }

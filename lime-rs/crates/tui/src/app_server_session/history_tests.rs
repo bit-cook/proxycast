@@ -1,4 +1,6 @@
-use app_server_protocol::protocol::v2::{ThreadItem, ThreadItemEntry, ThreadItemsListResponse};
+use app_server_protocol::protocol::v2::{
+    ThreadItem, ThreadItemEntry, ThreadItemsListResponse, Turn, TurnItemsView, TurnStatus,
+};
 
 use super::*;
 
@@ -92,4 +94,47 @@ fn advancing_cursor_rejects_repeated_cursors() {
         advancing_cursor(Some("second"), /*next*/ None, &mut seen_cursors),
         None
     );
+}
+
+fn test_turn(id: &str) -> Turn {
+    Turn {
+        id: id.to_string(),
+        items: Vec::new(),
+        items_view: TurnItemsView::NotLoaded,
+        status: TurnStatus::Completed,
+        error: None,
+        started_at: Some(1),
+        completed_at: Some(2),
+        duration_ms: Some(1),
+    }
+}
+
+#[test]
+fn turn_lookup_requires_one_older_context_turn_after_targets() {
+    let turns_desc = vec![
+        test_turn("newest"),
+        test_turn("target"),
+        test_turn("previous"),
+    ];
+    let targets = std::collections::HashSet::from([String::from("target")]);
+    assert!(all_target_turns_loaded(&turns_desc, &targets));
+    assert!(has_older_turn_context(&turns_desc, &targets));
+}
+
+#[test]
+fn turn_lookup_keeps_paging_when_target_is_oldest_loaded_turn() {
+    let turns_desc = vec![test_turn("newest"), test_turn("target")];
+    let targets = std::collections::HashSet::from([String::from("target")]);
+    assert!(all_target_turns_loaded(&turns_desc, &targets));
+    assert!(!has_older_turn_context(&turns_desc, &targets));
+}
+
+#[test]
+fn turn_lookup_returns_chronological_order_for_history_filtering() {
+    let turns_desc = vec![test_turn("newest"), test_turn("older"), test_turn("oldest")];
+    let ids = chronological_turns(turns_desc)
+        .into_iter()
+        .map(|turn| turn.id)
+        .collect::<Vec<_>>();
+    assert_eq!(ids, vec!["oldest", "older", "newest"]);
 }

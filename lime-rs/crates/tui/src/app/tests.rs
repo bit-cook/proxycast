@@ -1,7 +1,8 @@
 use super::*;
+use crate::command_popup::CommandPopup;
 use app_server_protocol::protocol::v2::{
-    CommandExecutionApprovalDecision, CommandExecutionRequestApprovalParams, ServerRequest,
-    UserInput,
+    CommandExecutionApprovalDecision, CommandExecutionRequestApprovalParams, McpServerStartupState,
+    McpServerStatusUpdatedNotification, ServerNotification, ServerRequest, UserInput,
 };
 use app_server_protocol::RequestId;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -69,6 +70,159 @@ fn active_bottom_pane_receives_input_before_the_chat_composer() {
     ));
     assert!(!app.bottom_pane.is_active());
     assert_eq!(app.composer.text(), "draft");
+}
+
+#[test]
+fn mcp_startup_status_is_app_scoped_and_clears_when_ready() {
+    let mut app = App::default();
+    app.apply_notification(ServerNotification::McpServerStatusUpdated(
+        McpServerStatusUpdatedNotification {
+            thread_id: None,
+            name: "docs".to_string(),
+            status: McpServerStartupState::Failed,
+            error: Some("offline".to_string()),
+            failure_reason: None,
+        },
+    ));
+    assert_eq!(app.projection.status(), "");
+    assert_eq!(app.status_value(), "MCP startup issue: docs: offline");
+
+    app.apply_notification(ServerNotification::McpServerStatusUpdated(
+        McpServerStatusUpdatedNotification {
+            thread_id: None,
+            name: "docs".to_string(),
+            status: McpServerStartupState::Ready,
+            error: None,
+            failure_reason: None,
+        },
+    ));
+    assert_eq!(app.status_value(), "");
+}
+
+#[test]
+fn startup_protected_request_keeps_draft_until_the_request_is_resolved() {
+    let mut app = App::default();
+    app.begin_startup_input_boundary();
+    app.composer.insert("startup draft");
+    app.bottom_pane
+        .enqueue(ServerRequest::ItemCommandExecutionRequestApproval {
+            id: RequestId::Integer(8),
+            params: CommandExecutionRequestApprovalParams {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "command-1".to_string(),
+                started_at_ms: 1,
+                approval_id: None,
+                reason: None,
+                network_approval_context: None,
+                command: Some("cargo test".to_string()),
+                cwd: Some("/workspace".to_string()),
+                available_decisions: None,
+            },
+        })
+        .expect("queue startup approval");
+    app.note_startup_protected_request();
+
+    let ignored = dispatch_connected_input(
+        &mut app,
+        Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
+    );
+    assert_eq!(ignored, AppAction::None);
+    assert_eq!(app.composer.text(), "startup draft");
+    assert!(app.has_queued_startup_protected_request());
+
+    let response = dispatch_connected_input(
+        &mut app,
+        Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+    );
+    assert!(matches!(
+        response,
+        AppAction::Respond(AppServerResponse::Command { .. })
+    ));
+    assert!(!app.has_queued_startup_protected_request());
+    assert_eq!(app.composer.text(), "startup draft");
+}
+
+#[test]
+fn startup_boundary_ignores_protected_requests_for_background_threads() {
+    let mut app = App::default();
+    app.begin_startup_input_boundary();
+    app.set_thread_id("main".to_string());
+    app.ensure_thread_channel("background").store.push_request(
+        ServerRequest::ItemCommandExecutionRequestApproval {
+            id: RequestId::Integer(9),
+            params: CommandExecutionRequestApprovalParams {
+                thread_id: "background".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "command-1".to_string(),
+                started_at_ms: 1,
+                approval_id: None,
+                reason: None,
+                network_approval_context: None,
+                command: Some("cargo test".to_string()),
+                cwd: Some("/workspace".to_string()),
+                available_decisions: None,
+            },
+        },
+    );
+
+    assert!(!app.has_queued_startup_protected_request());
+}
+
+#[test]
+fn startup_boundary_ends_on_the_first_safe_user_input() {
+    let mut app = App::default();
+    app.begin_startup_input_boundary();
+
+    assert!(!app.release_startup_input_boundary_if_ready(false));
+    assert!(app.startup_protected_input_boundary);
+    assert!(app.release_startup_input_boundary_if_ready(true));
+    assert!(!app.startup_protected_input_boundary);
+    assert!(!app.startup_pending_protected_request);
+}
+
+#[test]
+fn first_safe_user_input_releases_boundary_before_reaching_composer() {
+    let mut app = App::default();
+    app.begin_startup_input_boundary();
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(!app.startup_protected_input_boundary);
+    assert_eq!(app.composer.text(), "x");
+}
+
+#[test]
+fn startup_boundary_waits_for_visible_request_before_releasing() {
+    let mut app = App::default();
+    app.begin_startup_input_boundary();
+    app.bottom_pane
+        .enqueue(ServerRequest::ItemCommandExecutionRequestApproval {
+            id: RequestId::Integer(10),
+            params: CommandExecutionRequestApprovalParams {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "command-1".to_string(),
+                started_at_ms: 1,
+                approval_id: None,
+                reason: None,
+                network_approval_context: None,
+                command: Some("cargo test".to_string()),
+                cwd: Some("/workspace".to_string()),
+                available_decisions: None,
+            },
+        })
+        .expect("queue startup approval");
+    app.note_startup_protected_request();
+
+    assert!(!app.release_startup_input_boundary_if_ready(true));
+    assert!(app.startup_protected_input_boundary);
+    assert!(app.startup_pending_protected_request);
 }
 
 #[test]
@@ -165,6 +319,63 @@ fn escape_interrupts_only_an_active_turn_and_preserves_the_draft() {
         AppAction::Interrupt
     );
     assert_eq!(app.composer.text(), "keep this draft");
+}
+
+#[test]
+fn ctrl_c_clears_idle_plain_text_draft_and_keeps_it_recallable() {
+    let mut app = App::default();
+    app.composer.insert("draft");
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL,)),
+        ),
+        AppAction::None
+    );
+    assert!(app.composer.is_empty());
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE,)),
+        ),
+        AppAction::None
+    );
+    assert_eq!(app.composer.text(), "draft");
+}
+
+#[test]
+fn ctrl_c_clears_active_turn_draft_without_interrupting() {
+    let mut app = App::default();
+    app.composer.insert("draft");
+    app.start_turn("turn-1".to_string());
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL,)),
+        ),
+        AppAction::None
+    );
+    assert!(app.composer.is_empty());
+}
+
+#[test]
+fn ctrl_c_preserves_attachment_draft_until_image_history_is_supported() {
+    let mut app = App::default();
+    app.composer.insert("draft");
+    app.attach_image(std::path::PathBuf::from("/tmp/draft.png"));
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL,)),
+        ),
+        AppAction::Interrupt
+    );
+    assert_eq!(app.composer.text(), "draft");
+    assert!(app.composer.has_pending_images());
 }
 
 #[test]
@@ -342,7 +553,7 @@ fn an_open_popup_owns_escape_before_active_turn_interruption() {
         &mut app,
         Event::Key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)),
     );
-    assert!(app.command_popup.is_some());
+    assert!(app.composer.command_popup().is_some());
 
     assert_eq!(
         dispatch_connected_input(
@@ -351,7 +562,7 @@ fn an_open_popup_owns_escape_before_active_turn_interruption() {
         ),
         AppAction::None
     );
-    assert!(app.command_popup.is_none());
+    assert!(app.composer.command_popup().is_none());
     assert!(app.projection.active_turn_id().is_some());
 }
 
@@ -377,6 +588,126 @@ fn history_search_owns_escape_before_active_turn_interruption() {
     assert!(!app.composer.history_search_active());
     assert_eq!(app.composer.text(), "previous");
     assert!(app.projection.active_turn_id().is_some());
+}
+
+#[test]
+fn vim_slash_command_toggles_composer_mode_and_projects_localized_status() {
+    let mut app = App::default();
+    app.set_locale(Locale::ZhCn);
+    app.composer.insert("/vim");
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(app.composer.is_vim_normal_mode());
+    assert!(app.composer.is_empty());
+    assert_eq!(app.projection.status(), "已启用 Vim 编辑模式");
+
+    app.composer.insert("/vim");
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(!app.composer.is_vim_normal_mode());
+    assert!(app.composer.is_empty());
+    assert_eq!(app.projection.status(), "已关闭 Vim 编辑模式");
+}
+
+#[test]
+fn vim_insert_escape_returns_to_normal_before_interrupting_an_active_turn() {
+    let mut app = App::default();
+    app.composer.set_vim_enabled(true);
+    app.start_turn("turn-1".to_string());
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(!app.composer.is_vim_normal_mode());
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(app.composer.is_vim_normal_mode());
+    assert!(app.projection.active_turn_id().is_some());
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        ),
+        AppAction::Interrupt
+    );
+}
+
+#[test]
+fn vim_search_owns_escape_and_paste_before_popup_or_active_turn() {
+    let mut app = App::default();
+    app.composer.set_vim_enabled(true);
+    app.composer.insert("alpha beta");
+    app.start_turn("turn-1".to_string());
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(app.composer.vim_search_active());
+
+    assert_eq!(
+        dispatch_connected_input(&mut app, Event::Paste("beta".to_string())),
+        AppAction::None
+    );
+    assert_eq!(app.composer.text(), "alpha beta");
+    assert_eq!(
+        app.composer.vim_search_query().map(|(query, _)| query),
+        Some("beta")
+    );
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(!app.composer.vim_search_active());
+    assert!(app.projection.active_turn_id().is_some());
+}
+
+#[test]
+fn vim_normal_up_and_down_do_not_replace_the_draft_with_history() {
+    let mut app = App::default();
+    app.composer.load_history(["previous prompt".to_string()]);
+    app.composer.insert("current draft");
+    app.composer.set_vim_enabled(true);
+
+    for code in [KeyCode::Up, KeyCode::Down] {
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(code, KeyModifiers::NONE)),
+            ),
+            AppAction::None
+        );
+        assert_eq!(app.composer.text(), "current draft");
+        assert!(app.composer.is_vim_normal_mode());
+    }
 }
 
 #[test]
@@ -430,10 +761,12 @@ fn export_slash_command_targets_the_canonical_transcript() {
             &mut app,
             Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE,))
         ),
-        AppAction::ExportTranscript { path: None }
+        AppAction::None
     );
+    assert!(app.export_picker.is_some());
     assert!(app.composer.is_empty());
 
+    let mut app = App::default();
     app.composer.insert("/export transcript.md");
     assert_eq!(
         dispatch_connected_input(
@@ -460,7 +793,9 @@ fn slash_popup_filters_and_executes_immediate_commands() {
         );
     }
     assert_eq!(
-        app.command_popup.as_ref().and_then(CommandPopup::selected),
+        app.composer
+            .command_popup()
+            .and_then(CommandPopup::selected),
         Some(SlashCommand::Model)
     );
 
@@ -471,7 +806,7 @@ fn slash_popup_filters_and_executes_immediate_commands() {
         ),
         AppAction::Submit("/model".to_string())
     );
-    assert!(app.command_popup.is_none());
+    assert!(app.composer.command_popup().is_none());
     assert!(app.composer.is_empty());
 }
 
@@ -482,19 +817,21 @@ fn slash_popup_completes_argument_commands_and_reopens_after_cancelled_input_cha
         &mut app,
         Event::Key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)),
     );
-    assert!(app.command_popup.is_some());
+    assert!(app.composer.command_popup().is_some());
     dispatch_connected_input(
         &mut app,
         Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
     );
-    assert!(app.command_popup.is_none());
+    assert!(app.composer.command_popup().is_none());
 
     dispatch_connected_input(
         &mut app,
         Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE)),
     );
     assert_eq!(
-        app.command_popup.as_ref().and_then(CommandPopup::selected),
+        app.composer
+            .command_popup()
+            .and_then(CommandPopup::selected),
         Some(SlashCommand::Effort)
     );
     assert_eq!(
@@ -505,7 +842,7 @@ fn slash_popup_completes_argument_commands_and_reopens_after_cancelled_input_cha
         AppAction::None
     );
     assert_eq!(app.composer.text(), "/effort ");
-    assert!(app.command_popup.is_none());
+    assert!(app.composer.command_popup().is_none());
 }
 
 #[test]
@@ -690,7 +1027,31 @@ fn alt_up_requests_server_delete_before_restoring_the_last_queued_input() {
 }
 
 #[test]
-fn alt_up_does_not_offer_a_lossy_or_overwriting_queue_edit() {
+fn queued_skill_input_restores_as_an_editable_dollar_mention() {
+    let submission = QueuedSubmission {
+        id: "queue-skill".to_string(),
+        input: vec![
+            UserInput::Skill {
+                name: "review".to_string(),
+                path: "/skills/review/SKILL.md".to_string(),
+            },
+            UserInput::Text {
+                text: "please check".to_string(),
+                text_elements: Vec::new(),
+            },
+        ],
+        client_user_message_id: "client-queue-skill".to_string(),
+    };
+    let mut app = App::default();
+    app.set_queued_submissions(vec![submission.clone()]);
+
+    assert!(app.restore_queued_submission_for_edit(submission));
+    assert_eq!(app.composer.text(), "$review please check");
+    assert!(app.queued_submissions.is_empty());
+}
+
+#[test]
+fn alt_up_offers_lossless_remote_image_queue_edit() {
     let remote_image = QueuedSubmission {
         id: "queue-remote".to_string(),
         input: vec![UserInput::Image {
@@ -706,8 +1067,23 @@ fn alt_up_does_not_offer_a_lossy_or_overwriting_queue_edit() {
             &mut app,
             Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT,))
         ),
-        AppAction::None
+        AppAction::EditQueuedSubmission(QueuedSubmission {
+            id: "queue-remote".to_string(),
+            input: vec![UserInput::Image {
+                detail: None,
+                url: "https://example.test/input.png".to_string(),
+            }],
+            client_user_message_id: "client-remote".to_string(),
+        })
     );
+
+    let remote_image = app.queued_submissions[0].clone();
+    assert!(app.restore_queued_submission_for_edit(remote_image));
+    assert_eq!(
+        app.composer.remote_image_urls(),
+        &["https://example.test/input.png"]
+    );
+    assert!(app.composer.is_empty());
 
     app.set_queued_submissions(vec![QueuedSubmission {
         id: "queue-text".to_string(),
@@ -727,6 +1103,36 @@ fn alt_up_does_not_offer_a_lossy_or_overwriting_queue_edit() {
     );
     assert_eq!(app.composer.text(), "unsent draft");
     assert_eq!(app.queued_submissions.len(), 1);
+}
+
+#[test]
+fn remote_image_rows_are_selectable_and_deletable_from_the_composer() {
+    let mut app = App::default();
+    app.set_remote_image_urls(vec![
+        "https://example.test/one.png".to_string(),
+        "https://example.test/two.png".to_string(),
+    ]);
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE))
+        ),
+        AppAction::None
+    );
+    assert!(app.composer.has_selected_remote_image());
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE))
+        ),
+        AppAction::None
+    );
+    assert_eq!(
+        app.composer.remote_image_urls(),
+        &["https://example.test/one.png"]
+    );
 }
 
 #[test]

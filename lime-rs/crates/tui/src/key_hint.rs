@@ -2,6 +2,18 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+#[cfg(windows)]
+#[inline]
+pub(crate) fn is_altgr(modifiers: KeyModifiers) -> bool {
+    modifiers.contains(KeyModifiers::ALT) && modifiers.contains(KeyModifiers::CONTROL)
+}
+
+#[cfg(not(windows))]
+#[inline]
+pub(crate) fn is_altgr(_modifiers: KeyModifiers) -> bool {
+    false
+}
+
 /// Returns whether an event should be treated as literal text input.
 pub(crate) fn is_plain_text_key_event(event: KeyEvent) -> bool {
     matches!(

@@ -21,9 +21,8 @@ mod thread_event_buffer;
 mod thread_events;
 mod thread_settings;
 pub(crate) mod transcript_export;
+pub(crate) mod working_directory;
 
-#[cfg(test)]
-use app_server_protocol::protocol::v2::ServerNotification;
 use app_server_protocol::protocol::v2::{QueuedSubmission, Thread};
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::collections::HashMap;
@@ -34,8 +33,9 @@ use self::agent_navigation::{AgentNavigationDirection, AgentNavigationState};
 use self::agent_picker::{AgentPicker, AgentPickerAction};
 use self::agents_overview::AgentsOverviewState;
 use self::agents_overview_view::AgentsOverviewAction;
+use self::transcript_export::{ExportPicker, ExportPickerAction};
 use crate::bottom_pane::{AppServerResponse, BottomPane, ChatComposer, InputResult};
-use crate::command_popup::{CommandPopup, CommandPopupAction};
+use crate::command_popup::CommandPopupAction;
 use crate::locale::Locale;
 use crate::model_catalog::ModelCatalog;
 use crate::model_picker::{ModelPicker, ModelPickerAction, ModelSelection};
@@ -43,7 +43,7 @@ use crate::pager_overlay::{PagerAction, PagerOverlay, StatusFacts};
 use crate::pending_input_preview::can_restore_submission;
 use crate::projection::ConversationProjection;
 use crate::resume_picker::{PickerAction, PickerState};
-use crate::slash_command::{command_from_prompt, SlashCommand};
+use crate::slash_command::SlashCommand;
 use crate::tui::TuiEvent;
 
 fn normalize_paste(text: String) -> String {
@@ -110,9 +110,10 @@ pub(crate) struct App {
     pub(crate) resume_picker: Option<PickerState>,
     pub(crate) model_catalog: ModelCatalog,
     pub(crate) skill_load_warnings: startup_prompts::SkillLoadWarningState,
+    pub(crate) mcp_startup_warnings: startup_prompts::McpStartupWarningState,
     pub(crate) collaboration_mode: Option<agent_protocol::CollaborationMode>,
-    pub(crate) command_popup: Option<CommandPopup>,
     pub(crate) pager_overlay: Option<PagerOverlay>,
+    pub(crate) export_picker: Option<ExportPicker>,
     pub(crate) thread_id: Option<String>,
     pub(crate) primary_thread_id: Option<String>,
     pub(crate) agent_navigation: AgentNavigationState,
@@ -129,6 +130,13 @@ pub(crate) struct App {
     pub(crate) clipboard_lease: Option<crate::clipboard_copy::ClipboardLease>,
     pub(crate) queued_submissions: Vec<QueuedSubmission>,
     pub(crate) thread_input_states: HashMap<String, String>,
+    /// Keeps terminal input behind a startup request that may open a protected interaction.
+    ///
+    /// The App Server stream can deliver an approval or user-input request immediately after the
+    /// initial thread handshake. Codex quarantines terminal input until that request is visible;
+    /// Lime keeps the same boundary while leaving request ownership in `BottomPane`.
+    pub(crate) startup_protected_input_boundary: bool,
+    pub(crate) startup_pending_protected_request: bool,
     external_editor_state: ExternalEditorState,
     active_turn_started_at: Option<Instant>,
 }
@@ -136,6 +144,58 @@ pub(crate) struct App {
 impl App {
     pub(crate) fn set_cwd(&mut self, cwd: PathBuf) {
         self.cwd = cwd;
+    }
+
+    /// Enable the startup input boundary before the terminal event loop begins.
+    pub(crate) fn begin_startup_input_boundary(&mut self) {
+        self.startup_protected_input_boundary = true;
+        self.startup_pending_protected_request = false;
+    }
+
+    /// Returns whether a startup request is waiting in the active pane or a thread buffer.
+    ///
+    /// Requests are never dropped to make room for ordinary notifications, so this check is
+    /// deterministic and does not require a second runtime or a local persistence store.
+    pub(crate) fn has_queued_startup_protected_request(&self) -> bool {
+        let active_thread_has_buffered_request = self
+            .thread_id
+            .as_deref()
+            .and_then(|thread_id| self.thread_event_channels.get(thread_id))
+            .is_some_and(|channel| {
+                channel.store.buffer.iter().any(|event| {
+                    matches!(event, self::thread_events::ThreadBufferedEvent::Request(_))
+                })
+            });
+        self.startup_protected_input_boundary
+            && (self.startup_pending_protected_request || active_thread_has_buffered_request)
+    }
+
+    pub(crate) fn note_startup_protected_request(&mut self) {
+        if self.startup_protected_input_boundary {
+            self.startup_pending_protected_request = true;
+        }
+    }
+
+    pub(crate) fn end_startup_input_boundary(&mut self) {
+        self.startup_protected_input_boundary = false;
+        self.startup_pending_protected_request = false;
+    }
+
+    /// Release the startup input boundary once the first ordinary input is safe to process.
+    ///
+    /// Codex keeps startup protection until queued app events and interactive requests have been
+    /// drained. The first key or paste event after that point ends the startup-only phase; later
+    /// requests are handled by the normal BottomPane lifecycle.
+    pub(crate) fn release_startup_input_boundary_if_ready(&mut self, user_input: bool) -> bool {
+        if !user_input
+            || !self.startup_protected_input_boundary
+            || self.bottom_pane.is_active()
+            || self.has_queued_startup_protected_request()
+        {
+            return false;
+        }
+        self.end_startup_input_boundary();
+        true
     }
 
     pub(crate) fn set_thread_id(&mut self, thread_id: String) {
@@ -183,6 +243,19 @@ impl App {
 
     pub(crate) fn set_locale(&mut self, locale: Locale) {
         self.locale = locale;
+    }
+
+    /// Return the user-visible status while keeping active-turn and explicit command status ahead
+    /// of app-scoped MCP startup diagnostics.
+    pub(crate) fn status_value(&self) -> String {
+        let status = self.projection.status();
+        if matches!(status, "" | "ready") {
+            return self
+                .mcp_startup_warnings
+                .status()
+                .unwrap_or_else(|| status.to_string());
+        }
+        status.to_string()
     }
 
     pub(crate) fn hydrate_thread(&mut self, thread: Thread) {
@@ -275,12 +348,12 @@ impl App {
                 }
                 TuiEvent::Key(key) => {
                     self.composer.handle_disconnected_key(key);
-                    self.command_popup = None;
+                    self.clear_command_popup();
                     AppAction::None
                 }
                 TuiEvent::Paste(text) => {
-                    self.composer.insert(&normalize_paste(text));
-                    self.command_popup = None;
+                    self.composer.handle_paste(&normalize_paste(text));
+                    self.clear_command_popup();
                     AppAction::None
                 }
                 _ => AppAction::None,
@@ -303,13 +376,50 @@ impl App {
             return AppAction::None;
         }
 
+        if let Some(picker) = self.export_picker.as_mut() {
+            let action = picker.handle_event(&event);
+            return match action {
+                ExportPickerAction::None => AppAction::None,
+                ExportPickerAction::Cancel => {
+                    self.export_picker = None;
+                    AppAction::None
+                }
+                ExportPickerAction::Copy => {
+                    self.export_picker = None;
+                    AppAction::ExportTranscript { path: None }
+                }
+                ExportPickerAction::Save => {
+                    let path = picker.selected_path();
+                    self.export_picker = None;
+                    path.map(|path| AppAction::ExportTranscript { path: Some(path) })
+                        .unwrap_or(AppAction::None)
+                }
+            };
+        }
+
         if self.bottom_pane.is_active() {
-            return self
+            let action = self
                 .bottom_pane
                 .handle_event(event)
                 .map(AppAction::Respond)
                 .unwrap_or(AppAction::None);
+            if matches!(action, AppAction::Respond(_)) && !self.bottom_pane.is_active() {
+                self.startup_pending_protected_request = false;
+            }
+            return action;
         }
+
+        // A delayed startup approval/user-input request owns the terminal until it is shown.
+        // This guard intentionally sits after `BottomPane`: once visible, the pane must receive
+        // the key that resolves the request instead of being blocked by its own boundary.
+        if self.has_queued_startup_protected_request() {
+            return AppAction::None;
+        }
+
+        self.release_startup_input_boundary_if_ready(matches!(
+            &event,
+            Event::Key(_) | Event::Paste(_)
+        ));
 
         if let Some(picker) = self.resume_picker.as_mut() {
             if picker.transcript_pager_is_open() {
@@ -393,12 +503,59 @@ impl App {
             };
         }
 
-        if let Some(popup) = self.command_popup.as_mut() {
-            match popup.handle_event(&event) {
+        // Vim query input is owned by the composer and must precede popups, global shortcuts,
+        // and submission handling. Query paste edits the ephemeral query editor, never the draft.
+        let vim_query_owns_event = self.composer.vim_search_active()
+            || matches!(&event, Event::Key(key) if self.composer.vim_search_wants_key(*key));
+        if vim_query_owns_event {
+            match event {
+                Event::Key(key) => {
+                    let action = self.composer.handle_key_event(key);
+                    return self.map_composer_action(action);
+                }
+                Event::Paste(text) => {
+                    self.composer.handle_paste(&text);
+                    return AppAction::None;
+                }
+                _ => {}
+            }
+        }
+
+        if self.composer.file_search_popup_active() {
+            let action = self.composer.handle_file_search_popup_event(&event);
+            match action {
+                crate::bottom_pane::FileSearchPopupAction::Pass => {}
+                crate::bottom_pane::FileSearchPopupAction::Consumed => {
+                    if !matches!(
+                        event,
+                        Event::Key(key) if key.code == KeyCode::Enter
+                    ) {
+                        return AppAction::None;
+                    }
+                }
+                crate::bottom_pane::FileSearchPopupAction::Cancel
+                | crate::bottom_pane::FileSearchPopupAction::Complete => {
+                    return AppAction::None;
+                }
+            }
+        }
+
+        if self.composer.skill_popup_active() {
+            let action = self.composer.handle_skill_popup_event(&event);
+            match action {
+                crate::bottom_pane::SkillPopupAction::Pass => {}
+                crate::bottom_pane::SkillPopupAction::Consumed => return AppAction::None,
+                crate::bottom_pane::SkillPopupAction::Cancel
+                | crate::bottom_pane::SkillPopupAction::Complete => return AppAction::None,
+            }
+        }
+
+        if self.composer.command_popup_active() {
+            let action = self.composer.handle_command_popup_event(&event);
+            match action {
                 CommandPopupAction::Pass => {}
                 CommandPopupAction::Consumed => return AppAction::None,
                 CommandPopupAction::Cancel => {
-                    self.command_popup = None;
                     return AppAction::None;
                 }
                 CommandPopupAction::Complete(command) => {
@@ -407,7 +564,7 @@ impl App {
                 }
                 CommandPopupAction::Execute(command) => {
                     self.composer.replace(format!("/{}", command.command()));
-                    self.command_popup = None;
+                    self.clear_command_popup();
                     if let Some(action) = self.run_local_command() {
                         return action;
                     }
@@ -430,10 +587,17 @@ impl App {
             return AppAction::None;
         }
 
+        if let Event::Key(key) = event {
+            if self.composer.should_handle_vim_insert_escape(key) {
+                let action = self.composer.handle_key_event(key);
+                return self.map_composer_action(action);
+            }
+        }
+
         match event {
             Event::Key(key) => self.handle_key_event(key),
             Event::Paste(text) => {
-                self.composer.insert(&text);
+                self.composer.handle_paste(&text);
                 self.sync_command_popup();
                 AppAction::None
             }
@@ -469,6 +633,14 @@ impl App {
         self.composer.restore_pending_images(images);
     }
 
+    pub(crate) fn take_remote_image_urls(&mut self) -> Vec<String> {
+        self.composer.take_remote_image_urls()
+    }
+
+    pub(crate) fn set_remote_image_urls(&mut self, urls: Vec<String>) {
+        self.composer.set_remote_image_urls(urls);
+    }
+
     pub(crate) fn set_queued_submissions(&mut self, submissions: Vec<QueuedSubmission>) {
         self.queued_submissions = submissions;
     }
@@ -497,36 +669,65 @@ impl App {
         }
         let submission_id = submission.id.clone();
         let mut text = String::new();
-        let mut images = Vec::new();
+        let mut local_images = Vec::new();
+        let mut remote_images = Vec::new();
+        let mut skills = Vec::new();
         for input in submission.input {
             match input {
                 app_server_protocol::protocol::v2::UserInput::Text { text: value, .. } => {
                     text = value;
                 }
                 app_server_protocol::protocol::v2::UserInput::LocalImage { path, .. } => {
-                    images.push(PathBuf::from(path));
+                    local_images.push(PathBuf::from(path));
+                }
+                app_server_protocol::protocol::v2::UserInput::Image { url, .. } => {
+                    remote_images.push(url);
+                }
+                app_server_protocol::protocol::v2::UserInput::Skill { name, .. } => {
+                    skills.push(format!("${name}"));
                 }
                 _ => return false,
             }
         }
         self.queued_submissions
             .retain(|queued| queued.id != submission_id);
+        if !skills.is_empty() {
+            let prefix = skills.join(" ");
+            text = if text.is_empty() {
+                prefix
+            } else {
+                format!("{prefix} {text}")
+            };
+        }
         self.replace_composer(text);
-        self.composer.restore_pending_images(images);
+        self.composer.restore_pending_images(local_images);
+        self.composer.set_remote_image_urls(remote_images);
+        self.clear_command_popup();
         true
     }
 
     fn map_composer_action(&mut self, action: InputResult) -> AppAction {
         match action {
             InputResult::Submitted(text) => {
-                self.command_popup = None;
+                self.clear_command_popup();
                 AppAction::Submit(text)
             }
             InputResult::Queued(text) => {
-                self.command_popup = None;
+                self.clear_command_popup();
                 AppAction::Queue(text)
             }
-            InputResult::Interrupt => AppAction::Interrupt,
+            InputResult::Interrupt => {
+                let cleared = self.composer.clear_for_ctrl_c().is_some();
+                if cleared {
+                    self.clear_command_popup();
+                    // Codex treats Ctrl-C as composer cancellation when a draft is present.
+                    // Do not also interrupt the active turn: a follow-up Ctrl-C can then be
+                    // handled after the terminal projection settles.
+                    AppAction::None
+                } else {
+                    AppAction::Interrupt
+                }
+            }
             InputResult::DecreaseEffort => AppAction::DecreaseEffort,
             InputResult::IncreaseEffort => AppAction::IncreaseEffort,
             InputResult::PreviousPermissions => AppAction::PreviousPermissions,
@@ -537,8 +738,8 @@ impl App {
             }
             InputResult::Quit => AppAction::Quit,
             InputResult::Changed => {
-                if self.composer.history_search_active() {
-                    self.command_popup = None;
+                if self.composer.history_search_active() || self.composer.vim_search_active() {
+                    self.clear_command_popup();
                 } else {
                     self.sync_command_popup();
                 }
@@ -552,24 +753,27 @@ impl App {
         let suffix = if command.requires_argument() { " " } else { "" };
         self.composer
             .replace(format!("/{}{suffix}", command.command()));
-        self.command_popup = None;
+        self.clear_command_popup();
     }
 
     fn sync_command_popup(&mut self) {
-        if self
-            .command_popup
-            .as_mut()
-            .is_some_and(|popup| popup.update(self.composer.text()))
-        {
-            return;
-        }
-        self.command_popup = CommandPopup::for_composer(self.composer.text());
+        self.composer.sync_command_popup();
+    }
+
+    fn clear_command_popup(&mut self) {
+        self.composer.clear_command_popup();
     }
 
     fn run_local_command(&mut self) -> Option<AppAction> {
         let text = self.composer.text().trim();
-        let command = command_from_prompt(text)?;
+        let command = self.composer.command_from_prompt(text)?;
         let action = match command {
+            SlashCommand::Vim => {
+                let enabled = self.composer.toggle_vim_enabled();
+                self.projection
+                    .set_status(self.locale.vim_mode_message(enabled));
+                AppAction::None
+            }
             SlashCommand::Status => {
                 self.open_status_pager();
                 AppAction::None
@@ -581,7 +785,12 @@ impl App {
                     .map(str::trim)
                     .filter(|path| !path.is_empty())
                     .map(PathBuf::from);
-                AppAction::ExportTranscript { path }
+                if path.is_none() {
+                    self.export_picker = Some(ExportPicker::new(self.thread_id.as_deref()));
+                    AppAction::None
+                } else {
+                    AppAction::ExportTranscript { path }
+                }
             }
             SlashCommand::Agents => {
                 self.open_agents_overview();
@@ -605,7 +814,7 @@ impl App {
             _ => return None,
         };
         self.composer.replace(String::new());
-        self.command_popup = None;
+        self.clear_command_popup();
         Some(action)
     }
 
@@ -620,7 +829,7 @@ impl App {
                 effort: self.reasoning_effort.as_deref(),
                 permissions: self.permissions.as_deref(),
                 cwd: &cwd,
-                status: self.projection.status(),
+                status: &self.status_value(),
             },
         ));
     }

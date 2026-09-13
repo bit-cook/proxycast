@@ -12,10 +12,11 @@ impl ChatComposer {
     #[allow(dead_code)]
     pub(crate) fn handle_disconnected_key(&mut self, key: KeyEvent) {
         if let Some(search) = self.history_search.take() {
-            self.replace_text(search.draft);
+            self.restore_draft(search.draft);
         }
-        self.history_index = None;
-        self.draft.saved_draft = None;
+        // A disconnected composer keeps the draft editable, but it must not retain a stale
+        // history-recall marker across the reconnect boundary.
+        self.reset_history_navigation();
 
         if matches!(key.code, KeyCode::Enter | KeyCode::Tab)
             || !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
@@ -23,7 +24,9 @@ impl ChatComposer {
             return;
         }
 
+        self.begin_vim_key(key);
         self.draft.textarea.input(key);
+        self.finish_vim_key();
         self.reset_history_navigation();
     }
 }

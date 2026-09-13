@@ -1361,6 +1361,118 @@ async fn paginated_resume_returns_stable_backwards_cursors() {
 }
 
 #[tokio::test]
+async fn paginated_history_jsonrpc_preserves_canonical_thread_turn_item_identity() {
+    let (_temp, server) = test_server();
+    initialize_server(&server).await;
+
+    let started = request(
+        &server,
+        2,
+        METHOD_THREAD_START,
+        json!({
+            "model": "fixture-model",
+            "modelProvider": "fixture-provider",
+            "historyMode": "paginated"
+        }),
+    )
+    .await;
+    let thread_id = started["result"]["thread"]["id"]
+        .as_str()
+        .expect("thread id")
+        .to_string();
+    let session_id = started["result"]["thread"]["sessionId"]
+        .as_str()
+        .expect("session id")
+        .to_string();
+    let turn_started = request(
+        &server,
+        3,
+        METHOD_TURN_START,
+        json!({
+            "threadId": thread_id,
+            "input": [{"type": "text", "text": "persisted prompt"}]
+        }),
+    )
+    .await;
+    let turn_id = turn_started["result"]["turn"]["id"]
+        .as_str()
+        .expect("turn id")
+        .to_string();
+
+    server
+        .append_external_runtime_events(
+            &session_id,
+            Some(&turn_id),
+            vec![
+                RuntimeEvent::new(
+                    "message.delta",
+                    json!({"itemId": "answer-item", "text": "persisted answer"}),
+                ),
+                RuntimeEvent::new(
+                    "message.completed",
+                    json!({"itemId": "answer-item", "status": "completed"}),
+                ),
+                RuntimeEvent::new("turn.completed", json!({})),
+            ],
+        )
+        .await
+        .expect("persist canonical history");
+
+    let resumed = request(
+        &server,
+        4,
+        METHOD_THREAD_RESUME,
+        json!({"threadId": thread_id, "excludeTurns": true}),
+    )
+    .await;
+    let resumed_thread_id = resumed["result"]["thread"]["id"]
+        .as_str()
+        .expect("resumed thread id");
+    assert_eq!(resumed_thread_id, thread_id);
+    assert_eq!(resumed["result"]["thread"]["turns"], json!([]));
+
+    let turns = request(
+        &server,
+        5,
+        METHOD_THREAD_TURNS_LIST,
+        json!({
+            "threadId": thread_id,
+            "limit": 10,
+            "sortDirection": "desc",
+            "itemsView": "full"
+        }),
+    )
+    .await;
+    assert_eq!(turns["result"]["data"][0]["id"], json!(turn_id));
+    assert_eq!(
+        turns["result"]["data"][0]["items"][1]["id"],
+        json!("answer-item")
+    );
+
+    let items = request(
+        &server,
+        6,
+        METHOD_THREAD_ITEMS_LIST,
+        json!({
+            "threadId": thread_id,
+            "limit": 10,
+            "sortDirection": "asc"
+        }),
+    )
+    .await;
+    let answer = items["result"]["data"]
+        .as_array()
+        .and_then(|data| {
+            data.iter()
+                .find(|entry| entry["item"]["id"] == "answer-item")
+        })
+        .expect("answer item in paginated item list");
+    assert_eq!(answer["turnId"], json!(turn_id));
+    assert_eq!(answer["item"]["id"], json!("answer-item"));
+    assert_eq!(answer["item"]["text"], json!("persisted answer"));
+}
+
+#[tokio::test]
 async fn thread_resume_rejects_legacy_shape_and_unimplemented_sources_or_overrides() {
     let (_temp, server) = test_server();
     initialize_server(&server).await;

@@ -5,6 +5,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
 use super::approval_overlay::ApprovalRequest;
+use super::mcp_server_elicitation;
 use super::request_user_input::render as request_user_input_render;
 use super::{BottomPane, PendingInteraction};
 use crate::locale::Locale;
@@ -34,10 +35,15 @@ pub(crate) fn render_with_locale(
         area,
     );
 
-    let Some(PendingInteraction::UserInput(request)) = pane.current() else {
-        return;
-    };
-    request_user_input_render::set_cursor_position(frame, inner, request, content.len());
+    match pane.current() {
+        Some(PendingInteraction::UserInput(request)) => {
+            request_user_input_render::set_cursor_position(frame, inner, request, content.len());
+        }
+        Some(PendingInteraction::McpElicitation(request)) => {
+            mcp_server_elicitation::set_cursor_position(frame, inner, request);
+        }
+        _ => {}
+    }
 }
 
 fn lines_with_locale(pane: &BottomPane, locale: Locale, width: usize) -> Vec<Line<'static>> {
@@ -91,6 +97,9 @@ fn lines_with_locale(pane: &BottomPane, locale: Locale, width: usize) -> Vec<Lin
         }
         Some(PendingInteraction::UserInput(request)) => {
             request_user_input_render::lines_with_locale_with_width(request, locale, width)
+        }
+        Some(PendingInteraction::McpElicitation(request)) => {
+            mcp_server_elicitation::lines_with_locale_with_width(request, locale, width)
         }
         None => Vec::new(),
     }

@@ -16,25 +16,33 @@ use crate::terminal_hyperlinks::{plain_hyperlink_lines, visible_lines_ref, Hyper
 
 mod approvals;
 mod base;
+mod computer_activity;
 mod exec;
+mod hook;
 mod mcp;
+mod mcp_result;
 mod messages;
 mod notices;
 mod patches;
 mod plans;
 mod request_user_input;
+mod search;
 mod separators;
 mod session;
 
 pub(crate) use approvals::*;
 pub(crate) use base::*;
+pub(crate) use computer_activity::{is_computer_activity, summary as computer_activity_summary};
 pub(crate) use exec::*;
+pub(crate) use hook::*;
 pub(crate) use mcp::*;
+pub(crate) use mcp_result::*;
 pub(crate) use messages::*;
 pub(crate) use notices::*;
 pub(crate) use patches::*;
 pub(crate) use plans::*;
 pub(crate) use request_user_input::*;
+pub(crate) use search::*;
 pub(crate) use separators::*;
 pub(crate) use session::*;
 

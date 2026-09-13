@@ -24,11 +24,8 @@ impl App {
             request => {
                 // Requests without a TUI interaction surface must fail closed instead of being
                 // retained for an impossible replay.
-                let unsupported_request = matches!(
-                    &request,
-                    ServerRequest::McpServerElicitationRequest { .. }
-                        | ServerRequest::DynamicToolCall { .. }
-                );
+                let unsupported_request =
+                    !crate::bottom_pane::BottomPane::supports_request(&request);
                 let thread_id = server_request_thread_id(&request).map(str::to_owned);
                 if let Some(thread_id) = thread_id {
                     if self.thread_id.as_deref() != Some(thread_id.as_str()) {
@@ -55,7 +52,12 @@ impl App {
                     }
                 }
                 match self.bottom_pane.enqueue(request) {
-                    Ok(()) => self.pager_overlay = None,
+                    Ok(()) => {
+                        if !unsupported_request {
+                            self.note_startup_protected_request();
+                        }
+                        self.pager_overlay = None;
+                    }
                     Err(request) => {
                         if let Err(error) = app_server_client.reject_server_request(request).await {
                             self.projection.set_status(error.to_string());

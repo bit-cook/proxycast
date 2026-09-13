@@ -220,7 +220,7 @@ Codex 形状的 `handle_key_event(KeyEvent)`。request-user-input 的 `Event` �
 `halfwidth_sound_marks_are_truncated_at_a_grapheme_boundary` 与
 `halfwidth_sound_marks_are_truncated_and_rendered_at_a_grapheme_boundary` 测试。
 
-当前不能声明 99% 完成。Codex Rust CLI 的 433 项测试账本现为 `covered=48`、`partial=90`、`pending=0`、`deferred=64`、`excluded=231`；结构账本同时记录 Codex 缺失面与 Lime-only 文件/符号，防止只做单向对照。P0、CLI/TUI 扩展 Gate B、Thread resume、session picker、bounded reconnect、active turn steer、queue input、Thread typed 管理命令、MCP/Skills typed 查询、prompt history、approval/request_user_input、panic-safe terminal、effort/permission shortcuts、model catalog picker、精确 resize/scrollback、专用 Item 布局、Item 结果摘要/细粒度终态、五语言 TUI 文案、Codex 同构 external editor 终端交接、CLI JSON/JSONL/stdin/退出码/completion 合同、`execpolicy check` 只读规则报告、802 项 Codex snapshot 分类账本、代表性终端 Markdown/diff、clipboard copy/image paste、OSC 8 hyperlink、宽度感知表格、ANSI syntax highlighting、slash command popup、`/status` static pager、`Ctrl+T` transcript overlay、active-turn status、reverse history search 与 canonical queued follow-up preview/edit 已完成。Windows CI 仍需补齐 external editor、clipboard/image paste、syntax highlighting native dependency 与六场景 CLI/TUI 平台运行证据。
+当前不能声明 99% 完成。Codex Rust CLI 的 467 项测试账本现为 `covered=50`、`partial=89`、`pending=0`、`deferred=81`、`excluded=247`；结构账本同时记录 Codex 缺失面与 Lime-only 文件/符号，防止只做单向对照。P0、CLI/TUI 扩展 Gate B、Thread resume、session picker、bounded reconnect、active turn steer、queue input、Thread typed 管理命令、MCP/Skills typed 查询、prompt history、approval/request_user_input、panic-safe terminal、effort/permission shortcuts、model catalog picker、精确 resize/scrollback、专用 Item 布局、Item 结果摘要/细粒度终态、五语言 TUI 文案、Codex 同构 external editor 终端交接、CLI JSON/JSONL/stdin/退出码/completion 合同、`execpolicy check` 只读规则报告、991 项 Codex snapshot 分类账本、代表性终端 Markdown/diff、clipboard copy/image paste、OSC 8 hyperlink、宽度感知表格、ANSI syntax highlighting、slash command popup、`/status` static pager、`Ctrl+T` transcript overlay、active-turn status、reverse history search 与 canonical queued follow-up preview/edit 已完成。Windows CI 仍需补齐 external editor、clipboard/image paste、syntax highlighting native dependency 与六场景 CLI/TUI 平台运行证据。
 
 当前刀已完成：`debug_sandbox.rs` 保留 Codex 的 `SandboxStateArgs`、平台命令类型、`SandboxType`、`DebugSandboxConfigOptions`、`ManagedRequirementsMode` 与 `run_command_under_*` 名称，并通过 `app-server-client -> command/exec` 进入唯一 sandbox owner；`sandbox_setup.rs` 复制 Codex 的目录、类型、函数和五个 parser 测试名，执行通过现有 `windowsSandbox/setupStart`，不直连 Windows helper；`ExecpolicyCommand`/`ExecpolicySubcommand`/`run_execpolicycheck` 归 `cli/src/main.rs`，`ExecPolicyCheckCommand`、`PolicyParser`、`Policy` 与 `RuleMatch` 归独立 `execpolicy` crate，重复 CLI 实现已移除；`exit_status.rs` 与 `handle_exit_status` 已补齐。CLI inventory 的 `missing` 已收敛为 0，剩余 Codex 专属路径均有明确 `excluded/deferred` 归类。
 
@@ -304,10 +304,10 @@ Codex 形状的 `handle_key_event(KeyEvent)`。request-user-input 的 `Event` �
 
 ## 2026-09-04 Codex TUI snapshot inventory
 
-- 参考 `codex-rs/tui` commit `cac96cd7b1756ab42e8925d938817a2ac10ebb6e`，生成 `tui-codex-snapshot-inventory.json`：802/802 snapshot 均有相对路径、内容 SHA-256、分类和规则 owner。
-- 排序后相对路径 SHA-256 为 `da5d7b14f30cccefa3132e2c33b4aaf1e0460ce9a342fc571f857ce15a21ef03`；分类计数：`direct=48`、`merge=579`、`contract=80`、`defer=25`、`dead=70`。
+- 参考 `codex-rs/tui` 当前 checkout commit `c4017a87aacc7558002b7cb510025e967c1d765e`，生成 `tui-codex-snapshot-inventory.json`：991/991 snapshot 均有相对路径、内容 SHA-256、分类和规则 owner。
+- 排序后相对路径 SHA-256 为 `7367819562c2ff87787e99840ae02494f3869dd429a3b7b2d4974760effb0915`；分类计数：`direct=48`、`merge=702`、`contract=136`、`defer=28`、`dead=77`。
 - Codex 产品专属 onboarding/account/update/migration 不进入 Lime current TUI；纯终端算法才允许 `direct`，跨 runtime/state owner 的行为必须按 canonical App Server contract 重建。
-- `npm run inventory:tui-codex` 可在显式 `CODEX_TUI_REFERENCE` checkout 上刷新账本；静态 Vitest guard 精确锁定 commit、路径摘要、802 项分类计数与 Hook feedback 语义例外，CI 不依赖仓库外 Codex checkout。
+- `npm run inventory:tui-codex` 可在显式 `CODEX_TUI_REFERENCE` checkout 上刷新账本；静态 Vitest guard 精确锁定 commit、路径摘要、991 项分类计数与 Hook feedback 语义例外，CI 不依赖仓库外 Codex checkout。
 
 ## 2026-09-04 终端 Markdown 第一刀
 
@@ -553,9 +553,10 @@ Codex 形状的 `handle_key_event(KeyEvent)`。request-user-input 的 `Event` �
   新增 `tui-structure-inventory.mjs` 与测试，锁定 TUI 目录/符号双向差异和产品专属排除。
 - 验证：`cargo test -p execpolicy`（34 个 crate 测试通过）、`cargo test -p tui -p cli`（188 + 49 通过）、
   `cargo clippy -p execpolicy --tests --no-deps -- -D warnings`、CLI/TUI 结构与测试 inventory Vitest 通过。
-- npm launcher 内部符号继续采用 Codex 名称：`codexPackageRoot`、`findCodexExecutable`、
-  `isPnpmOwnedCodexInstall`、`isVitePlusOwnedCodexInstall`；Lime 包名、平台 alias、环境变量和原生
-  payload 名称保持 Lime current 合同。`run_command` 与 `stage_codex_sdk_sources` 属于 Codex SDK 专属
+- npm launcher 的平台选择与包管理器检测沿用 Codex 行为，但内部符号使用 Lime current
+  命名：`limePackageRoot`、`findLimeExecutable`、`isPnpmOwnedLimeInstall`、
+  `isVitePlusOwnedLimeInstall`；Lime 包名、平台 alias、环境变量和原生 payload 名称保持 Lime
+  current 合同，避免品牌残留进入 current owner。`run_command` 与 `stage_codex_sdk_sources` 属于 Codex SDK 专属
   staging，结构账本继续显式保留为 excluded，不引入 SDK 或第二分发 owner。`node --test
   packages/cli/tests/npm-package.test.mjs` 8/8 通过。
 
@@ -805,7 +806,7 @@ Codex 形状的 `handle_key_event(KeyEvent)`。request-user-input 的 `Event` �
 - 完整 `cargo test --manifest-path "lime-rs/Cargo.toml" -p tui --lib`：318/318 通过。
 - `cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui --no-deps -- -D warnings` 与
   touched 文件 `rustfmt --check` 通过。
-- TUI structure inventory 与 802 条 Codex snapshot inventory：5/5 测试通过；
+- TUI structure inventory 与 991 条 Codex snapshot inventory：5/5 测试通过；
   `npm run test:contracts`、`npm run governance:legacy-report`、`git diff --check` 通过。
 - `npm run smoke:tui-gate-b`：complete、approval、user-input、interrupt、failure、queue-edit
   六场景通过，真实 PTY/alternate screen/键盘输入/终端恢复与 canonical App Server ledger 均通过。

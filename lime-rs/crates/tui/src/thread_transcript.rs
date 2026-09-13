@@ -8,10 +8,12 @@ use std::io;
 
 use app_server_client::RequestHandle;
 use app_server_protocol::protocol::v2::{
-    Thread, ThreadReadParams, ThreadReadResponse, METHOD_THREAD_READ,
+    SortDirection, Thread, ThreadHistoryMode, ThreadItem, ThreadItemEntry, ThreadItemsListResponse,
+    ThreadReadParams, ThreadReadResponse, ThreadTurnsListParams, ThreadTurnsListResponse, Turn,
+    TurnItemsView, METHOD_THREAD_ITEMS_LIST, METHOD_THREAD_READ, METHOD_THREAD_TURNS_LIST,
 };
 
-use crate::app_server_session::AppServerSession;
+use crate::app_server_session::{thread_items_page_params, AppServerSession};
 use crate::projection::{ConversationProjection, TranscriptEntry};
 
 #[allow(dead_code)]
@@ -19,28 +21,210 @@ pub(crate) async fn load_session_transcript(
     app_server: &AppServerSession,
     thread_id: impl Into<String>,
 ) -> io::Result<Vec<TranscriptEntry>> {
-    let response = app_server
-        .thread_read(thread_id, true)
-        .await
-        .map_err(io::Error::other)?;
-    Ok(thread_to_transcript_entries(response.thread))
+    load_session_transcript_with_handle(app_server.request_handle(), thread_id).await
 }
 
 pub(crate) async fn load_session_transcript_with_handle(
     request_handle: RequestHandle,
     thread_id: impl Into<String>,
 ) -> io::Result<Vec<TranscriptEntry>> {
+    let thread_id = thread_id.into();
+    let metadata: ThreadReadResponse = request_handle
+        .request(
+            METHOD_THREAD_READ,
+            ThreadReadParams {
+                thread_id: thread_id.clone(),
+                include_turns: false,
+            },
+        )
+        .await
+        .map_err(io::Error::other)?;
+
+    if metadata.thread.history_mode == ThreadHistoryMode::Legacy {
+        return load_legacy_transcript(request_handle, thread_id, metadata.thread).await;
+    }
+
+    let turns = load_paginated_turns(request_handle.clone(), thread_id.clone())
+        .await
+        .ok();
+    let items = load_paginated_items(request_handle, thread_id).await?;
+    if let Some(turns) = turns {
+        if let Some(thread) = hydrate_paginated_thread(&metadata.thread, turns, &items) {
+            return Ok(thread_to_transcript_entries(thread));
+        }
+    }
+
+    // Older App Servers may expose item paging without turn paging. Keep the
+    // existing flat projection in that case; it only applies page-local
+    // review boundaries and therefore cannot hide data based on guessed state.
+    Ok(items_to_transcript_entries(
+        items.into_iter().map(|entry| entry.item).collect(),
+    ))
+}
+
+async fn load_legacy_transcript(
+    request_handle: RequestHandle,
+    thread_id: String,
+    thread: Thread,
+) -> io::Result<Vec<TranscriptEntry>> {
+    if !thread.turns.is_empty() {
+        return Ok(thread_to_transcript_entries(thread));
+    }
     let response: ThreadReadResponse = request_handle
         .request(
             METHOD_THREAD_READ,
             ThreadReadParams {
-                thread_id: thread_id.into(),
+                thread_id,
                 include_turns: true,
             },
         )
         .await
         .map_err(io::Error::other)?;
     Ok(thread_to_transcript_entries(response.thread))
+}
+
+async fn load_paginated_items(
+    request_handle: RequestHandle,
+    thread_id: String,
+) -> io::Result<Vec<ThreadItemEntry>> {
+    let mut cursor = None;
+    let mut seen_cursors = std::collections::HashSet::new();
+    let mut items = Vec::new();
+
+    loop {
+        let response: ThreadItemsListResponse = request_handle
+            .request(
+                METHOD_THREAD_ITEMS_LIST,
+                thread_items_page_params(
+                    thread_id.clone(),
+                    None,
+                    cursor.clone(),
+                    crate::app_server_session::HISTORY_ITEM_PAGE_LIMIT,
+                ),
+            )
+            .await
+            .map_err(io::Error::other)?;
+
+        let page_items = response.data.into_iter().rev().collect::<Vec<_>>();
+        prepend_page_entries(&mut items, page_items);
+
+        let Some(next_cursor) = next_transcript_cursor(response.next_cursor, &mut seen_cursors)?
+        else {
+            break;
+        };
+        cursor = Some(next_cursor);
+    }
+
+    Ok(items)
+}
+
+async fn load_paginated_turns(
+    request_handle: RequestHandle,
+    thread_id: String,
+) -> io::Result<Vec<Turn>> {
+    let mut cursor = None;
+    let mut seen_cursors = std::collections::HashSet::new();
+    let mut turns = Vec::new();
+
+    loop {
+        let response: ThreadTurnsListResponse = request_handle
+            .request(
+                METHOD_THREAD_TURNS_LIST,
+                ThreadTurnsListParams {
+                    thread_id: thread_id.clone(),
+                    cursor: cursor.clone(),
+                    limit: Some(crate::app_server_session::HISTORY_ITEM_PAGE_LIMIT),
+                    sort_direction: Some(SortDirection::Desc),
+                    items_view: Some(TurnItemsView::NotLoaded),
+                },
+            )
+            .await
+            .map_err(io::Error::other)?;
+
+        let page_turns = response.data.into_iter().rev().collect::<Vec<_>>();
+        prepend_page_turns(&mut turns, page_turns);
+
+        let Some(next_cursor) = next_transcript_cursor(response.next_cursor, &mut seen_cursors)?
+        else {
+            break;
+        };
+        cursor = Some(next_cursor);
+    }
+
+    Ok(turns)
+}
+
+fn next_transcript_cursor(
+    next_cursor: Option<String>,
+    seen_cursors: &mut std::collections::HashSet<String>,
+) -> io::Result<Option<String>> {
+    let Some(next_cursor) = next_cursor else {
+        return Ok(None);
+    };
+    if !seen_cursors.insert(next_cursor.clone()) {
+        return Err(io::Error::other(format!(
+            "thread items pagination repeated cursor {next_cursor}"
+        )));
+    }
+    Ok(Some(next_cursor))
+}
+
+fn prepend_page_entries(items: &mut Vec<ThreadItemEntry>, page_items: Vec<ThreadItemEntry>) {
+    if page_items.is_empty() {
+        return;
+    }
+    items.splice(0..0, page_items);
+}
+
+fn prepend_page_turns(turns: &mut Vec<Turn>, page_turns: Vec<Turn>) {
+    if page_turns.is_empty() {
+        return;
+    }
+    turns.splice(0..0, page_turns);
+}
+
+fn hydrate_paginated_thread(
+    metadata: &Thread,
+    turns: Vec<Turn>,
+    items: &[ThreadItemEntry],
+) -> Option<Thread> {
+    if items
+        .iter()
+        .any(|entry| !turns.iter().any(|turn| turn.id == entry.turn_id))
+    {
+        return None;
+    }
+
+    let mut thread = metadata.clone();
+    let mut turns = turns;
+    for turn in &mut turns {
+        turn.items.clear();
+        turn.items_view = TurnItemsView::Full;
+    }
+    for entry in items {
+        turns
+            .iter_mut()
+            .find(|turn| turn.id == entry.turn_id)
+            .expect("turn id checked before hydration")
+            .items
+            .push(entry.item.clone());
+    }
+    thread.turns = turns;
+    Some(thread)
+}
+
+#[cfg(test)]
+fn prepend_page_items(items: &mut Vec<ThreadItem>, page_items: Vec<ThreadItem>) {
+    if page_items.is_empty() {
+        return;
+    }
+    items.splice(0..0, page_items);
+}
+
+fn items_to_transcript_entries(items: Vec<ThreadItem>) -> Vec<TranscriptEntry> {
+    let mut projection = ConversationProjection::default();
+    projection.prepend_items(items);
+    projection.entries().to_vec()
 }
 
 pub(crate) fn thread_to_transcript_entries(thread: Thread) -> Vec<TranscriptEntry> {
@@ -120,5 +304,131 @@ mod tests {
     #[test]
     fn empty_threads_produce_an_empty_canonical_transcript() {
         assert!(thread_to_transcript_entries(thread(Vec::new())).is_empty());
+    }
+
+    #[test]
+    fn paginated_pages_are_reassembled_in_transcript_order() {
+        let mut items = Vec::new();
+        prepend_page_items(
+            &mut items,
+            vec![agent_message("middle"), agent_message("newest")],
+        );
+        prepend_page_items(
+            &mut items,
+            vec![agent_message("oldest"), agent_message("older")],
+        );
+
+        let ids = items
+            .into_iter()
+            .map(|item| match item {
+                ThreadItem::AgentMessage { id, .. } => id,
+                item => panic!("unexpected item: {item:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["oldest", "older", "middle", "newest"]);
+    }
+
+    #[test]
+    fn paginated_items_restore_turn_status_for_nested_review_filtering() {
+        let entered = ThreadItem::EnteredReviewMode {
+            id: "review-enter".to_string(),
+            metadata: None,
+            review: "review".to_string(),
+        };
+        let exited = ThreadItem::ExitedReviewMode {
+            id: "review-exit".to_string(),
+            metadata: None,
+            review: "review".to_string(),
+        };
+        let user = |id: &str| ThreadItem::UserMessage {
+            id: id.to_string(),
+            metadata: None,
+            client_id: None,
+            content: vec![app_server_protocol::protocol::v2::UserInput::Text {
+                text: "duplicate review prompt".to_string(),
+                text_elements: Vec::new(),
+            }],
+        };
+        let previous = Turn {
+            id: "review-turn".to_string(),
+            status: TurnStatus::Completed,
+            error: None,
+            items: Vec::new(),
+            items_view: TurnItemsView::NotLoaded,
+            started_at: Some(1),
+            completed_at: Some(2),
+            duration_ms: Some(1),
+        };
+        let current = Turn {
+            id: "nested-turn".to_string(),
+            status: TurnStatus::Interrupted,
+            error: None,
+            items: Vec::new(),
+            items_view: TurnItemsView::NotLoaded,
+            started_at: Some(3),
+            completed_at: None,
+            duration_ms: None,
+        };
+        let items = vec![
+            ThreadItemEntry {
+                turn_id: "review-turn".to_string(),
+                item: entered,
+            },
+            ThreadItemEntry {
+                turn_id: "review-turn".to_string(),
+                item: exited,
+            },
+            ThreadItemEntry {
+                turn_id: "nested-turn".to_string(),
+                item: user("nested-one"),
+            },
+            ThreadItemEntry {
+                turn_id: "nested-turn".to_string(),
+                item: user("nested-two"),
+            },
+        ];
+
+        let mut metadata = thread(Vec::new());
+        metadata.history_mode = ThreadHistoryMode::Paginated;
+        let hydrated = hydrate_paginated_thread(&metadata, vec![previous, current], &items)
+            .expect("all item turn ids should resolve");
+        let entries = thread_to_transcript_entries(hydrated);
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["review started: review", "review completed: review"]
+        );
+    }
+
+    #[test]
+    fn paginated_hydration_fails_closed_when_item_turn_metadata_is_missing() {
+        let item = ThreadItemEntry {
+            turn_id: "unknown-turn".to_string(),
+            item: agent_message("orphaned-item"),
+        };
+        assert!(hydrate_paginated_thread(&thread(Vec::new()), Vec::new(), &[item]).is_none());
+    }
+
+    #[test]
+    fn paginated_loader_fails_closed_on_a_repeated_cursor() {
+        let mut seen = std::collections::HashSet::from([String::from("head")]);
+        assert!(next_transcript_cursor(Some(String::from("tail")), &mut seen).is_ok());
+        let error = next_transcript_cursor(Some(String::from("tail")), &mut seen)
+            .expect_err("repeated cursor must fail closed");
+        assert!(error.to_string().contains("repeated cursor tail"));
+    }
+
+    fn agent_message(id: &str) -> ThreadItem {
+        ThreadItem::AgentMessage {
+            id: id.to_string(),
+            metadata: None,
+            text: id.to_string(),
+            phase: None,
+            memory_citation: None,
+            delivery: None,
+        }
     }
 }

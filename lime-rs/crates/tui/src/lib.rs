@@ -16,6 +16,7 @@ mod external_editor;
 mod highlight;
 #[allow(dead_code, unused_imports)]
 mod history_cell;
+mod history_filter;
 #[allow(dead_code)]
 mod insert_history;
 mod key_hint;
@@ -31,7 +32,6 @@ mod multi_agents;
 mod pager_overlay;
 mod pending_input_preview;
 mod projection;
-mod reconnect;
 #[allow(dead_code)]
 mod render;
 mod resume_picker;
@@ -54,6 +54,7 @@ mod transcript_reflow;
 mod tui;
 mod view;
 mod viewport;
+mod vim_search;
 mod width;
 mod wrapping;
 

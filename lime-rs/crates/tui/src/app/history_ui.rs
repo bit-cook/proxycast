@@ -4,7 +4,7 @@
 //! owned by App Server and `ConversationProjection`.
 
 use crate::app::App;
-use crate::history_cell::{HistoryCell, TranscriptHistoryCell};
+use crate::history_cell::{FinalMessageSeparator, HistoryCell, TranscriptHistoryCell};
 use crate::locale::Locale;
 use crate::projection::TranscriptEntry;
 use crate::terminal_hyperlinks::{wrap_hyperlink_line, HyperlinkLine};
@@ -53,6 +53,13 @@ pub(crate) fn render_transcript_content_lines(
             app.locale,
             &app.cwd,
         ));
+        if let Some(boundary) = app.projection.completion_after(&entry.id) {
+            lines.extend(
+                FinalMessageSeparator::new(boundary.elapsed_seconds)
+                    .with_locale(app.locale)
+                    .display_hyperlink_lines(viewport_width.saturating_sub(2).max(1)),
+            );
+        }
     }
     lines
 }
@@ -109,5 +116,21 @@ mod tests {
             .iter()
             .flat_map(|line| line.line.spans.iter())
             .any(|span| span.content.contains("assistant")));
+    }
+
+    #[test]
+    fn transcript_content_lines_render_completion_separator_after_completed_turn() {
+        let mut app = App {
+            locale: Locale::EnUs,
+            ..App::default()
+        };
+        app.projection.add_system_message("answer");
+        let entry_id = app.projection.entries()[0].id.clone();
+        app.projection.add_completion_boundary(entry_id, Some(61));
+
+        let lines = render_transcript_content_lines(&app, 80, false);
+        assert!(lines
+            .iter()
+            .any(|line| line.line.to_string().contains("Worked for 61s")));
     }
 }

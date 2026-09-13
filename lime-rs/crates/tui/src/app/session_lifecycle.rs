@@ -27,20 +27,23 @@ impl App {
         let paginated_history = response.thread.history_mode
             == app_server_protocol::protocol::v2::ThreadHistoryMode::Paginated;
         let initial_cursor = response.items_backwards_cursor.clone();
-        let initial_history = if paginated_history {
+        let initial_page = if paginated_history {
             session
                 .hydrate_initial_thread_history(resumed_thread_id.clone(), initial_cursor)
                 .await
         } else {
-            Ok(Vec::new())
+            Ok(crate::app_server_session::InitialHistoryPage {
+                items: Vec::new(),
+                turns: None,
+            })
         };
         let snapshot = self.take_thread_event_snapshot(&resumed_thread_id, true);
         self.bottom_pane.clear();
         self.hydrate_thread(response.thread);
         self.set_thread_id(resumed_thread_id.clone());
-        match initial_history {
-            Ok(items) => {
-                self.projection.prepend_items(items);
+        match initial_page {
+            Ok(page) => {
+                self.prepend_initial_history_page(page);
                 self.scrollback_has_older_history = session.has_older_history(&resumed_thread_id);
             }
             Err(error) => self
@@ -56,9 +59,7 @@ impl App {
             *permissions = session.active_permission_profile().map(str::to_string);
         }
         let resumed_cwd = PathBuf::from(response.cwd);
-        if crate::session_resume::cwds_differ(&self.cwd, &resumed_cwd) {
-            self.set_cwd(resumed_cwd);
-        }
+        super::working_directory::sync_server_cwd(self, resumed_cwd);
         self.set_settings(
             model.clone(),
             model_provider.clone(),

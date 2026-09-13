@@ -12,7 +12,6 @@ use crate::model_picker;
 use crate::pending_input_preview;
 use crate::status_indicator_widget;
 use crate::terminal_hyperlinks::HyperlinkParagraph;
-use crate::width::usable_content_width_u16;
 use std::time::Instant;
 
 pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
@@ -31,6 +30,10 @@ pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
         pager.render(frame, area, app.locale, &transcript_lines);
         return;
     }
+    if let Some(picker) = app.export_picker.as_ref() {
+        crate::app::transcript_export::render_picker(frame, area, picker, app.locale);
+        return;
+    }
     let chunks = screen_chunks(area, app);
 
     render_header(frame, chunks[0], app);
@@ -46,10 +49,16 @@ pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
     } else {
         render_composer(frame, chunks[4], app);
     }
-    render_footer(frame, chunks[5], app);
+    bottom_pane::render_footer(frame, chunks[5], app);
     if !app.bottom_pane.is_active() {
-        if let Some(popup) = app.command_popup.as_ref() {
+        if let Some(popup) = app.composer.command_popup() {
             command_popup::render(frame, chunks[4], popup, app.locale);
+        }
+        if let Some(popup) = app.composer.file_search_popup() {
+            popup.render(frame, chunks[4], app.locale);
+        }
+        if let Some(popup) = app.composer.skill_popup() {
+            popup.render(frame, chunks[4], app.locale);
         }
     }
     if let Some(picker) = app.model_picker.as_ref() {
@@ -168,18 +177,20 @@ fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let image_lines = app
-        .composer
-        .pending_images()
-        .iter()
-        .enumerate()
-        .map(|(index, _)| {
-            Line::styled(
-                format!("[Image #{}]", index + 1),
-                Style::default().fg(Color::Cyan),
-            )
-        })
-        .collect::<Vec<_>>();
+    let remote_count = app.composer.remote_image_urls().len();
+    let mut image_lines = app.composer.remote_image_lines();
+    image_lines.extend(
+        app.composer
+            .pending_images()
+            .iter()
+            .enumerate()
+            .map(|(index, _)| {
+                Line::styled(
+                    format!("[Image #{}]", remote_count + index + 1),
+                    Style::default().fg(Color::Cyan),
+                )
+            }),
+    );
     if inner.width == 0 || inner.height == 0 {
         return;
     }
@@ -203,7 +214,30 @@ fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
     let cursor = {
         let mut state = app.composer.textarea_state_mut();
-        frame.render_stateful_widget_ref(app.composer.textarea(), text_area, &mut *state);
+        let highlights = app
+            .composer
+            .history_search_highlight_ranges()
+            .into_iter()
+            .map(|range| {
+                (
+                    range,
+                    Style::default()
+                        .add_modifier(Modifier::REVERSED)
+                        .add_modifier(Modifier::BOLD),
+                )
+            })
+            .collect::<Vec<_>>();
+        if highlights.is_empty() {
+            frame.render_stateful_widget_ref(app.composer.textarea(), text_area, &mut *state);
+        } else {
+            app.composer.textarea().render_ref_styled_with_highlights(
+                text_area,
+                frame.buffer_mut(),
+                &mut state,
+                Style::default(),
+                &highlights,
+            );
+        }
         app.composer
             .textarea()
             .cursor_pos_with_state(text_area, *state)
@@ -213,42 +247,8 @@ fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
 }
 
-fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    if let Some(query) = app.composer.history_search_query() {
-        let width = usable_content_width_u16(area.width, 1).unwrap_or_default();
-        let line = truncate_line_with_ellipsis_if_overflow(
-            Line::styled(
-                format!(" {}{}", app.locale.history_search_label(), query),
-                Style::default().fg(Color::DarkGray),
-            ),
-            width,
-        );
-        frame.render_widget(Paragraph::new(line), area);
-        return;
-    }
-    let active = app
-        .projection
-        .active_turn_id()
-        .map(|turn| format!(" {} {turn}", app.locale.turn_label()))
-        .unwrap_or_default();
-    let active_agent = app
-        .agent_navigation
-        .active_agent_label(app.thread_id.as_deref(), app.primary_thread_id.as_deref())
-        .map(|label| format!("  {label}"))
-        .unwrap_or_default();
-    let width = usable_content_width_u16(area.width, 1).unwrap_or_default();
-    let line = truncate_line_with_ellipsis_if_overflow(
-        Line::styled(
-            format!(" {active}{active_agent}"),
-            Style::default().fg(Color::DarkGray),
-        ),
-        width,
-    );
-    frame.render_widget(Paragraph::new(line), area);
-}
-
 fn status_text(app: &App) -> String {
-    match app.projection.status() {
+    match app.status_value().as_str() {
         "" => app.locale.ready_label().to_string(),
         status => app.locale.status(status),
     }
@@ -267,7 +267,7 @@ mod tests {
         TurnPlanStep, TurnPlanStepStatus, TurnPlanUpdatedNotification, UserInput,
     };
     use app_server_protocol::RequestId;
-    use crossterm::event::Event;
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
     use ratatui::backend::TestBackend;
     use ratatui::widgets::Wrap;
     use ratatui::Terminal;
@@ -374,6 +374,35 @@ mod tests {
         assert!(text.contains("[Image #1]"));
         assert!(text.contains("[Image #2]"));
         assert!(text.contains("describe these"));
+    }
+
+    #[test]
+    fn test_backend_renders_remote_images_with_selection_highlight() {
+        let mut app = App::default();
+        app.set_remote_image_urls(vec![
+            "https://example.test/one.png".to_string(),
+            "https://example.test/two.png".to_string(),
+        ]);
+        let mut terminal = Terminal::new(TestBackend::new(40, 10)).expect("terminal");
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let text = buffer_text(&terminal);
+        assert!(text.contains("[Image #1]"));
+        assert!(text.contains("[Image #2]"));
+
+        let _ = app
+            .composer
+            .handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        terminal.draw(|frame| render(frame, &app)).expect("redraw");
+        let buffer = terminal.backend().buffer();
+        let highlighted = (0..buffer.area.height).any(|y| {
+            (0..buffer.area.width).any(|x| {
+                let cell = &buffer[(x, y)];
+                cell.symbol() == "["
+                    && cell.style().add_modifier(Modifier::REVERSED) == cell.style()
+            })
+        });
+        assert!(highlighted);
     }
 
     #[test]
@@ -508,6 +537,103 @@ mod tests {
     }
 
     #[test]
+    fn history_search_preview_highlights_matches_until_accepted() {
+        let mut app = App::default();
+        app.composer.load_history(["Deploy Lime".to_string()]);
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+        );
+        for character in "dep".chars() {
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE)),
+            );
+        }
+
+        let area = Rect::new(0, 0, 64, 10);
+        let mut terminal =
+            Terminal::new(TestBackend::new(area.width, area.height)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut start = None;
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width.saturating_sub(2) {
+                if buffer[(x, y)].symbol() == "D"
+                    && buffer[(x + 1, y)].symbol() == "e"
+                    && buffer[(x + 2, y)].symbol() == "p"
+                {
+                    start = Some((x, y));
+                    break;
+                }
+            }
+            if start.is_some() {
+                break;
+            }
+        }
+        let (x, y) = start.expect("history preview");
+        for offset in 0..3 {
+            let modifiers = buffer[(x + offset, y)].style().add_modifier;
+            assert!(modifiers.contains(Modifier::REVERSED));
+            assert!(modifiers.contains(Modifier::BOLD));
+        }
+
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        );
+        terminal.draw(|frame| render(frame, &app)).expect("redraw");
+        let buffer = terminal.backend().buffer();
+        for offset in 0..3 {
+            let modifiers = buffer[(x + offset, y)].style().add_modifier;
+            assert!(!modifiers.contains(Modifier::REVERSED));
+            assert!(!modifiers.contains(Modifier::BOLD));
+        }
+    }
+
+    #[test]
+    fn history_search_footer_cursor_tracks_query_and_clamps_to_narrow_width() {
+        let mut app = App::default();
+        app.composer.load_history(["git status".to_string()]);
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+        );
+        for character in "git".chars() {
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE)),
+            );
+        }
+
+        let wide = Rect::new(0, 0, 80, 10);
+        let mut terminal =
+            Terminal::new(TestBackend::new(wide.width, wide.height)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("draw wide");
+        let footer = screen_chunks(wide, &app)[5];
+        let prefix_width =
+            Line::from(format!(" {}", app.locale.history_search_label())).width() as u16;
+        assert_eq!(
+            terminal.backend().cursor_position(),
+            Position::new(footer.x + prefix_width + 3, footer.y)
+        );
+
+        let narrow = Rect::new(0, 0, 12, 10);
+        let mut terminal =
+            Terminal::new(TestBackend::new(narrow.width, narrow.height)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("draw narrow");
+        let footer = screen_chunks(narrow, &app)[5];
+        assert_eq!(
+            terminal.backend().cursor_position(),
+            Position::new(footer.right().saturating_sub(1), footer.y)
+        );
+    }
+
+    #[test]
     fn test_backend_renders_filtered_slash_command_popup_above_composer() {
         let mut app = App::default();
         app.set_locale(Locale::ZhCn);
@@ -533,6 +659,66 @@ mod tests {
         assert!(compact.contains("设置权限配置"), "{text}");
         assert!(!text.contains("/model"));
         assert!(text.contains("/pe"));
+    }
+
+    #[test]
+    fn export_picker_matches_codex_destination_and_filename_flow() {
+        let mut app = App::default();
+        app.set_thread_id("00000000-0000-0000-0000-000000000123".to_string());
+        app.composer.insert("/export");
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE,))
+            ),
+            crate::app::AppAction::None
+        );
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 12)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let text = buffer_text(&terminal);
+        assert!(text.contains("Export conversation"), "{text}");
+        assert!(text.contains("Copy to clipboard"), "{text}");
+        assert!(text.contains("Save to file"), "{text}");
+
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE,))
+            ),
+            crate::app::AppAction::None
+        );
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE,))
+            ),
+            crate::app::AppAction::None
+        );
+        assert!(app
+            .export_picker
+            .as_ref()
+            .is_some_and(crate::app::transcript_export::ExportPicker::is_filename_prompt));
+
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("draw filename");
+        let text = buffer_text(&terminal);
+        assert!(text.contains("Save conversation"), "{text}");
+        assert!(text.contains("codex-session-00000000-0000-0000-0000-000000000123.md"));
+
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE,))
+            ),
+            crate::app::AppAction::ExportTranscript {
+                path: Some(std::path::PathBuf::from(
+                    "codex-session-00000000-0000-0000-0000-000000000123.md",
+                )),
+            }
+        );
+        assert!(app.export_picker.is_none());
     }
 
     #[test]

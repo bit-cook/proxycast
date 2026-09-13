@@ -1,16 +1,415 @@
 use super::*;
+use agent_protocol::response_item::MessagePhase;
 use app_server_protocol::protocol::v2::{
     AgentMessageDeltaNotification, CollabAgentState, CollabAgentStatus, CollabAgentTool,
     CommandExecutionOutputDeltaNotification, CommandExecutionSource,
     DynamicToolCallOutputContentItem, FileChangePatchUpdatedNotification, FileUpdateChange,
-    ImageGenerationItem, ItemCompletedNotification, ItemStartedNotification, McpToolCallError,
-    McpToolCallResult, PatchChangeKind, SessionSource, Thread, ThreadActiveFlag, ThreadItem,
-    ThreadStatus, Turn, TurnCompletedNotification, TurnDiffUpdatedNotification, TurnItemsView,
-    TurnPlanStep, TurnPlanStepStatus, TurnPlanUpdatedNotification,
+    HookCompletedNotification, HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry,
+    HookOutputEntryKind, HookRunStatus, HookRunSummary, HookScope, HookSource,
+    HookStartedNotification, ImageGenerationItem, ItemCompletedNotification,
+    ItemStartedNotification, McpToolCallError, McpToolCallResult, PatchChangeKind, SessionSource,
+    SleepItem, Thread, ThreadActiveFlag, ThreadItem, ThreadStatus, Turn, TurnCompletedNotification,
+    TurnDiffUpdatedNotification, TurnItemsView, TurnPlanStep, TurnPlanStepStatus,
+    TurnPlanUpdatedNotification, WebSearchItem,
 };
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+
+fn user_message(id: &str, text: &str) -> ThreadItem {
+    ThreadItem::UserMessage {
+        id: id.to_string(),
+        metadata: None,
+        client_id: None,
+        content: vec![app_server_protocol::protocol::v2::UserInput::Text {
+            text: text.to_string(),
+            text_elements: Vec::new(),
+        }],
+    }
+}
+
+fn agent_message(id: &str, text: &str, phase: Option<MessagePhase>) -> ThreadItem {
+    ThreadItem::AgentMessage {
+        id: id.to_string(),
+        metadata: None,
+        text: text.to_string(),
+        phase,
+        memory_citation: None,
+        delivery: None,
+    }
+}
+
+fn review_boundary(id: &str, entered: bool) -> ThreadItem {
+    if entered {
+        ThreadItem::EnteredReviewMode {
+            id: id.to_string(),
+            metadata: None,
+            review: "review".to_string(),
+        }
+    } else {
+        ThreadItem::ExitedReviewMode {
+            id: id.to_string(),
+            metadata: None,
+            review: "review".to_string(),
+        }
+    }
+}
+
+fn test_thread(turns: Vec<Turn>) -> Thread {
+    Thread {
+        id: "thread-review-filter".to_string(),
+        extra: None,
+        session_id: "session-review-filter".to_string(),
+        forked_from_id: None,
+        parent_thread_id: None,
+        preview: "review filter".to_string(),
+        ephemeral: false,
+        section: None,
+        section_entered_at: None,
+        project_id: None,
+        history_mode: Default::default(),
+        model_provider: "fixture".to_string(),
+        created_at: 1,
+        updated_at: 1,
+        recency_at: None,
+        status: ThreadStatus::Idle,
+        path: None,
+        cwd: PathBuf::from("/workspace"),
+        cli_version: "test".to_string(),
+        source: SessionSource::Cli,
+        can_accept_direct_input: Some(true),
+        thread_source: None,
+        agent_nickname: None,
+        agent_role: None,
+        git_info: None,
+        name: None,
+        turns,
+    }
+}
+
+fn test_turn(id: &str, status: TurnStatus, items: Vec<ThreadItem>) -> Turn {
+    Turn {
+        id: id.to_string(),
+        items,
+        items_view: TurnItemsView::Full,
+        status,
+        error: None,
+        started_at: Some(1),
+        completed_at: matches!(status, TurnStatus::Completed | TurnStatus::Failed).then_some(2),
+        duration_ms: Some(1),
+    }
+}
+
+fn hook_run(
+    id: &str,
+    status: HookRunStatus,
+    status_message: Option<&str>,
+    entries: Vec<(HookOutputEntryKind, &str)>,
+) -> HookRunSummary {
+    HookRunSummary {
+        id: id.to_string(),
+        event_name: HookEventName::PreToolUse,
+        handler_type: HookHandlerType::Command,
+        execution_mode: HookExecutionMode::Sync,
+        scope: HookScope::Turn,
+        source_path: PathBuf::from("/workspace/hooks.json"),
+        source: HookSource::Project,
+        display_order: 0,
+        status,
+        status_message: status_message.map(str::to_string),
+        started_at: 1,
+        completed_at: (status != HookRunStatus::Running).then_some(2),
+        duration_ms: (status != HookRunStatus::Running).then_some(1),
+        entries: entries
+            .into_iter()
+            .map(|(kind, text)| HookOutputEntry {
+                kind,
+                text: text.to_string(),
+            })
+            .collect(),
+    }
+}
+
+fn hook_started(run: HookRunSummary, turn_id: Option<&str>) -> ServerNotification {
+    ServerNotification::HookStarted(HookStartedNotification {
+        thread_id: "thread-1".to_string(),
+        turn_id: turn_id.map(str::to_string),
+        run,
+    })
+}
+
+fn hook_completed(run: HookRunSummary, turn_id: Option<&str>) -> ServerNotification {
+    ServerNotification::HookCompleted(HookCompletedNotification {
+        thread_id: "thread-1".to_string(),
+        turn_id: turn_id.map(str::to_string),
+        run,
+    })
+}
+
+#[test]
+fn hook_started_exposes_running_status_without_transcript_entry() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(hook_started(
+        hook_run("hook-1", HookRunStatus::Running, None, Vec::new()),
+        Some("turn-1"),
+    ));
+
+    assert_eq!(projection.status(), "running hook");
+    assert!(projection.entries().is_empty());
+
+    projection.apply(hook_started(
+        hook_run(
+            "hook-1",
+            HookRunStatus::Running,
+            Some("checking files"),
+            Vec::new(),
+        ),
+        Some("turn-1"),
+    ));
+    assert_eq!(projection.status(), "checking files");
+}
+
+#[test]
+fn multiple_running_hooks_use_shared_message_or_plural_status() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(hook_started(
+        hook_run(
+            "hook-1",
+            HookRunStatus::Running,
+            Some("checking"),
+            Vec::new(),
+        ),
+        Some("turn-1"),
+    ));
+    projection.apply(hook_started(
+        hook_run(
+            "hook-2",
+            HookRunStatus::Running,
+            Some("checking"),
+            Vec::new(),
+        ),
+        Some("turn-1"),
+    ));
+    assert_eq!(projection.status(), "checking");
+
+    projection.apply(hook_started(
+        hook_run(
+            "hook-3",
+            HookRunStatus::Running,
+            Some("waiting"),
+            Vec::new(),
+        ),
+        Some("turn-1"),
+    ));
+    assert_eq!(projection.status(), "running hooks");
+}
+
+#[test]
+fn context_only_successful_hook_is_hidden_from_transcript() {
+    let mut projection = ConversationProjection::default();
+    projection.start_turn("turn-1".to_string());
+    projection.apply(hook_started(
+        hook_run("hook-1", HookRunStatus::Running, None, Vec::new()),
+        Some("turn-1"),
+    ));
+    projection.apply(hook_completed(
+        hook_run(
+            "hook-1",
+            HookRunStatus::Completed,
+            None,
+            vec![(HookOutputEntryKind::Context, "private model context")],
+        ),
+        Some("turn-1"),
+    ));
+
+    assert_eq!(projection.status(), "running");
+    assert!(projection.entries().is_empty());
+}
+
+#[test]
+fn non_successful_hooks_render_bounded_user_visible_summary() {
+    for (status, label) in [
+        (HookRunStatus::Failed, "hook failed"),
+        (HookRunStatus::Blocked, "hook blocked"),
+        (HookRunStatus::Stopped, "hook stopped"),
+    ] {
+        let mut projection = ConversationProjection::default();
+        let mut run = hook_run(
+            "hook-1",
+            status,
+            None,
+            vec![
+                (HookOutputEntryKind::Context, "private model context"),
+                (HookOutputEntryKind::Feedback, "visible output\nsecond line"),
+            ],
+        );
+        run.entries.extend((0..6).map(|_| HookOutputEntry {
+            kind: HookOutputEntryKind::Warning,
+            text: "additional output".to_string(),
+        }));
+        projection.apply(hook_completed(run, Some("turn-1")));
+
+        assert_eq!(projection.entries().len(), 1);
+        let entry = &projection.entries()[0];
+        assert_eq!(entry.text, label);
+        assert_eq!(entry.status, Some(EntryStatus::Failed));
+        assert_eq!(entry.summary.len(), 4);
+        assert_eq!(entry.summary[0], "hook output: visible output");
+        assert!(!entry
+            .summary
+            .iter()
+            .any(|summary| summary.contains("private model context")));
+    }
+}
+
+#[test]
+fn turn_completion_clears_only_hooks_owned_by_that_turn() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(hook_started(
+        hook_run("hook-1", HookRunStatus::Running, None, Vec::new()),
+        Some("turn-1"),
+    ));
+    projection.apply(hook_started(
+        hook_run("hook-2", HookRunStatus::Running, None, Vec::new()),
+        Some("turn-2"),
+    ));
+
+    projection.apply(ServerNotification::TurnCompleted(
+        TurnCompletedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: test_turn("turn-1", TurnStatus::Completed, Vec::new()),
+        },
+    ));
+    assert_eq!(projection.status(), "running hook");
+
+    projection.apply(hook_completed(
+        hook_run("hook-2", HookRunStatus::Completed, None, Vec::new()),
+        Some("turn-2"),
+    ));
+    assert_eq!(projection.status(), "ready");
+}
+
+#[test]
+fn hydrate_thread_hides_review_prompt_but_keeps_boundaries() {
+    let mut projection = ConversationProjection::default();
+    projection.hydrate_thread(test_thread(vec![test_turn(
+        "turn-review",
+        TurnStatus::Completed,
+        vec![
+            review_boundary("enter", true),
+            user_message("review-prompt", "内部 review prompt"),
+            review_boundary("exit", false),
+            user_message("visible", "普通请求"),
+        ],
+    )]));
+
+    let texts = projection
+        .entries()
+        .iter()
+        .map(|entry| entry.text.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        texts,
+        vec![
+            "review started: review",
+            "review completed: review",
+            "普通请求"
+        ]
+    );
+    assert!(!texts.iter().any(|text| text.contains("内部 review prompt")));
+}
+
+#[test]
+fn hydrate_thread_hides_unfinished_nested_review_duplicate_only() {
+    let mut projection = ConversationProjection::default();
+    projection.hydrate_thread(test_thread(vec![
+        test_turn(
+            "turn-review",
+            TurnStatus::Completed,
+            vec![
+                review_boundary("enter", true),
+                review_boundary("exit", false),
+            ],
+        ),
+        test_turn(
+            "turn-nested",
+            TurnStatus::Interrupted,
+            vec![
+                user_message("nested-1", "重复请求"),
+                user_message("nested-2", "重复请求"),
+            ],
+        ),
+        test_turn(
+            "turn-normal",
+            TurnStatus::Completed,
+            vec![
+                user_message("normal-1", "重复请求"),
+                user_message("normal-2", "重复请求"),
+            ],
+        ),
+    ]));
+
+    let visible_user_texts = projection
+        .entries()
+        .iter()
+        .filter(|entry| entry.kind == EntryKind::User)
+        .map(|entry| entry.text.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(visible_user_texts, vec!["重复请求", "重复请求"]);
+}
+
+#[test]
+fn realtime_review_boundary_hides_only_messages_inside_interval() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: user_message("before", "普通请求"),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: review_boundary("enter", true),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: user_message("hidden", "内部 review prompt"),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: review_boundary("exit", false),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: user_message("after", "普通请求 2"),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+
+    let visible_user_texts = projection
+        .entries()
+        .iter()
+        .filter(|entry| entry.kind == EntryKind::User)
+        .map(|entry| entry.text.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(visible_user_texts, vec!["普通请求", "普通请求 2"]);
+}
 
 #[test]
 fn completed_agent_item_replaces_streaming_delta() {
@@ -51,6 +450,162 @@ fn completed_agent_item_replaces_streaming_delta() {
     assert_eq!(projection.entries()[0].text, "你好。");
     assert!(!projection.entries()[0].streaming);
     assert_eq!(projection.final_answer(), "你好。");
+}
+
+#[test]
+fn commentary_agent_messages_are_visible_but_not_final_answers() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: agent_message(
+                "commentary-1",
+                "正在检查实现",
+                Some(MessagePhase::Commentary),
+            ),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+
+    assert_eq!(projection.entries().len(), 1);
+    assert_eq!(projection.entries()[0].text, "正在检查实现");
+    assert_eq!(projection.final_answer(), "");
+}
+
+#[test]
+fn final_answer_phase_wins_over_older_commentary() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: agent_message(
+                "commentary-1",
+                "正在检查实现",
+                Some(MessagePhase::Commentary),
+            ),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: agent_message("final-1", "实现已完成", Some(MessagePhase::FinalAnswer)),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 2,
+        },
+    ));
+
+    assert_eq!(projection.final_answer(), "实现已完成");
+}
+
+#[test]
+fn legacy_agent_messages_without_phase_remain_final_answers() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: agent_message("legacy-1", "兼容回答", None),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+
+    assert_eq!(projection.final_answer(), "兼容回答");
+}
+
+#[test]
+fn streamed_agent_message_phase_is_repaired_by_item_completion() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::AgentMessageDelta(
+        AgentMessageDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "streamed-1".to_string(),
+            delta: "内部进度".to_string(),
+        },
+    ));
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: agent_message("streamed-1", "内部进度", Some(MessagePhase::Commentary)),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+    assert_eq!(projection.final_answer(), "");
+
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: agent_message("streamed-1", "公开回答", Some(MessagePhase::FinalAnswer)),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 2,
+        },
+    ));
+    assert_eq!(projection.final_answer(), "公开回答");
+}
+
+#[test]
+fn hydrated_thread_uses_the_same_phase_aware_final_answer_rule() {
+    let mut projection = ConversationProjection::default();
+    projection.hydrate_thread(test_thread(vec![test_turn(
+        "turn-1",
+        TurnStatus::Completed,
+        vec![
+            agent_message("commentary-1", "历史进度", Some(MessagePhase::Commentary)),
+            agent_message("final-1", "历史最终回答", Some(MessagePhase::FinalAnswer)),
+        ],
+    )]));
+
+    assert_eq!(projection.final_answer(), "历史最终回答");
+}
+
+#[test]
+fn user_message_images_are_numbered_without_retaining_sources() {
+    let item = ThreadItem::UserMessage {
+        id: "user-images".to_string(),
+        metadata: None,
+        client_id: None,
+        content: vec![
+            app_server_protocol::protocol::v2::UserInput::Image {
+                detail: None,
+                url: "data:image/png;base64,private-payload".to_string(),
+            },
+            app_server_protocol::protocol::v2::UserInput::Text {
+                text: "describe these".to_string(),
+                text_elements: Vec::new(),
+            },
+            app_server_protocol::protocol::v2::UserInput::LocalImage {
+                detail: None,
+                path: "C:/Users/alice/private.png".to_string(),
+            },
+        ],
+    };
+
+    let mut live = ConversationProjection::default();
+    live.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: item.clone(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+    let mut persisted = ConversationProjection::default();
+    persisted.hydrate_thread(test_thread(vec![test_turn(
+        "turn-1",
+        TurnStatus::Completed,
+        vec![item],
+    )]));
+
+    assert_eq!(live.entries(), persisted.entries());
+    let entry = &live.entries()[0];
+    assert_eq!(entry.text, "describe these");
+    assert_eq!(entry.summary, vec!["image: 1", "image: 2"]);
+    assert!(!entry.text.contains("private-payload"));
+    assert!(!entry.text.contains("alice"));
 }
 
 #[test]
@@ -175,6 +730,196 @@ fn patch_format_preserves_rename_destination() {
 }
 
 #[test]
+fn web_search_action_details_follow_codex_display_contract() {
+    let cases = [
+        (
+            Some(json!({"type": "search", "query": "Rust release"})),
+            Some("canonical query"),
+            "web search: Rust release",
+        ),
+        (
+            Some(json!({"type": "search", "queries": ["first query", "second query"]})),
+            None,
+            "web search: first query ...",
+        ),
+        (
+            Some(json!({"type": "open_page", "url": "https://example.test/page"})),
+            None,
+            "web search: https://example.test/page",
+        ),
+        (
+            Some(json!({
+                "type": "find_in_page",
+                "url": "https://example.test/page",
+                "pattern": "release"
+            })),
+            None,
+            "web search: 'release' in https://example.test/page",
+        ),
+        (
+            Some(json!({"type": "find_in_page", "pattern": "release"})),
+            None,
+            "web search: 'release'",
+        ),
+    ];
+
+    for (action, query, expected) in cases {
+        let entry = project_item(
+            &ThreadItem::WebSearch(WebSearchItem {
+                id: "web-search".to_string(),
+                metadata: None,
+                query: query.map(str::to_string),
+                action,
+            }),
+            false,
+        )
+        .expect("web search projection");
+        assert_eq!(entry.text, expected);
+    }
+}
+
+#[test]
+fn web_search_realtime_lifecycle_uses_codex_started_and_completed_labels() {
+    let item = ThreadItem::WebSearch(WebSearchItem {
+        id: "web-search-lifecycle".to_string(),
+        metadata: None,
+        query: Some("Rust release".to_string()),
+        action: None,
+    });
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::ItemStarted(ItemStartedNotification {
+        item: item.clone(),
+        thread_id: "thread-1".to_string(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 1,
+    }));
+    assert_eq!(
+        projection.entries()[0].text,
+        "searching the web Rust release"
+    );
+    assert!(projection.entries()[0].streaming);
+
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item,
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 2,
+        },
+    ));
+    assert_eq!(
+        projection.entries()[0].text,
+        "searched the web for Rust release"
+    );
+    assert!(!projection.entries()[0].streaming);
+}
+
+#[test]
+fn completed_turn_repair_keeps_web_search_completed_label() {
+    let item = ThreadItem::WebSearch(WebSearchItem {
+        id: "web-search-turn-repair".to_string(),
+        metadata: None,
+        query: Some("Rust release".to_string()),
+        action: None,
+    });
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::ItemStarted(ItemStartedNotification {
+        item: item.clone(),
+        thread_id: "thread-1".to_string(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 1,
+    }));
+    projection.apply(ServerNotification::TurnCompleted(
+        TurnCompletedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: test_turn("turn-1", TurnStatus::Completed, vec![item]),
+        },
+    ));
+
+    assert_eq!(
+        projection.entries()[0].text,
+        "searched the web for Rust release"
+    );
+    assert!(!projection.entries()[0].streaming);
+}
+
+#[test]
+fn web_search_persisted_projection_is_status_agnostic() {
+    let entry = project_item(
+        &ThreadItem::WebSearch(WebSearchItem {
+            id: "web-search-history".to_string(),
+            metadata: None,
+            query: Some("Rust release".to_string()),
+            action: None,
+        }),
+        false,
+    )
+    .expect("web search projection");
+    assert_eq!(entry.text, "web search: Rust release");
+}
+
+#[test]
+fn web_search_malformed_or_unknown_action_falls_back_to_query() {
+    for action in [
+        json!("search_query"),
+        json!({"type": "future_action", "url": "https://example.test/hidden"}),
+        json!({"type": "open_page", "url": 42}),
+        json!({"type": "search", "queries": [42]}),
+        json!({"type": "other"}),
+    ] {
+        let entry = project_item(
+            &ThreadItem::WebSearch(WebSearchItem {
+                id: "web-search-fallback".to_string(),
+                metadata: None,
+                query: Some("canonical query".to_string()),
+                action: Some(action),
+            }),
+            false,
+        )
+        .expect("web search projection");
+        assert_eq!(entry.text, "web search: canonical query");
+    }
+}
+
+#[test]
+fn web_search_detail_is_localized_at_the_entry_boundary() {
+    let entry = project_item(
+        &ThreadItem::WebSearch(WebSearchItem {
+            id: "web-search-locale".to_string(),
+            metadata: None,
+            query: None,
+            action: Some(json!({
+                "type": "find_in_page",
+                "url": "https://example.test/page",
+                "pattern": "release"
+            })),
+        }),
+        false,
+    )
+    .expect("web search projection");
+    for (locale, prefix) in [
+        (crate::locale::Locale::ZhCn, "网页搜索："),
+        (crate::locale::Locale::ZhTw, "網頁搜尋："),
+        (crate::locale::Locale::EnUs, "web search: "),
+        (crate::locale::Locale::JaJp, "ウェブ検索: "),
+        (crate::locale::Locale::KoKr, "웹 검색: "),
+    ] {
+        let rendered = crate::entry::hyperlink_lines_with_locale(
+            &entry,
+            locale,
+            Some(120),
+            std::path::Path::new("/workspace"),
+        );
+        let text = rendered
+            .iter()
+            .flat_map(|line| line.line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(text.contains(format!("{prefix}'release' in https://example.test/page").as_str()));
+    }
+}
+
+#[test]
 fn item_result_fields_become_structured_display_summaries() {
     let command = project_item(
         &ThreadItem::CommandExecution {
@@ -199,6 +944,16 @@ fn item_result_fields_become_structured_display_summaries() {
     assert_eq!(command.status, Some(EntryStatus::Completed));
     assert!(command.text.contains("cargo test -p tui\nok"));
     assert_eq!(command.summary, vec!["exit 0", "duration 42ms"]);
+
+    assert!(project_item(
+        &ThreadItem::Sleep(SleepItem {
+            id: "sleep-1".to_string(),
+            metadata: None,
+            duration_ms: Some(1000),
+        }),
+        false,
+    )
+    .is_none());
 
     let patch = project_item(
         &ThreadItem::FileChange {
@@ -253,8 +1008,83 @@ fn item_result_fields_become_structured_display_summaries() {
         mcp.summary,
         vec![
             "result items: 1",
+            "content types: unknown=1",
             "error: upstream unavailable",
             "duration 9ms"
+        ]
+    );
+
+    let mcp_details = project_item(
+        &ThreadItem::McpToolCall {
+            id: "mcp-details".to_string(),
+            metadata: None,
+            server: "docs".to_string(),
+            tool: "search".to_string(),
+            status: McpToolCallStatus::Completed,
+            arguments: json!({}),
+            app_context: None,
+            mcp_app_resource_uri: None,
+            plugin_id: None,
+            read_only_hint: None,
+            result: Some(Box::new(McpToolCallResult {
+                content: vec![
+                    json!({"type": "text", "text": "ok"}),
+                    json!({"type": "image", "data": "bounded"}),
+                    json!({"type": "resource_link", "uri": "file:///result.txt"}),
+                    json!({"type": "future_block"}),
+                ],
+                structured_content: Some(json!({"matches": 1})),
+                meta: Some(json!({"truncated": true, "outputAvailable": true})),
+            })),
+            error: None,
+            duration_ms: Some(4),
+        },
+        false,
+    )
+    .expect("mcp details projection");
+    assert_eq!(
+        mcp_details.summary,
+        vec![
+            "result items: 4",
+            "content types: text=1, image=1, resource-link=1, unknown=1",
+            "output: ok",
+            "structured content: {\"matches\":1}",
+            "truncated",
+            "output available",
+            "duration 4ms",
+        ]
+    );
+
+    let computer = project_item(
+        &ThreadItem::McpToolCall {
+            id: "computer-1".to_string(),
+            metadata: None,
+            server: "cua_repl".to_string(),
+            tool: "computer".to_string(),
+            status: McpToolCallStatus::Completed,
+            arguments: json!({"title": "Capture calendar"}),
+            app_context: None,
+            mcp_app_resource_uri: None,
+            plugin_id: None,
+            read_only_hint: None,
+            result: Some(Box::new(McpToolCallResult {
+                content: vec![json!({"type": "image", "data": "not retained"})],
+                structured_content: None,
+                meta: None,
+            })),
+            error: None,
+            duration_ms: None,
+        },
+        false,
+    )
+    .expect("computer activity projection");
+    assert_eq!(
+        computer.summary,
+        vec![
+            "result items: 1",
+            "content types: image=1",
+            "computer action: Capture calendar",
+            "computer screenshot: captured",
         ]
     );
 
@@ -277,7 +1107,12 @@ fn item_result_fields_become_structured_display_summaries() {
     .expect("dynamic projection");
     assert_eq!(
         dynamic.summary,
-        vec!["success: true", "content items: 1", "duration 12ms"]
+        vec![
+            "success: true",
+            "content items: 1",
+            "output: done",
+            "duration 12ms",
+        ]
     );
 
     let mut agents_states = HashMap::new();
@@ -331,12 +1166,76 @@ fn item_result_fields_become_structured_display_summaries() {
     assert_eq!(image.status, Some(EntryStatus::Completed));
     assert_eq!(
         image.summary,
+        vec!["saved: /tmp/image.png", "revised prompt: a concise prompt"]
+    );
+    assert!(!image
+        .summary
+        .iter()
+        .any(|detail| detail.contains("example.test")));
+}
+
+#[test]
+fn dynamic_text_previews_are_compact_bounded_and_ignore_media_urls() {
+    let long_text = "x".repeat(161);
+    let content = vec![
+        DynamicToolCallOutputContentItem::InputText {
+            text: "first line\nsecond line".to_string(),
+        },
+        DynamicToolCallOutputContentItem::InputImage {
+            image_url: "https://secret.example/image.png".to_string(),
+        },
+        DynamicToolCallOutputContentItem::InputText { text: long_text },
+        DynamicToolCallOutputContentItem::InputAudio {
+            audio_url: "https://secret.example/audio.wav".to_string(),
+        },
+        DynamicToolCallOutputContentItem::InputText {
+            text: "third".to_string(),
+        },
+        DynamicToolCallOutputContentItem::InputText {
+            text: "fourth".to_string(),
+        },
+        DynamicToolCallOutputContentItem::InputText {
+            text: "fifth".to_string(),
+        },
+    ];
+
+    let summary = super::dynamic_summary(Some(&content), Some(true), None);
+
+    assert_eq!(
+        summary,
         vec![
-            "result: https://example.test/image.png",
-            "saved: /tmp/image.png",
-            "revised prompt: a concise prompt"
+            "success: true".to_string(),
+            "content items: 7".to_string(),
+            "output: first line".to_string(),
+            format!("output: {}...", "x".repeat(160)),
+            "output: third".to_string(),
+            "output: fourth".to_string(),
         ]
     );
+    assert!(summary
+        .iter()
+        .all(|detail| { !detail.contains("secret.example") }));
+}
+
+#[test]
+fn mcp_text_previews_are_compact_bounded_and_capped() {
+    let long_text = "x".repeat(161);
+    let content = vec![
+        json!({"type": "text", "text": "first line\nsecond line"}),
+        json!({"type": "text", "text": long_text}),
+        json!({"type": "image", "data": "bounded"}),
+        json!({"type": "text", "text": "third"}),
+        json!({"type": "text", "text": "fourth"}),
+        json!({"type": "text", "text": "fifth"}),
+        json!({"type": "text", "text": "sixth"}),
+    ];
+
+    let previews = mcp_content_previews(&content);
+    assert_eq!(previews.len(), 4);
+    assert_eq!(previews[0], "output: first line");
+    assert_eq!(previews[1], format!("output: {}...", "x".repeat(160)));
+    assert_eq!(previews[2], "output: third");
+    assert_eq!(previews[3], "output: fourth");
 }
 
 #[test]
@@ -719,4 +1618,144 @@ fn turn_completion_inserts_missing_canonical_items_before_known_following_items(
             .collect::<Vec<_>>(),
         vec!["请求", "完整回答"]
     );
+}
+
+#[test]
+fn completed_turn_exposes_separator_after_its_last_visible_item() {
+    let mut projection = ConversationProjection::default();
+    projection.hydrate_thread(test_thread(vec![test_turn(
+        "turn-complete",
+        TurnStatus::Completed,
+        vec![
+            user_message("prompt", "请求"),
+            agent_message("answer", "回答", None),
+        ],
+    )]));
+
+    assert_eq!(
+        projection
+            .completion_after("answer")
+            .map(|boundary| boundary.elapsed_seconds),
+        Some(Some(0))
+    );
+    assert!(projection.completion_after("prompt").is_none());
+}
+
+#[test]
+fn unsuccessful_turns_do_not_expose_completion_separators() {
+    let mut projection = ConversationProjection::default();
+    projection.hydrate_thread(test_thread(vec![test_turn(
+        "turn-failed",
+        TurnStatus::Failed,
+        vec![agent_message("answer", "失败", None)],
+    )]));
+
+    assert!(projection.completion_after("answer").is_none());
+}
+
+#[test]
+fn grouped_history_does_not_move_completion_to_a_previous_visible_item() {
+    let mut projection = ConversationProjection::default();
+    projection.prepend_grouped_items_with_hidden_ids(
+        vec![(
+            vec![
+                review_boundary("enter", true),
+                user_message("hidden-final", "内部请求"),
+            ],
+            Some(CompletionMetadata {
+                elapsed_seconds: Some(61),
+            }),
+        )],
+        &HashSet::new(),
+    );
+
+    assert!(projection.completion_after("enter").is_none());
+    assert!(projection.completion_after("hidden-final").is_none());
+}
+
+#[test]
+fn grouped_history_filters_metadata_hidden_user_without_moving_completion() {
+    let mut projection = ConversationProjection::default();
+    projection.prepend_grouped_items_with_hidden_ids(
+        vec![(
+            vec![
+                user_message("hidden", "内部请求"),
+                agent_message("answer", "回答", None),
+            ],
+            Some(CompletionMetadata {
+                elapsed_seconds: Some(12),
+            }),
+        )],
+        &HashSet::from([String::from("hidden")]),
+    );
+
+    assert_eq!(
+        projection
+            .entries()
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["answer"]
+    );
+    assert_eq!(
+        projection
+            .completion_after("answer")
+            .map(|boundary| boundary.elapsed_seconds),
+        Some(Some(12))
+    );
+}
+
+#[test]
+fn grouped_history_hides_nested_review_prompts_from_turn_metadata() {
+    let previous = test_turn(
+        "review-turn",
+        TurnStatus::Completed,
+        vec![
+            review_boundary("enter", true),
+            review_boundary("exit", false),
+        ],
+    );
+    let current = test_turn(
+        "nested-turn",
+        TurnStatus::Interrupted,
+        vec![
+            user_message("nested-one", "重复请求"),
+            user_message("nested-two", "重复请求"),
+        ],
+    );
+    let hidden_ids = crate::history_filter::hidden_user_message_ids(&[previous, current]);
+    let mut projection = ConversationProjection::default();
+    projection.prepend_grouped_items_with_hidden_ids(
+        vec![(
+            vec![
+                review_boundary("enter", true),
+                review_boundary("exit", false),
+                user_message("nested-one", "重复请求"),
+                user_message("nested-two", "重复请求"),
+            ],
+            None,
+        )],
+        &hidden_ids,
+    );
+
+    assert_eq!(
+        projection
+            .entries()
+            .iter()
+            .map(|entry| entry.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["review started: review", "review completed: review"]
+    );
+}
+
+#[test]
+fn hidden_id_reconciliation_removes_entries_loaded_from_a_newer_page() {
+    let mut projection = ConversationProjection::default();
+    projection.prepend_items(vec![user_message("nested-one", "重复请求")]);
+    projection.add_completion_boundary("nested-one", Some(9));
+
+    projection.remove_hidden_entries(&HashSet::from([String::from("nested-one")]));
+
+    assert!(projection.entries().is_empty());
+    assert!(projection.completion_after("nested-one").is_none());
 }

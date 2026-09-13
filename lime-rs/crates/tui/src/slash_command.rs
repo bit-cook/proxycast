@@ -13,10 +13,11 @@ pub(crate) enum SlashCommand {
     Agents,
     MultiAgents,
     Resume,
+    Vim,
 }
 
 impl SlashCommand {
-    pub(crate) const ALL: [Self; 11] = [
+    pub(crate) const ALL: [Self; 12] = [
         Self::Model,
         Self::Plan,
         Self::Effort,
@@ -28,6 +29,7 @@ impl SlashCommand {
         Self::Agents,
         Self::MultiAgents,
         Self::Resume,
+        Self::Vim,
     ];
 
     pub(crate) const fn command(self) -> &'static str {
@@ -43,6 +45,7 @@ impl SlashCommand {
             Self::Agents => "agents",
             Self::MultiAgents => "subagents",
             Self::Resume => "resume",
+            Self::Vim => "vim",
         }
     }
 
@@ -107,6 +110,7 @@ mod tests {
                 "agents",
                 "subagents",
                 "resume",
+                "vim",
             ]
         );
         for command in SlashCommand::ALL {

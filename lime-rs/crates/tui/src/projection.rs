@@ -1,9 +1,19 @@
+use agent_protocol::response_item::MessagePhase;
 use app_server_protocol::protocol::v2::{
-    CollabAgentToolCallStatus, CommandExecutionStatus, DynamicToolCallStatus, McpToolCallStatus,
-    PatchApplyStatus, PatchChangeKind, ServerNotification, Thread, ThreadItem, TurnStatus,
-    UserInput,
+    CollabAgentToolCallStatus, CommandExecutionStatus, DynamicToolCallStatus, HookRunStatus,
+    McpToolCallStatus, PatchApplyStatus, PatchChangeKind, ServerNotification, Thread, ThreadItem,
+    TurnStatus, UserInput,
 };
+use std::collections::{HashMap, HashSet};
 
+use crate::history_cell::{
+    compact_text, computer_activity_summary, invocation_text as mcp_invocation_text,
+    is_computer_activity, summary as mcp_summary, web_search_detail,
+};
+use crate::history_filter::{
+    filter_review_mode_items, filter_review_mode_items_with_state, filter_user_message_ids,
+    hidden_user_message_ids, user_message_id,
+};
 use crate::multi_agents;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,11 +62,40 @@ pub(crate) struct TranscriptEntry {
     pub(crate) summary: Vec<String>,
 }
 
+/// Completion metadata is attached to the last visible item of a completed turn.
+///
+/// It deliberately lives beside the item projection rather than inside `TranscriptEntry`: a
+/// separator is presentation metadata and must not become a fake canonical ThreadItem or leak
+/// into transcript export.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CompletionBoundary {
+    pub(crate) after_entry_id: String,
+    pub(crate) elapsed_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CompletionMetadata {
+    pub(crate) elapsed_seconds: Option<u64>,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct ConversationProjection {
     entries: Vec<TranscriptEntry>,
+    completion_boundaries: Vec<CompletionBoundary>,
     active_turn_id: Option<String>,
     status: String,
+    review_mode: bool,
+    active_hooks: Vec<ActiveHook>,
+    /// Explicit assistant phases keyed by canonical item id. Legacy items
+    /// omit this field and retain the historical final-answer behavior.
+    assistant_phases: HashMap<String, MessagePhase>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ActiveHook {
+    id: String,
+    turn_id: Option<String>,
+    status_message: Option<String>,
 }
 
 impl ConversationProjection {
@@ -64,12 +103,48 @@ impl ConversationProjection {
         &self.entries
     }
 
+    pub(crate) fn completion_after(&self, entry_id: &str) -> Option<&CompletionBoundary> {
+        self.completion_boundaries
+            .iter()
+            .find(|boundary| boundary.after_entry_id == entry_id)
+    }
+
+    pub(crate) fn add_completion_boundary(
+        &mut self,
+        after_entry_id: impl Into<String>,
+        elapsed_seconds: Option<u64>,
+    ) {
+        let after_entry_id = after_entry_id.into();
+        if self
+            .completion_boundaries
+            .iter()
+            .any(|boundary| boundary.after_entry_id == after_entry_id)
+        {
+            return;
+        }
+        self.completion_boundaries.push(CompletionBoundary {
+            after_entry_id,
+            elapsed_seconds,
+        });
+    }
+
+    /// Remove entries previously projected from a page whose canonical review classification was
+    /// completed only after loading adjacent Turn metadata.
+    pub(crate) fn remove_hidden_entries(&mut self, hidden_ids: &HashSet<String>) {
+        if hidden_ids.is_empty() {
+            return;
+        }
+        self.entries.retain(|entry| !hidden_ids.contains(&entry.id));
+        self.completion_boundaries
+            .retain(|boundary| !hidden_ids.contains(&boundary.after_entry_id));
+    }
+
     pub(crate) fn active_turn_id(&self) -> Option<&str> {
         self.active_turn_id.as_deref()
     }
 
     pub(crate) fn status(&self) -> &str {
-        &self.status
+        self.hook_status().unwrap_or(&self.status)
     }
 
     pub(crate) fn set_status(&mut self, status: impl Into<String>) {
@@ -89,18 +164,27 @@ impl ConversationProjection {
         self.entries
             .iter()
             .rev()
-            .find(|entry| entry.kind == EntryKind::Assistant && !entry.text.is_empty())
+            .find(|entry| {
+                entry.kind == EntryKind::Assistant
+                    && !entry.text.is_empty()
+                    && self.assistant_phases.get(&entry.id) != Some(&MessagePhase::Commentary)
+            })
             .map(|entry| entry.text.clone())
             .unwrap_or_default()
     }
 
     /// Prepend older canonical items while preserving transcript order.
     pub(crate) fn prepend_items(&mut self, items: impl IntoIterator<Item = ThreadItem>) {
-        let mut older = items
-            .into_iter()
-            .filter_map(|item| project_item(&item, false))
-            .filter(|entry| !self.entries.iter().any(|current| current.id == entry.id))
-            .collect::<Vec<_>>();
+        let items = filter_review_mode_items(&items.into_iter().collect::<Vec<_>>());
+        let mut older = Vec::new();
+        for item in items {
+            self.record_assistant_phase(&item);
+            if let Some(entry) = project_item(&item, false) {
+                if !self.entries.iter().any(|current| current.id == entry.id) {
+                    older.push(entry);
+                }
+            }
+        }
         if older.is_empty() {
             return;
         }
@@ -108,19 +192,98 @@ impl ConversationProjection {
         self.entries = older;
     }
 
+    /// Prepend grouped history while applying canonical-id review filtering from Turn metadata.
+    ///
+    /// The completion boundary is resolved against the original group tail before filtering, so
+    /// hiding a canonical user message cannot move a separator onto a previous visible item.
+    pub(crate) fn prepend_grouped_items_with_hidden_ids(
+        &mut self,
+        groups: impl IntoIterator<Item = (Vec<ThreadItem>, Option<CompletionMetadata>)>,
+        hidden_ids: &HashSet<String>,
+    ) {
+        let mut older = Vec::new();
+        let mut boundaries = Vec::new();
+        for (items, completion) in groups {
+            let final_entry_id = items
+                .last()
+                .and_then(|item| project_item(item, false).map(|entry| entry.id));
+            let filtered = filter_user_message_ids(&filter_review_mode_items(&items), hidden_ids);
+            for item in filtered {
+                self.record_assistant_phase(&item);
+                if let Some(entry) = project_item(&item, false) {
+                    if !self.entries.iter().any(|current| current.id == entry.id)
+                        && !older
+                            .iter()
+                            .any(|current: &TranscriptEntry| current.id == entry.id)
+                    {
+                        older.push(entry);
+                    }
+                }
+            }
+            if let (Some(final_entry_id), Some(completion)) = (final_entry_id, completion) {
+                if self.entries.iter().any(|entry| entry.id == final_entry_id)
+                    || older.iter().any(|entry| entry.id == final_entry_id)
+                {
+                    boundaries.push(CompletionBoundary {
+                        after_entry_id: final_entry_id,
+                        elapsed_seconds: completion.elapsed_seconds,
+                    });
+                }
+            }
+        }
+        if !older.is_empty() {
+            older.append(&mut self.entries);
+            self.entries = older;
+        }
+        boundaries.retain(|boundary| {
+            !self
+                .completion_boundaries
+                .iter()
+                .any(|known| known.after_entry_id == boundary.after_entry_id)
+        });
+        boundaries.append(&mut self.completion_boundaries);
+        self.completion_boundaries = boundaries;
+    }
+
     pub(crate) fn hydrate_thread(&mut self, thread: Thread) {
         self.entries.clear();
+        self.completion_boundaries.clear();
         self.active_turn_id = None;
         self.status = "ready".to_string();
+        self.review_mode = false;
+        self.active_hooks.clear();
+        self.assistant_phases.clear();
 
+        let hidden_user_messages = hidden_user_message_ids(&thread.turns);
         for turn in thread.turns {
             if turn.status == TurnStatus::InProgress {
                 self.active_turn_id = Some(turn.id.clone());
                 self.status = "running".to_string();
             }
+            let final_entry_id = (turn.status == TurnStatus::Completed)
+                .then(|| turn.items.last())
+                .flatten()
+                .and_then(|item| project_item(item, false).map(|entry| entry.id));
             for item in turn.items {
+                self.update_review_mode(&item);
+                self.record_assistant_phase(&item);
+                if user_message_id(&item).is_some_and(|id| hidden_user_messages.contains(id)) {
+                    continue;
+                }
                 if let Some(entry) = project_item(&item, false) {
                     self.replace_entry(entry);
+                }
+            }
+            if turn.status == TurnStatus::Completed {
+                if let Some(entry_id) =
+                    final_entry_id.filter(|id| self.entries.iter().any(|current| current.id == *id))
+                {
+                    self.add_completion_boundary(
+                        entry_id,
+                        turn.duration_ms
+                            .and_then(|duration| u64::try_from(duration).ok())
+                            .map(|duration| duration / 1_000),
+                    );
                 }
             }
             if self.active_turn_id.is_none() {
@@ -137,21 +300,58 @@ impl ConversationProjection {
             }
             ServerNotification::TurnCompleted(params) => {
                 self.active_turn_id = None;
+                self.active_hooks
+                    .retain(|hook| hook.turn_id.as_deref() != Some(params.turn.id.as_str()));
                 // The terminal client may miss an item delta or item/completed
                 // notification while the transport is reconnecting. The
                 // completed turn is the canonical repair point for those
                 // transcript entries.
-                self.merge_canonical_items(&params.turn.items);
+                let web_search_lifecycle = match params.turn.status {
+                    TurnStatus::Completed => WebSearchLifecycle::Completed,
+                    TurnStatus::Interrupted | TurnStatus::Failed | TurnStatus::InProgress => {
+                        WebSearchLifecycle::Historical
+                    }
+                };
+                self.merge_canonical_items(&params.turn.items, web_search_lifecycle);
+                if params.turn.status == TurnStatus::Completed {
+                    let last_entry_id = params.turn.items.last().and_then(|item| {
+                        project_item(item, false)
+                            .map(|entry| entry.id)
+                            .filter(|id| self.entries.iter().any(|current| current.id == *id))
+                    });
+                    if let Some(entry_id) = last_entry_id {
+                        self.add_completion_boundary(
+                            entry_id,
+                            params
+                                .turn
+                                .duration_ms
+                                .and_then(|duration| u64::try_from(duration).ok())
+                                .map(|duration| duration / 1_000),
+                        );
+                    }
+                }
                 self.settle_running_entries(params.turn.status);
                 self.status = turn_status(params.turn.status).to_string();
             }
             ServerNotification::ItemStarted(params) => {
-                if let Some(entry) = project_item(&params.item, true) {
+                if self.should_hide_realtime_item(&params.item) {
+                    return;
+                }
+                if let Some(entry) =
+                    project_item_with_lifecycle(&params.item, true, WebSearchLifecycle::Started)
+                {
+                    self.record_assistant_phase(&params.item);
                     self.replace_entry(entry);
                 }
             }
             ServerNotification::ItemCompleted(params) => {
-                if let Some(entry) = project_item(&params.item, false) {
+                if self.should_hide_realtime_item(&params.item) {
+                    return;
+                }
+                if let Some(entry) =
+                    project_item_with_lifecycle(&params.item, false, WebSearchLifecycle::Completed)
+                {
+                    self.record_assistant_phase(&params.item);
                     self.replace_entry(entry);
                 }
             }
@@ -217,8 +417,82 @@ impl ConversationProjection {
                 };
                 self.push_system(params.error.message);
             }
+            ServerNotification::HookStarted(params) => {
+                self.start_hook(params.turn_id, params.run);
+            }
+            ServerNotification::HookCompleted(params) => {
+                self.complete_hook(params.run);
+            }
             _ => {}
         }
+    }
+
+    fn start_hook(
+        &mut self,
+        turn_id: Option<String>,
+        run: app_server_protocol::protocol::v2::HookRunSummary,
+    ) {
+        if run.status != HookRunStatus::Running {
+            return;
+        }
+        if let Some(existing) = self.active_hooks.iter_mut().find(|hook| hook.id == run.id) {
+            existing.turn_id = turn_id;
+            existing.status_message = run.status_message;
+            return;
+        }
+        self.active_hooks.push(ActiveHook {
+            id: run.id,
+            turn_id,
+            status_message: run.status_message,
+        });
+    }
+
+    fn complete_hook(&mut self, run: app_server_protocol::protocol::v2::HookRunSummary) {
+        self.active_hooks.retain(|hook| hook.id != run.id);
+        let Some(text) = crate::history_cell::status_text(run.status) else {
+            return;
+        };
+        if crate::history_cell::is_quiet_success(&run) {
+            return;
+        }
+        let status = match run.status {
+            HookRunStatus::Completed => EntryStatus::Completed,
+            HookRunStatus::Running => EntryStatus::Running,
+            HookRunStatus::Failed | HookRunStatus::Blocked | HookRunStatus::Stopped => {
+                EntryStatus::Failed
+            }
+        };
+        self.replace_entry(TranscriptEntry {
+            id: format!("hook-{}", run.id),
+            kind: EntryKind::System,
+            text: text.to_string(),
+            streaming: false,
+            status: Some(status),
+            summary: crate::history_cell::output_details(&run),
+        });
+    }
+
+    fn hook_status(&self) -> Option<&str> {
+        if self.active_hooks.is_empty() {
+            return None;
+        }
+        let first = self.active_hooks[0]
+            .status_message
+            .as_deref()
+            .map(str::trim)
+            .filter(|message| !message.is_empty());
+        if self.active_hooks.len() == 1 {
+            return first.or(Some("running hook"));
+        }
+        if first.is_some()
+            && self
+                .active_hooks
+                .iter()
+                .all(|hook| hook.status_message.as_deref().map(str::trim) == first)
+        {
+            return first;
+        }
+        Some("running hooks")
     }
 
     fn append_delta(&mut self, id: String, kind: EntryKind, delta: String) {
@@ -238,6 +512,20 @@ impl ConversationProjection {
         });
     }
 
+    fn update_review_mode(&mut self, item: &ThreadItem) {
+        match item {
+            ThreadItem::EnteredReviewMode { .. } => self.review_mode = true,
+            ThreadItem::ExitedReviewMode { .. } => self.review_mode = false,
+            _ => {}
+        }
+    }
+
+    fn should_hide_realtime_item(&mut self, item: &ThreadItem) -> bool {
+        let hidden = matches!(item, ThreadItem::UserMessage { .. }) && self.review_mode;
+        self.update_review_mode(item);
+        hidden
+    }
+
     fn replace_entry(&mut self, entry: TranscriptEntry) {
         if let Some(current) = self
             .entries
@@ -250,10 +538,20 @@ impl ConversationProjection {
         }
     }
 
-    fn merge_canonical_items(&mut self, items: &[ThreadItem]) {
-        let projected = items
+    fn merge_canonical_items(
+        &mut self,
+        items: &[ThreadItem],
+        web_search_lifecycle: WebSearchLifecycle,
+    ) {
+        let initial_review_mode = self.review_mode;
+        let filtered = filter_review_mode_items_with_state(items, initial_review_mode);
+        for item in items {
+            self.update_review_mode(item);
+            self.record_assistant_phase(item);
+        }
+        let projected = filtered
             .iter()
-            .filter_map(|item| project_item(item, false))
+            .filter_map(|item| project_item_with_lifecycle(item, false, web_search_lifecycle))
             .collect::<Vec<_>>();
 
         for (index, entry) in projected.into_iter().enumerate() {
@@ -268,12 +566,12 @@ impl ConversationProjection {
 
             // Place a repaired item next to the nearest canonical neighbor so
             // a missing user message cannot appear after its assistant reply.
-            let next_index = items
+            let next_index = filtered
                 .iter()
                 .skip(index + 1)
                 .filter_map(projected_item_id)
                 .find_map(|id| self.entries.iter().position(|current| current.id == id));
-            let previous_index = items
+            let previous_index = filtered
                 .iter()
                 .take(index)
                 .filter_map(projected_item_id)
@@ -295,6 +593,19 @@ impl ConversationProjection {
             status: None,
             summary: Vec::new(),
         });
+    }
+
+    fn record_assistant_phase(&mut self, item: &ThreadItem) {
+        if let ThreadItem::AgentMessage { id, phase, .. } = item {
+            match phase {
+                Some(phase) => {
+                    self.assistant_phases.insert(id.clone(), phase.clone());
+                }
+                None => {
+                    self.assistant_phases.remove(id);
+                }
+            }
+        }
     }
 
     fn settle_running_entries(&mut self, status: TurnStatus) {
@@ -337,19 +648,37 @@ fn plan_marker(status: app_server_protocol::protocol::v2::TurnPlanStepStatus) ->
 }
 
 fn project_item(item: &ThreadItem, streaming: bool) -> Option<TranscriptEntry> {
+    project_item_with_lifecycle(item, streaming, WebSearchLifecycle::Historical)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WebSearchLifecycle {
+    Historical,
+    Started,
+    Completed,
+}
+
+fn project_item_with_lifecycle(
+    item: &ThreadItem,
+    streaming: bool,
+    web_search_lifecycle: WebSearchLifecycle,
+) -> Option<TranscriptEntry> {
     let (id, kind, text, status, summary) = match item {
         ThreadItem::UserMessage {
             id,
             client_id,
             content,
             ..
-        } => (
-            client_id.as_ref().unwrap_or(id).clone(),
-            EntryKind::User,
-            user_input_text(content),
-            None,
-            Vec::new(),
-        ),
+        } => {
+            let (text, summary) = user_input_projection(content);
+            (
+                client_id.as_ref().unwrap_or(id).clone(),
+                EntryKind::User,
+                text,
+                None,
+                summary,
+            )
+        }
         ThreadItem::HookPrompt { id, fragments, .. } => (
             id.clone(),
             EntryKind::System,
@@ -424,18 +753,29 @@ fn project_item(item: &ThreadItem, streaming: bool) -> Option<TranscriptEntry> {
             id,
             server,
             tool,
+            arguments,
             status,
             result,
             error,
             duration_ms,
             ..
-        } => (
-            id.clone(),
-            EntryKind::Mcp,
-            format!("{server}.{tool}"),
-            Some(mcp_entry_status(*status)),
-            mcp_summary(result.as_deref(), error.as_ref(), *duration_ms),
-        ),
+        } => {
+            let mut summary = mcp_summary(result.as_deref(), error.as_ref(), *duration_ms);
+            if is_computer_activity(server) {
+                summary.extend(computer_activity_summary(
+                    arguments,
+                    result.as_deref(),
+                    error.as_ref(),
+                ));
+            }
+            (
+                id.clone(),
+                EntryKind::Mcp,
+                mcp_invocation_text(server, tool, arguments),
+                Some(mcp_entry_status(*status)),
+                summary,
+            )
+        }
         ThreadItem::DynamicToolCall {
             id,
             tool,
@@ -488,13 +828,34 @@ fn project_item(item: &ThreadItem, streaming: bool) -> Option<TranscriptEntry> {
                 Vec::new(),
             )
         }
-        ThreadItem::WebSearch(item) => (
-            item.id.clone(),
-            EntryKind::Tool,
-            format!("web search: {}", item.query.as_deref().unwrap_or("")),
-            None,
-            Vec::new(),
-        ),
+        ThreadItem::WebSearch(item) => {
+            let detail =
+                web_search_detail(item.query.as_deref().unwrap_or(""), item.action.as_ref());
+            let text = match web_search_lifecycle {
+                WebSearchLifecycle::Historical => {
+                    if detail.is_empty() {
+                        "web search".to_string()
+                    } else {
+                        format!("web search: {detail}")
+                    }
+                }
+                WebSearchLifecycle::Started => {
+                    if detail.is_empty() {
+                        "searching the web".to_string()
+                    } else {
+                        format!("searching the web {detail}")
+                    }
+                }
+                WebSearchLifecycle::Completed => {
+                    if detail.is_empty() {
+                        "searched the web".to_string()
+                    } else {
+                        format!("searched the web for {detail}")
+                    }
+                }
+            };
+            (item.id.clone(), EntryKind::Tool, text, None, Vec::new())
+        }
         ThreadItem::ImageView { id, path, .. } => (
             id.clone(),
             EntryKind::Tool,
@@ -502,18 +863,11 @@ fn project_item(item: &ThreadItem, streaming: bool) -> Option<TranscriptEntry> {
             None,
             Vec::new(),
         ),
-        ThreadItem::Sleep(item) => (
-            item.id.clone(),
-            EntryKind::Tool,
-            format!("sleep: {}ms", item.duration_ms.unwrap_or_default()),
-            None,
-            Vec::new(),
-        ),
+        // Sleep is an internal runtime control item in Codex and is not part of the
+        // user-visible transcript or agent status feed.
+        ThreadItem::Sleep(_) => return None,
         ThreadItem::ImageGeneration(item) => {
             let mut summary = Vec::new();
-            if !item.result.trim().is_empty() {
-                summary.push(format!("result: {}", compact_text(&item.result)));
-            }
             if let Some(path) = item.saved_path.as_deref() {
                 summary.push(format!("saved: {path}"));
             }
@@ -607,24 +961,6 @@ fn patch_summary(changes: &[app_server_protocol::protocol::v2::FileUpdateChange]
     details
 }
 
-fn mcp_summary(
-    result: Option<&app_server_protocol::protocol::v2::McpToolCallResult>,
-    error: Option<&app_server_protocol::protocol::v2::McpToolCallError>,
-    duration_ms: Option<i64>,
-) -> Vec<String> {
-    let mut details = Vec::new();
-    if let Some(result) = result {
-        details.push(format!("result items: {}", result.content.len()));
-    }
-    if let Some(error) = error {
-        details.push(format!("error: {}", compact_text(&error.message)));
-    }
-    if let Some(duration_ms) = duration_ms {
-        details.push(format!("duration {duration_ms}ms"));
-    }
-    details
-}
-
 fn dynamic_summary(
     content_items: Option<&[app_server_protocol::protocol::v2::DynamicToolCallOutputContentItem]>,
     success: Option<bool>,
@@ -636,6 +972,7 @@ fn dynamic_summary(
     }
     if let Some(content_items) = content_items {
         details.push(format!("content items: {}", content_items.len()));
+        details.extend(dynamic_content_previews(content_items));
     }
     if let Some(duration_ms) = duration_ms {
         details.push(format!("duration {duration_ms}ms"));
@@ -643,13 +980,19 @@ fn dynamic_summary(
     details
 }
 
-fn compact_text(value: &str) -> String {
-    let value = value.lines().next().unwrap_or(value);
-    let mut text = value.chars().take(160).collect::<String>();
-    if value.chars().count() > 160 {
-        text.push_str("...");
-    }
-    text
+fn dynamic_content_previews(
+    content_items: &[app_server_protocol::protocol::v2::DynamicToolCallOutputContentItem],
+) -> Vec<String> {
+    content_items
+        .iter()
+        .filter_map(|item| match item {
+            app_server_protocol::protocol::v2::DynamicToolCallOutputContentItem::InputText {
+                text,
+            } if !text.trim().is_empty() => Some(format!("output: {}", compact_text(text))),
+            _ => None,
+        })
+        .take(4)
+        .collect()
 }
 
 fn command_entry_status(status: CommandExecutionStatus) -> EntryStatus {
@@ -729,18 +1072,30 @@ fn format_patch(changes: &[app_server_protocol::protocol::v2::FileUpdateChange])
         .join("\n")
 }
 
-fn user_input_text(content: &[UserInput]) -> String {
-    content
-        .iter()
-        .map(|input| match input {
-            UserInput::Text { text, .. } => text.clone(),
-            UserInput::Image { url, .. } => format!("[image: {url}]"),
-            UserInput::LocalImage { path, .. } => format!("[image: {path}]"),
-            UserInput::Skill { name, .. } => format!("[skill: {name}]"),
-            UserInput::Mention { name, .. } => format!("[@{name}]"),
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+fn user_input_projection(content: &[UserInput]) -> (String, Vec<String>) {
+    let mut text = Vec::new();
+    let mut image_count = 0usize;
+
+    for input in content {
+        match input {
+            UserInput::Text { text: value, .. } => text.push(value.clone()),
+            UserInput::Image { .. } | UserInput::LocalImage { .. } => {
+                image_count += 1;
+            }
+            UserInput::Skill { name, .. } => text.push(format!("[skill: {name}]")),
+            UserInput::Mention { name, .. } => text.push(format!("[@{name}]")),
+        }
+    }
+
+    let summary = (1..=image_count)
+        .map(|index| format!("image: {index}"))
+        .collect();
+    (text.join("\n"), summary)
+}
+
+#[cfg(test)]
+fn mcp_content_previews(content: &[serde_json::Value]) -> Vec<String> {
+    crate::history_cell::content_previews(content)
 }
 
 #[cfg(test)]

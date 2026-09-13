@@ -1,5 +1,6 @@
 //! App-server event stream handling for the TUI app.
 
+use super::startup::apply_skills_list_response;
 use super::App;
 use crate::app_server_session::AppServerSession;
 use app_server_client::AppServerEvent;
@@ -41,9 +42,21 @@ impl App {
             ServerNotification::ThreadQueueChanged(params)
                 if self.thread_id.as_deref() == Some(params.thread_id.as_str())
         );
+        let skills_changed = matches!(&notification, ServerNotification::SkillsChanged(_));
         self.apply_notification(notification);
         if queue_changed {
             self.refresh_queued_submissions(app_server_client).await;
+        }
+        if skills_changed {
+            match app_server_client
+                .reload_skills(vec![self.cwd.clone()])
+                .await
+            {
+                Ok(response) => apply_skills_list_response(self, response),
+                Err(error) => self
+                    .projection
+                    .set_status(format!("skills unavailable: {error}")),
+            }
         }
     }
 

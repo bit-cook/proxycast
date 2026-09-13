@@ -2,15 +2,26 @@
 
 use std::collections::HashSet;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use app_server_protocol::protocol::v2::{
     SortDirection, ThreadItem, ThreadItemsListParams, ThreadItemsListResponse,
-    METHOD_THREAD_ITEMS_LIST,
+    ThreadTurnsListParams, ThreadTurnsListResponse, Turn, TurnItemsView, METHOD_THREAD_ITEMS_LIST,
+    METHOD_THREAD_TURNS_LIST,
 };
 
 use super::AppServerSession;
 
 pub(crate) const HISTORY_ITEM_PAGE_LIMIT: u32 = 100;
+
+/// The first page of a paginated transcript and the optional Turn metadata used to render it.
+///
+/// Items remain the canonical payload. Turn metadata is an enrichment contract: callers must
+/// keep the item-only path when an older App Server cannot provide it.
+#[derive(Debug)]
+pub(crate) struct InitialHistoryPage {
+    pub(crate) items: Vec<ThreadItem>,
+    pub(crate) turns: Option<Vec<Turn>>,
+}
 
 pub(crate) fn thread_items_page_params(
     thread_id: impl Into<String>,
@@ -50,12 +61,26 @@ impl AppServerSession {
         &mut self,
         thread_id: impl Into<String>,
         item_cursor: Option<String>,
-    ) -> Result<Vec<ThreadItem>> {
+    ) -> Result<InitialHistoryPage> {
         let thread_id = thread_id.into();
         let page = self
             .thread_items_page(thread_id.clone(), item_cursor, HISTORY_ITEM_PAGE_LIMIT)
             .await?;
         let next_item_cursor = page.next_cursor.clone();
+        let turn_ids = page
+            .data
+            .iter()
+            .map(|entry| entry.turn_id.clone())
+            .collect::<HashSet<_>>();
+        let turns = if turn_ids.is_empty() {
+            None
+        } else {
+            // Turn metadata is optional for compatibility with older App Servers. The caller
+            // renders the same canonical items without enrichment when this lookup is absent.
+            self.thread_turns_for_items(thread_id.clone(), &turn_ids)
+                .await
+                .ok()
+        };
         let items = page
             .data
             .into_iter()
@@ -63,7 +88,7 @@ impl AppServerSession {
             .rev()
             .collect();
         self.initialize_history_pagination(thread_id, next_item_cursor);
-        Ok(items)
+        Ok(InitialHistoryPage { items, turns })
     }
 
     pub(crate) fn initialize_history_pagination(
@@ -139,6 +164,88 @@ impl AppServerSession {
             .await
             .context("failed to load App Server thread item page")
     }
+
+    pub(crate) async fn thread_turns_page(
+        &self,
+        thread_id: impl Into<String>,
+        cursor: Option<String>,
+    ) -> Result<ThreadTurnsListResponse> {
+        self.request_handle
+            .request(
+                METHOD_THREAD_TURNS_LIST,
+                ThreadTurnsListParams {
+                    thread_id: thread_id.into(),
+                    cursor,
+                    limit: Some(HISTORY_ITEM_PAGE_LIMIT),
+                    sort_direction: Some(SortDirection::Desc),
+                    items_view: Some(TurnItemsView::Full),
+                },
+            )
+            .await
+            .context("failed to load App Server thread turn page")
+    }
+
+    /// Load the turn pages that cover the item page and one older context turn.
+    ///
+    /// The lookup is bounded and stops on a repeated cursor, so an older or malformed App Server
+    /// cannot make a scroll request unbounded. A missing turn page is handled by the caller as an
+    /// item-only projection without inventing completion state.
+    pub(crate) async fn thread_turns_for_items(
+        &self,
+        thread_id: impl Into<String>,
+        target_turn_ids: &HashSet<String>,
+    ) -> Result<Vec<Turn>> {
+        if target_turn_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let thread_id = thread_id.into();
+        let mut cursor = None;
+        let mut seen_cursors = HashSet::new();
+        let mut turns_desc = Vec::new();
+
+        for _ in 0..16 {
+            let page = self
+                .thread_turns_page(thread_id.clone(), cursor.clone())
+                .await?;
+            turns_desc.extend(page.data);
+            if all_target_turns_loaded(&turns_desc, target_turn_ids)
+                && has_older_turn_context(&turns_desc, target_turn_ids)
+            {
+                return Ok(chronological_turns(turns_desc));
+            }
+            let Some(next_cursor) = page.next_cursor else {
+                return Ok(chronological_turns(turns_desc));
+            };
+            if !seen_cursors.insert(next_cursor.clone()) {
+                bail!("thread turns pagination repeated cursor {next_cursor}");
+            }
+            cursor = Some(next_cursor);
+        }
+
+        bail!("thread turns pagination exceeded 16 pages")
+    }
+}
+
+fn chronological_turns(turns_desc: Vec<Turn>) -> Vec<Turn> {
+    turns_desc.into_iter().rev().collect()
+}
+
+fn all_target_turns_loaded(turns_desc: &[Turn], target_turn_ids: &HashSet<String>) -> bool {
+    target_turn_ids
+        .iter()
+        .all(|target| turns_desc.iter().any(|turn| &turn.id == target))
+}
+
+/// The turns endpoint is queried newest-first. Once every target turn is present, keep paging
+/// until one older turn is present as context for nested-review reconciliation.
+fn has_older_turn_context(turns_desc: &[Turn], target_turn_ids: &HashSet<String>) -> bool {
+    turns_desc
+        .iter()
+        .enumerate()
+        .filter(|(_, turn)| target_turn_ids.contains(&turn.id))
+        .map(|(index, _)| index)
+        .max()
+        .is_some_and(|oldest_target| oldest_target + 1 < turns_desc.len())
 }
 
 #[cfg(test)]

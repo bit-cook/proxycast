@@ -149,6 +149,51 @@ impl Locale {
         }
     }
 
+    pub(crate) fn file_search_loading(self) -> &'static str {
+        match self {
+            Self::ZhCn => "正在搜索...",
+            Self::ZhTw => "正在搜尋...",
+            Self::EnUs => "loading...",
+            Self::JaJp => "検索中...",
+            Self::KoKr => "검색 중...",
+        }
+    }
+
+    pub(crate) fn file_search_no_matches(self) -> &'static str {
+        match self {
+            Self::ZhCn => "没有匹配项",
+            Self::ZhTw => "沒有符合項目",
+            Self::EnUs => "no matches",
+            Self::JaJp => "一致する項目がありません",
+            Self::KoKr => "일치하는 항목이 없습니다",
+        }
+    }
+
+    pub(crate) fn skill_popup_no_matches(self) -> &'static str {
+        match self {
+            Self::ZhCn => "没有匹配的技能",
+            Self::ZhTw => "沒有符合的技能",
+            Self::EnUs => "no matching skills",
+            Self::JaJp => "一致するスキルがありません",
+            Self::KoKr => "일치하는 기술이 없습니다",
+        }
+    }
+
+    pub(crate) fn vim_mode_message(self, enabled: bool) -> &'static str {
+        match (self, enabled) {
+            (Self::ZhCn, true) => "已启用 Vim 编辑模式",
+            (Self::ZhCn, false) => "已关闭 Vim 编辑模式",
+            (Self::ZhTw, true) => "已啟用 Vim 編輯模式",
+            (Self::ZhTw, false) => "已關閉 Vim 編輯模式",
+            (Self::EnUs, true) => "Vim composer mode enabled",
+            (Self::EnUs, false) => "Vim composer mode disabled",
+            (Self::JaJp, true) => "Vim 編集モードを有効にしました",
+            (Self::JaJp, false) => "Vim 編集モードを無効にしました",
+            (Self::KoKr, true) => "Vim 편집 모드를 켰습니다",
+            (Self::KoKr, false) => "Vim 편집 모드를 껐습니다",
+        }
+    }
+
     pub(crate) fn slash_command_description(self, command: SlashCommand) -> &'static str {
         match (self, command) {
             (Self::ZhCn, SlashCommand::Model) => "选择模型",
@@ -205,6 +250,11 @@ impl Locale {
             (Self::EnUs, SlashCommand::Resume) => "resume a previous session",
             (Self::JaJp, SlashCommand::Resume) => "以前のセッションを再開",
             (Self::KoKr, SlashCommand::Resume) => "이전 세션 재개",
+            (Self::ZhCn, SlashCommand::Vim) => "切换 Vim 编辑模式",
+            (Self::ZhTw, SlashCommand::Vim) => "切換 Vim 編輯模式",
+            (Self::EnUs, SlashCommand::Vim) => "toggle Vim composer mode",
+            (Self::JaJp, SlashCommand::Vim) => "Vim 編集モードを切り替え",
+            (Self::KoKr, SlashCommand::Vim) => "Vim 편집 모드 전환",
             (Self::ZhCn, SlashCommand::Pwd) => "显示当前工作目录",
             (Self::ZhTw, SlashCommand::Pwd) => "顯示目前工作目錄",
             (Self::EnUs, SlashCommand::Pwd) => "show the current working directory",
@@ -277,6 +327,96 @@ impl Locale {
         }
     }
 
+    pub(crate) fn export_title(self) -> &'static str {
+        match self {
+            Self::ZhCn => "导出对话",
+            Self::ZhTw => "匯出對話",
+            Self::EnUs => "Export conversation",
+            Self::JaJp => "会話をエクスポート",
+            Self::KoKr => "대화 내보내기",
+        }
+    }
+
+    pub(crate) fn export_subtitle(self) -> &'static str {
+        match self {
+            Self::ZhCn => "将完整对话保存为 Markdown",
+            Self::ZhTw => "將完整對話儲存為 Markdown",
+            Self::EnUs => "Save the complete conversation as Markdown",
+            Self::JaJp => "完全な会話を Markdown として保存",
+            Self::KoKr => "전체 대화를 Markdown으로 저장",
+        }
+    }
+
+    pub(crate) fn export_copy_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "复制到剪贴板",
+            Self::ZhTw => "複製到剪貼簿",
+            Self::EnUs => "Copy to clipboard",
+            Self::JaJp => "クリップボードにコピー",
+            Self::KoKr => "클립보드에 복사",
+        }
+    }
+
+    pub(crate) fn export_copy_description(self) -> &'static str {
+        match self {
+            Self::ZhCn => "复制完整 Markdown 对话记录",
+            Self::ZhTw => "複製完整 Markdown 對話記錄",
+            Self::EnUs => "Copy the complete Markdown transcript",
+            Self::JaJp => "完全な Markdown 会話履歴をコピー",
+            Self::KoKr => "전체 Markdown 대화 기록 복사",
+        }
+    }
+
+    pub(crate) fn export_file_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "保存到文件",
+            Self::ZhTw => "儲存到檔案",
+            Self::EnUs => "Save to file",
+            Self::JaJp => "ファイルに保存",
+            Self::KoKr => "파일에 저장",
+        }
+    }
+
+    pub(crate) fn export_file_description(self) -> &'static str {
+        match self {
+            Self::ZhCn => "选择 Markdown 文件名",
+            Self::ZhTw => "選擇 Markdown 檔名",
+            Self::EnUs => "Choose a Markdown filename",
+            Self::JaJp => "Markdown ファイル名を選択",
+            Self::KoKr => "Markdown 파일 이름 선택",
+        }
+    }
+
+    pub(crate) fn export_picker_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "按 Enter 确认，按 Esc 返回",
+            Self::ZhTw => "按 Enter 確認，按 Esc 返回",
+            Self::EnUs => "Press enter to confirm or esc to go back",
+            Self::JaJp => "Enter で確定、Esc で戻る",
+            Self::KoKr => "Enter로 확인하거나 Esc로 돌아가기",
+        }
+    }
+
+    pub(crate) fn export_prompt_title(self) -> &'static str {
+        match self {
+            Self::ZhCn => "保存对话",
+            Self::ZhTw => "儲存對話",
+            Self::EnUs => "Save conversation",
+            Self::JaJp => "会話を保存",
+            Self::KoKr => "대화 저장",
+        }
+    }
+
+    pub(crate) fn export_prompt_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "输入文件名并按 Enter 确认，按 Esc 返回",
+            Self::ZhTw => "輸入檔名並按 Enter 確認，按 Esc 返回",
+            Self::EnUs => "Type a filename and press Enter to confirm, Esc to go back",
+            Self::JaJp => "ファイル名を入力して Enter で確定、Esc で戻る",
+            Self::KoKr => "파일 이름을 입력하고 Enter로 확인하거나 Esc로 돌아가기",
+        }
+    }
+
     pub(crate) fn thread_label(self) -> &'static str {
         match self {
             Self::ZhCn => "会话",
@@ -336,6 +476,14 @@ impl Locale {
         }
     }
 
+    pub(crate) fn numbered_image_label(self, index: &str) -> String {
+        let label = match self {
+            Self::EnUs => "Image",
+            _ => self.image_label(),
+        };
+        format!("[{label} #{index}]")
+    }
+
     pub(crate) fn edit_queued_input_hint(self) -> &'static str {
         match self {
             Self::ZhCn => "Alt+Up 编辑最后一条排队输入",
@@ -381,6 +529,34 @@ impl Locale {
                 Self::EnUs => "running",
                 Self::JaJp => "実行中",
                 Self::KoKr => "실행 중",
+            },
+            "running hook" => match self {
+                Self::ZhCn => "正在运行 Hook",
+                Self::ZhTw => "正在執行 Hook",
+                Self::EnUs => "running hook",
+                Self::JaJp => "Hook を実行中",
+                Self::KoKr => "Hook 실행 중",
+            },
+            "running hooks" => match self {
+                Self::ZhCn => "正在运行多个 Hook",
+                Self::ZhTw => "正在執行多個 Hook",
+                Self::EnUs => "running hooks",
+                Self::JaJp => "複数の Hook を実行中",
+                Self::KoKr => "여러 Hook 실행 중",
+            },
+            "MCP startup issue" => match self {
+                Self::ZhCn => "MCP 启动问题",
+                Self::ZhTw => "MCP 啟動問題",
+                Self::EnUs => "MCP startup issue",
+                Self::JaJp => "MCP 起動の問題",
+                Self::KoKr => "MCP 시작 문제",
+            },
+            "MCP startup issues" => match self {
+                Self::ZhCn => "MCP 启动问题",
+                Self::ZhTw => "MCP 啟動問題",
+                Self::EnUs => "MCP startup issues",
+                Self::JaJp => "MCP 起動の問題",
+                Self::KoKr => "MCP 시작 문제",
             },
             "completed" => match self {
                 Self::ZhCn | Self::ZhTw => "已完成",
@@ -745,6 +921,50 @@ impl Locale {
                 "結果項目: ",
                 "결과 항목: ",
             ),
+            (
+                "content types: ",
+                "内容类型：",
+                "內容類型：",
+                "コンテンツ種別: ",
+                "콘텐츠 유형: ",
+            ),
+            ("output: ", "输出：", "輸出：", "出力: ", "출력: "),
+            (
+                "computer action: ",
+                "电脑操作：",
+                "電腦操作：",
+                "コンピュータ操作: ",
+                "컴퓨터 작업: ",
+            ),
+            (
+                "computer error: ",
+                "电脑错误：",
+                "電腦錯誤：",
+                "コンピュータ エラー: ",
+                "컴퓨터 오류: ",
+            ),
+            (
+                "computer screenshot: ",
+                "电脑截图：",
+                "電腦螢幕截圖：",
+                "コンピュータ スクリーンショット: ",
+                "컴퓨터 스크린샷: ",
+            ),
+            (
+                "structured content: ",
+                "结构化内容：",
+                "結構化內容：",
+                "構造化コンテンツ: ",
+                "구조화 콘텐츠: ",
+            ),
+            ("truncated", "已截断", "已截斷", "切り詰め済み", "잘림"),
+            (
+                "output available",
+                "可获取输出",
+                "可取得輸出",
+                "出力を取得可能",
+                "출력 사용 가능",
+            ),
             ("error: ", "错误：", "錯誤：", "エラー: ", "오류: "),
             ("success: ", "成功：", "成功：", "成功: ", "성공: "),
             (
@@ -784,13 +1004,68 @@ impl Locale {
                 "웹 검색: ",
             ),
             (
+                "hook completed",
+                "Hook 已完成",
+                "Hook 已完成",
+                "Hook 完了",
+                "Hook 완료",
+            ),
+            (
+                "hook failed",
+                "Hook 失败",
+                "Hook 失敗",
+                "Hook 失敗",
+                "Hook 실패",
+            ),
+            (
+                "hook blocked",
+                "Hook 已阻断",
+                "Hook 已封鎖",
+                "Hook がブロックされました",
+                "Hook 차단됨",
+            ),
+            (
+                "hook stopped",
+                "Hook 已停止",
+                "Hook 已停止",
+                "Hook 停止",
+                "Hook 중지됨",
+            ),
+            (
+                "hook output: ",
+                "Hook 输出：",
+                "Hook 輸出：",
+                "Hook 出力: ",
+                "Hook 출력: ",
+            ),
+            (
+                "searching the web",
+                "正在搜索网页",
+                "正在搜尋網頁",
+                "ウェブを検索中",
+                "웹 검색 중",
+            ),
+            (
+                "searched the web for ",
+                "已搜索网页：",
+                "已搜尋網頁：",
+                "ウェブ検索済み：",
+                "웹 검색 완료: ",
+            ),
+            (
+                "searched the web",
+                "已搜索网页",
+                "已搜尋網頁",
+                "ウェブ検索済み",
+                "웹 검색 완료",
+            ),
+            (
                 "view image: ",
                 "查看图片：",
                 "檢視圖片：",
                 "画像を表示: ",
                 "이미지 보기: ",
             ),
-            ("sleep: ", "休眠：", "休眠：", "スリープ: ", "대기: "),
             ("result: ", "结果：", "結果：", "結果: ", "결과: "),
             ("saved: ", "已保存：", "已儲存：", "保存済み: ", "저장됨: "),
             (
@@ -953,6 +1228,126 @@ impl Locale {
             (Self::JaJp, "Grant for this session") => "このセッションで許可".to_string(),
             (Self::KoKr, "Grant for this session") => "이 세션에 허용".to_string(),
             _ => label.to_string(),
+        }
+    }
+
+    pub(crate) fn mcp_elicitation_title(self, server_name: &str) -> String {
+        match self {
+            Self::ZhCn => format!("MCP 请求：{server_name}"),
+            Self::ZhTw => format!("MCP 要求：{server_name}"),
+            Self::EnUs => format!("MCP request: {server_name}"),
+            Self::JaJp => format!("MCP リクエスト：{server_name}"),
+            Self::KoKr => format!("MCP 요청: {server_name}"),
+        }
+    }
+
+    pub(crate) fn mcp_elicitation_progress(self, current: usize, total: usize) -> String {
+        match self {
+            Self::ZhCn => format!("字段 {current}/{total}"),
+            Self::ZhTw => format!("欄位 {current}/{total}"),
+            Self::EnUs => format!("Field {current}/{total}"),
+            Self::JaJp => format!("フィールド {current}/{total}"),
+            Self::KoKr => format!("필드 {current}/{total}"),
+        }
+    }
+
+    pub(crate) fn mcp_elicitation_text_placeholder(self, required: bool) -> &'static str {
+        match (self, required) {
+            (Self::ZhCn, true) => "请输入答案",
+            (Self::ZhCn, false) => "请输入答案（可选）",
+            (Self::ZhTw, true) => "請輸入答案",
+            (Self::ZhTw, false) => "請輸入答案（選填）",
+            (Self::EnUs, true) => "Type an answer",
+            (Self::EnUs, false) => "Type an answer (optional)",
+            (Self::JaJp, true) => "回答を入力",
+            (Self::JaJp, false) => "回答を入力（任意）",
+            (Self::KoKr, true) => "답변 입력",
+            (Self::KoKr, false) => "답변 입력 (선택 사항)",
+        }
+    }
+
+    pub(crate) fn mcp_elicitation_boolean_option(self, value: bool) -> &'static str {
+        match (self, value) {
+            (Self::ZhCn, true) => "是",
+            (Self::ZhCn, false) => "否",
+            (Self::ZhTw, true) => "是",
+            (Self::ZhTw, false) => "否",
+            (Self::EnUs, true) => "True",
+            (Self::EnUs, false) => "False",
+            (Self::JaJp, true) => "はい",
+            (Self::JaJp, false) => "いいえ",
+            (Self::KoKr, true) => "예",
+            (Self::KoKr, false) => "아니요",
+        }
+    }
+
+    pub(crate) fn mcp_elicitation_approval_option(self, value: &str) -> &'static str {
+        match (self, value) {
+            (Self::ZhCn, "accept") => "允许",
+            (Self::ZhCn, "accept_session") => "允许本次会话",
+            (Self::ZhCn, "accept_always") => "始终允许",
+            (Self::ZhCn, "decline") => "拒绝",
+            (Self::ZhCn, "cancel") => "取消",
+            (Self::ZhTw, "accept") => "允許",
+            (Self::ZhTw, "accept_session") => "允許此工作階段",
+            (Self::ZhTw, "accept_always") => "一律允許",
+            (Self::ZhTw, "decline") => "拒絕",
+            (Self::ZhTw, "cancel") => "取消",
+            (Self::EnUs, "accept") => "Allow",
+            (Self::EnUs, "accept_session") => "Allow for this session",
+            (Self::EnUs, "accept_always") => "Always allow",
+            (Self::EnUs, "decline") => "Deny",
+            (Self::EnUs, "cancel") => "Cancel",
+            (Self::JaJp, "accept") => "許可",
+            (Self::JaJp, "accept_session") => "このセッションで許可",
+            (Self::JaJp, "accept_always") => "常に許可",
+            (Self::JaJp, "decline") => "拒否",
+            (Self::JaJp, "cancel") => "キャンセル",
+            (Self::KoKr, "accept") => "허용",
+            (Self::KoKr, "accept_session") => "이 세션에서 허용",
+            (Self::KoKr, "accept_always") => "항상 허용",
+            (Self::KoKr, "decline") => "거부",
+            (Self::KoKr, "cancel") => "취소",
+            (_, _) => "",
+        }
+    }
+
+    pub(crate) fn mcp_elicitation_controls(self, select: bool) -> String {
+        match (self, select) {
+            (Self::ZhCn, true) => "↑/↓ 选择  Enter 确认  Tab/←/→ 切换字段  Esc 取消".to_string(),
+            (Self::ZhCn, false) => "Enter 确认  Tab 切换字段  Esc 取消".to_string(),
+            (Self::ZhTw, true) => "↑/↓ 選擇  Enter 確認  Tab/←/→ 切換欄位  Esc 取消".to_string(),
+            (Self::ZhTw, false) => "Enter 確認  Tab 切換欄位  Esc 取消".to_string(),
+            (Self::EnUs, true) => {
+                "Up/Down select  Enter confirm  Tab/Left/Right switch field  Esc cancel".to_string()
+            }
+            (Self::EnUs, false) => "Enter confirm  Tab switch field  Esc cancel".to_string(),
+            (Self::JaJp, true) => {
+                "↑/↓ 選択  Enter 確定  Tab/←/→ フィールド切替  Esc キャンセル".to_string()
+            }
+            (Self::JaJp, false) => "Enter 確定  Tab フィールド切替  Esc キャンセル".to_string(),
+            (Self::KoKr, true) => "↑/↓ 선택  Enter 확인  Tab/←/→ 필드 전환  Esc 취소".to_string(),
+            (Self::KoKr, false) => "Enter 확인  Tab 필드 전환  Esc 취소".to_string(),
+        }
+    }
+
+    pub(crate) fn mcp_elicitation_required_error(self) -> &'static str {
+        match self {
+            Self::ZhCn => "请先填写必填字段。",
+            Self::ZhTw => "請先填寫必填欄位。",
+            Self::EnUs => "Answer all required fields first.",
+            Self::JaJp => "必須フィールドを先に入力してください。",
+            Self::KoKr => "필수 필드를 먼저 입력하세요.",
+        }
+    }
+
+    pub(crate) fn mcp_elicitation_invalid(self) -> &'static str {
+        match self {
+            Self::ZhCn => "无法显示此 MCP 请求",
+            Self::ZhTw => "無法顯示此 MCP 要求",
+            Self::EnUs => "Unable to display this MCP request",
+            Self::JaJp => "この MCP リクエストを表示できません",
+            Self::KoKr => "이 MCP 요청을 표시할 수 없습니다",
         }
     }
 
@@ -1424,7 +1819,78 @@ mod tests {
         assert_eq!(Locale::EnUs.detail("prompt: inspect"), "prompt: inspect");
         assert_eq!(Locale::JaJp.detail("model: fixture"), "モデル: fixture");
         assert_eq!(Locale::KoKr.detail("effort: high"), "추론 강도: high");
+        assert_eq!(Locale::ZhCn.detail("output: ok"), "输出：ok");
+        assert_eq!(Locale::ZhTw.detail("output: ok"), "輸出：ok");
+        assert_eq!(Locale::EnUs.detail("output: ok"), "output: ok");
+        assert_eq!(Locale::JaJp.detail("output: ok"), "出力: ok");
+        assert_eq!(Locale::KoKr.detail("output: ok"), "출력: ok");
+        assert_eq!(
+            Locale::ZhCn.detail("structured content: {\"matches\":1}"),
+            "结构化内容：{\"matches\":1}"
+        );
+        assert_eq!(
+            Locale::ZhTw.detail("structured content: {\"matches\":1}"),
+            "結構化內容：{\"matches\":1}"
+        );
+        assert_eq!(
+            Locale::EnUs.detail("structured content: {\"matches\":1}"),
+            "structured content: {\"matches\":1}"
+        );
+        assert_eq!(
+            Locale::JaJp.detail("structured content: {\"matches\":1}"),
+            "構造化コンテンツ: {\"matches\":1}"
+        );
+        assert_eq!(
+            Locale::KoKr.detail("structured content: {\"matches\":1}"),
+            "구조화 콘텐츠: {\"matches\":1}"
+        );
+        assert_eq!(
+            Locale::ZhCn.detail("computer screenshot: captured"),
+            "电脑截图：captured"
+        );
+        assert_eq!(
+            Locale::ZhTw.detail("computer action: Capture"),
+            "電腦操作：Capture"
+        );
+        assert_eq!(
+            Locale::EnUs.detail("computer error: failed"),
+            "computer error: failed"
+        );
+        assert_eq!(
+            Locale::JaJp.detail("computer screenshot: captured"),
+            "コンピュータ スクリーンショット: captured"
+        );
+        assert_eq!(
+            Locale::KoKr.detail("computer action: Capture"),
+            "컴퓨터 작업: Capture"
+        );
         assert_eq!(Locale::ZhTw.detail("custom: value"), "custom: value");
+        assert_eq!(Locale::ZhCn.status("running hook"), "正在运行 Hook");
+        assert_eq!(Locale::ZhTw.status("running hooks"), "正在執行多個 Hook");
+        assert_eq!(Locale::EnUs.status("running hook"), "running hook");
+        assert_eq!(Locale::JaJp.status("running hooks"), "複数の Hook を実行中");
+        assert_eq!(Locale::KoKr.status("running hook"), "Hook 실행 중");
+        assert_eq!(
+            Locale::ZhCn.status("MCP startup issue: docs: offline"),
+            "MCP 启动问题: docs: offline"
+        );
+        assert_eq!(
+            Locale::ZhTw.status("MCP startup issues: 2"),
+            "MCP 啟動問題: 2"
+        );
+        assert_eq!(
+            Locale::JaJp.status("MCP startup issue: docs: offline"),
+            "MCP 起動の問題: docs: offline"
+        );
+        assert_eq!(
+            Locale::KoKr.status("MCP startup issue: docs: offline"),
+            "MCP 시작 문제: docs: offline"
+        );
+        assert_eq!(Locale::ZhCn.detail("hook completed"), "Hook 已完成");
+        assert_eq!(Locale::ZhTw.detail("hook failed"), "Hook 失敗");
+        assert_eq!(Locale::EnUs.detail("hook blocked"), "hook blocked");
+        assert_eq!(Locale::JaJp.detail("hook stopped"), "Hook 停止");
+        assert_eq!(Locale::KoKr.detail("hook output: ok"), "Hook 출력: ok");
         assert_eq!(Locale::ZhCn.approval_option("Allow once"), "允许一次");
         assert_eq!(
             Locale::JaJp.approval_option("Cancel turn"),
@@ -1710,6 +2176,55 @@ mod tests {
     }
 
     #[test]
+    fn export_picker_labels_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            for label in [
+                locale.export_title(),
+                locale.export_subtitle(),
+                locale.export_copy_label(),
+                locale.export_copy_description(),
+                locale.export_file_label(),
+                locale.export_file_description(),
+                locale.export_picker_hint(),
+                locale.export_prompt_title(),
+                locale.export_prompt_hint(),
+            ] {
+                assert!(!label.is_empty(), "missing export label for {locale:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn mcp_approval_labels_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            for value in [
+                "accept",
+                "accept_session",
+                "accept_always",
+                "decline",
+                "cancel",
+            ] {
+                assert!(
+                    !locale.mcp_elicitation_approval_option(value).is_empty(),
+                    "missing MCP approval label for {locale:?}/{value}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn working_directory_messages_cover_all_product_locales() {
         let cwd = "/tmp/project";
         for locale in [
@@ -1722,6 +2237,31 @@ mod tests {
             let message = locale.current_working_directory_message(cwd);
             assert!(message.contains(cwd));
             assert!(!locale.pwd_usage().is_empty());
+        }
+    }
+
+    #[test]
+    fn file_search_popup_labels_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            assert!(!locale.file_search_loading().is_empty());
+            assert!(!locale.file_search_no_matches().is_empty());
+        }
+        assert_eq!(Locale::ZhCn.file_search_loading(), "正在搜索...");
+        assert_eq!(Locale::EnUs.file_search_no_matches(), "no matches");
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            assert!(!locale.skill_popup_no_matches().is_empty());
         }
     }
 

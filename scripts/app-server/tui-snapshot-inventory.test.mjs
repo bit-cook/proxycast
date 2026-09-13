@@ -16,13 +16,13 @@ describe("Codex TUI snapshot inventory", () => {
   it("classifies every recorded snapshot with a stable relative path and hash", () => {
     expect(inventory.schemaVersion).toBe(1);
     expect(inventory.sourceCommit).toBe(
-      "cac96cd7b1756ab42e8925d938817a2ac10ebb6e",
+      "c4017a87aacc7558002b7cb510025e967c1d765e",
     );
     expect(inventory.sourcePathSetSha256).toBe(
-      "da5d7b14f30cccefa3132e2c33b4aaf1e0460ce9a342fc571f857ce15a21ef03",
+      "7367819562c2ff87787e99840ae02494f3869dd429a3b7b2d4974760effb0915",
     );
     expect(inventory.snapshotCount).toBe(inventory.entries.length);
-    expect(inventory.snapshotCount).toBe(802);
+    expect(inventory.snapshotCount).toBe(991);
     expect(new Set(inventory.entries.map((entry) => entry.path)).size).toBe(
       inventory.snapshotCount,
     );
@@ -51,10 +51,10 @@ describe("Codex TUI snapshot inventory", () => {
     expect(actualCounts).toEqual(inventory.counts);
     expect(actualCounts).toEqual({
       direct: 48,
-      merge: 579,
-      contract: 80,
-      defer: 25,
-      dead: 70,
+      merge: 702,
+      contract: 136,
+      defer: 28,
+      dead: 77,
     });
     expect(
       inventory.entries.find((entry) =>

@@ -16,16 +16,16 @@ describe("Codex CLI test inventory", () => {
   it("records every upstream Rust test with stable source evidence", () => {
     expect(inventory.schemaVersion).toBe(1);
     expect(inventory.sourceCommit).toBe(
-      "cac96cd7b1756ab42e8925d938817a2ac10ebb6e",
+      "c4017a87aacc7558002b7cb510025e967c1d765e",
     );
-    expect(inventory.sourceFileCount).toBe(53);
-    expect(inventory.testCount).toBe(433);
+    expect(inventory.sourceFileCount).toBe(60);
+    expect(inventory.testCount).toBe(467);
     expect(inventory.entries).toHaveLength(inventory.testCount);
     expect(inventory.sourcePathSetSha256).toBe(
-      "f9bac0cacb2726be1fa2c76dd00aab1ef2a6430ec308d552e33493a19783ade9",
+      "4574baa0b5b443e14d6761ca0cff16e2154af7363605ae91789cb5c0a7100289",
     );
     expect(inventory.sourceTreeSha256).toBe(
-      "d126a443a2f74c9fcfd626edc2f5f9d8e26410d6067d87d0b4affc53d81ce2b1",
+      "f43e19fc9d2d0d5da51d45e919cf5341d0b7b0ee61192f2892f4e255c6f16db1",
     );
 
     const identities = inventory.entries.map(

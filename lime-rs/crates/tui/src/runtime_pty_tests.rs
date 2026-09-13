@@ -395,6 +395,18 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             );
             writer.write_all(&[3]).expect("send quit Ctrl-C");
             writer.flush().expect("flush quit Ctrl-C");
+            if scenario == "queue-edit" {
+                // The queued draft is cleared by the first Ctrl-C. Wait for the canonical
+                // interrupted projection before sending the second Ctrl-C that exits.
+                wait_for_screen_marker(
+                    &output_rx,
+                    &mut output,
+                    "interrupted",
+                    Duration::from_secs(5),
+                );
+                writer.write_all(&[3]).expect("send second quit Ctrl-C");
+                writer.flush().expect("flush second quit Ctrl-C");
+            }
         } else {
             writer.write_all(&[4]).expect("exit TUI");
             writer.flush().expect("flush TUI exit");

@@ -1,5 +1,7 @@
 mod approval_overlay;
 mod chat_composer;
+mod footer;
+mod mcp_server_elicitation;
 mod render;
 mod request_user_input;
 mod textarea;
@@ -9,16 +11,21 @@ use std::collections::VecDeque;
 use app_server_protocol::protocol::v2::{
     CommandExecutionApprovalDecision, CommandExecutionRequestApprovalResponse,
     FileChangeApprovalDecision, FileChangeRequestApprovalResponse, GrantedPermissionProfile,
-    PermissionGrantScope, PermissionsRequestApprovalResponse, ServerRequest,
-    ToolRequestUserInputResponse,
+    McpServerElicitationRequestResponse, PermissionGrantScope, PermissionsRequestApprovalResponse,
+    ServerRequest, ToolRequestUserInputResponse,
 };
 use app_server_protocol::RequestId;
 use crossterm::event::{Event, KeyEvent};
 
 use approval_overlay::ApprovalOverlay;
-pub(crate) use chat_composer::{ChatComposer, InputResult};
+pub(crate) use chat_composer::{
+    ChatComposer, FileSearchPopupAction, FileSearchRequest, InputResult, SkillPopupAction,
+};
+use mcp_server_elicitation::McpServerElicitationOverlay;
 use request_user_input::RequestUserInputOverlay;
+pub(crate) use textarea::{TextArea, TextAreaState};
 
+pub(crate) use footer::render_footer;
 pub(crate) use render::{desired_height_with_locale, render_with_locale};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +45,10 @@ pub(crate) enum AppServerResponse {
     UserInput {
         id: RequestId,
         response: ToolRequestUserInputResponse,
+    },
+    McpElicitation {
+        id: RequestId,
+        response: McpServerElicitationRequestResponse,
     },
 }
 
@@ -76,9 +87,11 @@ impl AppServerResponse {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum PendingInteraction {
     Approval(ApprovalOverlay),
     UserInput(RequestUserInputOverlay),
+    McpElicitation(McpServerElicitationOverlay),
 }
 
 impl PendingInteraction {
@@ -92,6 +105,13 @@ impl PendingInteraction {
             ServerRequest::ItemToolRequestUserInput { id, params } => {
                 Ok(Self::UserInput(RequestUserInputOverlay::new(id, params)))
             }
+            ServerRequest::McpServerElicitationRequest { id, params } => {
+                McpServerElicitationOverlay::from_server_request(id.clone(), &params)
+                    .map(Self::McpElicitation)
+                    .ok_or_else(|| {
+                        Box::new(ServerRequest::McpServerElicitationRequest { id, params })
+                    })
+            }
             request => Err(Box::new(request)),
         }
     }
@@ -100,6 +120,7 @@ impl PendingInteraction {
         match self {
             Self::Approval(approval) => approval.handle_key_event(key),
             Self::UserInput(request) => request.handle_key_event(key),
+            Self::McpElicitation(request) => request.handle_key_event(key),
         }
     }
 }
@@ -114,6 +135,20 @@ impl BottomPane {
         self.queue
             .push_back(PendingInteraction::from_server_request(request)?);
         Ok(())
+    }
+
+    pub(crate) fn supports_request(request: &ServerRequest) -> bool {
+        match request {
+            ServerRequest::McpServerElicitationRequest { id, params } => {
+                McpServerElicitationOverlay::from_server_request(id.clone(), params).is_some()
+            }
+            ServerRequest::DynamicToolCall { .. } => false,
+            ServerRequest::CurrentTimeRead { .. }
+            | ServerRequest::ItemCommandExecutionRequestApproval { .. }
+            | ServerRequest::ItemFileChangeRequestApproval { .. }
+            | ServerRequest::ItemPermissionsRequestApproval { .. }
+            | ServerRequest::ItemToolRequestUserInput { .. } => true,
+        }
     }
 
     pub(crate) fn is_active(&self) -> bool {
@@ -132,11 +167,16 @@ impl BottomPane {
         match event {
             Event::Key(key) => self.handle_key_event(key),
             Event::Paste(text) => {
-                let Some(PendingInteraction::UserInput(request)) = self.queue.front_mut() else {
-                    return None;
-                };
-                request.editing = true;
-                request.composer.insert(&text);
+                match self.queue.front_mut() {
+                    Some(PendingInteraction::UserInput(request)) => {
+                        request.editing = true;
+                        request.composer.insert(&text);
+                    }
+                    Some(PendingInteraction::McpElicitation(request)) => {
+                        request.handle_paste(&text);
+                    }
+                    _ => return None,
+                }
                 None
             }
             _ => None,
@@ -263,11 +303,62 @@ mod tests {
             }
         }))
         .expect("MCP elicitation request");
+        assert!(pane.enqueue(mcp_elicitation).is_ok());
+        assert!(pane.is_active());
         assert!(matches!(
-            pane.enqueue(mcp_elicitation),
+            pane.handle_event(key(KeyCode::Enter)),
+            Some(AppServerResponse::McpElicitation {
+                response: McpServerElicitationRequestResponse {
+                    action: app_server_protocol::protocol::v2::McpServerElicitationAction::Accept,
+                    content: Some(_),
+                    ..
+                },
+                ..
+            })
+        ));
+        assert!(!pane.is_active());
+
+        let unsupported_tool_suggestion = serde_json::from_value::<ServerRequest>(json!({
+            "method": "mcpServer/elicitation/request",
+            "id": 6,
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "serverName": "form-server",
+                "mode": "form",
+                "_meta": { "codex_approval_kind": "tool_suggestion" },
+                "message": "Install a tool",
+                "requestedSchema": { "type": "object", "properties": {} }
+            }
+        }))
+        .expect("tool suggestion MCP elicitation request");
+        assert!(matches!(
+            pane.enqueue(unsupported_tool_suggestion),
             Err(request) if matches!(*request, ServerRequest::McpServerElicitationRequest { .. })
         ));
         assert!(!pane.is_active());
+
+        let supported_mcp_elicitation = serde_json::from_value::<ServerRequest>(json!({
+            "method": "mcpServer/elicitation/request",
+            "id": 5,
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "serverName": "form-server",
+                "mode": "form",
+                "message": "Choose a value",
+                "requestedSchema": {
+                    "type": "object",
+                    "properties": {
+                        "confirmed": { "type": "boolean" }
+                    },
+                    "required": ["confirmed"]
+                }
+            }
+        }))
+        .expect("supported MCP elicitation request");
+        assert!(pane.enqueue(supported_mcp_elicitation).is_ok());
+        assert!(pane.is_active());
     }
 
     #[test]

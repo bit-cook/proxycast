@@ -1,33 +1,33 @@
 # Codex 与 Lime TUI/CLI 全量差异报告
 
 基线：Codex checkout `/Users/coso/Documents/dev/rust/codex`，Rust commit
-`cac96cd7b1756ab42e8925d938817a2ac10ebb6e`。本报告只记录对照结果，不把 Codex
+`c4017a87aacc7558002b7cb510025e967c1d765e`（参考目录当前 checkout）。本报告只记录对照结果，不把 Codex
 私有产品能力误判成 Lime current 需求。逐项路径、符号、哈希、测试名和分类以以下
 JSON 为最终事实源：
 
 - [TUI 目录/符号账本](./tui-structure-inventory.json)
-- [TUI 802 个 snapshot 账本](./tui-codex-snapshot-inventory.json)
+- [TUI 991 个 snapshot 账本](./tui-codex-snapshot-inventory.json)
 - [CLI 目录/符号账本](./cli-structure-inventory.json)
-- [CLI 433 个测试账本](./cli-codex-test-inventory.json)
+- [CLI 467 个测试账本](./cli-codex-test-inventory.json)
 
 ## 1. 总量差异
 
 | 维度 | Codex | Lime | 差异 | 结论 |
 | --- | ---: | ---: | ---: | --- |
-| TUI Rust 源文件 | 579 | 91 | 缺 506，Lime 独有 18 | 目录体系未同构 |
-| TUI Rust 类型/函数符号 | 12,000 | 1,491 | 缺 9,878，Lime 独有 791 | 大量行为仍聚合在 Lime owner |
-| TUI snapshot | 802 | 0 | 802 未复制为 insta 文件 | 账本已分类，未机械迁移 |
-| TUI 测试标记 | 4,145 | 372 | 缺 3,773（以扫描口径） | Cargo 实际 TUI 测试 390/390 |
-| CLI Rust 源文件 | 82 | 11 | 缺 71 | 产品专属文件被排除，current 仍较薄 |
+| TUI Rust 源文件 | 704 | 140 | 缺 582，Lime 独有 18 | 目录体系仍未同构 |
+| TUI Rust 类型/函数符号 | 13,120 | 2,213 | 缺 10,415，Lime 独有 881 | 大量行为仍聚合在 Lime owner |
+| TUI snapshot | 991 | 0 | 991 未复制为 insta 文件 | 账本已分类，未机械迁移 |
+| TUI 测试标记 | 4,617 | 577 | 缺 4,040（按当前 checkout 的 `#[test]`/`#[tokio::test]` 扫描） | Cargo 实际 TUI library 586/586，集成 15/15，manager regression 1/1 |
+| CLI Rust 源文件 | 97 | 11 | 缺 86 | 产品专属文件被排除，current 仍较薄 |
 | execpolicy 源文件 | 17 | 17 | 0 | 目录同构 |
 | CLI npm 文件 | 7 | 7 | 3 个文件名不同 | launcher 已改为 Lime 命名 |
-| Codex CLI 测试 | 433 | - | 50 covered，88 partial，64 deferred，231 excluded | `missing=0` 不等于行为全覆盖 |
+| Codex CLI 测试 | 467 | - | 50 covered，89 partial，81 deferred，247 excluded | `missing=0` 不等于行为全覆盖 |
 
 ## 2. TUI 目录与文件差异
 
 ### 2.1 Codex 缺失于 Lime 的文件族
 
-`filesMissingInLime=506`，完整路径清单在 TUI 结构账本。按一级 owner 计数如下：
+`filesMissingInLime=582`，完整路径清单在 TUI 结构账本。按一级 owner 计数如下：
 
 | owner | 缺失数 | 主要差异 |
 | --- | ---: | --- |
@@ -99,29 +99,30 @@ canonical contract 重建，不能直接把私有类型搬进 Lime。
 
 ## 4. TUI snapshot 差异
 
-Codex snapshot 基线为 802 个，Lime 当前 snapshot 文件为 0；账本已逐项保存路径和 SHA-256。
+Codex snapshot 基线为 991 个，Lime 当前 snapshot 文件为 0；账本已逐项保存路径和 SHA-256。
 
 | Codex 模块 | snapshot 数 | 分类 |
 | --- | ---: | --- |
-| `app` | 56 | contract/dead |
-| `bottom_pane` | 244 | merge/dead |
-| `chatwidget` | 278 | merge/dead |
-| `history_cell` | 56 | merge/dead |
+| `app` | 110 | contract/dead |
+| `bottom_pane` | 278 | merge/dead |
+| `chatwidget` | 352 | merge/dead |
+| `history_cell` | 68 | merge/dead |
 | `status` | 23 | merge/dead |
-| `resume_picker` | 18 | contract |
+| `resume_picker` | 20 | contract |
 | `markdown_render` | 20 | direct |
 | `diff_render` | 23 | direct |
 | `pager_overlay` | 9 | merge |
-| `status_indicator_widget` | 8 | merge |
+| `status_indicator_widget` | 9 | merge |
 | `cwd_prompt` | 5 | contract |
-| `onboarding` | 4 | dead |
+| `onboarding` | 6 | dead |
 | `model_migration` | 4 | dead |
 | `inline_visualization` | 4 | defer |
 | `custom_terminal` | 3 | defer |
 | `debug_config` | 3 | dead |
-| 其它模块 | 44 | 按账本逐项分类 |
+| `keymap_setup` | 18 | defer |
+| 其它模块 | 36 | 按账本逐项分类 |
 
-分类总计：`direct=48`、`merge=579`、`contract=80`、`defer=25`、`dead=70`。
+分类总计：`direct=48`、`merge=702`、`contract=136`、`defer=28`、`dead=77`。
 
 - `direct`：`diff_render`、`markdown_render`、`insert_history`、`render`、
   `terminal_hyperlinks`、`terminal_palette`、`table_detect`、`wrapping` 等纯终端算法。
@@ -139,12 +140,17 @@ Codex snapshot 基线为 802 个，Lime 当前 snapshot 文件为 0；账本已�
 App Server 事件/请求分离、ThreadEventStore、replay filter、agent picker、resume/archive、
 queue edit、approval、request_user_input、interrupt、external editor、model catalog、
 多 agent overview、terminal restore、clipboard、markdown/diff/hyperlink/wrapping、
-status indicator、真实 PTY Gate B 均已有 current owner 和回归测试。
+status indicator、真实 PTY Gate B 均已有 current owner 和回归测试。`wrapping` 已按 Codex
+同名 owner 补齐 projected halfwidth sound mark、owned penalty、trailing-space/sentinel、
+CRLF、缩进 source mapping 和 URL-only/mixed URL-prose 测试，相关 61 个测试全部通过。
 
 ### 部分对齐
 
 1. Codex `chatwidget` 的完整状态机被 Lime `app` + `bottom_pane/chat_composer` + `projection`
    分散承接，目录和类型没有一一对应。
+   当前 `ChatComposer` 的 attachment owner 已与 Codex 语义对齐：本地图片和远程
+   `UserInput::Image` 均可选择、删除、编号、提交，并可通过队列编辑无损恢复；运行时仍只
+   通过 App Server v2 canonical `UserInput` lowering，不复制 Codex 私有 history/rollout DB。
 2. Codex `history_cell` 的历史项渲染被 Lime `entry.rs`/`thread_transcript.rs` 承接，
    但 approval、MCP、patch、plan、hook、exec 的完整 cell owner 和 snapshot 套件未同构。
 3. Codex `render`/`streaming` 被 Lime `view.rs`、`entry.rs`、`markdown.rs`、`highlight.rs`
@@ -214,7 +220,7 @@ Codex 缺失文件完整路径在 `cli-structure-inventory.json.comparisons.rust
 
 ### 7.2 符号
 
-- CLI Rust 缺失 Codex 符号 `774` 个，Lime 独有 `65` 个；完整路径/名称在结构账本。
+- CLI Rust 缺失 Codex 符号 `797` 个，Lime 独有 `65` 个；完整路径/名称在结构账本。
 - `execpolicy` 为 17/17 文件、95/95 符号，同构完成。
 - Lime current 命名已按 Codex 形状收敛：`MultitoolCli`、`Subcommand`、`CompletionCommand`、
   `TuiCli`、`ExecCli`、`ResumeCommand`、`McpCli`、`PluginCli`、`FeaturesCli`、
@@ -226,15 +232,15 @@ Codex 缺失文件完整路径在 `cli-structure-inventory.json.comparisons.rust
 
 ## 8. CLI 测试差异
 
-Codex CLI 账本共 433 个测试，来自 53 个源文件。当前分类：
+Codex CLI 账本共 467 个测试，来自 60 个源文件。当前分类：
 
 | 分类/状态 | 数量 | 含义 |
 | --- | ---: | --- |
 | `direct / covered` | 9 | 纯 parser、WSL、execpolicy 等直接覆盖 |
 | `contract / covered` | 41 | 通过 App Server JSON-RPC/current owner 覆盖 |
-| `contract / partial` | 88 | 有 current owner，但行为或 Gate B 未完全同构 |
-| `cloud-deferred / deferred` | 64 | authenticated remote transport 基础完成前暂缓 |
-| `product-specific / excluded` | 231 | Codex account/doctor/marketplace/updater/desktop/state 私有能力 |
+| `contract / partial` | 89 | 有 current owner，但行为或 Gate B 未完全同构 |
+| `cloud-deferred / deferred` | 81 | authenticated remote transport 基础完成前暂缓 |
+| `product-specific / excluded` | 247 | Codex account/doctor/marketplace/updater/desktop/state 私有能力 |
 | `missing / pending` | 0 | 每个测试都已明确绑定到分类；不代表行为全部实现 |
 
 ### 已覆盖 current CLI 行为
@@ -245,7 +251,7 @@ add/list/read/search/enable/disable/remove、MCP list/add/get/remove/start/stop�
 thread archive/delete/unarchive/fork/resume、非交互 exec、TUI/exec 入口、WSL path 算法和
 退出码处理。
 
-### 88 个 partial 的能力族
+### 89 个 partial 的能力族
 
 1. permission options：Codex `approve-for-me`、`not-so-yolo` 别名和 root/exec/resume 合并
    优先级未逐字复制；Lime 以 `permissionProfile/list` + `turn/start` 为 current owner。
@@ -260,14 +266,14 @@ thread archive/delete/unarchive/fork/resume、非交互 exec、TUI/exec 入口�
    daemon/state/rollout storage 不复制。
 7. sandbox：sandbox-state replay、managed network、named profile 全矩阵仍不完整。
 
-### 64 个 Cloud deferred 能力族
+### 81 个 Cloud deferred 能力族
 
 remote-control、exec-server、remote API-key auth、Cloud managed permission profile、
 Cloud MCP config/OAuth、remote plugin catalog、remote queue、remote working directory、
 parent lifetime/telemetry、远程 sandbox 和所有 authenticated transport 相关测试。
 完整测试名在 `cli-codex-test-inventory.json` 中 `status=deferred` 的条目。
 
-### 231 个 product-specific 排除能力族
+### 247 个 product-specific 排除能力族
 
 Codex `doctor` 全部诊断面、account/login、marketplace add/remove/upgrade、updater/update、
 desktop launcher、macOS PID tracker/seatbelt denial internals、state DB recovery、rollout
@@ -311,10 +317,9 @@ Android/Linux musl 分支。
 
 ### launcher 命名和实现
 
-Lime launcher 源码仍残留 Codex-shaped 变量/函数名：`codexPackageRoot`、
-`findCodexExecutable`、`isPnpmOwnedCodexInstall`；这是当前未完成的命名差异，不能把
-Codex 名字留在 Lime current owner 中。应改为 Lime 语义（例如 package root 和
-`findLimeExecutable`），并同步 npm 测试和结构账本。Lime 额外设置
+Lime launcher 已将 Codex-shaped 变量/函数名收敛为 Lime current 语义：
+`limePackageRoot`、`findLimeExecutable`、`isPnpmOwnedLimeInstall` 和
+`isVitePlusOwnedLimeInstall`，并同步 npm 测试和结构账本。Lime 额外设置
 `DYLD_LIBRARY_PATH`/`LD_LIBRARY_PATH` 以加载 bundled native libraries，这是运行时适配，
 不是 Codex 同构差异。
 
@@ -335,7 +340,8 @@ account/onboarding/update/marketplace/doctor/pets/theme，以及 Codex 产品内
 
 已验证：
 
-- `cargo test --locked -p tui -p cli`：TUI 390/390，CLI 50/50。
+- `cargo test --locked -p tui -p cli`：TUI library 586/586、TUI integration 15/15、manager
+  regression 1/1，CLI all-targets 52/52。
 - `cargo clippy --locked -p tui --no-deps -- -D warnings`、`cargo check --locked -p tui`。
 - `cargo metadata --locked`、`cargo fmt --package tui -- --check`、`git diff --check`。
 - TUI/CLI inventory Vitest、`npm run test:contracts`、`npm run governance:legacy-report`。

@@ -22,6 +22,26 @@ const PACKAGE_ROOT = path.resolve(
 const LAUNCHER_SOURCE = path.join(PACKAGE_ROOT, "bin", "lime.js");
 const BUILD_SCRIPT = path.join(PACKAGE_ROOT, "scripts", "build_npm_package.py");
 
+test("launcher current owner does not expose Codex helper names", () => {
+  const source = readFileSync(LAUNCHER_SOURCE, "utf8");
+  for (const name of [
+    "codexPackageRoot",
+    "findCodexExecutable",
+    "isPnpmOwnedCodexInstall",
+    "isVitePlusOwnedCodexInstall",
+  ]) {
+    assert.equal(source.includes(name), false, name);
+  }
+  for (const name of [
+    "limePackageRoot",
+    "findLimeExecutable",
+    "isPnpmOwnedLimeInstall",
+    "isVitePlusOwnedLimeInstall",
+  ]) {
+    assert.equal(source.includes(name), true, name);
+  }
+});
+
 function currentPlatform() {
   if (process.platform === "darwin" && process.arch === "arm64") {
     return {
@@ -213,7 +233,7 @@ test(
   },
 );
 
-test("staging creates Codex-style root aliases and a real npm tarball", (t) => {
+test("staging creates Lime root aliases and a real npm tarball", (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "lime-npm-stage-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const staging = path.join(root, "root-package");

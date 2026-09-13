@@ -28,13 +28,13 @@ const rules = [
     rationale:
       "Remote-control, Cloud, and exec-server behavior remains deferred beyond the authenticated transport foundation and must not create a second runtime.",
     matches: ({ path: relativePath, testName }) =>
-      /(?:^|\/)(?:cloud_config|remote_control_cmd|exec_server(?:_telemetry)?(?:_tests)?)(?:\.rs|\/)/u.test(
+      /(?:^|\/)(?:cloud_config|remote_control_cmd|exec_server(?:_auth|_telemetry)?(?:_tests)?|mcp_login(?:_tests)?)(?:\.rs|\/)/u.test(
         relativePath,
       ) ||
-      /(?:^|\/)tests\/(?:cloud_auth|cloud_config|exec_server|sandbox_cloud_config)\.rs$/u.test(
+      /(?:^|\/)tests\/(?:cloud_auth|cloud_config|exec_server|mcp_login|sandbox_cloud_config)\.rs$/u.test(
         relativePath,
       ) ||
-      /(?:^|_)(?:remote|exec_server|cloud_managed_permission_profiles?)(?:_|$)/u.test(testName),
+      /(?:^|_)(?:remote|exec_server|mcp_login|cloud_managed_permission_profiles?)(?:_|$)/u.test(testName),
   },
   {
     id: "retired-doctor-surface",
@@ -72,10 +72,10 @@ const rules = [
       ) ||
       /(?:^|\/)desktop_app\//u.test(relativePath) ||
       /(?:^|\/)src\/bin\/logs_client\.rs$/u.test(relativePath) ||
-      /(?:^|\/)tests\/(?:login|marketplace_add|marketplace_remove|marketplace_upgrade|update)\.rs$/u.test(
+      /(?:^|\/)tests\/(?:login|marketplace_add|marketplace_remove|marketplace_upgrade|update|worktree)\.rs$/u.test(
         relativePath,
       ) ||
-      /(?:^|_)(?:marketplace|updater|chatgpt)(?:_|$)/u.test(testName),
+      /(?:^|_)(?:marketplace|updater|chatgpt|worktree|manual_update)(?:_|$)/u.test(testName),
   },
   {
     id: "current-sandbox-parser",
@@ -159,15 +159,15 @@ const rules = [
   },
   {
     id: "current-sandbox-and-execpolicy",
-    classification: "missing",
-    status: "pending",
+    classification: "contract",
+    status: "partial",
     limeOwner:
       "cli -> app-server-client -> App Server command/exec -> tool-runtime sandbox/execpolicy",
     rationale:
       "The remaining Codex sandbox-state replay, managed network, and named-profile cases still need current-owner implementations and integration tests.",
     matches: ({ path: relativePath, testName }) =>
       /(?:^|\/)src\/debug_sandbox(?:\.rs|\/)/u.test(relativePath) ||
-      /(?:^|\/)tests\/sandbox_network_proxy\.rs$/u.test(relativePath) ||
+      /(?:^|\/)tests\/(?:sandbox_network_proxy|sandbox_tty)\.rs$/u.test(relativePath) ||
       /(?:^|_)sandbox_(?:parses|help|rejects)(?:_|$)/u.test(testName),
   },
   {

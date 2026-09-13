@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
-const codexPackageRoot = realpathSync(path.join(__dirname, ".."));
+const limePackageRoot = realpathSync(path.join(__dirname, ".."));
 
 const PLATFORM_PACKAGE_BY_TARGET = {
   "x86_64-unknown-linux-gnu": "@limecloud/lime-linux-x64",
@@ -53,7 +53,7 @@ if (!platformPackage) {
   throw new Error(`Unsupported target triple: ${targetTriple}`);
 }
 
-function findCodexExecutable() {
+function findLimeExecutable() {
   let vendorRoot;
   try {
     const packageJsonPath = require.resolve(`${platformPackage}/package.json`);
@@ -86,7 +86,7 @@ function findCodexExecutable() {
   );
 }
 
-function isPnpmOwnedCodexInstall(nodeModulesDir) {
+function isPnpmOwnedLimeInstall(nodeModulesDir) {
   if (!existsSync(path.join(nodeModulesDir, ".modules.yaml"))) {
     return false;
   }
@@ -94,14 +94,14 @@ function isPnpmOwnedCodexInstall(nodeModulesDir) {
   try {
     return (
       realpathSync(path.join(nodeModulesDir, "@limecloud", "lime")) ===
-      codexPackageRoot
+      limePackageRoot
     );
   } catch {
     return false;
   }
 }
 
-function isVitePlusOwnedCodexInstall(packagesDir) {
+function isVitePlusOwnedLimeInstall(packagesDir) {
   if (path.basename(packagesDir) !== "packages") {
     return false;
   }
@@ -125,7 +125,7 @@ function isVitePlusOwnedCodexInstall(packagesDir) {
       const packageRoot = path.join(nodeModulesDir, "@limecloud", "lime");
       if (
         existsSync(packageRoot) &&
-        realpathSync(packageRoot) === codexPackageRoot
+        realpathSync(packageRoot) === limePackageRoot
       ) {
         return true;
       }
@@ -138,22 +138,22 @@ function isVitePlusOwnedCodexInstall(packagesDir) {
 
 function detectPackageManager() {
   const entrypointDir = path.dirname(path.resolve(process.argv[1]));
-  for (const startDir of new Set([codexPackageRoot, entrypointDir])) {
+  for (const startDir of new Set([limePackageRoot, entrypointDir])) {
     const filesystemRoot = path.parse(startDir).root;
     for (
       let currentDir = startDir;
       currentDir !== filesystemRoot;
       currentDir = path.dirname(currentDir)
     ) {
-      if (isVitePlusOwnedCodexInstall(currentDir)) {
+      if (isVitePlusOwnedLimeInstall(currentDir)) {
         return "vite-plus";
       }
-      if (isPnpmOwnedCodexInstall(path.join(currentDir, "node_modules"))) {
+      if (isPnpmOwnedLimeInstall(path.join(currentDir, "node_modules"))) {
         return "pnpm";
       }
     }
 
-    if (isPnpmOwnedCodexInstall(path.join(filesystemRoot, "node_modules"))) {
+    if (isPnpmOwnedLimeInstall(path.join(filesystemRoot, "node_modules"))) {
       return "pnpm";
     }
   }
@@ -178,7 +178,7 @@ function detectPackageManager() {
   return userAgent ? "npm" : null;
 }
 
-const binaryPath = findCodexExecutable();
+const binaryPath = findLimeExecutable();
 const packageManager = detectPackageManager();
 const packageManagerEnvVar =
   packageManager === "bun"
@@ -190,7 +190,7 @@ const packageManagerEnvVar =
         : "LIME_MANAGED_BY_NPM";
 const env = {
   ...process.env,
-  LIME_MANAGED_PACKAGE_ROOT: codexPackageRoot,
+  LIME_MANAGED_PACKAGE_ROOT: limePackageRoot,
 };
 delete env.LIME_MANAGED_BY_NPM;
 delete env.LIME_MANAGED_BY_BUN;

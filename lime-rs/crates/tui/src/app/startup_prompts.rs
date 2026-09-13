@@ -5,7 +5,9 @@
 //! deferred until the corresponding App Server contract exists.
 
 use super::App;
-use app_server_protocol::protocol::v2::{Model, SkillErrorInfo};
+use app_server_protocol::protocol::v2::{
+    McpServerStartupState, McpServerStatusUpdatedNotification, Model, SkillErrorInfo,
+};
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
@@ -44,6 +46,47 @@ impl SkillLoadWarningState {
 
         self.active = current;
         newly_active
+    }
+}
+
+/// Tracks App Server MCP startup failures without turning transient diagnostics into transcript
+/// entries. A ready notification clears the matching server, while other TUI status keeps priority
+/// during an active turn.
+#[derive(Debug, Default)]
+pub(crate) struct McpStartupWarningState {
+    active: BTreeMap<String, Option<String>>,
+}
+
+impl McpStartupWarningState {
+    pub(crate) fn observe(&mut self, notification: &McpServerStatusUpdatedNotification) {
+        match notification.status {
+            McpServerStartupState::Failed | McpServerStartupState::Cancelled => {
+                self.active.insert(
+                    notification.name.clone(),
+                    notification
+                        .error
+                        .clone()
+                        .filter(|error| !error.trim().is_empty()),
+                );
+            }
+            McpServerStartupState::Ready => {
+                self.active.remove(&notification.name);
+            }
+            McpServerStartupState::Starting => {}
+        }
+    }
+
+    pub(crate) fn status(&self) -> Option<String> {
+        match self.active.len() {
+            0 => None,
+            1 => self.active.iter().next().map(|(name, error)| {
+                error.as_deref().map_or_else(
+                    || format!("MCP startup issue: {name}"),
+                    |error| format!("MCP startup issue: {name}: {error}"),
+                )
+            }),
+            count => Some(format!("MCP startup issues: {count}")),
+        }
     }
 }
 
@@ -307,6 +350,38 @@ mod tests {
         assert_eq!(
             state.newly_active_errors(std::slice::from_ref(&error)),
             vec![error]
+        );
+    }
+
+    #[test]
+    fn mcp_startup_warning_state_clears_only_the_ready_server() {
+        let mut state = McpStartupWarningState::default();
+        state.observe(&McpServerStatusUpdatedNotification {
+            thread_id: None,
+            name: "docs".to_string(),
+            status: McpServerStartupState::Failed,
+            error: Some("offline".to_string()),
+            failure_reason: None,
+        });
+        state.observe(&McpServerStatusUpdatedNotification {
+            thread_id: None,
+            name: "calendar".to_string(),
+            status: McpServerStartupState::Cancelled,
+            error: None,
+            failure_reason: None,
+        });
+        assert_eq!(state.status(), Some("MCP startup issues: 2".to_string()));
+
+        state.observe(&McpServerStatusUpdatedNotification {
+            thread_id: None,
+            name: "docs".to_string(),
+            status: McpServerStartupState::Ready,
+            error: None,
+            failure_reason: None,
+        });
+        assert_eq!(
+            state.status(),
+            Some("MCP startup issue: calendar".to_string())
         );
     }
 
