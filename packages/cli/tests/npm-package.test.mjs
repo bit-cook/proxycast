@@ -233,7 +233,7 @@ test(
   },
 );
 
-test("staging creates Lime root aliases and a real npm tarball", (t) => {
+test("staging creates Lime root platform dependencies and a real npm tarball", (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "lime-npm-stage-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const staging = path.join(root, "root-package");
@@ -262,10 +262,10 @@ test("staging creates Lime root aliases and a real npm tarball", (t) => {
   assert.equal(packageJson.packageManager, "pnpm@9.15.9");
   assert.equal(packageJson.scripts, undefined);
   assert.deepEqual(packageJson.optionalDependencies, {
-    "@limecloud/lime-linux-x64": "npm:@limecloud/lime@1.2.3-linux-x64",
-    "@limecloud/lime-darwin-x64": "npm:@limecloud/lime@1.2.3-darwin-x64",
-    "@limecloud/lime-darwin-arm64": "npm:@limecloud/lime@1.2.3-darwin-arm64",
-    "@limecloud/lime-win32-x64": "npm:@limecloud/lime@1.2.3-win32-x64",
+    "@limecloud/lime-linux-x64": "1.2.3-linux-x64",
+    "@limecloud/lime-darwin-x64": "1.2.3-darwin-x64",
+    "@limecloud/lime-darwin-arm64": "1.2.3-darwin-arm64",
+    "@limecloud/lime-win32-x64": "1.2.3-win32-x64",
   });
   assert.ok(existsSync(tarball));
 });

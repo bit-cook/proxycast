@@ -119,7 +119,7 @@ export function checkCliBoundary(repoRoot = process.cwd()) {
   }
   if (npmPackage.os || npmPackage.cpu) {
     failures.push(
-      "CLI npm root package must delegate platform filters to aliases",
+      "CLI npm root package must delegate platform filters to optional dependencies",
     );
   }
   if (
@@ -172,7 +172,7 @@ export function checkCliBoundary(repoRoot = process.cwd()) {
     '"lime-darwin-x64"',
     '"lime-darwin-arm64"',
     '"lime-win32-x64"',
-    'f"npm:{NPM_NAME}@{compute_platform_package_version',
+    'config["npm_name"]: compute_platform_package_version',
     'f"app-server{suffix}"',
     'f"code-mode-host{suffix}"',
     '"windows-sandbox-setup.exe"',

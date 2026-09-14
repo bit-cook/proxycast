@@ -13,8 +13,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 CLI_ROOT = SCRIPT_DIR.parent
 NPM_NAME = "@limecloud/lime"
 
-# Alias names are resolved by bin/lime.js. Every platform tarball is published
-# under NPM_NAME with a unique version suffix, matching the Codex npm layout.
+# Platform package names are resolved by bin/lime.js. Every platform tarball is
+# published under its own name with a unique version suffix.
 PLATFORM_PACKAGES: dict[str, dict[str, str]] = {
     "lime-linux-x64": {
         "npm_name": "@limecloud/lime-linux-x64",
@@ -122,8 +122,8 @@ def stage_sources(staging_dir: Path, version: str, package: str) -> None:
         package_json["files"] = ["bin/lime.js"]
         package_json.pop("scripts", None)
         package_json["optionalDependencies"] = {
-            config["npm_name"]: (
-                f"npm:{NPM_NAME}@{compute_platform_package_version(version, config['npm_tag'])}"
+            config["npm_name"]: compute_platform_package_version(
+                version, config["npm_tag"]
             )
             for config in PLATFORM_PACKAGES.values()
         }
