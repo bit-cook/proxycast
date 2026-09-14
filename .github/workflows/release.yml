@@ -1022,6 +1022,8 @@ jobs:
     needs: publish_cli_assets
     if: needs.publish_cli_assets.result == 'success'
     runs-on: ubuntu-22.04
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     permissions:
       contents: write
       id-token: write
