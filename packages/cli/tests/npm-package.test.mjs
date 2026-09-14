@@ -309,7 +309,7 @@ test("platform staging requires the complete App Server runtime payload", (t) =>
   const packageJson = JSON.parse(
     readFileSync(path.join(staging, "package.json"), "utf8"),
   );
-  assert.equal(packageJson.name, "@limecloud/lime");
+  assert.equal(packageJson.name, "@limecloud/lime-darwin-arm64");
   assert.equal(packageJson.version, "1.2.3-darwin-arm64");
   assert.deepEqual(packageJson.os, ["darwin"]);
   assert.deepEqual(packageJson.cpu, ["arm64"]);

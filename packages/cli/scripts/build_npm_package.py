@@ -130,7 +130,7 @@ def stage_sources(staging_dir: Path, version: str, package: str) -> None:
     else:
         platform = PLATFORM_PACKAGES[package]
         package_json = {
-            "name": NPM_NAME,
+            "name": platform["npm_name"],
             "version": compute_platform_package_version(version, platform["npm_tag"]),
             "description": root_package_json.get("description"),
             "license": root_package_json.get("license", "MIT"),
