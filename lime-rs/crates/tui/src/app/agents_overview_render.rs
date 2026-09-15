@@ -1,7 +1,9 @@
 //! Ratatui rendering for the Codex-shaped Agents Overview.
 
 use super::{AgentsOverviewGroup, AgentsOverviewInputMode, AgentsOverviewView};
-use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+use crate::bottom_pane::selection_row_layout::{
+    wrap_row, SelectionDescriptionLayout, SelectionRow,
+};
 use crate::locale::Locale;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -101,24 +103,35 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, view: &AgentsOverviewVie
                 .as_deref()
                 .or_else(|| (!row.thread.preview.is_empty()).then_some(row.thread.preview.as_str()))
                 .unwrap_or("Untitled task");
-            let current = if row.is_current { "  current" } else { "" };
-            let project = if view.status_grouping() {
-                String::new()
+            let current = row.is_current.then_some("current");
+            let description = if view.status_grouping() {
+                current.map(str::to_owned)
             } else {
-                format!(
-                    "  {} · {}",
+                let project = format!(
+                    "{} · {}",
                     locale.agents_overview_group_label(row.group.label()),
                     row.thread.cwd.display()
-                )
+                );
+                Some(match current {
+                    Some(current) => format!("{current}  {project}"),
+                    None => project,
+                })
             };
-            ListItem::new(truncate_line_with_ellipsis_if_overflow(
-                Line::from(vec![
-                    Span::styled(format!("{marker} "), Style::default().fg(Color::Cyan)),
-                    Span::raw(title.to_string()),
-                    Span::styled(current, Style::default().fg(Color::DarkGray)),
-                    Span::styled(project, Style::default().fg(Color::DarkGray)),
-                ]),
-                usize::from(list_area.width.saturating_sub(4)),
+            let row = SelectionRow::new(
+                title,
+                description,
+                vec![Span::styled(
+                    format!("{marker} "),
+                    Style::default().fg(Color::Cyan),
+                )],
+            );
+            ListItem::new(wrap_row(
+                &row,
+                usize::from(list_area.width.saturating_mul(3).saturating_div(5).max(1)),
+                list_area.width.saturating_sub(4),
+                SelectionDescriptionLayout::StackBelowWhenNarrow {
+                    min_description_width: 16,
+                },
             ))
         })
         .collect::<Vec<_>>();
@@ -134,7 +147,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, view: &AgentsOverviewVie
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             )
-            .highlight_symbol("> "),
+            .highlight_symbol("› "),
         list_area,
         &mut state,
     );
@@ -318,5 +331,37 @@ mod tests {
         let compact = compact.collect::<String>();
         assert!(compact.contains("新建任务"), "{text}");
         assert!(compact.contains("检查任务"), "{text}");
+    }
+
+    #[test]
+    fn overview_render_uses_selection_row_for_status_and_current_context() {
+        let mut current = row("current");
+        current.group = AgentsOverviewGroup::Ready;
+        current.is_current = true;
+        current.thread.cwd = PathBuf::from("/workspace/project");
+        let view = AgentsOverviewView::new(vec![current], Some("current"));
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, frame.area(), &view, Locale::EnUs))
+            .expect("draw");
+        let text = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>();
+        assert!(text.contains("○"), "selection row marker missing: {text}");
+        assert!(text.contains("current"), "current context missing: {text}");
+        assert!(text.contains("Ready"), "status description missing: {text}");
+        let compact = text
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        assert!(compact.contains("/"), "cwd prefix missing: {text}");
+        assert!(
+            compact.contains("workspace/project"),
+            "cwd description missing: {text}"
+        );
     }
 }

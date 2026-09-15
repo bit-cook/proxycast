@@ -10,7 +10,7 @@ use futures::StreamExt;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Clear, Paragraph};
 use ratatui::Frame;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -39,6 +39,7 @@ use page_loading::{PageCursor, PageLoadMode, PaginationState};
 mod transcript_preview;
 
 const MAX_THREADS: u32 = 100;
+const PICKER_LIST_HORIZONTAL_INSET: u16 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -584,21 +585,30 @@ impl PickerState {
             return PickerAction::ToggleExpanded;
         }
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('k')
+                if key.code == KeyCode::Up || key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 self.selected = self.selected.saturating_sub(1);
                 PickerAction::MoveUp
             }
-            KeyCode::PageUp => {
+            KeyCode::PageUp | KeyCode::Char('b')
+                if key.code == KeyCode::PageUp || key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 self.selected = self.selected.saturating_sub(10);
                 PickerAction::MoveUp
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('j')
+                if key.code == KeyCode::Down || key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 if !self.threads.is_empty() {
                     self.selected = (self.selected + 1).min(self.threads.len() - 1);
                 }
                 PickerAction::MoveDown
             }
-            KeyCode::PageDown => {
+            KeyCode::PageDown
+                if key.code == KeyCode::PageDown
+                    || key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 if !self.threads.is_empty() {
                     self.selected = (self.selected + 10).min(self.threads.len() - 1);
                 }
@@ -627,7 +637,11 @@ impl PickerState {
                 self.invalidate_thread_list();
                 PickerAction::Reload
             }
-            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::ALT) => {
+            KeyCode::Char(c)
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
                 self.query.push(c);
                 self.invalidate_thread_list();
                 PickerAction::Reload
@@ -708,8 +722,9 @@ impl PickerState {
 
     pub(crate) fn handle_transcript_pager_event(&mut self, event: &Event) {
         if let Some(pager) = self.transcript_pager.as_mut() {
-            if pager.overlay.handle_event(event) == PagerAction::Close {
-                self.transcript_pager = None;
+            match pager.overlay.handle_event(event) {
+                PagerAction::Close => self.transcript_pager = None,
+                PagerAction::Consumed | PagerAction::LoadOlderHistory => {}
             }
         }
     }
@@ -951,8 +966,9 @@ async fn run_session_picker_with_action(
                     TuiEvent::Draw | TuiEvent::Resume => continue,
                 };
                 if let Some(pager) = picker.transcript_pager.as_mut() {
-                    if pager.overlay.handle_event(&event) == PagerAction::Close {
-                        picker.transcript_pager = None;
+                    match pager.overlay.handle_event(&event) {
+                        PagerAction::Close => picker.transcript_pager = None,
+                        PagerAction::Consumed | PagerAction::LoadOlderHistory => {}
                     }
                     continue;
                 }
@@ -1022,109 +1038,44 @@ pub(crate) fn render_with_locale(frame: &mut Frame<'_>, picker: &PickerState, lo
     }
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(2),
-        ])
+        .constraints(picker_vertical_constraints(area.height))
         .split(area);
-
-    let title = Paragraph::new(Line::from(vec![
-        Span::styled(
-            format!(
-                " {}: {} ",
-                locale.resume_label(),
-                locale.resume_picker_title(matches!(picker.action, SessionPickerAction::Fork))
-            ),
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(locale.resume_title(), Style::default().fg(Color::DarkGray)),
-    ]));
-    frame.render_widget(title, chunks[0]);
-
-    let search = if picker.query.is_empty() {
-        locale.resume_search_placeholder().to_string()
-    } else {
-        format!("{}: {}", locale.resume_search_placeholder(), picker.query)
+    let chrome = |rect: ratatui::layout::Rect| {
+        ratatui::layout::Rect::new(
+            rect.x.saturating_add(1),
+            rect.y,
+            rect.width.saturating_sub(2),
+            rect.height,
+        )
     };
-    let toolbar = format!(
-        "{} | {} | {}",
-        locale.resume_status_label(picker.status == SessionStatus::Archived),
-        locale.resume_filter_label(picker.show_all),
-        locale.resume_sort_label(picker.sort_key == ThreadSortKey::CreatedAt),
-    );
+
+    let header = chrome(chunks[0]);
+    let title = locale
+        .resume_picker_title(matches!(picker.action, SessionPickerAction::Fork))
+        .to_string();
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            format!("{search} | {toolbar}"),
-            Style::default().fg(Color::DarkGray),
+            truncate_display(&title, usize::from(header.width)),
+            Style::default().add_modifier(Modifier::BOLD),
         ))),
-        chunks[0].inner(ratatui::layout::Margin {
-            vertical: 1,
-            horizontal: 0,
-        }),
+        header,
     );
 
-    let items = picker
-        .threads
-        .iter()
-        .enumerate()
-        .map(|(index, thread)| {
-            let preview = picker.transcript_preview_text(&thread.id);
-            let title = thread_line_with_preview(
-                thread,
-                usize::from(chunks[1].width),
-                locale,
-                preview.as_deref(),
-            );
-            let is_expanded = picker.selected == index
-                && picker.expanded_thread_id.as_deref() == Some(thread.id.as_str());
-            if is_expanded {
-                let mut lines = vec![title];
-                lines.extend(render_expanded_session_details(
-                    thread,
-                    picker,
-                    usize::from(chunks[1].width),
-                    locale,
-                ));
-                ListItem::new(lines)
-            } else if picker.density == SessionListDensity::Dense {
-                ListItem::new(title)
-            } else {
-                let metadata = format!(
-                    "  {}  {}",
-                    thread.cwd.display(),
-                    if thread.updated_at == 0 {
-                        String::from("-")
-                    } else {
-                        thread.updated_at.to_string()
-                    }
-                );
-                ListItem::new(vec![
-                    title,
-                    Line::from(Span::styled(
-                        truncate_display(&metadata, usize::from(chunks[1].width)),
-                        Style::default().fg(Color::DarkGray),
-                    )),
-                ])
-            }
-        })
-        .collect::<Vec<_>>();
-    let mut state = ListState::default();
-    if !picker.threads.is_empty() {
-        state.select(Some(picker.selected));
-    }
-    frame.render_stateful_widget(
-        List::new(items)
-            .block(Block::default().borders(Borders::TOP | Borders::BOTTOM))
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("> "),
-        chunks[1],
-        &mut state,
+    let search = chrome(chunks[2]);
+    frame.render_widget(
+        Paragraph::new(resume_search_line(picker, locale, search.width))
+            .style(Style::default().fg(Color::DarkGray)),
+        search,
     );
+
+    let list = ratatui::layout::Rect::new(
+        chunks[4].x.saturating_add(2),
+        chunks[4].y,
+        chunks[4].width.saturating_sub(PICKER_LIST_HORIZONTAL_INSET),
+        chunks[4].height,
+    );
+    render_session_list(frame, list, picker, locale);
+
     let footer = if picker.loading {
         locale.resume_loading().to_string()
     } else if picker.threads.is_empty() {
@@ -1144,12 +1095,276 @@ pub(crate) fn render_with_locale(frame: &mut Frame<'_>, picker: &PickerState, lo
             locale.resume_density_label(picker.density == SessionListDensity::Dense),
         )
     };
+    render_picker_footer(frame, chunks[5], picker, &footer);
+}
+
+/// Allocate the picker chrome without allowing the footer to push the list outside the
+/// terminal. The picker is commonly rendered in a full-screen area, but tests and embedded
+/// hosts also exercise very short terminals, so every constraint is derived from the height.
+fn picker_vertical_constraints(height: u16) -> [Constraint; 6] {
+    let mut remaining = height;
+    let header = remaining.min(1);
+    remaining = remaining.saturating_sub(header);
+    let header_gap = remaining.min(1);
+    remaining = remaining.saturating_sub(header_gap);
+    let search = remaining.min(1);
+    remaining = remaining.saturating_sub(search);
+    let list_gap = remaining.min(1);
+    remaining = remaining.saturating_sub(list_gap);
+    let footer = remaining.min(4);
+    remaining = remaining.saturating_sub(footer);
+    [
+        Constraint::Length(header),
+        Constraint::Length(header_gap),
+        Constraint::Length(search),
+        Constraint::Length(list_gap),
+        Constraint::Length(remaining),
+        Constraint::Length(footer),
+    ]
+}
+
+fn resume_search_line(picker: &PickerState, locale: Locale, width: u16) -> Line<'static> {
+    let width = usize::from(width);
+    let search = if picker.query.is_empty() {
+        locale.resume_search_placeholder().to_string()
+    } else {
+        format!("{}: {}", locale.resume_search_placeholder(), picker.query)
+    };
+    let toolbar_wide = format!(
+        "{} | {} | {}",
+        locale.resume_status_label(picker.status == SessionStatus::Archived),
+        locale.resume_filter_label(picker.show_all),
+        locale.resume_sort_label(picker.sort_key == ThreadSortKey::CreatedAt),
+    );
+    let toolbar_compact = format!(
+        "{}  {}  {}",
+        locale.resume_status_label(picker.status == SessionStatus::Archived),
+        locale.resume_filter_label(picker.show_all),
+        locale.resume_sort_label(picker.sort_key == ThreadSortKey::CreatedAt),
+    );
+    let separator = "  ";
+    let toolbar = if display_width(&search)
+        .saturating_add(display_width(separator))
+        .saturating_add(display_width(&toolbar_wide))
+        <= width
+    {
+        toolbar_wide
+    } else {
+        toolbar_compact
+    };
+    let available_search = width
+        .saturating_sub(display_width(&toolbar))
+        .saturating_sub(display_width(separator));
+    if available_search == 0 {
+        return Line::from(Span::raw(truncate_display(&toolbar, width)));
+    }
+    let search = truncate_display(&search, available_search);
+    let combined = format!("{search}{separator}{toolbar}");
+    Line::from(Span::raw(truncate_display(&combined, width)))
+}
+
+fn render_picker_footer(
+    frame: &mut Frame<'_>,
+    area: ratatui::layout::Rect,
+    picker: &PickerState,
+    footer: &str,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let progress = format!(
+        " {} / {} ",
+        if picker.threads.is_empty() {
+            0
+        } else {
+            picker.selected.saturating_add(1)
+        },
+        picker.threads.len(),
+    );
+    let progress_width = display_width(&progress);
+    let separator_width = usize::from(area.width).saturating_sub(progress_width);
+    let separator = if progress_width < usize::from(area.width) {
+        format!("{}{}", "─".repeat(separator_width), progress)
+    } else {
+        "─".repeat(usize::from(area.width))
+    };
+    frame.render_widget(
+        Paragraph::new(separator).style(Style::default().fg(Color::DarkGray)),
+        ratatui::layout::Rect::new(area.x, area.y, area.width, 1),
+    );
+    if area.height == 1 {
+        return;
+    }
+    let hints = ratatui::layout::Rect::new(
+        area.x.saturating_add(1),
+        area.y.saturating_add(1),
+        area.width.saturating_sub(2),
+        area.height.saturating_sub(1),
+    );
     frame.render_widget(
         Paragraph::new(footer)
             .style(Style::default().fg(Color::DarkGray))
             .wrap(ratatui::widgets::Wrap { trim: true }),
-        chunks[2],
+        hints,
     );
+}
+
+fn render_session_list(
+    frame: &mut Frame<'_>,
+    area: ratatui::layout::Rect,
+    picker: &PickerState,
+    locale: Locale,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    if picker.threads.is_empty() {
+        frame.render_widget(
+            Paragraph::new(locale.resume_empty()).style(Style::default().fg(Color::DarkGray)),
+            area,
+        );
+        return;
+    }
+
+    let selected = picker.selected.min(picker.threads.len().saturating_sub(1));
+    let show_more_above = selected > 0;
+    let show_more_below = picker.has_more_pages() || selected + 1 < picker.threads.len();
+    let content_height = usize::from(area.height)
+        .saturating_sub(usize::from(show_more_above))
+        .saturating_sub(usize::from(show_more_below))
+        .max(1);
+    let mut start = selected;
+    let selected_height = session_list_item(
+        &picker.threads[selected],
+        picker,
+        selected,
+        locale,
+        area.width,
+    )
+    .len()
+    .max(1);
+    let mut used = selected_height.min(content_height);
+    while start > 0 {
+        let previous_height = session_list_item(
+            &picker.threads[start - 1],
+            picker,
+            start - 1,
+            locale,
+            area.width,
+        )
+        .len()
+        .max(1);
+        let separator = usize::from(picker.density == SessionListDensity::Comfortable);
+        if used + separator + previous_height > content_height {
+            break;
+        }
+        start -= 1;
+        used += separator + previous_height;
+    }
+
+    let mut y = area.y;
+    if show_more_above {
+        frame.render_widget(
+            Paragraph::new("↑ more").style(Style::default().fg(Color::DarkGray)),
+            ratatui::layout::Rect::new(area.x, y, area.width, 1),
+        );
+        y = y.saturating_add(1);
+    }
+    for index in start..picker.threads.len() {
+        let content_bottom = area.bottom().saturating_sub(u16::from(show_more_below));
+        if y >= content_bottom {
+            break;
+        }
+        for line in session_list_item(&picker.threads[index], picker, index, locale, area.width) {
+            if y >= content_bottom {
+                break;
+            }
+            frame.render_widget(
+                Paragraph::new(line),
+                ratatui::layout::Rect::new(area.x, y, area.width, 1),
+            );
+            y = y.saturating_add(1);
+        }
+        if picker.density == SessionListDensity::Comfortable
+            && y < content_bottom
+            && index + 1 < picker.threads.len()
+        {
+            y = y.saturating_add(1);
+        }
+    }
+    if show_more_below {
+        frame.render_widget(
+            Paragraph::new("↓ more").style(Style::default().fg(Color::DarkGray)),
+            ratatui::layout::Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
+        );
+    }
+}
+
+fn session_list_item(
+    thread: &Thread,
+    picker: &PickerState,
+    index: usize,
+    locale: Locale,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let width = usize::from(width);
+    let preview = picker.transcript_preview_text(&thread.id);
+    let title =
+        thread_line_with_preview(thread, width.saturating_sub(2), locale, preview.as_deref());
+    let marker = if picker.selected == index {
+        Span::styled(
+            "❯ ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::raw("  ")
+    };
+    let mut title = Line {
+        style: title.style,
+        alignment: title.alignment,
+        spans: std::iter::once(marker).chain(title.spans).collect(),
+    };
+    if picker.selected == index {
+        title = title.style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        );
+    }
+    let is_expanded = picker.selected == index
+        && picker.expanded_thread_id.as_deref() == Some(thread.id.as_str());
+    if is_expanded {
+        let mut lines = vec![title];
+        lines.extend(render_expanded_session_details(
+            thread,
+            picker,
+            width.saturating_sub(2),
+            locale,
+        ));
+        lines
+    } else if picker.density == SessionListDensity::Dense {
+        vec![title]
+    } else {
+        let metadata = format!(
+            "  {}  {}",
+            thread.cwd.display(),
+            if thread.updated_at == 0 {
+                String::from("-")
+            } else {
+                thread.updated_at.to_string()
+            }
+        );
+        vec![
+            title,
+            Line::from(Span::styled(
+                truncate_display(&metadata, width),
+                Style::default().fg(Color::DarkGray),
+            )),
+        ]
+    }
 }
 
 fn render_expanded_session_details(
@@ -1195,25 +1410,34 @@ fn render_expanded_session_details(
     match picker.transcripts.get(&thread.id) {
         Some(SessionTranscriptState::Loading) => {
             lines.push(Line::from(Span::styled(
-                format!("{indent}{}", locale.resume_transcript_loading()),
+                truncate_display(
+                    &format!("{indent}{}", locale.resume_transcript_loading()),
+                    width,
+                ),
                 Style::default().fg(Color::DarkGray),
             )));
         }
         Some(SessionTranscriptState::Failed) => {
             lines.push(Line::from(Span::styled(
-                format!("{indent}{}", locale.resume_transcript_failed()),
+                truncate_display(
+                    &format!("{indent}{}", locale.resume_transcript_failed()),
+                    width,
+                ),
                 Style::default().fg(Color::Red),
             )));
         }
         Some(SessionTranscriptState::Loaded(entries)) if entries.is_empty() => {
             lines.push(Line::from(Span::styled(
-                format!("{indent}{}", locale.resume_transcript_empty()),
+                truncate_display(
+                    &format!("{indent}{}", locale.resume_transcript_empty()),
+                    width,
+                ),
                 Style::default().fg(Color::DarkGray),
             )));
         }
         Some(SessionTranscriptState::Loaded(entries)) => {
             lines.push(Line::from(Span::styled(
-                format!("{indent}{}", locale.transcript_title()),
+                truncate_display(&format!("{indent}{}", locale.transcript_title()), width),
                 Style::default().add_modifier(Modifier::BOLD),
             )));
             for entry in entries {
@@ -1236,6 +1460,15 @@ fn render_expanded_session_details(
 
 fn metadata_line(label: &str, value: &str, width: usize) -> Line<'static> {
     let prefix = format!("  {label}: ");
+    if width == 0 {
+        return Line::default();
+    }
+    if display_width(&prefix) >= width {
+        return Line::from(Span::styled(
+            truncate_display(&prefix, width),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
     let available = width.saturating_sub(display_width(&prefix));
     Line::from(vec![
         Span::styled(prefix, Style::default().fg(Color::DarkGray)),
@@ -1277,6 +1510,9 @@ fn thread_line_with_preview(
 }
 
 fn truncate_display(text: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
     if display_width(text) <= max_width {
         return text.to_string();
     }
@@ -1384,6 +1620,86 @@ mod tests {
     }
 
     #[test]
+    fn searchable_picker_keeps_plain_vim_letters_for_query_input() {
+        let mut picker = PickerState::new(
+            vec![
+                thread("one", "first", false),
+                thread("two", "second", false),
+            ],
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+
+        assert_eq!(
+            picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char('j'),
+                KeyModifiers::NONE,
+            ))),
+            PickerAction::Reload
+        );
+        assert_eq!(picker.query, "j");
+        assert_eq!(picker.selected, 0);
+    }
+
+    #[test]
+    fn picker_control_navigation_matches_codex_list_bindings() {
+        let mut picker = PickerState::new(
+            vec![
+                thread("one", "first", false),
+                thread("two", "second", false),
+                thread("three", "third", false),
+            ],
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+
+        assert_eq!(
+            picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char('n'),
+                KeyModifiers::CONTROL,
+            ))),
+            PickerAction::MoveDown
+        );
+        assert_eq!(picker.selected, 1);
+        assert_eq!(
+            picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char('p'),
+                KeyModifiers::CONTROL,
+            ))),
+            PickerAction::MoveUp
+        );
+        assert_eq!(picker.selected, 0);
+        assert_eq!(
+            picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::PageDown,
+                KeyModifiers::NONE,
+            ))),
+            PickerAction::MoveDown
+        );
+        assert_eq!(picker.selected, 2);
+    }
+
+    #[test]
+    fn unhandled_control_keys_do_not_pollute_resume_query() {
+        let mut picker = PickerState::new(
+            vec![thread("one", "first", false)],
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Char('z'),
+            KeyModifiers::CONTROL,
+        )));
+        assert!(picker.query.is_empty());
+    }
+
+    #[test]
     fn picker_render_is_bounded_for_narrow_unicode_terminal() {
         let picker = PickerState::new(
             vec![thread("one", "你好，这是一段很长的预览", false)],
@@ -1399,6 +1715,160 @@ mod tests {
             .chars()
             .count()
             <= 1));
+    }
+
+    #[test]
+    fn resume_picker_render_matrix_stays_bounded_across_locales_and_widths() {
+        let mut threads = (0..12)
+            .map(|index| {
+                let mut value = thread(
+                    &format!("thread-{index:02}"),
+                    "这是一个很长的会话预览，用于验证窄终端上的重排与截断行为",
+                    false,
+                );
+                value.name = Some(format!(
+                    "会话 {index:02} — a deliberately long title for the picker"
+                ));
+                value.cwd = PathBuf::from(
+                    "/Users/example/Documents/projects/a-very-long-working-directory",
+                );
+                value
+            })
+            .collect::<Vec<_>>();
+        let selected_id = threads[0].id.clone();
+        threads.reverse();
+
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            for width in [40u16, 80, 120] {
+                let mut picker = PickerState::new(
+                    threads.clone(),
+                    SessionPickerAction::Resume,
+                    SessionStatus::Active,
+                    None,
+                    true,
+                );
+                picker.query = "a very long query that must remain clipped safely".to_string();
+                picker.selected = picker
+                    .threads
+                    .iter()
+                    .position(|thread| thread.id == selected_id)
+                    .unwrap_or_default();
+                let selected_lines = session_list_item(
+                    &picker.threads[picker.selected],
+                    &picker,
+                    picker.selected,
+                    locale,
+                    width,
+                );
+                assert!(
+                    selected_lines
+                        .iter()
+                        .all(|line| line.width() <= usize::from(width)),
+                    "locale={} width={width} selected row exceeded width: {selected_lines:?}",
+                    locale.tag()
+                );
+
+                let mut terminal = Terminal::new(TestBackend::new(width, 16)).expect("terminal");
+                terminal
+                    .draw(|frame| render_with_locale(frame, &picker, locale))
+                    .expect("draw");
+                let rendered = buffer_text(&terminal);
+                assert_eq!(rendered.lines().count(), 16);
+                assert!(
+                    rendered.contains("00"),
+                    "locale={} width={width} selected row was not visible: {rendered:?}",
+                    locale.tag()
+                );
+                assert!(
+                    rendered.contains("Enter") && rendered.contains("Esc"),
+                    "locale={} width={width} footer lost primary actions: {rendered:?}",
+                    locale.tag()
+                );
+                assert!(
+                    terminal.backend().buffer().content().iter().all(|cell| cell
+                        .symbol()
+                        .chars()
+                        .count()
+                        <= 1),
+                    "locale={} width={width} contains a multi-codepoint cell",
+                    locale.tag()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn resume_picker_short_terminal_heights_remain_renderable() {
+        let picker = PickerState::new(
+            vec![thread("one", "preview", false)],
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        for height in [1u16, 2, 4, 7, 8] {
+            let mut terminal = Terminal::new(TestBackend::new(40, height)).expect("terminal");
+            terminal
+                .draw(|frame| render_with_locale(frame, &picker, Locale::EnUs))
+                .expect("draw");
+            assert_eq!(terminal.backend().buffer().area.height, height);
+        }
+    }
+
+    #[test]
+    fn resume_search_line_preserves_toolbar_and_display_width_on_narrow_terminals() {
+        let mut picker = PickerState::new(
+            vec![thread("one", "first", false)],
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        picker.query = "a very long search query that should be shortened".to_string();
+        for width in [8, 16, 24, 40] {
+            let line = resume_search_line(&picker, Locale::EnUs, width);
+            assert!(
+                crate::line_truncation::line_width(&line) <= usize::from(width),
+                "width={width} line={line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn long_resume_list_keeps_selected_session_visible_after_end_navigation() {
+        let mut threads = (0..20)
+            .map(|index| {
+                let mut value = thread(&format!("thread-{index:02}"), "preview", false);
+                value.name = Some(format!("Session {index:02}"));
+                value
+            })
+            .collect::<Vec<_>>();
+        threads.reverse();
+        let mut picker = PickerState::new(
+            threads,
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        picker.handle_event(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::End,
+            KeyModifiers::NONE,
+        )));
+
+        let mut terminal = Terminal::new(TestBackend::new(48, 10)).expect("terminal");
+        terminal.draw(|frame| render(frame, &picker)).expect("draw");
+        let text = buffer_text(&terminal);
+        assert!(
+            text.contains("Session 00"),
+            "selected session was clipped from the viewport: {text}"
+        );
     }
 
     #[test]

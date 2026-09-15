@@ -143,7 +143,7 @@ impl FileSearchPopup {
                         Style::default()
                     };
                     Line::from(vec![
-                        Span::styled(if selected { "> " } else { "  " }, style),
+                        Span::styled(if selected { "› " } else { "  " }, style),
                         Span::styled(item.path.clone(), style),
                     ])
                 })

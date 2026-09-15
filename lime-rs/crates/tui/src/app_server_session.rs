@@ -13,7 +13,8 @@ use app_server_client::{
 use app_server_protocol::protocol::v2::{
     CollaborationModeListParams, CollaborationModeListResponse, CollaborationModeMask,
     CurrentTimeReadResponse, FuzzyFileSearchParams, FuzzyFileSearchResponse,
-    McpServerElicitationRequestResponse, ModelListParams, ModelListResponse,
+    ListMcpServerStatusParams, ListMcpServerStatusResponse, McpServerElicitationRequestResponse,
+    McpServerStatus, McpServerStatusDetail, ModelListParams, ModelListResponse,
     PermissionProfileListParams, PermissionProfileListResponse, PromptHistoryAppendParams,
     PromptHistoryAppendResponse, PromptHistoryReadParams, PromptHistoryReadResponse,
     QueuedSubmission, ServerRequest, SkillsListParams, SkillsListResponse, ThreadForkParams,
@@ -25,9 +26,10 @@ use app_server_protocol::protocol::v2::{
     ThreadStartResponse, ThreadStartSource, ThreadUnarchiveParams, ThreadUnarchiveResponse,
     TurnInterruptParams, TurnInterruptResponse, TurnStartParams, TurnStartResponse,
     TurnSteerParams, TurnSteerResponse, UserInput, METHOD_COLLABORATION_MODE_LIST,
-    METHOD_FUZZY_FILE_SEARCH, METHOD_PERMISSION_PROFILE_LIST, METHOD_PROMPT_HISTORY_APPEND,
-    METHOD_PROMPT_HISTORY_READ, METHOD_SKILLS_LIST, METHOD_THREAD_ARCHIVE, METHOD_THREAD_QUEUE_ADD,
-    METHOD_THREAD_QUEUE_DELETE, METHOD_THREAD_QUEUE_LIST, METHOD_THREAD_READ, METHOD_THREAD_RESUME,
+    METHOD_FUZZY_FILE_SEARCH, METHOD_MCP_SERVER_STATUS_LIST, METHOD_PERMISSION_PROFILE_LIST,
+    METHOD_PROMPT_HISTORY_APPEND, METHOD_PROMPT_HISTORY_READ, METHOD_SKILLS_LIST,
+    METHOD_THREAD_ARCHIVE, METHOD_THREAD_QUEUE_ADD, METHOD_THREAD_QUEUE_DELETE,
+    METHOD_THREAD_QUEUE_LIST, METHOD_THREAD_READ, METHOD_THREAD_RESUME,
     METHOD_THREAD_SETTINGS_UPDATE, METHOD_THREAD_START, METHOD_TURN_INTERRUPT, METHOD_TURN_START,
     METHOD_TURN_STEER,
 };
@@ -57,6 +59,39 @@ pub(crate) struct AppServerSession {
 }
 
 impl AppServerSession {
+    pub(crate) async fn list_mcp_server_statuses(
+        &self,
+        detail: McpServerStatusDetail,
+    ) -> Result<Vec<McpServerStatus>> {
+        let mut cursor = None;
+        let mut seen_cursors = HashSet::new();
+        let mut data = Vec::new();
+        for _ in 0..16 {
+            let page: ListMcpServerStatusResponse = self
+                .request_handle
+                .request(
+                    METHOD_MCP_SERVER_STATUS_LIST,
+                    ListMcpServerStatusParams {
+                        cursor,
+                        limit: Some(64),
+                        detail: Some(detail),
+                        thread_id: self.thread_id.clone(),
+                    },
+                )
+                .await
+                .context("failed to list App Server MCP server statuses")?;
+            data.extend(page.data);
+            let Some(next_cursor) = page.next_cursor else {
+                return Ok(data);
+            };
+            if !seen_cursors.insert(next_cursor.clone()) {
+                bail!("MCP server status list pagination repeated cursor {next_cursor}");
+            }
+            cursor = Some(next_cursor);
+        }
+        bail!("MCP server status list pagination exceeded 16 pages")
+    }
+
     /// Search files through the current App Server contract using a cloned request boundary.
     /// All interactive queries share one cancellation token so newer queries supersede older
     /// filesystem walks without creating another transport or runtime owner.

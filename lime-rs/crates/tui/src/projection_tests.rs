@@ -7,7 +7,8 @@ use app_server_protocol::protocol::v2::{
     HookCompletedNotification, HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry,
     HookOutputEntryKind, HookRunStatus, HookRunSummary, HookScope, HookSource,
     HookStartedNotification, ImageGenerationItem, ItemCompletedNotification,
-    ItemStartedNotification, McpToolCallError, McpToolCallResult, PatchChangeKind, SessionSource,
+    ItemStartedNotification, McpToolCallError, McpToolCallResult, PatchChangeKind,
+    ReasoningSummaryPartAddedNotification, ReasoningSummaryTextDeltaNotification, SessionSource,
     SleepItem, Thread, ThreadActiveFlag, ThreadItem, ThreadStatus, Turn, TurnCompletedNotification,
     TurnDiffUpdatedNotification, TurnItemsView, TurnPlanStep, TurnPlanStepStatus,
     TurnPlanUpdatedNotification, WebSearchItem,
@@ -453,6 +454,31 @@ fn completed_agent_item_replaces_streaming_delta() {
 }
 
 #[test]
+fn late_agent_delta_does_not_reopen_completed_item() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: agent_message("item-1", "canonical", None),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+
+    projection.apply(ServerNotification::AgentMessageDelta(
+        AgentMessageDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "item-1".to_string(),
+            delta: " late".to_string(),
+        },
+    ));
+
+    assert_eq!(projection.entries()[0].text, "canonical");
+    assert!(!projection.entries()[0].streaming);
+}
+
+#[test]
 fn commentary_agent_messages_are_visible_but_not_final_answers() {
     let mut projection = ConversationProjection::default();
     projection.apply(ServerNotification::ItemCompleted(
@@ -545,6 +571,133 @@ fn streamed_agent_message_phase_is_repaired_by_item_completion() {
         },
     ));
     assert_eq!(projection.final_answer(), "公开回答");
+}
+
+#[test]
+fn reasoning_summary_parts_keep_streamed_section_boundaries() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::ReasoningSummaryTextDelta(
+        ReasoningSummaryTextDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "reasoning-1".to_string(),
+            delta: "检查输入".to_string(),
+            summary_index: 0,
+        },
+    ));
+    projection.apply(ServerNotification::ReasoningSummaryPartAdded(
+        ReasoningSummaryPartAddedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "reasoning-1".to_string(),
+            summary_index: 1,
+        },
+    ));
+    projection.apply(ServerNotification::ReasoningSummaryTextDelta(
+        ReasoningSummaryTextDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "reasoning-1".to_string(),
+            delta: "准备回答".to_string(),
+            summary_index: 1,
+        },
+    ));
+
+    assert_eq!(projection.entries()[0].text, "检查输入\n准备回答");
+    assert!(projection.entries()[0].streaming);
+}
+
+#[test]
+fn reasoning_summary_updates_running_status_with_latest_usable_line() {
+    let mut projection = ConversationProjection::default();
+    projection.start_turn("turn-1".to_string());
+
+    projection.apply(ServerNotification::ReasoningSummaryTextDelta(
+        ReasoningSummaryTextDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "reasoning-1".to_string(),
+            delta: "**Checking tests**".to_string(),
+            summary_index: 0,
+        },
+    ));
+    assert_eq!(projection.status(), "Checking tests");
+
+    projection.apply(ServerNotification::ReasoningSummaryTextDelta(
+        ReasoningSummaryTextDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "reasoning-1".to_string(),
+            delta: "\n<!-- progress -->\nPreparing response".to_string(),
+            summary_index: 0,
+        },
+    ));
+    assert_eq!(projection.status(), "Preparing response");
+
+    projection.apply(ServerNotification::TurnCompleted(
+        TurnCompletedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: test_turn("turn-1", TurnStatus::Completed, Vec::new()),
+        },
+    ));
+    assert_eq!(projection.status(), "ready");
+}
+
+#[test]
+fn explicit_status_clears_reasoning_summary_header() {
+    let mut projection = ConversationProjection::default();
+    projection.start_turn("turn-1".to_string());
+    projection.apply(ServerNotification::ReasoningSummaryTextDelta(
+        ReasoningSummaryTextDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "reasoning-1".to_string(),
+            delta: "**Checking**".to_string(),
+            summary_index: 0,
+        },
+    ));
+    assert_eq!(projection.status(), "Checking");
+
+    projection.set_status("waiting for input");
+    assert_eq!(projection.status(), "waiting for input");
+}
+
+#[test]
+fn late_reasoning_section_boundary_does_not_mutate_completed_history() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: ThreadItem::Reasoning {
+                id: "reasoning-1".to_string(),
+                metadata: None,
+                summary: vec!["已完成".to_string()],
+                content: Vec::new(),
+            },
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+        },
+    ));
+    projection.apply(ServerNotification::ReasoningSummaryPartAdded(
+        ReasoningSummaryPartAddedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "reasoning-1".to_string(),
+            summary_index: 1,
+        },
+    ));
+    projection.apply(ServerNotification::ReasoningSummaryTextDelta(
+        ReasoningSummaryTextDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "reasoning-1".to_string(),
+            delta: " late".to_string(),
+            summary_index: 1,
+        },
+    ));
+
+    assert_eq!(projection.entries()[0].text, "已完成");
+    assert!(!projection.entries()[0].streaming);
 }
 
 #[test]
@@ -1562,6 +1715,166 @@ fn turn_completion_replaces_streaming_item_with_canonical_text() {
     assert_eq!(projection.entries().len(), 1);
     assert_eq!(projection.entries()[0].text, "完整最终回答");
     assert!(!projection.entries()[0].streaming);
+}
+
+#[test]
+fn terminal_turn_closes_unrepaired_stream_tail_against_late_delta() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::AgentMessageDelta(
+        AgentMessageDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "answer-1".to_string(),
+            delta: "部分".to_string(),
+        },
+    ));
+
+    projection.apply(ServerNotification::TurnCompleted(
+        TurnCompletedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: Turn {
+                id: "turn-1".to_string(),
+                items: Vec::new(),
+                items_view: TurnItemsView::Full,
+                status: TurnStatus::Interrupted,
+                error: None,
+                started_at: Some(1),
+                completed_at: Some(2),
+                duration_ms: Some(1),
+            },
+        },
+    ));
+    projection.apply(ServerNotification::AgentMessageDelta(
+        AgentMessageDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "answer-1".to_string(),
+            delta: " late".to_string(),
+        },
+    ));
+
+    assert_eq!(projection.entries().len(), 1);
+    assert_eq!(projection.entries()[0].text, "部分");
+    assert!(!projection.entries()[0].streaming);
+}
+
+#[test]
+fn terminal_turn_rejects_late_delta_for_unknown_item() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::TurnCompleted(
+        TurnCompletedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: Turn {
+                id: "turn-1".to_string(),
+                items: Vec::new(),
+                items_view: TurnItemsView::Full,
+                status: TurnStatus::Failed,
+                error: None,
+                started_at: Some(1),
+                completed_at: Some(2),
+                duration_ms: Some(1),
+            },
+        },
+    ));
+
+    projection.apply(ServerNotification::AgentMessageDelta(
+        AgentMessageDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "missing-answer".to_string(),
+            delta: "late output".to_string(),
+        },
+    ));
+
+    assert!(projection.entries().is_empty());
+}
+
+#[test]
+fn terminal_turn_rejects_late_item_started_but_accepts_canonical_completion() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::TurnCompleted(
+        TurnCompletedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: Turn {
+                id: "turn-1".to_string(),
+                items: Vec::new(),
+                items_view: TurnItemsView::Full,
+                status: TurnStatus::Interrupted,
+                error: None,
+                started_at: Some(1),
+                completed_at: Some(2),
+                duration_ms: Some(1),
+            },
+        },
+    ));
+
+    projection.apply(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: "thread-1".to_string(),
+        turn_id: "turn-1".to_string(),
+        item: agent_message("late-item", "provisional", None),
+        started_at_ms: 3,
+    }));
+    assert!(projection.entries().is_empty());
+
+    projection.apply(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            item: agent_message("late-item", "canonical repair", None),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 4,
+        },
+    ));
+    assert_eq!(projection.entries().len(), 1);
+    assert_eq!(projection.entries()[0].text, "canonical repair");
+    assert!(!projection.entries()[0].streaming);
+}
+
+#[test]
+fn a_new_turn_can_create_a_streaming_item_after_a_terminal_turn() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::TurnCompleted(
+        TurnCompletedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: Turn {
+                id: "turn-1".to_string(),
+                items: Vec::new(),
+                items_view: TurnItemsView::Full,
+                status: TurnStatus::Completed,
+                error: None,
+                started_at: Some(1),
+                completed_at: Some(2),
+                duration_ms: Some(1),
+            },
+        },
+    ));
+    projection.apply(ServerNotification::TurnStarted(
+        app_server_protocol::protocol::v2::TurnStartedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: Turn {
+                id: "turn-2".to_string(),
+                items: Vec::new(),
+                items_view: TurnItemsView::Full,
+                status: TurnStatus::InProgress,
+                error: None,
+                started_at: Some(3),
+                completed_at: None,
+                duration_ms: None,
+            },
+        },
+    ));
+
+    projection.apply(ServerNotification::AgentMessageDelta(
+        AgentMessageDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-2".to_string(),
+            item_id: "answer-2".to_string(),
+            delta: "new output".to_string(),
+        },
+    ));
+
+    assert_eq!(projection.entries().len(), 1);
+    assert_eq!(projection.entries()[0].text, "new output");
+    assert!(projection.entries()[0].streaming);
 }
 
 #[test]

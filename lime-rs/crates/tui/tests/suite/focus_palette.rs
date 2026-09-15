@@ -11,6 +11,12 @@ const FOCUS_INPUT_TIMEOUT: Duration = Duration::from_secs(5);
 const RESIZE_EVENT_TIMEOUT: Duration = Duration::from_secs(5);
 const FOCUS_PROBE_INPUT: &str = "focus-palette-24527";
 
+#[derive(Clone, Copy)]
+enum StartMode<'a> {
+    Tui,
+    Resume(&'a str),
+}
+
 #[test]
 fn focus_gained_with_unanswered_palette_queries_preserves_immediate_input() -> Result<()> {
     if std::env::var_os("LIME_TEST_TUI_GATE_B").is_none() {
@@ -86,6 +92,46 @@ impl PtyLime {
         cwd: &Path,
         node_bin: &Path,
     ) -> Result<Self> {
+        Self::start_with_mode(
+            cli_bin,
+            app_server_bin,
+            backend_path,
+            ledger_path,
+            cwd,
+            node_bin,
+            StartMode::Tui,
+        )
+    }
+
+    pub(super) fn start_resume(
+        cli_bin: &Path,
+        app_server_bin: &Path,
+        backend_path: &Path,
+        ledger_path: &Path,
+        cwd: &Path,
+        node_bin: &Path,
+        thread_id: &str,
+    ) -> Result<Self> {
+        Self::start_with_mode(
+            cli_bin,
+            app_server_bin,
+            backend_path,
+            ledger_path,
+            cwd,
+            node_bin,
+            StartMode::Resume(thread_id),
+        )
+    }
+
+    fn start_with_mode(
+        cli_bin: &Path,
+        app_server_bin: &Path,
+        backend_path: &Path,
+        ledger_path: &Path,
+        cwd: &Path,
+        node_bin: &Path,
+        mode: StartMode<'_>,
+    ) -> Result<Self> {
         let pair = native_pty_system().openpty(PtySize {
             rows: 32,
             cols: 120,
@@ -93,8 +139,15 @@ impl PtyLime {
             pixel_height: 0,
         })?;
         let mut command = CommandBuilder::new(cli_bin);
-        for argument in [
-            OsString::from("tui"),
+        let mut arguments = Vec::new();
+        match mode {
+            StartMode::Tui => arguments.push(OsString::from("tui")),
+            StartMode::Resume(thread_id) => {
+                arguments.push(OsString::from("resume"));
+                arguments.push(OsString::from(thread_id));
+            }
+        }
+        arguments.extend([
             OsString::from("--cd"),
             cwd.as_os_str().to_os_string(),
             OsString::from("--model"),
@@ -120,7 +173,8 @@ impl PtyLime {
                 "--app-server-arg={}",
                 cwd.join("app-data").display()
             )),
-        ] {
+        ]);
+        for argument in arguments {
             command.arg(argument);
         }
         command.cwd(cwd);
@@ -163,11 +217,15 @@ impl PtyLime {
     }
 
     pub(super) fn wait_for_startup(&mut self) -> Result<()> {
-        let deadline = Instant::now() + STARTUP_TIMEOUT;
+        self.wait_for_startup_with_timeout(STARTUP_TIMEOUT)
+    }
+
+    pub(super) fn wait_for_startup_with_timeout(&mut self, timeout: Duration) -> Result<()> {
+        let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
             self.read_output(Duration::from_millis(50))?;
             self.answer_startup_queries()?;
-            if self.palette_answered && self.screen_contains("ready") {
+            if self.palette_answered && self.screen_contains("Ask Lime to do anything") {
                 return Ok(());
             }
             if let Some(status) = self.child.try_wait()? {
@@ -175,7 +233,7 @@ impl PtyLime {
             }
         }
         bail!(
-            "Lime did not initialize within {STARTUP_TIMEOUT:?}; screen:\n{}",
+            "Lime did not initialize within {timeout:?}; screen:\n{}",
             self.screen_contents()
         )
     }
@@ -328,7 +386,7 @@ impl Drop for PtyLime {
     }
 }
 
-fn required_test_path(name: &str) -> PathBuf {
+pub(super) fn required_test_path(name: &str) -> PathBuf {
     std::env::var_os(name)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)

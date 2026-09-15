@@ -3,9 +3,9 @@
 //! The composer owns popup visibility and dismissal.  `App` only routes events and renders the
 //! current projection, which keeps slash completion state from being duplicated across hosts.
 
+use super::super::command_popup::CommandPopup;
 use super::file_search_popup::FileSearchPopup;
 use super::skill_popup::SkillPopup;
-use crate::command_popup::CommandPopup;
 use std::ops::Range;
 
 /// One token occurrence whose autocomplete popup should remain hidden.
@@ -64,6 +64,9 @@ pub(super) enum ActivePopup {
 pub(super) struct PopupState {
     pub(super) active: ActivePopup,
     pub(super) dismissed_command_token: Option<String>,
+    pub(super) dismissed_file_token: Option<DismissedToken>,
+    pub(super) dismissed_skill_token: Option<DismissedToken>,
+    pub(super) file_search_requested_query: Option<String>,
 }
 
 impl ActivePopup {

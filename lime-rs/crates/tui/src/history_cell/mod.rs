@@ -229,7 +229,7 @@ mod tests {
             PathBuf::from("/workspace"),
         );
         let lines = cell.display_lines(80);
-        assert_eq!(lines[0].spans[0].content, "> ");
+        assert_eq!(lines[0].spans[0].content, "› ");
         assert_eq!(lines[1].spans[0].content, "  ");
         assert!(lines.iter().any(|line| {
             line.spans

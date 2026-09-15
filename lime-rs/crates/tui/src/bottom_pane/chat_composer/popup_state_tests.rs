@@ -1,11 +1,14 @@
 use super::*;
-use crate::command_popup::CommandPopup;
+use crate::bottom_pane::command_popup::CommandPopup;
 
 #[test]
 fn popup_state_has_single_active_command_popup() {
     let mut state = PopupState {
         active: ActivePopup::Command(CommandPopup::for_composer("/").expect("popup")),
         dismissed_command_token: None,
+        dismissed_file_token: None,
+        dismissed_skill_token: None,
+        file_search_requested_query: None,
     };
 
     assert!(state.active());

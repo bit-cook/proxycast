@@ -81,6 +81,26 @@ impl Locale {
         }
     }
 
+    pub(crate) fn change_model_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => " 切换模型",
+            Self::ZhTw => " 切換模型",
+            Self::EnUs => " to change",
+            Self::JaJp => " で変更",
+            Self::KoKr => "로 변경",
+        }
+    }
+
+    pub(crate) fn composer_placeholder(self) -> &'static str {
+        match self {
+            Self::ZhCn => "询问 Lime 做任何事",
+            Self::ZhTw => "詢問 Lime 做任何事",
+            Self::EnUs => "Ask Lime to do anything",
+            Self::JaJp => "Lime に何でも依頼",
+            Self::KoKr => "Lime에게 무엇이든 요청",
+        }
+    }
+
     pub(crate) fn effort_label(self) -> &'static str {
         match self {
             Self::ZhCn | Self::ZhTw => "推理",
@@ -136,6 +156,50 @@ impl Locale {
             Self::EnUs => "turn",
             Self::JaJp => "ターン",
             Self::KoKr => "턴",
+        }
+    }
+
+    pub(crate) fn queue_message_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "Tab 排队消息",
+            Self::ZhTw => "Tab 排隊訊息",
+            Self::EnUs => "Tab to queue message",
+            Self::JaJp => "Tab でメッセージをキューに追加",
+            Self::KoKr => "Tab으로 메시지 대기열 추가",
+        }
+    }
+
+    pub(crate) fn queue_short_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "Tab 排队",
+            Self::ZhTw => "Tab 排隊",
+            Self::EnUs => "Tab to queue",
+            Self::JaJp => "Tab でキューに追加",
+            Self::KoKr => "Tab으로 대기열 추가",
+        }
+    }
+
+    pub(crate) fn draft_ready_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "草稿就绪",
+            Self::ZhTw => "草稿就緒",
+            Self::EnUs => "draft ready",
+            Self::JaJp => "下書き準備完了",
+            Self::KoKr => "초안 준비됨",
+        }
+    }
+
+    /// 空闲 composer 的快捷键入口提示。
+    ///
+    /// Codex 在没有草稿或活动回合时仍保留一条可操作的 footer，避免底部区域看起来像
+    /// 未渲染。文案由 locale owner 提供，footer 只负责几何布局与截断。
+    pub(crate) fn shortcuts_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "? 查看快捷键",
+            Self::ZhTw => "? 查看快捷鍵",
+            Self::EnUs => "? for shortcuts",
+            Self::JaJp => "? ショートカット",
+            Self::KoKr => "? 단축키 보기",
         }
     }
 
@@ -250,6 +314,11 @@ impl Locale {
             (Self::EnUs, SlashCommand::Resume) => "resume a previous session",
             (Self::JaJp, SlashCommand::Resume) => "以前のセッションを再開",
             (Self::KoKr, SlashCommand::Resume) => "이전 세션 재개",
+            (Self::ZhCn, SlashCommand::Mcp) => "查看 MCP 服务器和工具",
+            (Self::ZhTw, SlashCommand::Mcp) => "檢視 MCP 伺服器與工具",
+            (Self::EnUs, SlashCommand::Mcp) => "show MCP servers and tools",
+            (Self::JaJp, SlashCommand::Mcp) => "MCP サーバーとツールを表示",
+            (Self::KoKr, SlashCommand::Mcp) => "MCP 서버 및 도구 보기",
             (Self::ZhCn, SlashCommand::Vim) => "切换 Vim 编辑模式",
             (Self::ZhTw, SlashCommand::Vim) => "切換 Vim 編輯模式",
             (Self::EnUs, SlashCommand::Vim) => "toggle Vim composer mode",
@@ -501,6 +570,217 @@ impl Locale {
             Self::EnUs => "Up/Down scroll  PgUp/PgDn page  Home/End jump  Esc/Q close",
             Self::JaJp => "上下スクロール  PgUp/PgDn ページ  Home/End 移動  Esc/Q 閉じる",
             Self::KoKr => "위/아래 스크롤  PgUp/PgDn 페이지  Home/End 이동  Esc/Q 닫기",
+        }
+    }
+
+    pub(crate) fn mcp_inventory_title(self) -> &'static str {
+        match self {
+            Self::ZhCn => "MCP 工具",
+            Self::ZhTw => "MCP 工具",
+            Self::EnUs => "MCP Tools",
+            Self::JaJp => "MCP ツール",
+            Self::KoKr => "MCP 도구",
+        }
+    }
+
+    pub(crate) fn mcp_no_servers(self) -> &'static str {
+        match self {
+            Self::ZhCn => "未配置 MCP 服务器。",
+            Self::ZhTw => "未設定 MCP 伺服器。",
+            Self::EnUs => "No MCP servers configured.",
+            Self::JaJp => "MCP サーバーが設定されていません。",
+            Self::KoKr => "구성된 MCP 서버가 없습니다.",
+        }
+    }
+
+    pub(crate) fn mcp_tools_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "工具",
+            Self::ZhTw => "工具",
+            Self::EnUs => "Tools",
+            Self::JaJp => "ツール",
+            Self::KoKr => "도구",
+        }
+    }
+
+    pub(crate) fn mcp_none(self) -> &'static str {
+        match self {
+            Self::ZhCn => "(无)",
+            Self::ZhTw => "(無)",
+            Self::EnUs => "(none)",
+            Self::JaJp => "(なし)",
+            Self::KoKr => "(없음)",
+        }
+    }
+
+    pub(crate) fn mcp_no_tools_available(self) -> &'static str {
+        match self {
+            Self::ZhCn => "没有可用的 MCP 工具。",
+            Self::ZhTw => "沒有可用的 MCP 工具。",
+            Self::EnUs => "No MCP tools available.",
+            Self::JaJp => "利用可能な MCP ツールがありません。",
+            Self::KoKr => "사용 가능한 MCP 도구가 없습니다.",
+        }
+    }
+
+    pub(crate) fn mcp_tool_unit(self, count: usize) -> &'static str {
+        match self {
+            Self::ZhCn => "工具",
+            Self::ZhTw => "工具",
+            Self::EnUs => {
+                if count == 1 {
+                    "tool"
+                } else {
+                    "tools"
+                }
+            }
+            Self::JaJp => "ツール",
+            Self::KoKr => "도구",
+        }
+    }
+
+    pub(crate) fn mcp_resources_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "资源",
+            Self::ZhTw => "資源",
+            Self::EnUs => "Resources",
+            Self::JaJp => "リソース",
+            Self::KoKr => "리소스",
+        }
+    }
+
+    pub(crate) fn mcp_resource_templates_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "资源模板",
+            Self::ZhTw => "資源範本",
+            Self::EnUs => "Resource templates",
+            Self::JaJp => "リソーステンプレート",
+            Self::KoKr => "리소스 템플릿",
+        }
+    }
+
+    pub(crate) fn mcp_status(self, status: &str) -> &'static str {
+        match (self, status) {
+            (_, "connected") => match self {
+                Self::ZhCn => "已连接",
+                Self::ZhTw => "已連線",
+                Self::EnUs => "connected",
+                Self::JaJp => "接続済み",
+                Self::KoKr => "연결됨",
+            },
+            (_, "starting") => match self {
+                Self::ZhCn => "启动中",
+                Self::ZhTw => "啟動中",
+                Self::EnUs => "starting",
+                Self::JaJp => "起動中",
+                Self::KoKr => "시작 중",
+            },
+            (_, "authentication required") => match self {
+                Self::ZhCn => "需要认证",
+                Self::ZhTw => "需要驗證",
+                Self::EnUs => "authentication required",
+                Self::JaJp => "認証が必要",
+                Self::KoKr => "인증 필요",
+            },
+            (_, "failed") => match self {
+                Self::ZhCn => "失败",
+                Self::ZhTw => "失敗",
+                Self::EnUs => "failed",
+                Self::JaJp => "失敗",
+                Self::KoKr => "실패",
+            },
+            (_, "not started") => match self {
+                Self::ZhCn => "未启动",
+                Self::ZhTw => "未啟動",
+                Self::EnUs => "not started",
+                Self::JaJp => "未起動",
+                Self::KoKr => "시작되지 않음",
+            },
+            (_, "disabled") => match self {
+                Self::ZhCn => "已禁用",
+                Self::ZhTw => "已停用",
+                Self::EnUs => "disabled",
+                Self::JaJp => "無効",
+                Self::KoKr => "비활성화됨",
+            },
+            (_, "cancelled") => match self {
+                Self::ZhCn => "已取消",
+                Self::ZhTw => "已取消",
+                Self::EnUs => "cancelled",
+                Self::JaJp => "キャンセル済み",
+                Self::KoKr => "취소됨",
+            },
+            (_, _) => match self {
+                Self::ZhCn => "未知",
+                Self::ZhTw => "未知",
+                Self::EnUs => "unknown",
+                Self::JaJp => "不明",
+                Self::KoKr => "알 수 없음",
+            },
+        }
+    }
+
+    pub(crate) fn mcp_auth_status(self, status: &str) -> &'static str {
+        match (self, status) {
+            (_, "unsupported") => match self {
+                Self::ZhCn => "不支持",
+                Self::ZhTw => "不支援",
+                Self::EnUs => "Unsupported",
+                Self::JaJp => "未対応",
+                Self::KoKr => "지원되지 않음",
+            },
+            (_, "not logged in") => match self {
+                Self::ZhCn => "未登录",
+                Self::ZhTw => "未登入",
+                Self::EnUs => "Not logged in",
+                Self::JaJp => "未ログイン",
+                Self::KoKr => "로그인되지 않음",
+            },
+            (_, "bearer token") => match self {
+                Self::ZhCn => "Bearer 令牌",
+                Self::ZhTw => "Bearer 權杖",
+                Self::EnUs => "Bearer token",
+                Self::JaJp => "Bearer トークン",
+                Self::KoKr => "Bearer 토큰",
+            },
+            (_, "OAuth") => "OAuth",
+            (_, _) => match self {
+                Self::ZhCn => "未知",
+                Self::ZhTw => "未知",
+                Self::EnUs => "Unknown",
+                Self::JaJp => "不明",
+                Self::KoKr => "알 수 없음",
+            },
+        }
+    }
+
+    pub(crate) fn mcp_auth_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "认证",
+            Self::ZhTw => "驗證",
+            Self::EnUs => "Auth",
+            Self::JaJp => "認証",
+            Self::KoKr => "인증",
+        }
+    }
+
+    pub(crate) fn mcp_use_verbose(self) -> &'static str {
+        match self {
+            Self::ZhCn => "使用 /mcp verbose 查看工具和资源。",
+            Self::ZhTw => "使用 /mcp verbose 查看工具與資源。",
+            Self::EnUs => "Use /mcp verbose for tools and resources.",
+            Self::JaJp => "/mcp verbose でツールとリソースを表示します。",
+            Self::KoKr => "도구와 리소스를 보려면 /mcp verbose를 사용하세요.",
+        }
+    }
+
+    pub(crate) fn mcp_usage(self) -> &'static str {
+        match self {
+            Self::ZhCn => "用法：/mcp [verbose]",
+            Self::ZhTw => "用法：/mcp [verbose]",
+            Self::EnUs => "Usage: /mcp [verbose]",
+            Self::JaJp => "使い方：/mcp [verbose]",
+            Self::KoKr => "사용법: /mcp [verbose]",
         }
     }
 
@@ -1231,6 +1511,70 @@ impl Locale {
         }
     }
 
+    /// Stable primary/escape controls shown below an approval request.
+    ///
+    /// Keep this deliberately short: the approval pane can be rendered in a 40-column
+    /// terminal, where a long explanatory footer would otherwise hide the only safe way out.
+    pub(crate) fn approval_controls(self) -> &'static str {
+        match self {
+            Self::ZhCn => "Enter 确认 · Esc 取消",
+            Self::ZhTw => "Enter 確認 · Esc 取消",
+            Self::EnUs => "Enter confirm · Esc cancel",
+            Self::JaJp => "Enter 確定 · Esc キャンセル",
+            Self::KoKr => "Enter 확인 · Esc 취소",
+        }
+    }
+
+    pub(crate) fn request_submit_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "Enter 提交",
+            Self::ZhTw => "Enter 提交",
+            Self::EnUs => "Enter submit",
+            Self::JaJp => "Enter 送信",
+            Self::KoKr => "Enter 제출",
+        }
+    }
+
+    pub(crate) fn request_cancel_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "Esc 取消",
+            Self::ZhTw => "Esc 取消",
+            Self::EnUs => "Esc cancel",
+            Self::JaJp => "Esc キャンセル",
+            Self::KoKr => "Esc 취소",
+        }
+    }
+
+    pub(crate) fn request_notes_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "Tab 备注",
+            Self::ZhTw => "Tab 備註",
+            Self::EnUs => "Tab notes",
+            Self::JaJp => "Tab メモ",
+            Self::KoKr => "Tab 메모",
+        }
+    }
+
+    pub(crate) fn request_select_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "↑/↓ 选择",
+            Self::ZhTw => "↑/↓ 選擇",
+            Self::EnUs => "↑/↓ select",
+            Self::JaJp => "↑/↓ 選択",
+            Self::KoKr => "↑/↓ 선택",
+        }
+    }
+
+    pub(crate) fn request_question_nav_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "←/→ 切换问题",
+            Self::ZhTw => "←/→ 切換問題",
+            Self::EnUs => "←/→ questions",
+            Self::JaJp => "←/→ 質問",
+            Self::KoKr => "←/→ 질문",
+        }
+    }
+
     pub(crate) fn mcp_elicitation_title(self, server_name: &str) -> String {
         match self {
             Self::ZhCn => format!("MCP 请求：{server_name}"),
@@ -1488,6 +1832,7 @@ impl Locale {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn resume_title(self) -> &'static str {
         match self {
             Self::ZhCn => "选择会话",
@@ -1508,6 +1853,7 @@ impl Locale {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn resume_label(self) -> &'static str {
         match self {
             Self::ZhCn => "恢复",
@@ -1782,6 +2128,16 @@ impl Locale {
             Self::EnUs => "Tab to add notes",
             Self::JaJp => "Tab でメモを追加",
             Self::KoKr => "Tab으로 메모 추가",
+        }
+    }
+
+    pub(crate) fn auto_resolution_countdown(self, remaining: &str) -> String {
+        match self {
+            Self::ZhCn => format!("将在 {remaining} 后自动继续"),
+            Self::ZhTw => format!("將在 {remaining} 後自動繼續"),
+            Self::EnUs => format!("auto-resolves in {remaining}"),
+            Self::JaJp => format!("{remaining}後に自動処理します"),
+            Self::KoKr => format!("{remaining} 후 자동으로 계속합니다"),
         }
     }
 }
@@ -2225,6 +2581,24 @@ mod tests {
     }
 
     #[test]
+    fn interactive_overlay_controls_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            assert!(!locale.approval_controls().is_empty());
+            assert!(!locale.request_submit_hint().is_empty());
+            assert!(!locale.request_cancel_hint().is_empty());
+            assert!(!locale.request_notes_hint().is_empty());
+            assert!(!locale.request_select_hint().is_empty());
+            assert!(!locale.request_question_nav_hint().is_empty());
+        }
+    }
+
+    #[test]
     fn working_directory_messages_cover_all_product_locales() {
         let cwd = "/tmp/project";
         for locale in [
@@ -2315,6 +2689,22 @@ mod tests {
     }
 
     #[test]
+    fn mcp_inventory_labels_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            assert!(!locale.mcp_inventory_title().is_empty());
+            assert!(!locale.mcp_no_servers().is_empty());
+            assert!(!locale.mcp_usage().is_empty());
+        }
+        assert_eq!(Locale::EnUs.mcp_usage(), "Usage: /mcp [verbose]");
+    }
+
+    #[test]
     fn resume_picker_controls_cover_all_product_locales() {
         for locale in [
             Locale::ZhCn,
@@ -2347,5 +2737,24 @@ mod tests {
             assert!(!locale.resume_transcript_failed().is_empty());
             assert!(!locale.resume_transcript_empty().is_empty());
         }
+    }
+
+    #[test]
+    fn auto_resolution_countdown_covers_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            assert!(locale
+                .auto_resolution_countdown("1m 00s")
+                .contains("1m 00s"));
+        }
+        assert_eq!(
+            Locale::EnUs.auto_resolution_countdown("59s"),
+            "auto-resolves in 59s"
+        );
     }
 }

@@ -16,6 +16,23 @@ use crate::history_filter::{
 };
 use crate::multi_agents;
 
+fn latest_summary_line(text: &str) -> Option<String> {
+    text.lines().rev().find_map(|line| {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("<!--") {
+            return None;
+        }
+        let line = line.trim_start_matches('#').trim();
+        let line = if let Some(stripped) = line.strip_prefix("**") {
+            let (bold, trailing) = stripped.split_once("**")?;
+            format!("{bold}{trailing}")
+        } else {
+            line.to_string()
+        };
+        (!line.is_empty()).then_some(line)
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EntryKind {
     User,
@@ -83,7 +100,12 @@ pub(crate) struct ConversationProjection {
     entries: Vec<TranscriptEntry>,
     completion_boundaries: Vec<CompletionBoundary>,
     active_turn_id: Option<String>,
+    /// Turn ids whose terminal notification or hydrated canonical record has already settled.
+    /// Late stream notifications for these turns must not create new provisional entries.
+    closed_turn_ids: HashSet<String>,
     status: String,
+    /// Latest usable reasoning summary while the active turn is still running.
+    reasoning_status: Option<String>,
     review_mode: bool,
     active_hooks: Vec<ActiveHook>,
     /// Explicit assistant phases keyed by canonical item id. Legacy items
@@ -144,10 +166,46 @@ impl ConversationProjection {
     }
 
     pub(crate) fn status(&self) -> &str {
-        self.hook_status().unwrap_or(&self.status)
+        if let Some(hook) = self.hook_status_message() {
+            return hook;
+        }
+        if self.active_turn_id.is_some() {
+            if let Some(reasoning) = self.reasoning_status.as_deref() {
+                return reasoning;
+            }
+        }
+        &self.status
+    }
+
+    /// Returns the active hook summary for the status indicator, if any.
+    ///
+    /// Hook state remains owned by the canonical projection; the view only consumes this
+    /// display-ready string and never inspects individual protocol notifications.
+    pub(crate) fn hook_status_message(&self) -> Option<&str> {
+        if self.active_hooks.is_empty() {
+            return None;
+        }
+        let first = self.active_hooks[0]
+            .status_message
+            .as_deref()
+            .map(str::trim)
+            .filter(|message| !message.is_empty());
+        if self.active_hooks.len() == 1 {
+            return first.or(Some("running hook"));
+        }
+        if first.is_some()
+            && self
+                .active_hooks
+                .iter()
+                .all(|hook| hook.status_message.as_deref().map(str::trim) == first)
+        {
+            return first;
+        }
+        Some("running hooks")
     }
 
     pub(crate) fn set_status(&mut self, status: impl Into<String>) {
+        self.reasoning_status = None;
         self.status = status.into();
     }
 
@@ -156,6 +214,7 @@ impl ConversationProjection {
     }
 
     pub(crate) fn start_turn(&mut self, turn_id: String) {
+        self.reasoning_status = None;
         self.active_turn_id = Some(turn_id);
         self.status = "running".to_string();
     }
@@ -249,13 +308,21 @@ impl ConversationProjection {
         self.entries.clear();
         self.completion_boundaries.clear();
         self.active_turn_id = None;
+        self.closed_turn_ids.clear();
         self.status = "ready".to_string();
+        self.reasoning_status = None;
         self.review_mode = false;
         self.active_hooks.clear();
         self.assistant_phases.clear();
 
         let hidden_user_messages = hidden_user_message_ids(&thread.turns);
         for turn in thread.turns {
+            if matches!(
+                turn.status,
+                TurnStatus::Completed | TurnStatus::Failed | TurnStatus::Interrupted
+            ) {
+                self.closed_turn_ids.insert(turn.id.clone());
+            }
             if turn.status == TurnStatus::InProgress {
                 self.active_turn_id = Some(turn.id.clone());
                 self.status = "running".to_string();
@@ -271,6 +338,7 @@ impl ConversationProjection {
                     continue;
                 }
                 if let Some(entry) = project_item(&item, false) {
+                    self.remember_reasoning_status(turn.id.as_str(), &entry);
                     self.replace_entry(entry);
                 }
             }
@@ -295,11 +363,14 @@ impl ConversationProjection {
     pub(crate) fn apply(&mut self, notification: ServerNotification) {
         match notification {
             ServerNotification::TurnStarted(params) => {
+                self.closed_turn_ids.remove(&params.turn.id);
+                self.reasoning_status = None;
                 self.active_turn_id = Some(params.turn.id);
                 self.status = "running".to_string();
             }
             ServerNotification::TurnCompleted(params) => {
                 self.active_turn_id = None;
+                self.reasoning_status = None;
                 self.active_hooks
                     .retain(|hook| hook.turn_id.as_deref() != Some(params.turn.id.as_str()));
                 // The terminal client may miss an item delta or item/completed
@@ -331,15 +402,25 @@ impl ConversationProjection {
                     }
                 }
                 self.settle_running_entries(params.turn.status);
+                if matches!(
+                    params.turn.status,
+                    TurnStatus::Completed | TurnStatus::Failed | TurnStatus::Interrupted
+                ) {
+                    self.closed_turn_ids.insert(params.turn.id.clone());
+                }
                 self.status = turn_status(params.turn.status).to_string();
             }
             ServerNotification::ItemStarted(params) => {
+                if self.closed_turn_ids.contains(&params.turn_id) {
+                    return;
+                }
                 if self.should_hide_realtime_item(&params.item) {
                     return;
                 }
                 if let Some(entry) =
                     project_item_with_lifecycle(&params.item, true, WebSearchLifecycle::Started)
                 {
+                    self.remember_reasoning_status(&params.turn_id, &entry);
                     self.record_assistant_phase(&params.item);
                     self.replace_entry(entry);
                 }
@@ -351,26 +432,58 @@ impl ConversationProjection {
                 if let Some(entry) =
                     project_item_with_lifecycle(&params.item, false, WebSearchLifecycle::Completed)
                 {
+                    self.remember_reasoning_status(&params.turn_id, &entry);
                     self.record_assistant_phase(&params.item);
                     self.replace_entry(entry);
                 }
             }
             ServerNotification::AgentMessageDelta(params) => {
-                self.append_delta(params.item_id, EntryKind::Assistant, params.delta);
+                self.append_delta(
+                    params.turn_id,
+                    params.item_id,
+                    EntryKind::Assistant,
+                    params.delta,
+                );
             }
             ServerNotification::ReasoningSummaryTextDelta(params) => {
-                self.append_delta(params.item_id, EntryKind::Reasoning, params.delta);
+                self.append_delta(
+                    params.turn_id,
+                    params.item_id,
+                    EntryKind::Reasoning,
+                    params.delta,
+                );
+            }
+            ServerNotification::ReasoningSummaryPartAdded(params) => {
+                self.append_reasoning_section_break(params.turn_id, params.item_id);
             }
             ServerNotification::ReasoningTextDelta(params) => {
-                self.append_delta(params.item_id, EntryKind::Reasoning, params.delta);
+                self.append_delta(
+                    params.turn_id,
+                    params.item_id,
+                    EntryKind::Reasoning,
+                    params.delta,
+                );
             }
             ServerNotification::PlanDelta(params) => {
-                self.append_delta(params.item_id, EntryKind::Plan, params.delta);
+                self.append_delta(
+                    params.turn_id,
+                    params.item_id,
+                    EntryKind::Plan,
+                    params.delta,
+                );
             }
             ServerNotification::CommandExecutionOutputDelta(params) => {
-                self.append_delta(params.item_id, EntryKind::Command, params.delta);
+                self.append_delta(
+                    params.turn_id,
+                    params.item_id,
+                    EntryKind::Command,
+                    params.delta,
+                );
             }
             ServerNotification::FileChangePatchUpdated(params) => {
+                if self.closed_turn_ids.contains(&params.turn_id) {
+                    return;
+                }
                 self.replace_entry(TranscriptEntry {
                     id: params.item_id,
                     kind: EntryKind::Patch,
@@ -381,6 +494,9 @@ impl ConversationProjection {
                 });
             }
             ServerNotification::TurnDiffUpdated(params) => {
+                if self.closed_turn_ids.contains(&params.turn_id) {
+                    return;
+                }
                 self.replace_entry(TranscriptEntry {
                     id: format!("turn-{}-diff", params.turn_id),
                     kind: EntryKind::Patch,
@@ -391,6 +507,9 @@ impl ConversationProjection {
                 });
             }
             ServerNotification::TurnPlanUpdated(params) => {
+                if self.closed_turn_ids.contains(&params.turn_id) {
+                    return;
+                }
                 let text = params
                     .plan
                     .iter()
@@ -410,6 +529,7 @@ impl ConversationProjection {
                 self.push_system(format!("warning: {}", params.message));
             }
             ServerNotification::Error(params) => {
+                self.reasoning_status = None;
                 self.status = if params.will_retry {
                     "retrying".to_string()
                 } else {
@@ -472,36 +592,29 @@ impl ConversationProjection {
         });
     }
 
-    fn hook_status(&self) -> Option<&str> {
-        if self.active_hooks.is_empty() {
-            return None;
-        }
-        let first = self.active_hooks[0]
-            .status_message
-            .as_deref()
-            .map(str::trim)
-            .filter(|message| !message.is_empty());
-        if self.active_hooks.len() == 1 {
-            return first.or(Some("running hook"));
-        }
-        if first.is_some()
-            && self
-                .active_hooks
-                .iter()
-                .all(|hook| hook.status_message.as_deref().map(str::trim) == first)
-        {
-            return first;
-        }
-        Some("running hooks")
-    }
-
-    fn append_delta(&mut self, id: String, kind: EntryKind, delta: String) {
-        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == id) {
-            entry.text.push_str(&delta);
-            entry.streaming = true;
+    fn append_delta(&mut self, turn_id: String, id: String, kind: EntryKind, delta: String) {
+        if self.closed_turn_ids.contains(&turn_id) {
             return;
         }
-        self.entries.push(TranscriptEntry {
+        let active_turn = self.active_turn_id.as_deref() == Some(turn_id.as_str());
+        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == id) {
+            // Once an item has been replaced by its canonical completion (or a terminal turn
+            // settled the provisional stream), late transport deltas must not reopen it. Codex
+            // flushes the active stream before accepting terminal history for the same reason.
+            if !entry.streaming || entry.kind != kind {
+                return;
+            }
+            entry.text.push_str(&delta);
+            entry.streaming = true;
+            let reasoning_status = (active_turn && kind == EntryKind::Reasoning)
+                .then(|| latest_summary_line(&entry.text))
+                .flatten();
+            if let Some(reasoning_status) = reasoning_status {
+                self.reasoning_status = Some(reasoning_status);
+            }
+            return;
+        }
+        let entry = TranscriptEntry {
             id,
             kind,
             text: delta,
@@ -509,7 +622,49 @@ impl ConversationProjection {
             status: (kind == EntryKind::Command || kind == EntryKind::Plan)
                 .then_some(EntryStatus::Running),
             summary: Vec::new(),
+        };
+        if active_turn {
+            self.remember_reasoning_status(&turn_id, &entry);
+        }
+        self.entries.push(entry);
+    }
+
+    /// Preserve the boundary between streamed reasoning summary parts.
+    ///
+    /// The following item completion remains authoritative and replaces this provisional entry
+    /// with the canonical summary. A completed historical reasoning item is therefore left
+    /// untouched when a late notification arrives after reconnect.
+    fn append_reasoning_section_break(&mut self, turn_id: String, id: String) {
+        if self.closed_turn_ids.contains(&turn_id) {
+            return;
+        }
+        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == id) {
+            if entry.kind != EntryKind::Reasoning || !entry.streaming {
+                return;
+            }
+            if !entry.text.is_empty() && !entry.text.ends_with('\n') {
+                entry.text.push('\n');
+            }
+            return;
+        }
+
+        self.entries.push(TranscriptEntry {
+            id,
+            kind: EntryKind::Reasoning,
+            text: String::new(),
+            streaming: true,
+            status: None,
+            summary: Vec::new(),
         });
+    }
+
+    fn remember_reasoning_status(&mut self, turn_id: &str, entry: &TranscriptEntry) {
+        if self.active_turn_id.as_deref() != Some(turn_id) || entry.kind != EntryKind::Reasoning {
+            return;
+        }
+        if let Some(summary) = latest_summary_line(&entry.text) {
+            self.reasoning_status = Some(summary);
+        }
     }
 
     fn update_review_mode(&mut self, item: &ThreadItem) {
@@ -622,6 +777,9 @@ impl ConversationProjection {
             if entry.status == Some(EntryStatus::Running) {
                 entry.status = Some(entry_status);
             }
+            // Assistant and reasoning entries intentionally have no running status, but they
+            // still carry a provisional stream flag. A terminal turn closes those tails too.
+            entry.streaming = false;
         }
     }
 }

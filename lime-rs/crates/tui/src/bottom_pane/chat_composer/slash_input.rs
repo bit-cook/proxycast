@@ -3,7 +3,7 @@
 //! This module is the composer-facing fact source.  The command catalog remains in
 //! [`crate::slash_command`], while lifecycle and rendering stay in the popup owner.
 
-use crate::command_popup::CommandPopup;
+use super::super::command_popup::CommandPopup;
 use crate::slash_command::command_from_prompt as parse_command_from_prompt;
 
 pub(super) fn command_popup(text: &str) -> super::ActivePopup {

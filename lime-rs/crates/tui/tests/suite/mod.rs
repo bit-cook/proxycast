@@ -2,6 +2,8 @@
 #[cfg(unix)]
 mod focus_palette;
 #[cfg(unix)]
+mod history_pagination;
+#[cfg(unix)]
 mod reconnect;
 #[cfg(unix)]
 mod resize_reflow;

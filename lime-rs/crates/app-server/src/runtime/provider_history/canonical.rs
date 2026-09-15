@@ -90,6 +90,8 @@ where
             flush_assistant(messages, assistant_content, assistant_text_by_item);
             tool_results.push(CurrentProviderContent::ToolResult(result));
         }
+        ThreadItemPayload::Extension { name, .. }
+            if matches!(name.as_str(), "enteredReviewMode" | "exitedReviewMode") => {}
         ThreadItemPayload::CollabAgentToolCall { .. }
         | ThreadItemPayload::Media { .. }
         | ThreadItemPayload::ContextCompaction { .. }

@@ -109,6 +109,8 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
     let mut app = App::default();
     app.set_cwd(options.cwd.clone());
     app.set_locale(Locale::resolve(options.locale.as_deref()));
+    app.composer
+        .set_agents_navigation_enabled(options.remote.is_none());
     app.begin_startup_input_boundary();
     let setup_result = crate::app::startup::initialize_session(
         &options,
@@ -174,6 +176,11 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                     reconnect_failed = true;
                     app.projection
                         .set_status("reconnect unavailable: thread id missing");
+                }
+            }
+            if session.is_some() {
+                if let Some(delay) = app.bottom_pane.next_frame_delay(std::time::Instant::now()) {
+                    frame_requester.schedule_frame_in(delay);
                 }
             }
             terminal
@@ -320,7 +327,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                             if app.projection.active_turn_id().is_some() {
                                 frame_requester.schedule_frame_in(Duration::from_secs(1));
                             }
-                            continue;
+                            TuiEvent::Draw
                         }
                         TuiEvent::Resize(size) => {
                             terminal.update_viewport(size, size.height);
@@ -692,6 +699,25 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                         }
                         AppAction::ScrollTop => app.scroll_top(),
                         AppAction::ScrollBottom => app.scroll_bottom(),
+                        AppAction::LoadOlderHistory => {
+                            let result = app
+                                .request_all_older_history_pages(
+                                    session.as_mut().expect(
+                                        "session available during transcript history loading",
+                                    ),
+                                )
+                                .await;
+                            match result {
+                                Ok(_) => {
+                                    if let Some(pager) = app.pager_overlay.as_ref() {
+                                        pager.reset_transcript_anchor_at_top();
+                                    }
+                                }
+                                Err(error) => app
+                                    .projection
+                                    .set_status(format!("history page failed: {error}")),
+                            }
+                        }
                         AppAction::OpenResumePicker => {
                             if app.resume_picker.is_none() {
                                 let (load_tx, load_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -864,7 +890,8 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                         | AppAction::RefreshAgentsOverview
                         | AppAction::DispatchAgentsOverviewTask { .. }
                         | AppAction::RenameAgentsOverviewThread { .. }
-                        | AppAction::StopAgentsOverviewThread { .. } => {
+                        | AppAction::StopAgentsOverviewThread { .. }
+                        | AppAction::FetchMcpInventory { .. } => {
                             unreachable!("App Server actions are handled by app::event_dispatch")
                         }
                         AppAction::Quit => break,

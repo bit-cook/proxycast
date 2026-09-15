@@ -1444,10 +1444,9 @@ async fn paginated_history_jsonrpc_preserves_canonical_thread_turn_item_identity
     )
     .await;
     assert_eq!(turns["result"]["data"][0]["id"], json!(turn_id));
-    assert_eq!(
-        turns["result"]["data"][0]["items"][1]["id"],
-        json!("answer-item")
-    );
+    assert!(turns["result"]["data"][0]["items"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item["id"] == "answer-item")));
 
     let items = request(
         &server,

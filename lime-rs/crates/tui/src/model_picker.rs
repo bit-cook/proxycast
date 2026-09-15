@@ -1,13 +1,18 @@
 use app_server_protocol::protocol::v2::Model;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
+use crate::bottom_pane::selection_row_layout::{
+    centered_popup, visible_item_window, wrap_row, SelectionDescriptionLayout, SelectionRow,
+    MAX_POPUP_ROWS,
+};
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
+use crate::style::{accent_style, muted_style};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ModelSelection {
@@ -74,14 +79,26 @@ impl ModelPicker {
                 }
                 match key.code {
                     KeyCode::Esc => ModelPickerAction::Cancel,
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.selected = self.selected.saturating_sub(1);
-                        ModelPickerAction::None
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
+                    KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('k')
+                        if key.code == KeyCode::Up
+                            || key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
                         let count = self.visible_indices().len();
                         if count > 0 {
-                            self.selected = (self.selected + 1).min(count - 1);
+                            self.selected = self
+                                .selected
+                                .checked_sub(1)
+                                .unwrap_or(count.saturating_sub(1));
+                        }
+                        ModelPickerAction::None
+                    }
+                    KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('j')
+                        if key.code == KeyCode::Down
+                            || key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        let count = self.visible_indices().len();
+                        if count > 0 {
+                            self.selected = (self.selected + 1) % count;
                         }
                         ModelPickerAction::None
                     }
@@ -94,7 +111,11 @@ impl ModelPicker {
                         self.selected = 0;
                         ModelPickerAction::None
                     }
-                    KeyCode::Char(ch) => {
+                    KeyCode::Char(ch)
+                        if !key
+                            .modifiers
+                            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                    {
                         self.query.push(ch);
                         self.selected = 0;
                         ModelPickerAction::None
@@ -139,12 +160,12 @@ pub(crate) fn render_with_locale(
     locale: Locale,
 ) {
     let width = area.width.saturating_mul(4).saturating_div(5).clamp(28, 72);
-    let height = area.height.saturating_mul(3).saturating_div(4).clamp(7, 18);
-    let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
-    let y = area
-        .y
-        .saturating_add(area.height.saturating_sub(height) / 2);
-    let popup = Rect::new(x, y, width.min(area.width), height.min(area.height));
+    let height = area
+        .height
+        .saturating_mul(3)
+        .saturating_div(4)
+        .clamp(7, MAX_POPUP_ROWS as u16 + 4);
+    let popup = centered_popup(area, width, height);
 
     frame.render_widget(Clear, popup);
     let chunks = Layout::default()
@@ -166,7 +187,7 @@ pub(crate) fn render_with_locale(
             } else {
                 picker.query().to_string()
             },
-            Style::default().fg(Color::DarkGray),
+            muted_style(),
         ),
     ]);
     frame.render_widget(
@@ -178,44 +199,51 @@ pub(crate) fn render_with_locale(
         chunks[0],
     );
 
-    let items = picker
-        .visible_models()
+    let row_width = chunks[1].width.saturating_sub(2);
+    let desc_col = usize::from(row_width.saturating_mul(2).saturating_div(5).max(1));
+    let visible_models = picker.visible_models();
+    let max_visible = MAX_POPUP_ROWS.min(usize::from(chunks[1].height).max(1));
+    let (start, end) = visible_item_window(picker.selected, visible_models.len(), max_visible);
+    let items = visible_models
         .into_iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
         .map(|model| {
-            let label = format!("{}  [{}]", model.display_name, model.provider_id);
-            ListItem::new(truncate_line_with_ellipsis_if_overflow(
-                Line::from(label),
-                usize::from(chunks[1].width.saturating_sub(2)),
+            let row = SelectionRow::new(
+                model.display_name.clone(),
+                Some(format!("[{}]", model.provider_id)),
+                Vec::new(),
+            );
+            ListItem::new(wrap_row(
+                &row,
+                desc_col,
+                row_width,
+                SelectionDescriptionLayout::StackBelowWhenNarrow {
+                    min_description_width: 10,
+                },
             ))
         })
         .collect::<Vec<_>>();
     let mut state = ListState::default();
     if !items.is_empty() {
-        state.select(Some(picker.selected));
+        state.select(Some(picker.selected.saturating_sub(start)));
     }
     frame.render_stateful_widget(
         List::new(items)
             .block(Block::default().borders(Borders::LEFT | Borders::RIGHT))
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("> "),
+            .highlight_style(accent_style())
+            .highlight_symbol("› "),
         chunks[1],
         &mut state,
     );
-    let footer = if picker.visible_models().is_empty() {
+    let footer = if end == start {
         locale.picker_empty()
     } else {
         locale.picker_footer()
     };
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            footer,
-            Style::default().fg(Color::DarkGray),
-        )))
-        .block(Block::default().borders(Borders::BOTTOM)),
+        Paragraph::new(Line::from(Span::styled(footer, muted_style())))
+            .block(Block::default().borders(Borders::BOTTOM)),
         chunks[2],
     );
 }
@@ -279,6 +307,69 @@ mod tests {
     }
 
     #[test]
+    fn searchable_picker_keeps_plain_vim_letters_for_query_input() {
+        let mut picker = ModelPicker::new(vec![
+            model("alpha", "fixture", false, true),
+            model("jupiter", "fixture", false, false),
+            model("kilo", "fixture", false, false),
+        ]);
+
+        assert_eq!(
+            picker.handle_event(Event::Key(KeyEvent::new(
+                KeyCode::Char('j'),
+                KeyModifiers::NONE,
+            ))),
+            ModelPickerAction::None
+        );
+        assert_eq!(picker.query(), "j");
+        assert_eq!(picker.visible_models()[0].model, "jupiter");
+
+        picker.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Backspace,
+            KeyModifiers::NONE,
+        )));
+        picker.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('k'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(picker.query(), "k");
+        assert_eq!(picker.visible_models()[0].model, "kilo");
+    }
+
+    #[test]
+    fn picker_navigation_wraps_and_accepts_control_bindings() {
+        let mut picker = ModelPicker::new(vec![
+            model("first", "fixture", false, true),
+            model("second", "fixture", false, false),
+        ]);
+
+        picker.handle_event(Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)));
+        assert_eq!(picker.selected, 1);
+
+        picker.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('n'),
+            KeyModifiers::CONTROL,
+        )));
+        assert_eq!(picker.selected, 0);
+
+        picker.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('k'),
+            KeyModifiers::CONTROL,
+        )));
+        assert_eq!(picker.selected, 1);
+    }
+
+    #[test]
+    fn unhandled_control_keys_do_not_pollute_model_query() {
+        let mut picker = ModelPicker::new(vec![model("first", "fixture", false, true)]);
+        picker.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('z'),
+            KeyModifiers::CONTROL,
+        )));
+        assert!(picker.query().is_empty());
+    }
+
+    #[test]
     fn picker_escape_cancels_and_render_stays_bounded() {
         let mut picker = ModelPicker::new(vec![model("模型", "提供方", false, true)]);
         assert_eq!(
@@ -289,5 +380,35 @@ mod tests {
         terminal
             .draw(|frame| render(frame, frame.area(), &picker))
             .expect("draw");
+    }
+
+    #[test]
+    fn long_model_catalog_keeps_selected_row_inside_bounded_popup() {
+        let models = (0..20)
+            .map(|index| model(&format!("model-{index:02}"), "fixture", false, index == 0))
+            .collect();
+        let mut picker = ModelPicker::new(models);
+        for _ in 0..12 {
+            picker.handle_event(Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)));
+        }
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, frame.area(), &picker))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        let text = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("model-12"),
+            "selected model was clipped: {text}"
+        );
+        assert!(text.lines().all(|line| line.chars().count() <= 80));
     }
 }

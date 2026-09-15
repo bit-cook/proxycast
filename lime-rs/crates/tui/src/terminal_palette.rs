@@ -17,20 +17,24 @@ pub(crate) enum StdoutColorLevel {
 
 #[allow(dead_code)]
 pub(crate) fn stdout_color_level() -> StdoutColorLevel {
-    if std::env::var_os("NO_COLOR").is_some() {
-        return StdoutColorLevel::Ansi16;
+    stdout_color_level_for_env(
+        std::env::var_os("NO_COLOR").is_some(),
+        &std::env::var("COLORTERM").unwrap_or_default(),
+        &std::env::var("TERM").unwrap_or_default(),
+    )
+}
+
+fn stdout_color_level_for_env(no_color: bool, color_term: &str, term: &str) -> StdoutColorLevel {
+    if no_color {
+        return StdoutColorLevel::Unknown;
     }
 
-    let color_term = std::env::var("COLORTERM")
-        .unwrap_or_default()
-        .to_ascii_lowercase();
+    let color_term = color_term.to_ascii_lowercase();
     if matches!(color_term.as_str(), "truecolor" | "24bit") {
         return StdoutColorLevel::TrueColor;
     }
 
-    let term = std::env::var("TERM")
-        .unwrap_or_default()
-        .to_ascii_lowercase();
+    let term = term.to_ascii_lowercase();
     if term.contains("direct") || term.contains("truecolor") {
         StdoutColorLevel::TrueColor
     } else if term.contains("256color") {
@@ -315,5 +319,13 @@ mod tests {
         assert_eq!(default_colors(), None);
         assert_eq!(default_fg(), None);
         assert_eq!(default_bg(), None);
+    }
+
+    #[test]
+    fn no_color_disables_semantic_colors_without_mutating_process_env() {
+        assert_eq!(
+            stdout_color_level_for_env(true, "truecolor", "xterm-256color"),
+            StdoutColorLevel::Unknown,
+        );
     }
 }

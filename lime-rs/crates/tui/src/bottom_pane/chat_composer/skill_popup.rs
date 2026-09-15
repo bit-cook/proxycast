@@ -127,7 +127,7 @@ impl SkillPopup {
                     let name = skill_display_name(skill);
                     let description = skill_description(skill);
                     let mut spans = vec![
-                        Span::styled(if selected { "> " } else { "  " }, style),
+                        Span::styled(if selected { "› " } else { "  " }, style),
                         Span::styled(format!("${name}"), style),
                     ];
                     if !description.is_empty() {

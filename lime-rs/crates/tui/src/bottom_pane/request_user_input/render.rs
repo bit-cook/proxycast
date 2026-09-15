@@ -1,50 +1,102 @@
 use ratatui::layout::{Position, Rect};
+use ratatui::style::Color;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
+use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::Frame;
+use std::time::Instant;
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::bottom_pane::selection_row_layout::{visible_item_window, MAX_POPUP_ROWS};
 use crate::line_truncation::line_width;
 use crate::locale::Locale;
+use crate::style::{accent_style, muted_style};
 use crate::width::display_width;
+use crate::wrapping::{word_wrap_line, RtOptions};
 
 use super::RequestUserInputOverlay;
 
-pub(in crate::bottom_pane) fn lines_with_locale(
-    request: &RequestUserInputOverlay,
-    locale: Locale,
-) -> Vec<Line<'static>> {
-    lines_with_locale_unbounded(request, locale)
-}
-
+#[allow(dead_code)]
 pub(in crate::bottom_pane) fn lines_with_locale_with_width(
     request: &RequestUserInputOverlay,
     locale: Locale,
     width: usize,
 ) -> Vec<Line<'static>> {
-    let lines = if width == usize::MAX {
-        lines_with_locale(request, locale)
-    } else {
-        lines_with_locale_unbounded(request, locale)
-    };
+    lines_with_locale_with_width_at(request, locale, width, Instant::now())
+}
+
+pub(in crate::bottom_pane) fn lines_with_locale_with_width_at(
+    request: &RequestUserInputOverlay,
+    locale: Locale,
+    width: usize,
+    now: Instant,
+) -> Vec<Line<'static>> {
+    let lines = lines_with_locale_unbounded(request, locale, now);
     if width == usize::MAX {
         lines
     } else {
-        lines
-            .into_iter()
-            .map(|line| truncate_line_word_boundary_with_ellipsis(line, width))
-            .collect()
+        wrap_request_lines(lines, width.max(1), request.editing)
     }
+}
+
+fn own_line(line: Line<'_>) -> Line<'static> {
+    let style = line.style;
+    let spans = line
+        .spans
+        .into_iter()
+        .map(|span| Span::styled(span.content.into_owned(), span.style))
+        .collect::<Vec<_>>();
+    Line::from(spans).style(style)
+}
+
+/// Wrap prompt/option/footer lines while keeping the editable value on one predictable row.
+///
+/// The bottom pane's height is derived from this same projection, so a long Chinese or
+/// Japanese label cannot push the footer (and therefore the cancel action) out of view.
+fn wrap_request_lines(
+    lines: Vec<Line<'static>>,
+    width: usize,
+    editing: bool,
+) -> Vec<Line<'static>> {
+    let input_index = editing.then(|| lines.len().saturating_sub(1));
+    let mut wrapped = Vec::new();
+    for (index, line) in lines.into_iter().enumerate() {
+        if Some(index) == input_index {
+            wrapped.push(truncate_line_word_boundary_with_ellipsis(line, width));
+            continue;
+        }
+        // Keep each option on one row so a long description cannot consume the vertical
+        // budget and hide the selected action. The label remains visible; only the secondary
+        // description is ellipsized at narrow widths.
+        if is_option_line(&line) {
+            wrapped.push(truncate_line_word_boundary_with_ellipsis(line, width));
+            continue;
+        }
+        let options = RtOptions::new(width).break_words(true);
+        wrapped.extend(word_wrap_line(&line, options).into_iter().map(own_line));
+    }
+    wrapped
+}
+
+fn is_option_line(line: &Line<'_>) -> bool {
+    let text = line.to_string();
+    let text = text.trim_start_matches(['›', ' ']);
+    text.as_bytes().first().is_some_and(u8::is_ascii_digit) && text.contains(". ")
 }
 
 fn lines_with_locale_unbounded(
     request: &RequestUserInputOverlay,
     locale: Locale,
+    now: Instant,
 ) -> Vec<Line<'static>> {
     let Some(question) = request.params.questions.get(request.question_index) else {
         return vec![Line::from(locale.no_questions())];
     };
-    let mut lines = vec![
+    let mut lines = Vec::new();
+    if let Some(countdown) = request.auto_resolution_countdown_text(now, locale) {
+        lines.push(Line::styled(countdown, Style::default().fg(Color::Red)));
+    }
+    lines.extend([
         Line::styled(
             format!(
                 "{} ({}/{})",
@@ -55,23 +107,26 @@ fn lines_with_locale_unbounded(
             Style::default().add_modifier(Modifier::BOLD),
         ),
         Line::from(question.question.clone()),
-    ];
+    ]);
     if let Some(options) = question
         .options
         .as_ref()
         .filter(|options| !options.is_empty())
     {
-        lines.extend(options.iter().enumerate().map(|(index, option)| {
-            option_line(
-                !request.editing && index == request.selected,
-                format!("{}  {}", option.label, option.description),
-            )
-        }));
-        if question.is_other {
-            lines.push(option_line(
-                !request.editing && request.selected == options.len(),
-                locale.other_option().to_string(),
-            ));
+        let total = options.len() + usize::from(question.is_other);
+        let (start, end) = visible_item_window(request.selected, total, MAX_POPUP_ROWS);
+        for index in start..end {
+            if let Some(option) = options.get(index) {
+                lines.push(option_line(
+                    !request.editing && index == request.selected,
+                    format!("{}. {}  {}", index + 1, option.label, option.description),
+                ));
+            } else if question.is_other && index == options.len() {
+                lines.push(option_line(
+                    !request.editing && request.selected == options.len(),
+                    format!("{}. {}", options.len() + 1, locale.other_option()),
+                ));
+            }
         }
     }
     if request.editing {
@@ -81,14 +136,11 @@ fn lines_with_locale_unbounded(
             request.composer.text().to_string()
         };
         lines.push(Line::from(vec![
-            Span::styled("> ", Style::default().fg(ratatui::style::Color::Cyan)),
+            Span::styled("› ", accent_style()),
             Span::raw(value),
         ]));
     } else if question.options.is_some() {
-        lines.push(Line::styled(
-            locale.add_notes(),
-            Style::default().fg(ratatui::style::Color::DarkGray),
-        ));
+        lines.push(Line::styled(locale.add_notes(), muted_style()));
     }
     lines
 }
@@ -97,23 +149,53 @@ pub(in crate::bottom_pane) fn set_cursor_position(
     frame: &mut Frame<'_>,
     inner: Rect,
     request: &RequestUserInputOverlay,
-    content_len: usize,
+    content: &[Line<'static>],
 ) {
     if !request.editing || inner.width == 0 || inner.height == 0 {
         return;
     }
     let value = &request.composer.text()[..request.composer.cursor()];
+    let is_secret = request
+        .params
+        .questions
+        .get(request.question_index)
+        .is_some_and(|question| question.is_secret);
+    let display_value = if is_secret {
+        "*".repeat(value.chars().count())
+    } else {
+        value.to_string()
+    };
+    let input_prefix = format!("› {display_value}");
+    let input_rows_before_cursor = Paragraph::new(Line::from(input_prefix))
+        .wrap(Wrap { trim: false })
+        .line_count(inner.width.max(1));
+    let input_line_index = content.len().saturating_sub(1);
+    let preceding_rows = Paragraph::new(content[..input_line_index].to_vec())
+        .wrap(Wrap { trim: false })
+        .line_count(inner.width.max(1));
     let value_width = request
         .params
         .questions
         .get(request.question_index)
         .filter(|question| question.is_secret)
         .map_or_else(|| display_width(value), |_| value.chars().count());
-    let x = u16::try_from(value_width)
-        .unwrap_or(u16::MAX)
-        .saturating_add(2)
-        .min(inner.width.saturating_sub(1));
-    let y = u16::try_from(content_len.saturating_sub(1))
+    let current_line = value.rsplit('\n').next().unwrap_or(value);
+    let current_line_width = if is_secret {
+        current_line.chars().count()
+    } else {
+        display_width(current_line)
+    };
+    let prefix_width = usize::from(!value.contains('\n')) * 2;
+    let x = u16::try_from(if value.contains('\n') {
+        current_line_width
+    } else {
+        value_width
+    })
+    .unwrap_or(u16::MAX)
+    .saturating_add(prefix_width as u16)
+    .min(inner.width.saturating_sub(1));
+    let input_row = preceding_rows.saturating_add(input_rows_before_cursor.saturating_sub(1));
+    let y = u16::try_from(input_row)
         .unwrap_or(u16::MAX)
         .min(inner.height.saturating_sub(1));
     frame.set_cursor_position(Position::new(
@@ -123,9 +205,9 @@ pub(in crate::bottom_pane) fn set_cursor_position(
 }
 
 fn option_line(selected: bool, label: String) -> Line<'static> {
-    let prefix = if selected { "> " } else { "  " };
+    let prefix = if selected { "› " } else { "  " };
     let style = if selected {
-        Style::default().fg(ratatui::style::Color::Cyan)
+        accent_style()
     } else {
         Style::default()
     };

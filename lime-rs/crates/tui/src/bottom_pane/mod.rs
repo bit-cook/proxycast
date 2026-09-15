@@ -1,12 +1,16 @@
 mod approval_overlay;
 mod chat_composer;
+pub(crate) mod command_popup;
 mod footer;
 mod mcp_server_elicitation;
+pub(crate) mod pending_input_preview;
 mod render;
 mod request_user_input;
+pub(crate) mod selection_row_layout;
 mod textarea;
 
 use std::collections::VecDeque;
+use std::time::{Duration, Instant};
 
 use app_server_protocol::protocol::v2::{
     CommandExecutionApprovalDecision, CommandExecutionRequestApprovalResponse,
@@ -26,7 +30,7 @@ use request_user_input::RequestUserInputOverlay;
 pub(crate) use textarea::{TextArea, TextAreaState};
 
 pub(crate) use footer::render_footer;
-pub(crate) use render::{desired_height_with_locale, render_with_locale};
+pub(crate) use render::{desired_height_with_locale_for_width, render_with_locale};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum AppServerResponse {
@@ -123,6 +127,20 @@ impl PendingInteraction {
             Self::McpElicitation(request) => request.handle_key_event(key),
         }
     }
+
+    fn pre_draw_tick(&mut self, now: Instant) -> Option<AppServerResponse> {
+        match self {
+            Self::UserInput(request) => request.pre_draw_tick(now),
+            Self::Approval(_) | Self::McpElicitation(_) => None,
+        }
+    }
+
+    fn next_frame_delay(&self, now: Instant) -> Option<Duration> {
+        match self {
+            Self::UserInput(request) => request.next_frame_delay(now),
+            Self::Approval(_) | Self::McpElicitation(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -155,6 +173,20 @@ impl BottomPane {
         !self.queue.is_empty()
     }
 
+    pub(crate) fn footer_hint(
+        &self,
+        locale: crate::locale::Locale,
+        width: usize,
+    ) -> Option<String> {
+        match self.queue.front() {
+            Some(PendingInteraction::Approval(_)) => Some(locale.approval_controls().to_string()),
+            Some(PendingInteraction::UserInput(request)) => {
+                Some(request.footer_hint_for_width(locale, width))
+            }
+            Some(PendingInteraction::McpElicitation(_)) | None => None,
+        }
+    }
+
     pub(crate) fn clear(&mut self) {
         self.queue.clear();
     }
@@ -169,8 +201,7 @@ impl BottomPane {
             Event::Paste(text) => {
                 match self.queue.front_mut() {
                     Some(PendingInteraction::UserInput(request)) => {
-                        request.editing = true;
-                        request.composer.insert(&text);
+                        request.handle_paste(&text);
                     }
                     Some(PendingInteraction::McpElicitation(request)) => {
                         request.handle_paste(&text);
@@ -187,6 +218,16 @@ impl BottomPane {
         let response = self.queue.front_mut()?.handle_key_event(key)?;
         self.queue.pop_front();
         Some(response)
+    }
+
+    pub(crate) fn pre_draw_tick(&mut self, now: Instant) -> Option<AppServerResponse> {
+        let response = self.queue.front_mut()?.pre_draw_tick(now)?;
+        self.queue.pop_front();
+        Some(response)
+    }
+
+    pub(crate) fn next_frame_delay(&self, now: Instant) -> Option<Duration> {
+        self.queue.front()?.next_frame_delay(now)
     }
 }
 
@@ -243,6 +284,7 @@ mod tests {
                         description: "Continue immediately".to_string(),
                     }]),
                 }],
+                is_blocking: true,
                 auto_resolution_ms: None,
             },
         })
@@ -453,6 +495,7 @@ mod tests {
                 turn_id: "turn-1".to_string(),
                 item_id: "question-1".to_string(),
                 questions: Vec::new(),
+                is_blocking: true,
                 auto_resolution_ms: None,
             },
         })

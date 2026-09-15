@@ -14,6 +14,7 @@ use crate::terminal_hyperlinks::{HyperlinkLine, HyperlinkParagraph};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PagerAction {
     Consumed,
+    LoadOlderHistory,
     Close,
 }
 
@@ -35,6 +36,7 @@ pub(crate) struct PagerOverlay {
     page_height: Cell<usize>,
     max_scroll: Cell<usize>,
     pinned_to_bottom: Cell<bool>,
+    older_history_available: Cell<bool>,
     /// Previous transcript input used to preserve the visible logical anchor when the
     /// projection prepends history or the terminal width changes. Static pagers do not
     /// populate this cache.
@@ -82,6 +84,7 @@ impl PagerOverlay {
             page_height: Cell::new(1),
             max_scroll: Cell::new(0),
             pinned_to_bottom: Cell::new(false),
+            older_history_available: Cell::new(false),
             previous_transcript_lines: RefCell::new(None),
             previous_content_width: Cell::new(0),
         }
@@ -95,6 +98,7 @@ impl PagerOverlay {
             page_height: Cell::new(1),
             max_scroll: Cell::new(0),
             pinned_to_bottom: Cell::new(true),
+            older_history_available: Cell::new(false),
             previous_transcript_lines: RefCell::new(None),
             previous_content_width: Cell::new(0),
         }
@@ -104,6 +108,21 @@ impl PagerOverlay {
         self.static_lines.is_none()
     }
 
+    pub(crate) fn set_older_history_available(&self, available: bool) {
+        self.older_history_available.set(available);
+    }
+
+    /// Keep the transcript at the actual beginning after Home loads all older pages.
+    pub(crate) fn reset_transcript_anchor_at_top(&self) {
+        if !self.is_transcript() {
+            return;
+        }
+        self.pinned_to_bottom.set(false);
+        self.scroll.set(0);
+        *self.previous_transcript_lines.borrow_mut() = None;
+        self.previous_content_width.set(0);
+    }
+
     pub(crate) fn handle_event(&mut self, event: &Event) -> PagerAction {
         let Event::Key(key) = event else {
             return PagerAction::Consumed;
@@ -111,6 +130,9 @@ impl PagerOverlay {
         if key.kind != KeyEventKind::Press {
             return PagerAction::Consumed;
         }
+        let load_older = self.is_transcript()
+            && self.older_history_available.get()
+            && matches!(key.code, KeyCode::Up | KeyCode::PageUp | KeyCode::Home);
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => return PagerAction::Close,
             KeyCode::Char(value)
@@ -156,7 +178,11 @@ impl PagerOverlay {
             self.pinned_to_bottom
                 .set(self.scroll.get() == self.max_scroll.get());
         }
-        PagerAction::Consumed
+        if load_older && self.scroll.get() == 0 {
+            PagerAction::LoadOlderHistory
+        } else {
+            PagerAction::Consumed
+        }
     }
 
     pub(crate) fn render(
@@ -303,7 +329,26 @@ impl PagerOverlay {
             .map(|(index, start)| (index, old_scroll.saturating_sub(*start)))
             .unwrap_or((0, old_scroll));
 
-        let mapped_line = if lines.len() >= previous.len()
+        let common_prefix = previous
+            .iter()
+            .zip(lines)
+            .take_while(|(old, new)| old == new)
+            .count();
+        let common_suffix = previous
+            .iter()
+            .rev()
+            .zip(lines.iter().rev())
+            .take_while(|(old, new)| old == new)
+            .count()
+            .min(previous.len().saturating_sub(common_prefix));
+        let mapped_line = if lines.len() == previous.len()
+            && (common_prefix > 0 || common_suffix > 0 || previous.len() == 1)
+        {
+            // Streaming updates replace the active canonical line in place. The visible text (and
+            // therefore `HyperlinkLine` equality) changes, but its logical transcript identity is
+            // stable, so keep the same line index while recomputing its wrapped height below.
+            old_line.0
+        } else if lines.len() >= previous.len()
             && lines[lines.len() - previous.len()..] == previous[..]
         {
             old_line.0 + lines.len() - previous.len()
@@ -548,6 +593,69 @@ mod tests {
     }
 
     #[test]
+    fn transcript_overlay_requests_older_history_when_scrolled_to_the_top() {
+        let mut overlay = PagerOverlay::transcript(Locale::EnUs);
+        overlay.set_older_history_available(true);
+        let lines = (0..12)
+            .map(|index| HyperlinkLine::from(format!("line {index}")))
+            .collect::<Vec<_>>();
+        let mut terminal = Terminal::new(TestBackend::new(24, 6)).expect("terminal");
+        terminal
+            .draw(|frame| overlay.render(frame, frame.area(), Locale::EnUs, &lines))
+            .expect("initial draw");
+
+        assert_eq!(
+            overlay.handle_event(&key(KeyCode::Home)),
+            PagerAction::LoadOlderHistory
+        );
+        assert_eq!(overlay.scroll.get(), 0);
+        assert!(!overlay.pinned_to_bottom.get());
+        assert_eq!(
+            overlay.handle_event(&key(KeyCode::PageUp)),
+            PagerAction::LoadOlderHistory
+        );
+    }
+
+    #[test]
+    fn static_overlay_never_requests_older_history() {
+        let mut overlay = PagerOverlay::new("STATUS".to_string(), vec![Line::raw("line")]);
+        assert_eq!(
+            overlay.handle_event(&key(KeyCode::Home)),
+            PagerAction::Consumed
+        );
+    }
+
+    #[test]
+    fn transcript_overlay_without_older_history_consumes_top_navigation() {
+        let mut overlay = PagerOverlay::transcript(Locale::EnUs);
+        assert_eq!(
+            overlay.handle_event(&key(KeyCode::Home)),
+            PagerAction::Consumed
+        );
+    }
+
+    #[test]
+    fn transcript_overlay_reset_anchor_keeps_newly_loaded_beginning_visible() {
+        let overlay = PagerOverlay::transcript(Locale::EnUs);
+        let old_lines = vec![HyperlinkLine::from("oldest loaded")];
+        let mut terminal = Terminal::new(TestBackend::new(24, 6)).expect("terminal");
+        terminal
+            .draw(|frame| overlay.render(frame, frame.area(), Locale::EnUs, &old_lines))
+            .expect("initial draw");
+
+        overlay.reset_transcript_anchor_at_top();
+        let lines = vec![
+            HyperlinkLine::from("actual oldest"),
+            HyperlinkLine::from("oldest loaded"),
+        ];
+        terminal
+            .draw(|frame| overlay.render(frame, frame.area(), Locale::EnUs, &lines))
+            .expect("expanded draw");
+
+        assert_eq!(overlay.scroll.get(), 0);
+    }
+
+    #[test]
     fn transcript_overlay_preserves_manual_scroll_when_projection_grows() {
         let mut overlay = PagerOverlay::transcript(Locale::EnUs);
         let initial = (0..10)
@@ -619,6 +727,38 @@ mod tests {
         let expected = wrapped_line_starts(&lines, 16)[1];
         assert!(expected > 1);
         assert_eq!(overlay.scroll.get(), expected);
+        assert!(!overlay.pinned_to_bottom.get());
+    }
+
+    #[test]
+    fn transcript_overlay_remaps_manual_anchor_when_streaming_line_grows_in_place() {
+        let overlay = PagerOverlay::transcript(Locale::EnUs);
+        let initial = vec![
+            HyperlinkLine::from("stable header"),
+            HyperlinkLine::from("anchor line"),
+            HyperlinkLine::from("tail line"),
+        ];
+        let mut terminal = Terminal::new(TestBackend::new(18, 4)).expect("terminal");
+        terminal
+            .draw(|frame| overlay.render(frame, frame.area(), Locale::EnUs, &initial))
+            .expect("initial draw");
+        overlay.pinned_to_bottom.set(false);
+        overlay.scroll.set(wrapped_line_starts(&initial, 18)[1]);
+
+        let updated = vec![
+            HyperlinkLine::from("stable header that grew while streaming"),
+            HyperlinkLine::from("anchor line"),
+            HyperlinkLine::from("tail line"),
+        ];
+        terminal
+            .draw(|frame| overlay.render(frame, frame.area(), Locale::EnUs, &updated))
+            .expect("streaming redraw");
+
+        assert_eq!(
+            overlay.scroll.get(),
+            wrapped_line_starts(&updated, 18)[1],
+            "the same logical anchor should remain visible after an in-place stream update"
+        );
         assert!(!overlay.pinned_to_bottom.get());
     }
 }

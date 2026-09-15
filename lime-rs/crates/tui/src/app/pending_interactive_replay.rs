@@ -483,6 +483,7 @@ mod tests {
                 turn_id: turn_id.to_string(),
                 item_id: item_id.to_string(),
                 questions: Vec::new(),
+                is_blocking: true,
                 auto_resolution_ms: None,
             },
         }

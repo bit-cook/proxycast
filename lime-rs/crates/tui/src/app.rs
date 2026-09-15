@@ -9,7 +9,9 @@ pub(crate) mod app_server_requests;
 pub(crate) mod event_dispatch;
 pub(crate) mod history_pagination;
 pub(crate) mod history_ui;
-mod input;
+mod input_flow;
+mod input_submission;
+mod interrupts;
 mod pending_interactive_replay;
 pub(crate) mod reconnect;
 mod replay_filter;
@@ -20,27 +22,30 @@ pub(crate) mod startup_prompts;
 mod thread_event_buffer;
 mod thread_events;
 mod thread_settings;
+mod tool_lifecycle;
 pub(crate) mod transcript_export;
+mod turn_lifecycle;
 pub(crate) mod working_directory;
 
-use app_server_protocol::protocol::v2::{QueuedSubmission, Thread};
+use app_server_protocol::protocol::v2::{
+    McpServerStatus, McpServerStatusDetail, QueuedSubmission, Thread,
+};
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use self::agent_navigation::{AgentNavigationDirection, AgentNavigationState};
 use self::agent_picker::{AgentPicker, AgentPickerAction};
 use self::agents_overview::AgentsOverviewState;
 use self::agents_overview_view::AgentsOverviewAction;
 use self::transcript_export::{ExportPicker, ExportPickerAction};
-use crate::bottom_pane::{AppServerResponse, BottomPane, ChatComposer, InputResult};
-use crate::command_popup::CommandPopupAction;
+use crate::bottom_pane::command_popup::CommandPopupAction;
+use crate::bottom_pane::{AppServerResponse, BottomPane, ChatComposer};
 use crate::locale::Locale;
 use crate::model_catalog::ModelCatalog;
 use crate::model_picker::{ModelPicker, ModelPickerAction, ModelSelection};
 use crate::pager_overlay::{PagerAction, PagerOverlay, StatusFacts};
-use crate::pending_input_preview::can_restore_submission;
 use crate::projection::ConversationProjection;
 use crate::resume_picker::{PickerAction, PickerState};
 use crate::slash_command::SlashCommand;
@@ -70,6 +75,7 @@ pub(crate) enum AppAction {
     ScrollDown,
     ScrollTop,
     ScrollBottom,
+    LoadOlderHistory,
     SelectModel(ModelSelection),
     ChangeCollaborationMode(agent_protocol::CollaborationMode),
     SwitchThread(String),
@@ -87,6 +93,9 @@ pub(crate) enum AppAction {
     },
     OpenResumePicker,
     ResumePicker(PickerAction),
+    FetchMcpInventory {
+        detail: McpServerStatusDetail,
+    },
     Respond(AppServerResponse),
     Quit,
 }
@@ -125,6 +134,7 @@ pub(crate) struct App {
     pub(crate) permission_profiles: Vec<String>,
     pub(crate) transcript_scroll: usize,
     pub(crate) scrollback_has_older_history: bool,
+    pub(crate) transcript_viewport: crate::transcript_reflow::TranscriptViewport,
     pub(crate) locale: Locale,
     pub(crate) cwd: PathBuf,
     pub(crate) clipboard_lease: Option<crate::clipboard_copy::ClipboardLease>,
@@ -138,7 +148,7 @@ pub(crate) struct App {
     pub(crate) startup_protected_input_boundary: bool,
     pub(crate) startup_pending_protected_request: bool,
     external_editor_state: ExternalEditorState,
-    active_turn_started_at: Option<Instant>,
+    turn_lifecycle: turn_lifecycle::TurnLifecycleState,
 }
 
 impl App {
@@ -201,6 +211,11 @@ impl App {
     pub(crate) fn set_thread_id(&mut self, thread_id: String) {
         if self.thread_id.as_deref() != Some(thread_id.as_str()) {
             self.queued_submissions.clear();
+            self.transcript_scroll = 0;
+            self.transcript_viewport.clear();
+            self.turn_lifecycle.reset_thread();
+            self.turn_lifecycle
+                .restore_running(self.projection.active_turn_id(), Instant::now());
         }
         if self.primary_thread_id.is_none() {
             self.primary_thread_id = Some(thread_id.clone());
@@ -259,6 +274,9 @@ impl App {
     }
 
     pub(crate) fn hydrate_thread(&mut self, thread: Thread) {
+        self.transcript_scroll = 0;
+        self.transcript_viewport.clear();
+        self.turn_lifecycle.reset_thread();
         self.agent_navigation.upsert(
             thread.id.clone(),
             thread.agent_nickname.clone(),
@@ -273,31 +291,14 @@ impl App {
         }
         self.projection.hydrate_thread(thread);
         self.scrollback_has_older_history = false;
-        self.active_turn_started_at = self
-            .projection
-            .active_turn_id()
-            .is_some()
-            .then(Instant::now);
-    }
-
-    pub(crate) fn start_turn(&mut self, turn_id: String) {
-        self.projection.start_turn(turn_id);
-        self.active_turn_started_at = Some(Instant::now());
+        self.turn_lifecycle
+            .restore_running(self.projection.active_turn_id(), Instant::now());
     }
 
     fn adjacent_agent(&self, direction: AgentNavigationDirection) -> Option<String> {
         self.agent_navigation
             .adjacent_thread_id(self.thread_id.as_deref(), direction)
             .filter(|thread_id| self.thread_id.as_deref() != Some(thread_id.as_str()))
-    }
-
-    pub(crate) fn active_turn_elapsed(&self, now: Instant) -> Option<Duration> {
-        self.projection.active_turn_id()?;
-        Some(
-            self.active_turn_started_at
-                .map(|started_at| now.saturating_duration_since(started_at))
-                .unwrap_or_default(),
-        )
     }
 
     pub(crate) fn can_accept_direct_input(&mut self) -> bool {
@@ -336,6 +337,18 @@ impl App {
         self.external_editor_state = ExternalEditorState::Closed;
     }
 
+    pub(crate) fn pre_draw_tick(&mut self, now: Instant) -> AppAction {
+        let action = self
+            .bottom_pane
+            .pre_draw_tick(now)
+            .map(AppAction::Respond)
+            .unwrap_or(AppAction::None);
+        if matches!(action, AppAction::Respond(_)) && !self.bottom_pane.is_active() {
+            self.startup_pending_protected_request = false;
+        }
+        action
+    }
+
     pub(crate) fn handle_tui_event(&mut self, event: TuiEvent, connected: bool) -> AppAction {
         if !connected {
             return match event {
@@ -366,14 +379,19 @@ impl App {
             TuiEvent::Resize(size) => Event::Resize(size.width, size.height),
             TuiEvent::FocusGained => Event::FocusGained,
             TuiEvent::FocusLost => Event::FocusLost,
-            TuiEvent::Draw | TuiEvent::Resume => return AppAction::None,
+            TuiEvent::Draw => return self.pre_draw_tick(Instant::now()),
+            TuiEvent::Resume => return AppAction::None,
         };
 
         if let Some(pager) = self.pager_overlay.as_mut() {
-            if pager.handle_event(&event) == PagerAction::Close {
-                self.pager_overlay = None;
-            }
-            return AppAction::None;
+            return match pager.handle_event(&event) {
+                PagerAction::Close => {
+                    self.pager_overlay = None;
+                    AppAction::None
+                }
+                PagerAction::LoadOlderHistory => AppAction::LoadOlderHistory,
+                PagerAction::Consumed => AppAction::None,
+            };
         }
 
         if let Some(picker) = self.export_picker.as_mut() {
@@ -621,134 +639,6 @@ impl App {
         self.transcript_scroll = 0;
     }
 
-    pub(crate) fn attach_image(&mut self, path: PathBuf) {
-        self.composer.attach_image(path);
-    }
-
-    pub(crate) fn take_pending_images(&mut self) -> Vec<PathBuf> {
-        self.composer.take_pending_images()
-    }
-
-    pub(crate) fn restore_pending_images(&mut self, images: Vec<PathBuf>) {
-        self.composer.restore_pending_images(images);
-    }
-
-    pub(crate) fn take_remote_image_urls(&mut self) -> Vec<String> {
-        self.composer.take_remote_image_urls()
-    }
-
-    pub(crate) fn set_remote_image_urls(&mut self, urls: Vec<String>) {
-        self.composer.set_remote_image_urls(urls);
-    }
-
-    pub(crate) fn set_queued_submissions(&mut self, submissions: Vec<QueuedSubmission>) {
-        self.queued_submissions = submissions;
-    }
-
-    pub(crate) fn upsert_queued_submission(&mut self, submission: QueuedSubmission) {
-        if let Some(existing) = self
-            .queued_submissions
-            .iter_mut()
-            .find(|existing| existing.id == submission.id)
-        {
-            *existing = submission;
-        } else {
-            self.queued_submissions.push(submission);
-        }
-    }
-
-    pub(crate) fn restore_queued_submission_for_edit(
-        &mut self,
-        submission: QueuedSubmission,
-    ) -> bool {
-        if !self.composer.is_empty()
-            || self.composer.has_pending_images()
-            || !can_restore_submission(&submission)
-        {
-            return false;
-        }
-        let submission_id = submission.id.clone();
-        let mut text = String::new();
-        let mut local_images = Vec::new();
-        let mut remote_images = Vec::new();
-        let mut skills = Vec::new();
-        for input in submission.input {
-            match input {
-                app_server_protocol::protocol::v2::UserInput::Text { text: value, .. } => {
-                    text = value;
-                }
-                app_server_protocol::protocol::v2::UserInput::LocalImage { path, .. } => {
-                    local_images.push(PathBuf::from(path));
-                }
-                app_server_protocol::protocol::v2::UserInput::Image { url, .. } => {
-                    remote_images.push(url);
-                }
-                app_server_protocol::protocol::v2::UserInput::Skill { name, .. } => {
-                    skills.push(format!("${name}"));
-                }
-                _ => return false,
-            }
-        }
-        self.queued_submissions
-            .retain(|queued| queued.id != submission_id);
-        if !skills.is_empty() {
-            let prefix = skills.join(" ");
-            text = if text.is_empty() {
-                prefix
-            } else {
-                format!("{prefix} {text}")
-            };
-        }
-        self.replace_composer(text);
-        self.composer.restore_pending_images(local_images);
-        self.composer.set_remote_image_urls(remote_images);
-        self.clear_command_popup();
-        true
-    }
-
-    fn map_composer_action(&mut self, action: InputResult) -> AppAction {
-        match action {
-            InputResult::Submitted(text) => {
-                self.clear_command_popup();
-                AppAction::Submit(text)
-            }
-            InputResult::Queued(text) => {
-                self.clear_command_popup();
-                AppAction::Queue(text)
-            }
-            InputResult::Interrupt => {
-                let cleared = self.composer.clear_for_ctrl_c().is_some();
-                if cleared {
-                    self.clear_command_popup();
-                    // Codex treats Ctrl-C as composer cancellation when a draft is present.
-                    // Do not also interrupt the active turn: a follow-up Ctrl-C can then be
-                    // handled after the terminal projection settles.
-                    AppAction::None
-                } else {
-                    AppAction::Interrupt
-                }
-            }
-            InputResult::DecreaseEffort => AppAction::DecreaseEffort,
-            InputResult::IncreaseEffort => AppAction::IncreaseEffort,
-            InputResult::PreviousPermissions => AppAction::PreviousPermissions,
-            InputResult::NextPermissions => AppAction::NextPermissions,
-            InputResult::OpenExternalEditor => {
-                self.request_external_editor_launch();
-                AppAction::None
-            }
-            InputResult::Quit => AppAction::Quit,
-            InputResult::Changed => {
-                if self.composer.history_search_active() || self.composer.vim_search_active() {
-                    self.clear_command_popup();
-                } else {
-                    self.sync_command_popup();
-                }
-                AppAction::None
-            }
-            InputResult::None => AppAction::None,
-        }
-    }
-
     fn complete_slash_command(&mut self, command: SlashCommand) {
         let suffix = if command.requires_argument() { " " } else { "" };
         self.composer
@@ -801,6 +691,21 @@ impl App {
                 AppAction::None
             }
             SlashCommand::Resume => AppAction::OpenResumePicker,
+            SlashCommand::Mcp => {
+                let argument = text.strip_prefix("/mcp").map(str::trim).unwrap_or_default();
+                match argument {
+                    "" => AppAction::FetchMcpInventory {
+                        detail: McpServerStatusDetail::ToolsAndAuthOnly,
+                    },
+                    "verbose" => AppAction::FetchMcpInventory {
+                        detail: McpServerStatusDetail::Full,
+                    },
+                    _ => {
+                        self.projection.set_status(self.locale.mcp_usage());
+                        AppAction::None
+                    }
+                }
+            }
             SlashCommand::Pwd => {
                 if text.split_whitespace().count() != 1 {
                     self.projection.set_status(self.locale.pwd_usage());
@@ -831,6 +736,18 @@ impl App {
                 cwd: &cwd,
                 status: &self.status_value(),
             },
+        ));
+    }
+
+    pub(crate) fn open_mcp_inventory(
+        &mut self,
+        statuses: Vec<McpServerStatus>,
+        detail: McpServerStatusDetail,
+    ) {
+        let lines = crate::history_cell::mcp_inventory_lines(&statuses, detail, self.locale);
+        self.pager_overlay = Some(PagerOverlay::new(
+            self.locale.mcp_inventory_title().to_string(),
+            lines,
         ));
     }
 }

@@ -4,7 +4,9 @@
 //! owned by App Server and `ConversationProjection`.
 
 use crate::app::App;
-use crate::history_cell::{FinalMessageSeparator, HistoryCell, TranscriptHistoryCell};
+use crate::history_cell::{
+    FinalMessageSeparator, HistoryCell, SessionHeaderHistoryCell, TranscriptHistoryCell,
+};
 use crate::locale::Locale;
 use crate::projection::TranscriptEntry;
 use crate::terminal_hyperlinks::{wrap_hyperlink_line, HyperlinkLine};
@@ -42,7 +44,19 @@ pub(crate) fn render_transcript_content_lines(
     viewport_width: u16,
     separate_entries: bool,
 ) -> Vec<HyperlinkLine> {
-    let mut lines = Vec::new();
+    let content_width = viewport_width.saturating_sub(2).max(1);
+    let header = SessionHeaderHistoryCell::new(
+        app.model.as_deref().unwrap_or("auto"),
+        app.reasoning_effort.clone(),
+        app.permissions.clone(),
+        app.cwd.clone(),
+        env!("CARGO_PKG_VERSION"),
+        app.locale,
+    );
+    let mut lines = header.display_hyperlink_lines(content_width);
+    if !app.projection.entries().is_empty() {
+        lines.push(HyperlinkLine::default());
+    }
     for entry in app.projection.entries() {
         if separate_entries && !lines.is_empty() {
             lines.push(HyperlinkLine::default());
@@ -85,12 +99,45 @@ mod tests {
             ),
         );
         let lines = render_transcript_content_lines(&app, 80, false);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0]
+        let header = lines
+            .iter()
+            .position(|line| line.line.to_string().contains("Lime"))
+            .expect("session header");
+        let warning = lines
+            .iter()
+            .position(|line| {
+                line.line
+                    .spans
+                    .iter()
+                    .any(|span| span.content.contains("warning"))
+            })
+            .expect("warning");
+        assert!(header < warning);
+        assert!(lines[warning]
             .line
             .spans
             .iter()
             .any(|span| span.content.contains("warning")));
+    }
+
+    #[test]
+    fn empty_thread_starts_with_exactly_one_session_header() {
+        let app = App {
+            locale: Locale::EnUs,
+            model: Some("fixture-model".to_string()),
+            cwd: "/workspace".into(),
+            ..App::default()
+        };
+        let lines = render_transcript_content_lines(&app, 80, false);
+        let text = lines
+            .iter()
+            .map(|line| line.line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(text.matches(">_ Lime").count(), 1, "{text}");
+        assert!(text.contains("fixture-model"), "{text}");
+        assert!(text.contains("/workspace"), "{text}");
     }
 
     #[test]

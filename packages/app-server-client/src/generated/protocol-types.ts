@@ -10625,6 +10625,7 @@ export interface ToolRequestUserInputOption {
 
 export interface ToolRequestUserInputParams {
   autoResolutionMs?: number | null;
+  isBlocking: boolean;
   itemId: string;
   questions: ToolRequestUserInputQuestion[];
   threadId: string;

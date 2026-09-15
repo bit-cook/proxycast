@@ -63,6 +63,13 @@ fn fork_rejects_canonical_history_that_cannot_be_lowered_without_loss() {
             }),
             "without a canonical result",
         ),
+        (
+            completed_item(ThreadItemPayload::Extension {
+                name: "providerExtension".to_string(),
+                data: serde_json::json!({"value": true}),
+            }),
+            "unknown or extension provider history",
+        ),
     ];
 
     for (item, expected) in cases {
@@ -165,6 +172,25 @@ fn fork_accepts_image_input_preserved_by_canonical_user_message() {
 
         validate_fork_provider_history(&history).expect("canonical image input is forkable");
     }
+}
+
+#[test]
+fn fork_accepts_known_review_boundary_extensions() {
+    for name in ["enteredReviewMode", "exitedReviewMode"] {
+        let item = completed_item(ThreadItemPayload::Extension {
+            name: name.to_string(),
+            data: serde_json::json!({"review": "fixture review"}),
+        });
+        validate_fork_canonical_item(&item).expect("review boundary extension is forkable");
+    }
+
+    let malformed = completed_item(ThreadItemPayload::Extension {
+        name: "enteredReviewMode".to_string(),
+        data: serde_json::json!({}),
+    });
+    let error = validate_fork_canonical_item(&malformed)
+        .expect_err("review boundary extension without text must fail closed");
+    assert!(error.to_string().contains("without review text"));
 }
 
 #[test]

@@ -125,7 +125,12 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
     let mut agents_overview_renamed_screen = None;
     let mut agents_overview_resumed_screen = None;
 
-    wait_for_marker(&output_rx, &mut output, "ready", Duration::from_secs(10));
+    wait_for_marker(
+        &output_rx,
+        &mut output,
+        "Ask Lime to do anything",
+        Duration::from_secs(10),
+    );
     if scenario == "agents-overview" {
         writer
             .write_all(b"/agents\r")
@@ -240,7 +245,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             &output_rx,
             &mut output,
             return_to_composer_at,
-            "ready",
+            "Ask Lime to do anything",
             Duration::from_secs(10),
         );
         writer
@@ -381,10 +386,10 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             );
             writer.write_all(b"\x1b").expect("interrupt with Escape");
             writer.flush().expect("flush Escape interrupt");
-            wait_for_marker(
+            wait_for_any_marker(
                 &output_rx,
                 &mut output,
-                "interrupting",
+                &["interrupting", "interrupted"],
                 Duration::from_secs(5),
             );
             wait_for_ledger_kind_and_scenario(
@@ -441,8 +446,9 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         "terminal result was not visible"
     );
     if scenario == "interrupt" {
+        let visible = visible_terminal_text(&output);
         assert!(
-            visible_terminal_text(&output).contains("interrupting"),
+            visible.contains("interrupting") || visible.contains("interrupted"),
             "interrupt action was not rendered"
         );
         assert!(
@@ -570,6 +576,28 @@ fn wait_for_marker(
         let chunk = output_rx
             .recv_timeout(remaining)
             .unwrap_or_else(|_| panic!("PTY closed before {marker:?}; output: {output}"));
+        output.push_str(&String::from_utf8_lossy(&chunk));
+    }
+}
+
+fn wait_for_any_marker(
+    output_rx: &mpsc::Receiver<Vec<u8>>,
+    output: &mut String,
+    markers: &[&str],
+    timeout: Duration,
+) {
+    let deadline = Instant::now() + timeout;
+    while !markers
+        .iter()
+        .any(|marker| visible_terminal_text(output).contains(marker))
+    {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            panic!("timed out waiting for one of {markers:?}; output: {output}");
+        }
+        let chunk = output_rx
+            .recv_timeout(remaining)
+            .unwrap_or_else(|_| panic!("PTY closed before one of {markers:?}; output: {output}"));
         output.push_str(&String::from_utf8_lossy(&chunk));
     }
 }

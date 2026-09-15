@@ -592,7 +592,22 @@ fn validate_fork_canonical_item(item: &ThreadItem) -> Result<(), RuntimeCoreErro
                     )
                 })?;
         }
-        ThreadItemPayload::Unknown { .. } | ThreadItemPayload::Extension { .. } => {
+        ThreadItemPayload::Unknown { .. } => {
+            return Err(invalid(
+                "thread/fork cannot preserve unknown or extension provider history from canonical history",
+            ));
+        }
+        ThreadItemPayload::Extension { name, data }
+            if matches!(name.as_str(), "enteredReviewMode" | "exitedReviewMode") =>
+        {
+            if data.get("review").and_then(Value::as_str).is_none() {
+                return Err(invalid(format!(
+                    "thread/fork cannot preserve review extension {} without review text",
+                    item.item_id
+                )));
+            }
+        }
+        ThreadItemPayload::Extension { .. } => {
             return Err(invalid(
                 "thread/fork cannot preserve unknown or extension provider history from canonical history",
             ));

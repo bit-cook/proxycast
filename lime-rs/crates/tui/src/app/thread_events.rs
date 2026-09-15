@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::time::Instant;
 
-use app_server_protocol::protocol::v2::{ServerNotification, ServerRequest, ThreadItem};
+use app_server_protocol::protocol::v2::{ServerNotification, ServerRequest};
 
 use super::app_server_event_targets::{
     server_notification_thread_target, ServerNotificationThreadTarget,
@@ -216,9 +216,11 @@ impl App {
         let previous_turn_id = self.projection.active_turn_id().map(str::to_owned);
         self.projection.apply(notification);
         let active_turn_id = self.projection.active_turn_id();
-        if active_turn_id != previous_turn_id.as_deref() {
-            self.active_turn_started_at = active_turn_id.map(|_| Instant::now());
-        }
+        self.turn_lifecycle.sync_projection_turn(
+            previous_turn_id.as_deref(),
+            active_turn_id,
+            Instant::now(),
+        );
     }
 
     pub(super) fn note_outbound_response(
@@ -265,33 +267,12 @@ impl App {
                 app_server_protocol::protocol::v2::ThreadStatus::NotLoaded => {}
             },
             ServerNotification::ItemStarted(params) => {
-                self.observe_item(&params.item);
+                super::tool_lifecycle::observe_item(self, &params.item);
             }
             ServerNotification::ItemCompleted(params) => {
-                self.observe_item(&params.item);
+                super::tool_lifecycle::observe_item(self, &params.item);
             }
             _ => {}
-        }
-    }
-
-    fn observe_item(&mut self, item: &ThreadItem) {
-        if let Some(activity) = crate::multi_agents::sub_agent_activity_display(item) {
-            // Activity is emitted on the parent stream before a child thread can be resumed
-            // independently. Treat that observation as authoritative for direct-input policy.
-            self.agent_navigation
-                .mark_parent_owned(activity.thread_id.clone());
-            self.agent_navigation.record_sub_agent_activity(activity);
-            return;
-        }
-        if let ThreadItem::CollabAgentToolCall {
-            tool: app_server_protocol::protocol::v2::CollabAgentTool::SpawnAgent,
-            receiver_thread_ids,
-            ..
-        } = item
-        {
-            for thread_id in receiver_thread_ids {
-                self.agent_navigation.mark_parent_owned(thread_id.clone());
-            }
         }
     }
 }

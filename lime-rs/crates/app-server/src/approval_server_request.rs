@@ -494,6 +494,9 @@ fn user_input_request(event: &AgentEvent) -> Result<Option<UserInputRequest>, St
             turn_id: identity.turn_id.clone(),
             item_id,
             questions,
+            is_blocking: payload_value(&event.payload, &["isBlocking", "is_blocking"])
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
             auto_resolution_ms: payload_value(
                 &event.payload,
                 &["autoResolutionMs", "auto_resolution_ms"],
@@ -780,6 +783,7 @@ mod tests {
             "data": {
                 "actionType": "ask_user",
                 "toolCallId": "item-ask-1",
+                "isBlocking": false,
                 "autoResolutionMs": 60000,
                 "questions": [{
                     "id": "mode",
@@ -799,6 +803,7 @@ mod tests {
             panic!("ask_user must use tool request user input");
         };
         assert_eq!(request.params.item_id, "item-ask-1");
+        assert!(!request.params.is_blocking);
         assert_eq!(request.params.auto_resolution_ms, Some(60000));
         assert_eq!(request.params.questions[0].id, "mode");
         assert_eq!(

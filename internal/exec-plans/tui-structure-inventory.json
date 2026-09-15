@@ -66321,7 +66321,7 @@
     },
     "lime-rs/crates/tui/src": {
       "root": "/Users/coso/Documents/dev/ai/aiclientproxy/lime/lime-rs/crates/tui/src",
-      "fileCount": 160,
+      "fileCount": 174,
       "files": [
         "app.rs",
         "app/agent_navigation.rs",
@@ -66340,6 +66340,9 @@
         "app/history_pagination.rs",
         "app/history_ui.rs",
         "app/input.rs",
+        "app/input_flow.rs",
+        "app/input_submission.rs",
+        "app/interrupts.rs",
         "app/pending_interactive_replay.rs",
         "app/reconnect.rs",
         "app/replay_filter.rs",
@@ -66351,14 +66354,19 @@
         "app/thread_event_buffer_tests.rs",
         "app/thread_events.rs",
         "app/thread_settings.rs",
+        "app/tool_lifecycle.rs",
         "app/transcript_export.rs",
+        "app/turn_lifecycle.rs",
         "app/working_directory.rs",
         "app_server_session.rs",
         "app_server_session/history.rs",
         "app_server_session/history_tests.rs",
         "bottom_pane/approval_overlay.rs",
         "bottom_pane/chat_composer.rs",
+        "bottom_pane/chat_composer/agents_navigation.rs",
         "bottom_pane/chat_composer/attachment_state.rs",
+        "bottom_pane/chat_composer/completion_target.rs",
+        "bottom_pane/chat_composer/completion_target_tests.rs",
         "bottom_pane/chat_composer/draft_state.rs",
         "bottom_pane/chat_composer/file_search_popup.rs",
         "bottom_pane/chat_composer/footer_state.rs",
@@ -66373,13 +66381,16 @@
         "bottom_pane/chat_composer/vim_history_tests.rs",
         "bottom_pane/chat_composer/vim_search.rs",
         "bottom_pane/chat_composer/vim_search_tests.rs",
+        "bottom_pane/command_popup.rs",
         "bottom_pane/footer.rs",
         "bottom_pane/mcp_server_elicitation.rs",
         "bottom_pane/mod.rs",
+        "bottom_pane/pending_input_preview.rs",
         "bottom_pane/render.rs",
         "bottom_pane/request_user_input/mod.rs",
         "bottom_pane/request_user_input/render.rs",
         "bottom_pane/request_user_input/render_tests.rs",
+        "bottom_pane/selection_row_layout.rs",
         "bottom_pane/textarea.rs",
         "bottom_pane/textarea/hyperlinks.rs",
         "bottom_pane/textarea/hyperlinks_tests.rs",
@@ -66459,6 +66470,9 @@
         "slash_command.rs",
         "status_indicator.rs",
         "status_indicator_widget.rs",
+        "status_indicator_widget/timer.rs",
+        "status_indicator_widget/timer_tests.rs",
+        "style.rs",
         "table_detect.rs",
         "terminal_hyperlinks.rs",
         "terminal_hyperlinks/paragraph.rs",
@@ -66484,13 +66498,8 @@
         "width.rs",
         "wrapping.rs"
       ],
-      "symbolCount": 2705,
+      "symbolCount": 3038,
       "symbols": [
-        {
-          "path": "app.rs",
-          "name": "active_turn_elapsed",
-          "kind": "function"
-        },
         {
           "path": "app.rs",
           "name": "adjacent_agent",
@@ -66505,11 +66514,6 @@
           "path": "app.rs",
           "name": "AppAction",
           "kind": "type"
-        },
-        {
-          "path": "app.rs",
-          "name": "attach_image",
-          "kind": "function"
         },
         {
           "path": "app.rs",
@@ -66568,11 +66572,6 @@
         },
         {
           "path": "app.rs",
-          "name": "map_composer_action",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
           "name": "normalize_paste",
           "kind": "function"
         },
@@ -66583,7 +66582,17 @@
         },
         {
           "path": "app.rs",
+          "name": "open_mcp_inventory",
+          "kind": "function"
+        },
+        {
+          "path": "app.rs",
           "name": "open_status_pager",
+          "kind": "function"
+        },
+        {
+          "path": "app.rs",
+          "name": "pre_draw_tick",
           "kind": "function"
         },
         {
@@ -66604,16 +66613,6 @@
         {
           "path": "app.rs",
           "name": "reset_external_editor_state",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "restore_pending_images",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "restore_queued_submission_for_edit",
           "kind": "function"
         },
         {
@@ -66663,22 +66662,7 @@
         },
         {
           "path": "app.rs",
-          "name": "set_queued_submissions",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "set_remote_image_urls",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
           "name": "set_thread_id",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "start_turn",
           "kind": "function"
         },
         {
@@ -66689,21 +66673,6 @@
         {
           "path": "app.rs",
           "name": "sync_command_popup",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "take_pending_images",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "take_remote_image_urls",
-          "kind": "function"
-        },
-        {
-          "path": "app.rs",
-          "name": "upsert_queued_submission",
           "kind": "function"
         },
         {
@@ -66878,6 +66847,11 @@
         },
         {
           "path": "app/agent_picker.rs",
+          "name": "long_agent_catalog_keeps_selected_row_inside_bounded_popup",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
           "name": "picker",
           "kind": "function"
         },
@@ -66889,6 +66863,11 @@
         {
           "path": "app/agent_picker.rs",
           "name": "picker_escape_cancels_and_narrow_render_stays_bounded",
+          "kind": "function"
+        },
+        {
+          "path": "app/agent_picker.rs",
+          "name": "picker_navigation_wraps_and_accepts_control_bindings",
           "kind": "function"
         },
         {
@@ -67004,6 +66983,11 @@
         {
           "path": "app/agents_overview_render.rs",
           "name": "overview_render_shows_localized_new_task_input_without_overflow",
+          "kind": "function"
+        },
+        {
+          "path": "app/agents_overview_render.rs",
+          "name": "overview_render_uses_selection_row_for_status_and_current_context",
           "kind": "function"
         },
         {
@@ -67313,6 +67297,11 @@
         },
         {
           "path": "app/history_pagination.rs",
+          "name": "answer",
+          "kind": "function"
+        },
+        {
+          "path": "app/history_pagination.rs",
           "name": "handle_older_history_page",
           "kind": "function"
         },
@@ -67323,7 +67312,52 @@
         },
         {
           "path": "app/history_pagination.rs",
+          "name": "initial_history_page_uses_turn_metadata_for_filtering_and_completion",
+          "kind": "function"
+        },
+        {
+          "path": "app/history_pagination.rs",
+          "name": "initial_history_page_without_turn_metadata_stays_item_only",
+          "kind": "function"
+        },
+        {
+          "path": "app/history_pagination.rs",
+          "name": "older_page_reconciles_nested_review_prompt_from_adjacent_turn_metadata",
+          "kind": "function"
+        },
+        {
+          "path": "app/history_pagination.rs",
+          "name": "older_pagination_completion_footers_follow_answers_without_overlap_duplicates",
+          "kind": "function"
+        },
+        {
+          "path": "app/history_pagination.rs",
+          "name": "prepend_history_page",
+          "kind": "function"
+        },
+        {
+          "path": "app/history_pagination.rs",
+          "name": "prepend_initial_history_page",
+          "kind": "function"
+        },
+        {
+          "path": "app/history_pagination.rs",
+          "name": "request_all_older_history_pages",
+          "kind": "function"
+        },
+        {
+          "path": "app/history_pagination.rs",
           "name": "request_older_history_page",
+          "kind": "function"
+        },
+        {
+          "path": "app/history_pagination.rs",
+          "name": "user_message",
+          "kind": "function"
+        },
+        {
+          "path": "app/history_ui.rs",
+          "name": "empty_thread_starts_with_exactly_one_session_header",
           "kind": "function"
         },
         {
@@ -67357,8 +67391,73 @@
           "kind": "function"
         },
         {
-          "path": "app/input.rs",
+          "path": "app/input_flow.rs",
           "name": "handle_key_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/input_submission.rs",
+          "name": "attach_image",
+          "kind": "function"
+        },
+        {
+          "path": "app/input_submission.rs",
+          "name": "map_composer_action",
+          "kind": "function"
+        },
+        {
+          "path": "app/input_submission.rs",
+          "name": "restore_pending_images",
+          "kind": "function"
+        },
+        {
+          "path": "app/input_submission.rs",
+          "name": "restore_queued_submission_for_edit",
+          "kind": "function"
+        },
+        {
+          "path": "app/input_submission.rs",
+          "name": "set_queued_submissions",
+          "kind": "function"
+        },
+        {
+          "path": "app/input_submission.rs",
+          "name": "set_remote_image_urls",
+          "kind": "function"
+        },
+        {
+          "path": "app/input_submission.rs",
+          "name": "take_pending_images",
+          "kind": "function"
+        },
+        {
+          "path": "app/input_submission.rs",
+          "name": "take_remote_image_urls",
+          "kind": "function"
+        },
+        {
+          "path": "app/input_submission.rs",
+          "name": "upsert_queued_submission",
+          "kind": "function"
+        },
+        {
+          "path": "app/interrupts.rs",
+          "name": "active_turn_can_interrupt",
+          "kind": "function"
+        },
+        {
+          "path": "app/interrupts.rs",
+          "name": "idle_app_does_not_interrupt",
+          "kind": "function"
+        },
+        {
+          "path": "app/interrupts.rs",
+          "name": "should_interrupt_turn",
+          "kind": "function"
+        },
+        {
+          "path": "app/interrupts.rs",
+          "name": "vim_search_suppresses_interrupt",
           "kind": "function"
         },
         {
@@ -67878,6 +67977,16 @@
         },
         {
           "path": "app/tests.rs",
+          "name": "empty_composer_left_opens_agents_overview_when_local_navigation_is_enabled",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "empty_composer_left_stays_in_editor_when_navigation_is_disabled",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
           "name": "escape_interrupts_only_an_active_turn_and_preserves_the_draft",
           "kind": "function"
         },
@@ -67904,6 +68013,16 @@
         {
           "path": "app/tests.rs",
           "name": "image_shortcut_attaches_and_allows_image_only_submission",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "mcp_slash_command_rejects_unknown_arguments_with_localized_usage",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "mcp_slash_commands_request_the_matching_inventory_detail",
           "kind": "function"
         },
         {
@@ -68003,12 +68122,22 @@
         },
         {
           "path": "app/tests.rs",
+          "name": "switching_threads_resets_the_main_transcript_to_the_tail",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
           "name": "tab_queues_a_follow_up_without_submitting_the_active_turn",
           "kind": "function"
         },
         {
           "path": "app/tests.rs",
           "name": "to_tui_event",
+          "kind": "function"
+        },
+        {
+          "path": "app/tests.rs",
+          "name": "transcript_overlay_requests_older_history_only_when_session_has_more_pages",
           "kind": "function"
         },
         {
@@ -68138,11 +68267,6 @@
         },
         {
           "path": "app/thread_events.rs",
-          "name": "observe_item",
-          "kind": "function"
-        },
-        {
-          "path": "app/thread_events.rs",
           "name": "observe_notification",
           "kind": "function"
         },
@@ -68244,6 +68368,21 @@
         {
           "path": "app/thread_settings.rs",
           "name": "sync_default_collaboration_mode",
+          "kind": "function"
+        },
+        {
+          "path": "app/tool_lifecycle.rs",
+          "name": "observe_item",
+          "kind": "function"
+        },
+        {
+          "path": "app/tool_lifecycle.rs",
+          "name": "spawn_marks_receiver_thread_as_parent_owned",
+          "kind": "function"
+        },
+        {
+          "path": "app/tool_lifecycle.rs",
+          "name": "sub_agent_activity_updates_navigation_liveness",
           "kind": "function"
         },
         {
@@ -68387,6 +68526,76 @@
           "kind": "function"
         },
         {
+          "path": "app/turn_lifecycle.rs",
+          "name": "active_turn_elapsed",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "budget_limited_turn_ids_are_consumed",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "elapsed",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "finish",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "mark_budget_limited",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "projection_transition_starts_and_finishes_timer",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "reset_thread",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "restore_running",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "start",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "start_and_finish_update_running_state",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "start_turn",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "sync_projection_turn",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "take_budget_limited",
+          "kind": "function"
+        },
+        {
+          "path": "app/turn_lifecycle.rs",
+          "name": "TurnLifecycleState",
+          "kind": "type"
+        },
+        {
           "path": "app/working_directory.rs",
           "name": "sync_server_cwd",
           "kind": "function"
@@ -68459,6 +68668,11 @@
         {
           "path": "app_server_session.rs",
           "name": "list_collaboration_modes",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session.rs",
+          "name": "list_mcp_server_statuses",
           "kind": "function"
         },
         {
@@ -68673,6 +68887,11 @@
         },
         {
           "path": "app_server_session/history.rs",
+          "name": "InitialHistoryPage",
+          "kind": "type"
+        },
+        {
+          "path": "app_server_session/history.rs",
           "name": "initialize_history_pagination",
           "kind": "function"
         },
@@ -68728,6 +68947,11 @@
         },
         {
           "path": "app_server_session/history_tests.rs",
+          "name": "turn_lookup_does_not_treat_an_unrelated_turn_as_the_item_page_target",
+          "kind": "function"
+        },
+        {
+          "path": "app_server_session/history_tests.rs",
           "name": "turn_lookup_keeps_paging_when_target_is_oldest_loaded_turn",
           "kind": "function"
         },
@@ -68739,6 +68963,11 @@
         {
           "path": "app_server_session/history_tests.rs",
           "name": "turn_lookup_returns_chronological_order_for_history_filtering",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/approval_overlay.rs",
+          "name": "approval_navigation_wraps_and_accepts_control_bindings",
           "kind": "function"
         },
         {
@@ -68878,6 +69107,16 @@
         },
         {
           "path": "bottom_pane/chat_composer.rs",
+          "name": "attachment_edit_exits_history_navigation",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer.rs",
+          "name": "attachment_only_draft_does_not_enter_text_history",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer.rs",
           "name": "ChatComposer",
           "kind": "type"
         },
@@ -68973,6 +69212,11 @@
         },
         {
           "path": "bottom_pane/chat_composer.rs",
+          "name": "disconnected_submit_keys_clear_history_recall_state",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer.rs",
           "name": "dollar_token_range_is_utf8_safe_and_rejects_embedded_prefixes",
           "kind": "function"
         },
@@ -69063,17 +69307,22 @@
         },
         {
           "path": "bottom_pane/chat_composer.rs",
+          "name": "history_navigation_clears_completion_popups_for_recalled_text",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer.rs",
+          "name": "history_navigation_does_not_replace_an_arbitrary_draft",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer.rs",
           "name": "history_next",
           "kind": "function"
         },
         {
           "path": "bottom_pane/chat_composer.rs",
           "name": "history_previous",
-          "kind": "function"
-        },
-        {
-          "path": "bottom_pane/chat_composer.rs",
-          "name": "history_restores_the_unsent_draft",
           "kind": "function"
         },
         {
@@ -69124,11 +69373,6 @@
         {
           "path": "bottom_pane/chat_composer.rs",
           "name": "insert",
-          "kind": "function"
-        },
-        {
-          "path": "bottom_pane/chat_composer.rs",
-          "name": "is_common_shell_variable",
           "kind": "function"
         },
         {
@@ -69263,6 +69507,11 @@
         },
         {
           "path": "bottom_pane/chat_composer.rs",
+          "name": "should_handle_history_navigation",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer.rs",
           "name": "should_handle_vim_insert_escape",
           "kind": "function"
         },
@@ -69353,6 +69602,11 @@
         },
         {
           "path": "bottom_pane/chat_composer.rs",
+          "name": "taking_attachment_state_exits_history_navigation",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer.rs",
           "name": "test_skill",
           "kind": "function"
         },
@@ -69379,6 +69633,56 @@
         {
           "path": "bottom_pane/chat_composer.rs",
           "name": "vim_mode_indicator_span",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer.rs",
+          "name": "wrapped_single_line_vertical_navigation_stays_in_editor_until_visual_boundary",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/agents_navigation.rs",
+          "name": "agents_navigation_available",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/agents_navigation.rs",
+          "name": "left",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/agents_navigation.rs",
+          "name": "left_key_returns_open_agents_overview_only_when_available",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/agents_navigation.rs",
+          "name": "left_navigation_does_not_steal_active_vim_search",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/agents_navigation.rs",
+          "name": "left_navigation_does_not_steal_popup_or_vim_operator_input",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/agents_navigation.rs",
+          "name": "left_navigation_is_disabled_by_default_and_for_remote_sessions",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/agents_navigation.rs",
+          "name": "left_navigation_requires_an_empty_unblocked_composer",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/agents_navigation.rs",
+          "name": "modified_left_stays_in_the_editor",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/agents_navigation.rs",
+          "name": "set_agents_navigation_enabled",
           "kind": "function"
         },
         {
@@ -69464,6 +69768,116 @@
         {
           "path": "bottom_pane/chat_composer/attachment_state.rs",
           "name": "take_remote_image_urls",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "current_prefixed_token_range",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "current_prefixed_token_range_with_dollar_predicate",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "dollar_query_is_completable",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "dollar_query_kind",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "DollarQueryKind",
+          "kind": "type"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "is_common_env_var",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "is_horizontal_whitespace",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "is_mention_name_char",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "prefixed_candidate",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "safe_cursor",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target.rs",
+          "name": "whitespace_delimited_range",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "current_prefixed_token_accepts_utf8_cursor_boundaries",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "current_prefixed_token_affinity_does_not_cross_line_break",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "current_prefixed_token_affinity_does_not_cross_separator_before_plain_text",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "current_prefixed_token_does_not_cross_trailing_horizontal_whitespace_into_plain_text",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "current_prefixed_token_handles_cursor_inside_utf8_codepoint_fail_closed",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "current_prefixed_token_keeps_nested_dollar_prefix_in_same_token",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "current_prefixed_token_prefers_right_at_token_start",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "current_prefixed_token_preserves_separator_affinity_between_sigil_targets",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "dollar_query_classifies_shell_and_skill_syntax",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "dollar_query_classifies_shell_parameter_edge_cases",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/chat_composer/completion_target_tests.rs",
+          "name": "textarea",
           "kind": "function"
         },
         {
@@ -70007,13 +70421,148 @@
           "kind": "function"
         },
         {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "CommandPopup",
+          "kind": "type"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "CommandPopupAction",
+          "kind": "type"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "commands",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "control_navigation_matches_codex_list_bindings",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "empty_filter_keeps_catalog_order_and_narrow_render_is_bounded",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "enter_executes_immediate_commands_and_completes_argument_commands",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "filters_by_prefix_and_wraps_selection",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "for_composer",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "handle_event",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "long_catalog_keeps_selected_row_visible_with_a_bounded_popup",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "matches",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "non_key_and_key_release_events_do_not_change_popup_state",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "render",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "selected",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "test_backend_renders_commands_and_localized_descriptions",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/command_popup.rs",
+          "name": "update",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "active_agent_context",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "active_draft_prefers_queue_hint_and_hides_context_when_narrow",
+          "kind": "function"
+        },
+        {
           "path": "bottom_pane/footer.rs",
           "name": "append_vim_indicator",
           "kind": "function"
         },
         {
           "path": "bottom_pane/footer.rs",
+          "name": "can_show_left_with_context",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "cjk_and_emoji_context_widths_do_not_overlap_left_hint",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "idle_footer_drops_ambient_agent_context_as_one_unit_when_it_cannot_fit",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "idle_footer_keeps_localized_shortcut_entry_point_across_supported_widths",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "left_fits",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "queue_and_draft_footer_hints_cover_all_product_locales",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "queue_hint_shortens_before_it_disappears",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "render_context_right",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
           "name": "render_footer",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "render_summary_footer",
           "kind": "function"
         },
         {
@@ -70052,6 +70601,26 @@
           "kind": "function"
         },
         {
+          "path": "bottom_pane/footer.rs",
+          "name": "right_aligned_x",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "single_line_footer_layout",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "SummaryHintKind",
+          "kind": "type"
+        },
+        {
+          "path": "bottom_pane/footer.rs",
+          "name": "SummaryLeft",
+          "kind": "type"
+        },
+        {
           "path": "bottom_pane/mcp_server_elicitation.rs",
           "name": "advance_or_submit",
           "kind": "function"
@@ -70074,6 +70643,21 @@
         {
           "path": "bottom_pane/mcp_server_elicitation.rs",
           "name": "commit_current_field",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "compact_control_segment",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "contains_cancel_hint",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "contains_submit_hint",
           "kind": "function"
         },
         {
@@ -70108,6 +70692,11 @@
         },
         {
           "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "footer_control_lines",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
           "name": "form_surface_localizes_generated_labels_and_controls",
           "kind": "function"
         },
@@ -70138,17 +70727,22 @@
         },
         {
           "path": "bottom_pane/mcp_server_elicitation.rs",
-          "name": "input_line_offset",
-          "kind": "function"
-        },
-        {
-          "path": "bottom_pane/mcp_server_elicitation.rs",
           "name": "is_complete",
           "kind": "function"
         },
         {
           "path": "bottom_pane/mcp_server_elicitation.rs",
           "name": "is_empty_object_schema",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "is_input_line",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "is_option_line",
           "kind": "function"
         },
         {
@@ -70173,7 +70767,17 @@
         },
         {
           "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "line_to_owned",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
           "name": "lines_with_locale",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "lines_with_locale_inner",
           "kind": "function"
         },
         {
@@ -70219,6 +70823,21 @@
         {
           "path": "bottom_pane/mcp_server_elicitation.rs",
           "name": "move_field",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "narrow_footer_wraps_actions_in_priority_order_for_all_locales",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "narrow_multiline_text_keeps_physical_rows_and_cursor_aligned",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "narrow_select_surface_bounds_rows_and_keeps_cancel_visible",
           "kind": "function"
         },
         {
@@ -70303,6 +70922,11 @@
         },
         {
           "path": "bottom_pane/mcp_server_elicitation.rs",
+          "name": "split_input_lines",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mcp_server_elicitation.rs",
           "name": "string_property",
           "kind": "function"
         },
@@ -70348,6 +70972,11 @@
         },
         {
           "path": "bottom_pane/mod.rs",
+          "name": "footer_hint",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mod.rs",
           "name": "from_server_request",
           "kind": "function"
         },
@@ -70378,6 +71007,16 @@
         },
         {
           "path": "bottom_pane/mod.rs",
+          "name": "next_frame_delay",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mod.rs",
+          "name": "next_frame_delay",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mod.rs",
           "name": "non_interactive_responses_fail_closed_for_every_supported_interaction",
           "kind": "function"
         },
@@ -70385,6 +71024,16 @@
           "path": "bottom_pane/mod.rs",
           "name": "PendingInteraction",
           "kind": "type"
+        },
+        {
+          "path": "bottom_pane/mod.rs",
+          "name": "pre_draw_tick",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/mod.rs",
+          "name": "pre_draw_tick",
+          "kind": "function"
         },
         {
           "path": "bottom_pane/mod.rs",
@@ -70402,13 +71051,83 @@
           "kind": "function"
         },
         {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "can_restore_submission",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "desired_height",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "edit_hint_requires_a_lossless_composer_projection",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "line_text",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "narrow_preview_wraps_and_caps_each_submission",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "preview_lines",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "preview_uses_canonical_multimodal_queue_and_caps_visible_items",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "queue_header_and_image_label_cover_all_product_locales",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "render",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "submission",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "submission_preview_lines",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/pending_input_preview.rs",
+          "name": "submission_summary",
+          "kind": "function"
+        },
+        {
           "path": "bottom_pane/render.rs",
-          "name": "desired_height_with_locale",
+          "name": "desired_height_with_locale_for_width",
           "kind": "function"
         },
         {
           "path": "bottom_pane/render.rs",
           "name": "lines_with_locale",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/render.rs",
+          "name": "long_request_input_keeps_the_selected_option_inside_the_eight_row_window",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/render.rs",
+          "name": "narrow_height_uses_the_same_width_as_rendered_content",
           "kind": "function"
         },
         {
@@ -70422,8 +71141,33 @@
           "kind": "function"
         },
         {
+          "path": "bottom_pane/render.rs",
+          "name": "request_with_options",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "auto_resolution_countdown_text",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "auto_resolution_timing_at",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "AutoResolutionTiming",
+          "kind": "type"
+        },
+        {
           "path": "bottom_pane/request_user_input/mod.rs",
           "name": "cancel",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "clear_notes_and_focus_options",
           "kind": "function"
         },
         {
@@ -70434,6 +71178,11 @@
         {
           "path": "bottom_pane/request_user_input/mod.rs",
           "name": "commit",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "control_j_and_k_navigate_options_without_opening_notes",
           "kind": "function"
         },
         {
@@ -70463,7 +71212,27 @@
         },
         {
           "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "footer_hint",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "footer_hint_for_width",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "format_auto_resolution_remaining",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
           "name": "handle_key_event",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "handle_paste",
           "kind": "function"
         },
         {
@@ -70478,7 +71247,52 @@
         },
         {
           "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "move_option",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "move_question",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "narrow_footer_keeps_submit_and_cancel_before_secondary_hints",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
           "name": "new",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "next_frame_delay",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "non_blocking_request",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "non_blocking_request_expires_with_empty_answers",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "non_blocking_request_is_snoozed_by_user_input",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "non_blocking_request_uses_hidden_grace_then_visible_countdown",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "notes_focus_returns_to_options_without_submitting_on_escape_or_empty_backspace",
           "kind": "function"
         },
         {
@@ -70488,7 +71302,22 @@
         },
         {
           "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "option_navigation_wraps_at_both_ends",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
           "name": "option_notes_follow_codex_answer_shape",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "options_typing_does_not_open_notes",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "other_enter_opens_notes_before_submitting_custom_answer",
           "kind": "function"
         },
         {
@@ -70503,12 +71332,42 @@
         },
         {
           "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "pre_draw_tick",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "question_navigation_preserves_each_question_draft_and_selection",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
           "name": "RequestUserInputOverlay",
           "kind": "type"
         },
         {
           "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "restore_current_state",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "save_current_state",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
           "name": "selected_option_label",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "snooze_auto_resolution",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/mod.rs",
+          "name": "ultra_narrow_footer_keeps_cancel_action_visible_without_overflow",
           "kind": "function"
         },
         {
@@ -70518,7 +71377,7 @@
         },
         {
           "path": "bottom_pane/request_user_input/render.rs",
-          "name": "lines_with_locale",
+          "name": "is_option_line",
           "kind": "function"
         },
         {
@@ -70533,7 +71392,17 @@
         },
         {
           "path": "bottom_pane/request_user_input/render.rs",
+          "name": "lines_with_locale_with_width_at",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/render.rs",
           "name": "option_line",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/request_user_input/render.rs",
+          "name": "own_line",
           "kind": "function"
         },
         {
@@ -70547,6 +71416,11 @@
           "kind": "function"
         },
         {
+          "path": "bottom_pane/request_user_input/render.rs",
+          "name": "wrap_request_lines",
+          "kind": "function"
+        },
+        {
           "path": "bottom_pane/request_user_input/render_tests.rs",
           "name": "halfwidth_sound_marks_are_truncated_and_rendered_at_a_grapheme_boundary",
           "kind": "function"
@@ -70554,6 +71428,96 @@
         {
           "path": "bottom_pane/request_user_input/render_tests.rs",
           "name": "halfwidth_sound_marks_are_truncated_at_a_grapheme_boundary",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "build_full_line",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "build_name_spans",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "centered_popup",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "centered_popup_is_clamped_and_keeps_terminal_anchor",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "combined_description",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "disabled_reason_is_visible_and_width_bounded",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "line_to_owned",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "narrow_rows_stack_description_without_splitting_graphemes",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "new",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "SelectionDescriptionLayout",
+          "kind": "type"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "SelectionRow",
+          "kind": "type"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "should_stack",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "stacked_description",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "visible_item_window",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "visible_item_window_keeps_selection_inside_eight_row_viewport",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "wide_rows_align_description_with_display_width",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "wrap_row",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/selection_row_layout.rs",
+          "name": "wrap_stacked_row",
           "kind": "function"
         },
         {
@@ -70653,6 +71617,11 @@
         },
         {
           "path": "bottom_pane/textarea.rs",
+          "name": "editor_display_width",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
           "name": "effective_scroll",
           "kind": "function"
         },
@@ -70694,6 +71663,11 @@
         {
           "path": "bottom_pane/textarea.rs",
           "name": "is_empty",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "is_vertical_boundary",
           "kind": "function"
         },
         {
@@ -70763,7 +71737,17 @@
         },
         {
           "path": "bottom_pane/textarea.rs",
+          "name": "move_to_display_col_on_line",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
           "name": "move_up",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "move_visual_vertical",
           "kind": "function"
         },
         {
@@ -70789,6 +71773,11 @@
         {
           "path": "bottom_pane/textarea.rs",
           "name": "previous_grapheme_start",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "previous_grapheme_start_at",
           "kind": "function"
         },
         {
@@ -70865,6 +71854,11 @@
           "path": "bottom_pane/textarea.rs",
           "name": "take",
           "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea.rs",
+          "name": "Target",
+          "kind": "type"
         },
         {
           "path": "bottom_pane/textarea.rs",
@@ -71468,6 +72462,21 @@
         },
         {
           "path": "bottom_pane/textarea/wrapping_tests.rs",
+          "name": "vertical_navigation_clamps_saved_column_after_resize",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea/wrapping_tests.rs",
+          "name": "vertical_navigation_preserves_destination_tab_columns",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea/wrapping_tests.rs",
+          "name": "vertical_navigation_preserves_preferred_column_across_short_wrapped_rows",
+          "kind": "function"
+        },
+        {
+          "path": "bottom_pane/textarea/wrapping_tests.rs",
           "name": "wrapped_lines_keep_utf8_boundaries_and_reserve_cursor_rows",
           "kind": "function"
         },
@@ -71789,66 +72798,6 @@
         {
           "path": "collaboration_modes.rs",
           "name": "to_mode_uses_mask_values_and_fallbacks",
-          "kind": "function"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "CommandPopup",
-          "kind": "type"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "CommandPopupAction",
-          "kind": "type"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "commands",
-          "kind": "function"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "enter_executes_immediate_commands_and_completes_argument_commands",
-          "kind": "function"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "filters_by_prefix_and_wraps_selection",
-          "kind": "function"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "for_composer",
-          "kind": "function"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "handle_event",
-          "kind": "function"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "matches",
-          "kind": "function"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "render",
-          "kind": "function"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "selected",
-          "kind": "function"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "test_backend_renders_commands_and_localized_descriptions",
-          "kind": "function"
-        },
-        {
-          "path": "command_popup.rs",
-          "name": "update",
           "kind": "function"
         },
         {
@@ -72223,6 +73172,11 @@
         },
         {
           "path": "entry.rs",
+          "name": "entry_status_style",
+          "kind": "function"
+        },
+        {
+          "path": "entry.rs",
           "name": "format_line",
           "kind": "function"
         },
@@ -72244,6 +73198,11 @@
         {
           "path": "entry.rs",
           "name": "item_kinds_have_distinct_terminal_layouts",
+          "kind": "function"
+        },
+        {
+          "path": "entry.rs",
+          "name": "lifecycle_status_suffixes_use_the_shared_semantic_tones",
           "kind": "function"
         },
         {
@@ -72279,11 +73238,6 @@
         {
           "path": "entry.rs",
           "name": "user_image_summaries_use_numbered_labels_in_all_product_locales",
-          "kind": "function"
-        },
-        {
-          "path": "entry.rs",
-          "name": "with_status_suffix",
           "kind": "function"
         },
         {
@@ -72688,6 +73642,11 @@
         },
         {
           "path": "history_cell/mcp.rs",
+          "name": "compact_inventory_matches_codex_summary_shape",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/mcp.rs",
           "name": "display_hyperlink_lines",
           "kind": "function"
         },
@@ -72699,6 +73658,46 @@
         {
           "path": "history_cell/mcp.rs",
           "name": "display_lines",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/mcp.rs",
+          "name": "full_inventory_preserves_resource_order_from_app_server",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/mcp.rs",
+          "name": "full_inventory_uses_codex_empty_tool_label",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/mcp.rs",
+          "name": "inventory_empty_state_is_localized",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/mcp.rs",
+          "name": "inventory_is_sorted_and_full_detail_includes_tool_counts_and_names",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/mcp.rs",
+          "name": "line_text",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/mcp.rs",
+          "name": "mcp_auth_status_label",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/mcp.rs",
+          "name": "mcp_connection_status_label",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/mcp.rs",
+          "name": "mcp_inventory_lines",
           "kind": "function"
         },
         {
@@ -72729,6 +73728,11 @@
         {
           "path": "history_cell/mcp.rs",
           "name": "raw_lines",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/mcp.rs",
+          "name": "status",
           "kind": "function"
         },
         {
@@ -73148,12 +74152,32 @@
         },
         {
           "path": "history_cell/session.rs",
+          "name": "card_inner_width",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/session.rs",
+          "name": "cell",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/session.rs",
+          "name": "dangerous_permissions_are_visible_without_becoming_a_fixed_header",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/session.rs",
           "name": "display_lines",
           "kind": "function"
         },
         {
           "path": "history_cell/session.rs",
           "name": "display_lines",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/session.rs",
+          "name": "format_directory",
           "kind": "function"
         },
         {
@@ -73168,12 +74192,27 @@
         },
         {
           "path": "history_cell/session.rs",
+          "name": "padded_label",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/session.rs",
           "name": "raw_lines",
           "kind": "function"
         },
         {
           "path": "history_cell/session.rs",
           "name": "raw_lines",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/session.rs",
+          "name": "session_header_is_a_bounded_codex_shaped_box",
+          "kind": "function"
+        },
+        {
+          "path": "history_cell/session.rs",
+          "name": "session_header_labels_cover_all_product_locales",
           "kind": "function"
         },
         {
@@ -73185,6 +74224,11 @@
           "path": "history_cell/session.rs",
           "name": "SessionInfoCell",
           "kind": "type"
+        },
+        {
+          "path": "history_cell/session.rs",
+          "name": "with_border",
+          "kind": "function"
         },
         {
           "path": "history_filter.rs",
@@ -73758,6 +74802,11 @@
         },
         {
           "path": "locale.rs",
+          "name": "approval_controls",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
           "name": "approval_option",
           "kind": "function"
         },
@@ -73768,12 +74817,32 @@
         },
         {
           "path": "locale.rs",
+          "name": "auto_resolution_countdown",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "auto_resolution_countdown_covers_all_product_locales",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "change_model_hint",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
           "name": "collaboration_mode_statuses_cover_all_product_locales",
           "kind": "function"
         },
         {
           "path": "locale.rs",
           "name": "command_output_omission_markers_cover_all_product_locales",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "composer_placeholder",
           "kind": "function"
         },
         {
@@ -73794,6 +74863,11 @@
         {
           "path": "locale.rs",
           "name": "detail",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "draft_ready_hint",
           "kind": "function"
         },
         {
@@ -73893,6 +74967,11 @@
         },
         {
           "path": "locale.rs",
+          "name": "interactive_overlay_controls_cover_all_product_locales",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
           "name": "interrupt_hint",
           "kind": "function"
         },
@@ -73904,6 +74983,16 @@
         {
           "path": "locale.rs",
           "name": "mcp_approval_labels_cover_all_product_locales",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_auth_label",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_auth_status",
           "kind": "function"
         },
         {
@@ -73944,6 +75033,66 @@
         {
           "path": "locale.rs",
           "name": "mcp_elicitation_title",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_inventory_labels_cover_all_product_locales",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_inventory_title",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_no_servers",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_no_tools_available",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_none",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_resource_templates_label",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_resources_label",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_status",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_tool_unit",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_tools_label",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_usage",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "mcp_use_verbose",
           "kind": "function"
         },
         {
@@ -74038,12 +75187,47 @@
         },
         {
           "path": "locale.rs",
+          "name": "queue_message_hint",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "queue_short_hint",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
           "name": "queue_unavailable_status_covers_all_product_locales",
           "kind": "function"
         },
         {
           "path": "locale.rs",
           "name": "ready_label",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "request_cancel_hint",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "request_notes_hint",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "request_question_nav_hint",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "request_select_hint",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "request_submit_hint",
           "kind": "function"
         },
         {
@@ -74139,6 +75323,11 @@
         {
           "path": "locale.rs",
           "name": "resume_transcript_loading",
+          "kind": "function"
+        },
+        {
+          "path": "locale.rs",
+          "name": "shortcuts_hint",
           "kind": "function"
         },
         {
@@ -74788,6 +75977,11 @@
         },
         {
           "path": "model_picker.rs",
+          "name": "long_model_catalog_keeps_selected_row_inside_bounded_popup",
+          "kind": "function"
+        },
+        {
+          "path": "model_picker.rs",
           "name": "model",
           "kind": "function"
         },
@@ -74823,6 +76017,11 @@
         },
         {
           "path": "model_picker.rs",
+          "name": "picker_navigation_wraps_and_accepts_control_bindings",
+          "kind": "function"
+        },
+        {
+          "path": "model_picker.rs",
           "name": "query",
           "kind": "function"
         },
@@ -74838,7 +76037,17 @@
         },
         {
           "path": "model_picker.rs",
+          "name": "searchable_picker_keeps_plain_vim_letters_for_query_input",
+          "kind": "function"
+        },
+        {
+          "path": "model_picker.rs",
           "name": "selected_model",
+          "kind": "function"
+        },
+        {
+          "path": "model_picker.rs",
+          "name": "unhandled_control_keys_do_not_pollute_model_query",
           "kind": "function"
         },
         {
@@ -75028,7 +76237,22 @@
         },
         {
           "path": "pager_overlay.rs",
+          "name": "reset_transcript_anchor_at_top",
+          "kind": "function"
+        },
+        {
+          "path": "pager_overlay.rs",
           "name": "resize_recomputes_scroll_bounds_and_tiny_areas_do_not_panic",
+          "kind": "function"
+        },
+        {
+          "path": "pager_overlay.rs",
+          "name": "set_older_history_available",
+          "kind": "function"
+        },
+        {
+          "path": "pager_overlay.rs",
+          "name": "static_overlay_never_requests_older_history",
           "kind": "function"
         },
         {
@@ -75073,7 +76297,22 @@
         },
         {
           "path": "pager_overlay.rs",
+          "name": "transcript_overlay_remaps_manual_anchor_when_streaming_line_grows_in_place",
+          "kind": "function"
+        },
+        {
+          "path": "pager_overlay.rs",
           "name": "transcript_overlay_remaps_manual_anchor_when_width_reflows",
+          "kind": "function"
+        },
+        {
+          "path": "pager_overlay.rs",
+          "name": "transcript_overlay_requests_older_history_when_scrolled_to_the_top",
+          "kind": "function"
+        },
+        {
+          "path": "pager_overlay.rs",
+          "name": "transcript_overlay_reset_anchor_keeps_newly_loaded_beginning_visible",
           "kind": "function"
         },
         {
@@ -75083,67 +76322,12 @@
         },
         {
           "path": "pager_overlay.rs",
+          "name": "transcript_overlay_without_older_history_consumes_top_navigation",
+          "kind": "function"
+        },
+        {
+          "path": "pager_overlay.rs",
           "name": "wrapped_line_starts",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "can_restore_submission",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "desired_height",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "edit_hint_requires_a_lossless_composer_projection",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "line_text",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "narrow_preview_wraps_and_caps_each_submission",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "preview_lines",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "preview_uses_canonical_multimodal_queue_and_caps_visible_items",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "queue_header_and_image_label_cover_all_product_locales",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "render",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "submission",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "submission_preview_lines",
-          "kind": "function"
-        },
-        {
-          "path": "pending_input_preview.rs",
-          "name": "submission_summary",
           "kind": "function"
         },
         {
@@ -75169,6 +76353,11 @@
         {
           "path": "projection.rs",
           "name": "append_delta",
+          "kind": "function"
+        },
+        {
+          "path": "projection.rs",
+          "name": "append_reasoning_section_break",
           "kind": "function"
         },
         {
@@ -75258,7 +76447,7 @@
         },
         {
           "path": "projection.rs",
-          "name": "hook_status",
+          "name": "hook_status_message",
           "kind": "function"
         },
         {
@@ -75269,6 +76458,11 @@
         {
           "path": "projection.rs",
           "name": "image_generation_status",
+          "kind": "function"
+        },
+        {
+          "path": "projection.rs",
+          "name": "latest_summary_line",
           "kind": "function"
         },
         {
@@ -75338,6 +76532,11 @@
         },
         {
           "path": "projection.rs",
+          "name": "remember_reasoning_status",
+          "kind": "function"
+        },
+        {
+          "path": "projection.rs",
           "name": "remove_hidden_entries",
           "kind": "function"
         },
@@ -75403,6 +76602,11 @@
         },
         {
           "path": "projection_tests.rs",
+          "name": "a_new_turn_can_create_a_streaming_item_after_a_terminal_turn",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
           "name": "agent_message",
           "kind": "function"
         },
@@ -75464,6 +76668,11 @@
         {
           "path": "projection_tests.rs",
           "name": "dynamic_text_previews_are_compact_bounded_and_ignore_media_urls",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
+          "name": "explicit_status_clears_reasoning_summary_header",
           "kind": "function"
         },
         {
@@ -75538,6 +76747,16 @@
         },
         {
           "path": "projection_tests.rs",
+          "name": "late_agent_delta_does_not_reopen_completed_item",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
+          "name": "late_reasoning_section_boundary_does_not_mutate_completed_history",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
           "name": "legacy_agent_messages_without_phase_remain_final_answers",
           "kind": "function"
         },
@@ -75573,6 +76792,16 @@
         },
         {
           "path": "projection_tests.rs",
+          "name": "reasoning_summary_parts_keep_streamed_section_boundaries",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
+          "name": "reasoning_summary_updates_running_status_with_latest_usable_line",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
           "name": "review_boundary",
           "kind": "function"
         },
@@ -75584,6 +76813,21 @@
         {
           "path": "projection_tests.rs",
           "name": "streamed_agent_message_phase_is_repaired_by_item_completion",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
+          "name": "terminal_turn_closes_unrepaired_stream_tail_against_late_delta",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
+          "name": "terminal_turn_rejects_late_delta_for_unknown_item",
+          "kind": "function"
+        },
+        {
+          "path": "projection_tests.rs",
+          "name": "terminal_turn_rejects_late_item_started_but_accepts_canonical_completion",
           "kind": "function"
         },
         {
@@ -76373,6 +77617,11 @@
         },
         {
           "path": "resume_picker.rs",
+          "name": "long_resume_list_keeps_selected_session_visible_after_end_navigation",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
           "name": "mark_preview_loading",
           "kind": "function"
         },
@@ -76403,6 +77652,11 @@
         },
         {
           "path": "resume_picker.rs",
+          "name": "picker_control_navigation_matches_codex_list_bindings",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
           "name": "picker_controls_match_codex_resume_shortcut_shapes",
           "kind": "function"
         },
@@ -76424,6 +77678,11 @@
         {
           "path": "resume_picker.rs",
           "name": "picker_search_filters_preview_name_path_and_thread_id",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "picker_vertical_constraints",
           "kind": "function"
         },
         {
@@ -76478,7 +77737,37 @@
         },
         {
           "path": "resume_picker.rs",
+          "name": "render_picker_footer",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "render_session_list",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
           "name": "render_with_locale",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "resume_picker_render_matrix_stays_bounded_across_locales_and_widths",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "resume_picker_short_terminal_heights_remain_renderable",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "resume_search_line",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "resume_search_line_preserves_toolbar_and_display_width_on_narrow_terminals",
           "kind": "function"
         },
         {
@@ -76503,12 +77792,22 @@
         },
         {
           "path": "resume_picker.rs",
+          "name": "searchable_picker_keeps_plain_vim_letters_for_query_input",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
           "name": "selected_thread_id",
           "kind": "function"
         },
         {
           "path": "resume_picker.rs",
           "name": "selection",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "session_list_item",
           "kind": "function"
         },
         {
@@ -76694,6 +77993,11 @@
         {
           "path": "resume_picker.rs",
           "name": "truncation_preserves_display_width",
+          "kind": "function"
+        },
+        {
+          "path": "resume_picker.rs",
+          "name": "unhandled_control_keys_do_not_pollute_resume_query",
           "kind": "function"
         },
         {
@@ -77083,6 +78387,11 @@
         },
         {
           "path": "runtime_pty_tests.rs",
+          "name": "wait_for_any_marker",
+          "kind": "function"
+        },
+        {
+          "path": "runtime_pty_tests.rs",
           "name": "wait_for_ledger_kind_and_scenario",
           "kind": "function"
         },
@@ -77248,12 +78557,292 @@
         },
         {
           "path": "status_indicator_widget.rs",
+          "name": "active_status_height_and_width_are_bounded_for_supported_locales",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "desired_height",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "desired_height_with_messages",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "details_are_wrapped_and_bounded_by_max_lines",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "details_args_can_disable_capitalization_and_limit_lines",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "details_overflow_adds_ellipsis",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "elapsed_time_matches_codex_compact_format",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
           "name": "fmt_elapsed_compact",
           "kind": "function"
         },
         {
           "path": "status_indicator_widget.rs",
+          "name": "hook_and_details_reflow_to_distinct_rows_without_dropping_the_header",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "hook_status_moves_to_a_second_line_when_the_header_does_not_fit",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "hook_status_reflows_without_displacing_controls_or_details",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "lines",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "localized_status_keeps_interrupt_hint_and_width_bound",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "new",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
           "name": "render",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "render",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "render_with_messages",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "renders_remapped_interrupt_hint",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "renders_without_spinner_when_animations_disabled",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "set_interrupt_hint",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "set_interrupt_hint_visible",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "status_line",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "StatusDetailsCapitalization",
+          "kind": "type"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "StatusIndicatorWidget",
+          "kind": "type"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "update_details",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "update_header",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "update_hook_status_message",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "update_inline_message",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget.rs",
+          "name": "wrapped_details_lines",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget/timer.rs",
+          "name": "default",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget/timer.rs",
+          "name": "elapsed_at",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget/timer.rs",
+          "name": "pause_at",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget/timer.rs",
+          "name": "reset",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget/timer.rs",
+          "name": "resume_at",
+          "kind": "function"
+        },
+        {
+          "path": "status_indicator_widget/timer.rs",
+          "name": "StatusTimer",
+          "kind": "type"
+        },
+        {
+          "path": "status_indicator_widget/timer_tests.rs",
+          "name": "pauses_and_resumes_without_counting_wait_time",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "accent_is_palette_aware_and_has_a_no_color_fallback",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "accent_style",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "accent_style_for",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "attention_style",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "blend",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "failure_style",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "footer_hint_label_style",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "footer_hint_label_style_for",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "footer_styles_keep_labels_quiet_on_all_palettes",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "is_light",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "muted_style",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "status_style",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "status_style_for",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "status_tones_preserve_light_dark_and_no_color_semantics",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "StatusTone",
+          "kind": "type"
+        },
+        {
+          "path": "style.rs",
+          "name": "table_separator_blends_on_truecolor_and_dims_without_palette_support",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "table_separator_style",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "table_separator_style_for",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "user_message_bg_rgb",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "user_message_style",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "user_message_style_for",
+          "kind": "function"
+        },
+        {
+          "path": "style.rs",
+          "name": "user_message_surface_adapts_to_dark_light_and_no_color",
           "kind": "function"
         },
         {
@@ -77678,6 +79267,11 @@
         },
         {
           "path": "terminal_palette.rs",
+          "name": "no_color_disables_semantic_colors_without_mutating_process_env",
+          "kind": "function"
+        },
+        {
+          "path": "terminal_palette.rs",
           "name": "rgb_color",
           "kind": "function"
         },
@@ -77704,6 +79298,11 @@
         {
           "path": "terminal_palette.rs",
           "name": "stdout_color_level",
+          "kind": "function"
+        },
+        {
+          "path": "terminal_palette.rs",
+          "name": "stdout_color_level_for_env",
           "kind": "function"
         },
         {
@@ -78513,6 +80112,11 @@
         },
         {
           "path": "transcript_reflow.rs",
+          "name": "clear",
+          "kind": "function"
+        },
+        {
+          "path": "transcript_reflow.rs",
           "name": "clear_pending_reflow",
           "kind": "function"
         },
@@ -78568,6 +80172,16 @@
         },
         {
           "path": "transcript_reflow.rs",
+          "name": "remap_transcript_offset",
+          "kind": "function"
+        },
+        {
+          "path": "transcript_reflow.rs",
+          "name": "resolve",
+          "kind": "function"
+        },
+        {
+          "path": "transcript_reflow.rs",
           "name": "schedule_debounced",
           "kind": "function"
         },
@@ -78603,12 +80217,37 @@
         },
         {
           "path": "transcript_reflow.rs",
+          "name": "TranscriptViewport",
+          "kind": "type"
+        },
+        {
+          "path": "transcript_reflow.rs",
           "name": "TranscriptWidthChange",
           "kind": "type"
         },
         {
           "path": "transcript_reflow.rs",
+          "name": "viewport_keeps_pinned_bottom_following_new_content",
+          "kind": "function"
+        },
+        {
+          "path": "transcript_reflow.rs",
+          "name": "viewport_preserves_manual_anchor_when_stream_tail_grows",
+          "kind": "function"
+        },
+        {
+          "path": "transcript_reflow.rs",
+          "name": "viewport_remaps_manual_anchor_when_width_reflows",
+          "kind": "function"
+        },
+        {
+          "path": "transcript_reflow.rs",
           "name": "visible_history_rows",
+          "kind": "function"
+        },
+        {
+          "path": "transcript_reflow.rs",
+          "name": "wrapped_line_starts",
           "kind": "function"
         },
         {
@@ -79078,6 +80717,11 @@
         },
         {
           "path": "view.rs",
+          "name": "active_status_message",
+          "kind": "function"
+        },
+        {
+          "path": "view.rs",
           "name": "active_turn_status_does_not_overflow_a_tiny_terminal",
           "kind": "function"
         },
@@ -79089,6 +80733,11 @@
         {
           "path": "view.rs",
           "name": "approval_hides_an_open_slash_command_popup",
+          "kind": "function"
+        },
+        {
+          "path": "view.rs",
+          "name": "approval_narrow_layout_keeps_primary_controls_visible",
           "kind": "function"
         },
         {
@@ -79133,6 +80782,16 @@
         },
         {
           "path": "view.rs",
+          "name": "idle_composer_uses_codex_prompt_and_localized_placeholder",
+          "kind": "function"
+        },
+        {
+          "path": "view.rs",
+          "name": "interactive_overlays_remain_actionable_across_supported_widths_and_locales",
+          "kind": "function"
+        },
+        {
+          "path": "view.rs",
           "name": "narrow_terminal_does_not_overflow_or_panic",
           "kind": "function"
         },
@@ -79148,12 +80807,17 @@
         },
         {
           "path": "view.rs",
-          "name": "render_header",
+          "name": "render_transcript",
           "kind": "function"
         },
         {
           "path": "view.rs",
-          "name": "render_transcript",
+          "name": "render_transient_status",
+          "kind": "function"
+        },
+        {
+          "path": "view.rs",
+          "name": "request_user_input_narrow_layout_keeps_submit_and_cancel_visible",
           "kind": "function"
         },
         {
@@ -79163,17 +80827,22 @@
         },
         {
           "path": "view.rs",
+          "name": "ScreenChunks",
+          "kind": "type"
+        },
+        {
+          "path": "view.rs",
           "name": "secret_user_input_is_masked_in_the_test_backend",
           "kind": "function"
         },
         {
           "path": "view.rs",
-          "name": "status_pager_owns_the_frame_and_renders_current_session_facts",
+          "name": "status_and_footer_geometry_remains_stable_across_supported_widths_and_locales",
           "kind": "function"
         },
         {
           "path": "view.rs",
-          "name": "status_text",
+          "name": "status_pager_owns_the_frame_and_renders_current_session_facts",
           "kind": "function"
         },
         {
@@ -79249,6 +80918,16 @@
         {
           "path": "view.rs",
           "name": "transcript_scroll_offset",
+          "kind": "function"
+        },
+        {
+          "path": "view.rs",
+          "name": "transient_status",
+          "kind": "function"
+        },
+        {
+          "path": "view.rs",
+          "name": "transient_status_keeps_action_feedback_visible_without_idle_status_bar",
           "kind": "function"
         },
         {
@@ -80012,7 +81691,7 @@
           "kind": "function"
         }
       ],
-      "treeSha256": "564f245d50c64fb738f01c27765d6be15f5d386d35cc004b27c40a8fe6ae3be1"
+      "treeSha256": "4c313cab1ca8a1d6328ac6bb386ff3f95aa8c2d96a9caa841725225e7b315beb"
     },
     "codex-rs/tui/tests": {
       "root": "/Users/coso/Documents/dev/rust/codex/codex-rs/tui/tests",
@@ -80309,11 +81988,12 @@
     },
     "lime-rs/crates/tui/tests": {
       "root": "/Users/coso/Documents/dev/ai/aiclientproxy/lime/lime-rs/crates/tui/tests",
-      "fileCount": 10,
+      "fileCount": 11,
       "files": [
         "all.rs",
         "manager_dependency_regression.rs",
         "suite/focus_palette.rs",
+        "suite/history_pagination.rs",
         "suite/mod.rs",
         "suite/reconnect.rs",
         "suite/resize_reflow.rs",
@@ -80322,7 +82002,7 @@
         "suite/vt100_live_commit.rs",
         "test_backend.rs"
       ],
-      "symbolCount": 82,
+      "symbolCount": 88,
       "symbols": [
         {
           "path": "manager_dependency_regression.rs",
@@ -80411,6 +82091,21 @@
         },
         {
           "path": "suite/focus_palette.rs",
+          "name": "start_resume",
+          "kind": "function"
+        },
+        {
+          "path": "suite/focus_palette.rs",
+          "name": "start_with_mode",
+          "kind": "function"
+        },
+        {
+          "path": "suite/focus_palette.rs",
+          "name": "StartMode",
+          "kind": "type"
+        },
+        {
+          "path": "suite/focus_palette.rs",
           "name": "wait_for_exit",
           "kind": "function"
         },
@@ -80436,7 +82131,22 @@
         },
         {
           "path": "suite/focus_palette.rs",
+          "name": "wait_for_startup_with_timeout",
+          "kind": "function"
+        },
+        {
+          "path": "suite/focus_palette.rs",
           "name": "write_input",
+          "kind": "function"
+        },
+        {
+          "path": "suite/history_pagination.rs",
+          "name": "older_pagination_reconciles_review_prompts_across_page_boundaries",
+          "kind": "function"
+        },
+        {
+          "path": "suite/history_pagination.rs",
+          "name": "required_path",
           "kind": "function"
         },
         {
@@ -80735,7 +82445,7 @@
           "kind": "function"
         }
       ],
-      "treeSha256": "ae26e9011f039225212007f71d5d2e9b8a84478162a2d9257907719e1fb874b7"
+      "treeSha256": "f26ccf24850b1c80874c7d3a03b913a1a82d10db44d72cf1708fada69ae92a8e"
     }
   },
   "comparisons": {
@@ -80883,10 +82593,7 @@
       "bottom_pane/async_questions/state.rs",
       "bottom_pane/async_questions/state_tests.rs",
       "bottom_pane/bottom_pane_view.rs",
-      "bottom_pane/chat_composer/agents_navigation.rs",
       "bottom_pane/chat_composer/agents_navigation_tests.rs",
-      "bottom_pane/chat_composer/completion_target.rs",
-      "bottom_pane/chat_composer/completion_target_tests.rs",
       "bottom_pane/chat_composer/composer_layout.rs",
       "bottom_pane/chat_composer/embedded_input_tests.rs",
       "bottom_pane/chat_composer/inline_input.rs",
@@ -80896,7 +82603,6 @@
       "bottom_pane/chat_composer_history.rs",
       "bottom_pane/chat_composer_history/search_batch.rs",
       "bottom_pane/chat_composer_history/search_batch_tests.rs",
-      "bottom_pane/command_popup.rs",
       "bottom_pane/custom_prompt_view.rs",
       "bottom_pane/custom_prompt_view_tests.rs",
       "bottom_pane/effort_ignition.rs",
@@ -80924,7 +82630,6 @@
       "bottom_pane/mentions_v2/search_mode.rs",
       "bottom_pane/multi_select_picker.rs",
       "bottom_pane/paste_burst.rs",
-      "bottom_pane/pending_input_preview.rs",
       "bottom_pane/pending_thread_approvals.rs",
       "bottom_pane/popup_consts.rs",
       "bottom_pane/prompt_args.rs",
@@ -80933,7 +82638,6 @@
       "bottom_pane/request_user_input/layout.rs",
       "bottom_pane/scroll_state.rs",
       "bottom_pane/selection_popup_common.rs",
-      "bottom_pane/selection_row_layout.rs",
       "bottom_pane/selection_tabs.rs",
       "bottom_pane/skill_popup.rs",
       "bottom_pane/skills_toggle_view.rs",
@@ -81245,8 +82949,6 @@
       "status/tests.rs",
       "status/thread_usage.rs",
       "status/thread_usage_tests.rs",
-      "status_indicator_widget/timer.rs",
-      "status_indicator_widget/timer_tests.rs",
       "streaming/chunking.rs",
       "streaming/code_fence.rs",
       "streaming/code_fence_render_tests.rs",
@@ -81257,7 +82959,6 @@
       "streaming/render.rs",
       "streaming/render_tests.rs",
       "streaming/table_holdback.rs",
-      "style.rs",
       "summary_shimmer.rs",
       "summary_shimmer_tests.rs",
       "system_motion.rs",
@@ -81309,6 +83010,11 @@
       "worktree_startup_tests.rs"
     ],
     "filesOnlyInLime": [
+      "app/input_flow.rs",
+      "app/input_submission.rs",
+      "app/interrupts.rs",
+      "app/tool_lifecycle.rs",
+      "app/turn_lifecycle.rs",
       "bottom_pane/chat_composer/file_search_popup.rs",
       "bottom_pane/chat_composer/skill_popup.rs",
       "bottom_pane/render.rs",
@@ -81401,7 +83107,6 @@
       "AsyncQuestions",
       "AttachedImage",
       "AuthModeWidget",
-      "AutoResolutionTiming",
       "AutoReviewMode",
       "AutomaticModelSwitch",
       "AutomaticModelSwitchReason",
@@ -81508,7 +83213,6 @@
       "DisconnectInfo",
       "DismissibleView",
       "DisplayCondition",
-      "DollarQueryKind",
       "DrainPlan",
       "DrawCommand",
       "DynamicToolMcpHandler",
@@ -81949,7 +83653,6 @@
       "SelectedThreadUsage",
       "Selection",
       "SelectionAction",
-      "SelectionDescriptionLayout",
       "SelectionItem",
       "SelectionRowDisplay",
       "SelectionTab",
@@ -82014,12 +83717,10 @@
       "StatusAccountDisplay",
       "StatusContextWindowData",
       "StatusCopySource",
-      "StatusDetailsCapitalization",
       "StatusHistoryCell",
       "StatusHistoryHandle",
       "StatusIndicator",
       "StatusIndicatorState",
-      "StatusIndicatorWidget",
       "StatusLineAccent",
       "StatusLineGitSummary",
       "StatusLineItem",
@@ -82034,9 +83735,7 @@
       "StatusSurfacePreviewItem",
       "StatusSurfaceSelections",
       "StatusThreadUsage",
-      "StatusTimer",
       "StatusTokenUsageData",
-      "StatusTone",
       "StderrState",
       "SteerSwitch",
       "Step",
@@ -82049,8 +83748,6 @@
       "StreamingRender",
       "StyledMarkerRenderable",
       "SubmissionValidation",
-      "SummaryHintKind",
-      "SummaryLeft",
       "SuspendContext",
       "TableBodyRow",
       "TableCell",
@@ -82058,7 +83755,6 @@
       "TableColumnMetrics",
       "TableHoldbackScanner",
       "TableHoldbackState",
-      "Target",
       "TargetOs",
       "TaskMention",
       "TemporaryStructuredThreadOptions",
@@ -82129,7 +83825,6 @@
       "TuiSessionReporter",
       "TuiSharedCliOptions",
       "TurnAbortReason",
-      "TurnLifecycleState",
       "TurnPermissionsOverride",
       "UnansweredConfirmationData",
       "UnansweredConfirmationLayout",
@@ -82212,8 +83907,6 @@
       "accent_color_for",
       "accent_fallback",
       "accent_rgb",
-      "accent_style",
-      "accent_style_for",
       "accent_style_uses_cyan_on_dark_or_unknown_backgrounds",
       "accent_style_uses_darker_cyan_on_light_backgrounds",
       "accept",
@@ -82419,7 +84112,6 @@
       "agent_turn_complete_does_not_override_pending_plan_mode_prompt_notification",
       "agent_turn_complete_notification_does_not_reuse_stale_copy_source",
       "agent_turn_preview",
-      "agents_navigation_available",
       "agents_navigation_hint_snapshots",
       "agents_navigation_requires_local_daemon",
       "agents_overview_acknowledges_inactive_steer_before_interrupt",
@@ -82799,7 +84491,6 @@
       "auto_resolution_next_frame_delay_at",
       "auto_resolution_paste_interaction_snoozes_timer",
       "auto_resolution_resets_for_queued_request",
-      "auto_resolution_timing_at",
       "auto_resolution_uses_is_blocking_without_auto_resolution_ms",
       "auto_resolution_visible_countdown_is_red",
       "auto_resolution_visible_countdown_snapshot",
@@ -82932,7 +84623,6 @@
       "bindings",
       "bindings_for",
       "bindings_for_action",
-      "blend",
       "blended_total",
       "blocked_and_failed_hooks_render_feedback_and_errors",
       "blocked_follow_up_keeps_unanswered_questions",
@@ -82970,7 +84660,6 @@
       "branch_diff_stats_to_default_branch",
       "breakable_unicode_space_hangs_before_following_text",
       "btw_hidden_in_empty_filter_but_shown_for_prefix",
-      "budget_limited_turn_ids_are_consumed",
       "budget_limited_turn_restores_queued_input_without_submitting",
       "buffer_hyperlinks_follow_word_wrapping",
       "buffer_hyperlinks_follow_wrapped_halfwidth_dakuten",
@@ -82999,7 +84688,6 @@
       "build_feedback_upload_params",
       "build_feedback_upload_params_includes_thread_id_and_rollout_path",
       "build_feedback_upload_params_omits_rollout_path_without_logs",
-      "build_full_line",
       "build_header",
       "build_keymap_action_menu_params",
       "build_keymap_capture_view",
@@ -83016,7 +84704,6 @@
       "build_line",
       "build_memory_settings_edits",
       "build_model_selection_edits",
-      "build_name_spans",
       "build_options",
       "build_oss_provider_edit",
       "build_pet_picker_params",
@@ -83073,7 +84760,6 @@
       "can_reuse_implicit_local_daemon",
       "can_reuse_implicit_local_daemon_requires_default_launch_config",
       "can_run_ctrl_l_clear_now",
-      "can_show_left_with_context",
       "can_toggle_fast_mode_from_keybinding",
       "cancel_active_attempt",
       "cancel_active_attempt_notifies_device_code_login",
@@ -83112,13 +84798,11 @@
       "capture_view",
       "capture_view_snapshot",
       "captures_repeated_strokes_but_ignores_auto_repeat",
-      "card_inner_width",
       "card_lines",
       "case_insensitive_match_ranges",
       "catch_up_batch_drains_current_backlog",
       "caught_panic_pty_child",
       "caught_panic_rehides_cursor_before_repainting_and_restores_its_shape",
-      "cell",
       "cell_date",
       "cell_display_width",
       "cell_to_text",
@@ -83202,7 +84886,6 @@
       "clear_managed_terminal_title",
       "clear_mcp_inventory_loading",
       "clear_misalignment_for_new_turn",
-      "clear_notes_and_focus_options",
       "clear_notes_draft",
       "clear_only_ui_reset_allows_active_skill_warning_to_render_again",
       "clear_only_ui_reset_preserves_chat_session_state",
@@ -83325,7 +85008,6 @@
       "column_classification_token_heavy_for_local_path_lists",
       "column_widths_bulk_shrink_large_token_heavy_column",
       "combined_billing_surfaces_wait_for_credits_and_cost",
-      "combined_description",
       "combined_preview_snapshot",
       "comfortable_zebra_lines_use_full_width_background",
       "command",
@@ -83768,16 +85450,10 @@
       "current_permission_profile",
       "current_plan_type",
       "current_prefixed_token",
-      "current_prefixed_token_affinity_does_not_cross_line_break",
-      "current_prefixed_token_affinity_does_not_cross_separator_before_plain_text",
       "current_prefixed_token_bounds_right_candidate_before_bound_element",
       "current_prefixed_token_falls_back_from_bound_at_token_on_right",
       "current_prefixed_token_falls_back_from_bound_dollar_suffix_on_right",
-      "current_prefixed_token_keeps_nested_dollar_prefix_in_same_token",
       "current_prefixed_token_prefers_right_after_adjacent_target",
-      "current_prefixed_token_prefers_right_at_token_start",
-      "current_prefixed_token_range",
-      "current_prefixed_token_range_with_dollar_predicate",
       "current_prefixed_token_stops_at_trailing_space_before_line_break",
       "current_prefixed_token_stops_before_overlapping_element",
       "current_prefixed_token_targets_later_segment_between_bound_elements",
@@ -84022,8 +85698,6 @@
       "detail_wrapped_lines",
       "detailed_reset_credits",
       "details",
-      "details_args_can_disable_capitalization_and_limit_lines",
-      "details_overflow_adds_ellipsis",
       "detect",
       "detect_backend",
       "detect_keyboard_enhancement_supported",
@@ -84137,9 +85811,6 @@
       "does_not_suppress_printable_quit_key_when_api_key_input_is_empty",
       "does_not_suppress_when_not_in_api_key_entry",
       "does_not_wrap_code_blocks",
-      "dollar_query_classifies_shell_and_skill_syntax",
-      "dollar_query_is_completable",
-      "dollar_query_kind",
       "done_only_caption_cannot_retire_a_newer_voice_answer",
       "dot_repeat_has_visual_snapshot_coverage",
       "dot_repeat_replays_character_find_and_buffer_jump_operators",
@@ -84240,8 +85911,6 @@
       "effort_transition_does_not_queue_a_missing_outgoing_status_line",
       "effort_transition_keeps_the_full_footer_row",
       "effort_transition_never_replaces_a_footer_flash",
-      "elapsed",
-      "elapsed_at",
       "elapsed_since_start",
       "element_id_for_exact_range",
       "element_payloads",
@@ -84902,11 +86571,9 @@
       "footer_flash_overrides_footer_hint_override",
       "footer_from_props_lines",
       "footer_height",
-      "footer_hint",
       "footer_hint_items_line",
       "footer_hint_items_width",
       "footer_hint_key_style",
-      "footer_hint_label_style",
       "footer_hint_line",
       "footer_hint_lines",
       "footer_hint_row_is_separated_from_composer",
@@ -84969,14 +86636,12 @@
       "form_request",
       "format_action_binding_summary",
       "format_additional_permissions_rule",
-      "format_auto_resolution_remaining",
       "format_config_error",
       "format_config_error_preserves_server_validation_message",
       "format_counted_details",
       "format_credit_amount",
       "format_credit_balance",
       "format_credit_micros",
-      "format_directory",
       "format_directory_display",
       "format_directory_display_truncates_halfwidth_sound_marks",
       "format_directory_inner",
@@ -85499,7 +87164,6 @@
       "hook_started_run",
       "hook_status_and_history_snapshot",
       "hook_status_frame",
-      "hook_status_reflows_without_displacing_controls_or_details",
       "hook_title",
       "hook_trust_label",
       "hooks_list_entry_for_cwd",
@@ -85726,7 +87390,6 @@
       "is_cancellable_work_active",
       "is_chatgpt_login_allowed",
       "is_close_fence",
-      "is_common_env_var",
       "is_ctrl_exit_combo",
       "is_current_field_answered",
       "is_current_misalignment_review",
@@ -85760,9 +87423,7 @@
       "is_inside_element",
       "is_iterm2_terminal",
       "is_kitty_protocol",
-      "is_light",
       "is_markdown_fence_info_basic",
-      "is_mention_name_char",
       "is_mention_name_char_char",
       "is_name_byte",
       "is_navigating",
@@ -85942,7 +87603,6 @@
       "latest_session_lookup_params_keep_local_filters_for_embedded_sessions",
       "latest_session_lookup_params_keep_local_filters_for_local_daemon_sessions",
       "latest_session_lookup_params_omit_local_filters_for_remote_sessions",
-      "latest_summary_line",
       "latest_tag_without_prefix_is_invalid",
       "latest_thread_cwd",
       "latest_version",
@@ -85962,7 +87622,6 @@
       "leaving_alternate_screen_repaints_restored_inline_viewport",
       "leaving_conversation_ultra_in_default_clears_the_ephemeral_plan_effort",
       "leaving_conversation_ultra_in_plan_clears_the_ephemeral_default_effort",
-      "left_fits",
       "left_navigates_only_from_an_empty_prompt",
       "left_respects_attachments_pastes_and_other_input_surfaces",
       "left_respects_editor_and_vim_history_remaps",
@@ -86011,7 +87670,6 @@
       "line_display_width",
       "line_number_width",
       "line_texts",
-      "line_to_owned",
       "line_to_text",
       "lines_at",
       "lines_to_plain_strings",
@@ -86224,7 +87882,6 @@
       "maps_install_context_to_update_action",
       "mark_agent_picker_thread_closed",
       "mark_available",
-      "mark_budget_limited",
       "mark_exhausted",
       "mark_external_writer",
       "mark_failed",
@@ -86312,7 +87969,6 @@
       "maybe_show_pending_rate_limit_prompt",
       "mcp",
       "mcp_apps_readiness_retries_an_in_flight_installed_mention_lookup",
-      "mcp_auth_status_label",
       "mcp_inventory_connection_states",
       "mcp_inventory_loading_snapshot",
       "mcp_inventory_loading_without_animations_is_stable",
@@ -86454,11 +88110,9 @@
       "move_down_without_selection_change_does_not_fire_callback",
       "move_down_wrap",
       "move_highlight",
-      "move_question",
       "move_selected_item",
       "move_selection_next",
       "move_selection_prev",
-      "move_to_display_col_on_line",
       "move_up_wrap",
       "moving_highlight_matches_full_rebuild_with_live_tail",
       "moving_highlight_preserves_unaffected_height_caches",
@@ -86585,7 +88239,6 @@
       "next_check_deadline",
       "next_copy_selection",
       "next_element_id",
-      "next_frame_delay",
       "next_goal_draft",
       "next_goal_objective",
       "next_history_message",
@@ -86724,7 +88377,6 @@
       "ok_page",
       "old_local_daemon_worktree_error_suggests_update",
       "older_external_server_starts_without_unsupported_dynamic_tools_or_history",
-      "older_pagination_completion_footers_follow_answers_without_overlap_duplicates",
       "older_pagination_reconciles_review_prompts_across_page_boundaries",
       "older_server_notice_falls_back_in_short_overview",
       "older_server_notice_is_visible_in_agents_overview",
@@ -87187,11 +88839,9 @@
       "paths_match",
       "pause",
       "pause_active_goal_for_interrupt",
-      "pause_at",
       "pause_for_disconnect",
       "pause_status_timer_for_modal",
       "pause_unavailable_thread",
-      "pauses_and_resumes_without_counting_wait_time",
       "pending",
       "pending_batch",
       "pending_device_code_state",
@@ -87536,7 +89186,6 @@
       "post_tool_use_hook_events_render_snapshot",
       "powershell_single_quoted_string",
       "powershell_skill_read_snapshot",
-      "pre_draw_tick",
       "pre_draw_tick_at",
       "pre_tool_use_hook_events_render_snapshot",
       "preamble_keeps_working_status_snapshot",
@@ -88307,7 +89956,6 @@
       "render_clears_area_when_cell_content_shrinks",
       "render_comfortable_session_lines",
       "render_content",
-      "render_context_right",
       "render_continue_in_browser",
       "render_conversation_preview_lines",
       "render_debug",
@@ -88325,6 +89973,7 @@
       "render_footer_with_mode_indicator_and_context",
       "render_fragment",
       "render_frame",
+      "render_header",
       "render_highlights_apply_style_without_mutating_text",
       "render_hints",
       "render_history_cell_lines",
@@ -88379,7 +90028,6 @@
       "render_pet_image",
       "render_pet_picker_preview_image",
       "render_pick_mode",
-      "render_picker_footer",
       "render_picker_footer_separator",
       "render_picker_from_view",
       "render_picker_list",
@@ -88464,7 +90112,6 @@
       "renders_mcp_tool_handler_with_server_and_tool_details",
       "renders_prompt",
       "renders_prompt_with_trust_error",
-      "renders_remapped_interrupt_hint",
       "renders_restricted_folder",
       "renders_review_needed_handler",
       "renders_scrolled_handler_window",
@@ -88477,7 +90124,6 @@
       "renders_truncated",
       "renders_untrusted_enabled_handler_as_inactive",
       "renders_with_working_header",
-      "renders_without_spinner_when_animations_disabled",
       "renders_wrapped_details_panama_two_lines",
       "reopening_identical_unified_mention_restarts_file_search",
       "repeat_aborts_when_change_motion_cannot_start",
@@ -88703,7 +90349,6 @@
       "reset_safety_buffering_for_turn_start",
       "reset_search",
       "reset_status_timer",
-      "reset_thread",
       "reset_thread_event_state",
       "reset_thread_event_state_aborts_listener_tasks",
       "reset_transcript_state_after_clear",
@@ -88792,7 +90437,6 @@
       "restore_reasoning_status_header",
       "restore_reconnected_input",
       "restore_retry_status_header_if_present",
-      "restore_running",
       "restore_runtime_permissions",
       "restore_runtime_theme_from_config",
       "restore_side_user_message",
@@ -88821,7 +90465,6 @@
       "restricted_acceptance_and_cancellation_do_not_persist_trust",
       "result_kind",
       "resumable_thread",
-      "resume_at",
       "resume_begin",
       "resume_config_for_target",
       "resume_end",
@@ -88905,7 +90548,6 @@
       "rgb332_color",
       "rgb332_index",
       "rgb_to_xyz",
-      "right_aligned_x",
       "right_footer_line_with_context",
       "rolling_credits_preserve_depleted_workspace_error_routing",
       "rolling_rate_limit_snapshot_preserves_prior_individual_limit",
@@ -89236,7 +90878,6 @@
       "set_active_reasoning_effort",
       "set_active_reasoning_effort_baseline",
       "set_active_turn_id",
-      "set_agents_navigation_enabled",
       "set_all_enabled",
       "set_alt_screen_enabled",
       "set_ambient_pet_notification",
@@ -89313,7 +90954,6 @@
       "set_input_enabled",
       "set_input_record_mode",
       "set_interrupt_binding",
-      "set_interrupt_hint_visible",
       "set_interrupted_turn_notice_mode",
       "set_key_chord_hint_override",
       "set_keymap",
@@ -89512,7 +91152,6 @@
       "should_show_matches",
       "should_show_onboarding",
       "should_show_trust_screen",
-      "should_stack",
       "should_suppress_animations",
       "should_suppress_printable_quit",
       "should_wrap_name_in_column",
@@ -89624,7 +91263,6 @@
       "single_line_command_over_highlight_limit_uses_plain_text_fallback",
       "single_line_command_wraps_with_four_space_continuation",
       "single_line_final_answer_hides_working_status_snapshot",
-      "single_line_footer_layout",
       "single_line_row_display_truncates_instead_of_wrapping",
       "single_question_spacing_with_working_status",
       "single_reasoning_option_skips_selection",
@@ -89820,7 +91458,6 @@
       "snapshot_rows",
       "snapshot_thread_switch_discards_queued_previous_history",
       "snapshot_view",
-      "snooze_auto_resolution",
       "socket_error",
       "soft_break",
       "soften_rgb_channel",
@@ -89895,7 +91532,6 @@
       "ssh_uses_osc52_and_skips_native_on_success",
       "stable_prefix_len_for_source_start",
       "stable_version",
-      "stacked_description",
       "stacked_side_content",
       "stacked_side_content_is_used_when_side_by_side_does_not_fit",
       "stage_selected_slash_command_history",
@@ -89922,7 +91558,6 @@
       "start_active_goal_turn",
       "start_add_credits_nudge_email_request",
       "start_agents_daemon",
-      "start_and_finish_update_running_state",
       "start_api_key_entry",
       "start_app_server",
       "start_app_server_for_picker",
@@ -90208,8 +91843,6 @@
       "status_snapshot_truncates_in_narrow_terminal",
       "status_snapshot_uses_default_reasoning_when_config_empty",
       "status_snapshot_uses_generic_limit_labels_for_unsupported_windows",
-      "status_style",
-      "status_style_for",
       "status_summary_line",
       "status_summary_spans",
       "status_surface_hostname_preview_uses_current_machine_hostname",
@@ -90478,8 +92111,6 @@
       "table_separator_blends_toward_dark_background",
       "table_separator_blends_toward_light_background",
       "table_separator_dims_when_palette_aware_color_is_unavailable",
-      "table_separator_style",
-      "table_separator_style_for",
       "table_url_with_tilde_keeps_complete_hyperlink",
       "table_widths_count_halfwidth_sound_marks",
       "tabs_enabled",
@@ -90489,7 +92120,6 @@
       "tail_starts_stream",
       "take_active_cell",
       "take_backfill_counts",
-      "take_budget_limited",
       "take_completed_persistent_runs",
       "take_completed_token_activity_output",
       "take_event_screen_size",
@@ -91112,7 +92742,6 @@
       "update_command_is_only_suggested_for_implicit_local_daemon",
       "update_computer_activity",
       "update_connector_enabled",
-      "update_details",
       "update_diff_preserves_multiline_highlight_state_within_hunk",
       "update_due_hook_visibility",
       "update_elements_after_replace",
@@ -91122,10 +92751,7 @@
       "update_feature_flags_enabling_guardian_overrides_explicit_manual_review_policy",
       "update_feature_flags_enabling_guardian_selects_auto_review",
       "update_from_arg_matches",
-      "update_header",
       "update_history_search_query",
-      "update_hook_status_message",
-      "update_inline_message",
       "update_inline_viewport_for_resize_reflow",
       "update_last_content_height",
       "update_layout_area",
@@ -91193,7 +92819,6 @@
       "user_input_too_large_message",
       "user_markdown_keeps_directive_literal",
       "user_message_bg",
-      "user_message_bg_rgb",
       "user_message_count",
       "user_message_display_for_history",
       "user_message_display_from_inputs",
@@ -91204,8 +92829,6 @@
       "user_message_for_restore",
       "user_message_from_submission",
       "user_message_preview_text",
-      "user_message_style",
-      "user_message_style_for",
       "user_positions_iter",
       "user_prompt_submit_app_server_hook_notifications_render_snapshot",
       "user_shell_command_renders_output_not_exploring",
@@ -91273,8 +92896,6 @@
       "version_is_at_least",
       "version_json",
       "version_matches",
-      "vertical_navigation_clamps_saved_column_after_resize",
-      "vertical_navigation_preserves_destination_tab_columns",
       "view",
       "view_footer",
       "view_id",
@@ -91497,7 +93118,6 @@
       "windows_terminal_uses_full_screen_unless_zellij_is_active",
       "windows_terminal_wt_session_promotes_to_truecolor",
       "windows_toml_from_json",
-      "with_border",
       "with_border_internal",
       "with_border_with_inner_width",
       "with_chat_widget_frame",
@@ -91565,7 +93185,6 @@
       "wrap_indent",
       "wrap_navigation_and_visibility",
       "wrap_row_lines",
-      "wrap_stacked_row",
       "wrap_standard_row",
       "wrap_styled_line",
       "wrap_styled_spans",
@@ -91579,7 +93198,6 @@
       "wrap_width",
       "wrap_with_prefix",
       "wrapped_and_prefixed_cells_handle_tiny_widths",
-      "wrapped_details_lines",
       "wrapped_list_item_is_separated_from_next_sibling",
       "wrapped_navigation_across_visual_lines",
       "wrapped_navigation_with_newlines_and_spaces",
@@ -91681,6 +93299,7 @@
       "FileSearchPopupAction",
       "FileSearchRequest",
       "HistoryTerminal",
+      "InitialHistoryPage",
       "ListKind",
       "Locale",
       "McpField",
@@ -91701,6 +93320,8 @@
       "PickerTranscriptPager",
       "ReconnectedSession",
       "Renderer",
+      "ScreenChunks",
+      "SelectionRow",
       "SettingsCommand",
       "SkillPopupAction",
       "StartupSessionState",
@@ -91709,14 +93330,22 @@
       "ThreadPage",
       "TranscriptEntry",
       "TranscriptHistoryCell",
+      "TranscriptViewport",
       "TuiOptions",
       "ViewportState",
       "Vt100HistoryTerminal",
       "WebSearchLifecycle",
+      "a_new_turn_can_create_a_streaming_item_after_a_terminal_turn",
+      "accent_is_palette_aware_and_has_a_no_color_fallback",
       "accepted_model_migration_updates_model_and_effort",
+      "active_agent_context",
       "active_bottom_pane_receives_input_before_the_chat_composer",
+      "active_draft_prefers_queue_hint_and_hides_context_when_narrow",
       "active_permission_profile",
       "active_permission_profile_requires_a_non_empty_id",
+      "active_status_height_and_width_are_bounded_for_supported_locales",
+      "active_status_message",
+      "active_turn_can_interrupt",
       "active_turn_elapsed",
       "active_turn_status_does_not_overflow_a_tiny_terminal",
       "active_turn_status_precedes_canonical_queue_and_composer",
@@ -91757,9 +93386,11 @@
       "ansi256_palette_contains_cube_and_grayscale",
       "ansi_alpha_markers_map_to_terminal_colors",
       "ansi_family_foreground_palette",
+      "answer",
       "append_delta",
       "append_item_preview_lines",
       "append_prompt_history",
+      "append_reasoning_section_break",
       "append_vim_indicator",
       "apply_add_block",
       "apply_delete_block",
@@ -91777,8 +93408,11 @@
       "apply_update_block_wraps_long_lines_text",
       "apply_update_with_rename_block",
       "apply_vim_text_object",
+      "approval_controls",
       "approval_fields",
       "approval_hides_an_open_slash_command_popup",
+      "approval_narrow_layout_keeps_primary_controls_visible",
+      "approval_navigation_wraps_and_accepts_control_bindings",
       "approval_option",
       "approval_replaces_the_composer_with_actionable_options",
       "approval_title",
@@ -91793,8 +93427,14 @@
       "at_token_range_tracks_cursor_boundaries_without_crossing_whitespace",
       "at_token_range_uses_utf8_safe_byte_ranges",
       "attach",
+      "attachment_edit_exits_history_navigation",
       "attachment_edit_is_undoable_without_text_changes",
+      "attachment_only_draft_does_not_enter_text_history",
       "attachments_are_ordered_and_restorable",
+      "attention_style",
+      "auto_resolution_countdown",
+      "auto_resolution_countdown_covers_all_product_locales",
+      "auto_resolution_countdown_text",
       "background_thread_notifications_do_not_mutate_the_current_projection",
       "backtab_cycles_server_collaboration_modes_only_when_idle",
       "bare_urls_are_linked_but_code_and_unsafe_schemes_are_not",
@@ -91813,9 +93453,13 @@
       "canonical_ids_filter_cross_page_review_messages_without_text_matching",
       "canonical_projection_adapter_preserves_item_identity_and_text",
       "capture_current_thread_input",
+      "centered_popup",
+      "centered_popup_is_clamped_and_keeps_terminal_anchor",
+      "change_model_hint",
       "changed_width_is_debounced_and_due_is_observable",
       "chars",
       "chronological_turns",
+      "cjk_and_emoji_context_widths_do_not_overlap_left_hint",
       "clear_command_popup",
       "clear_dismissal",
       "clear_exec_approval_item",
@@ -91860,6 +93504,8 @@
       "commentary_agent_messages_are_visible_but_not_final_answers",
       "commit",
       "commit_current_field",
+      "compact_control_segment",
+      "compact_inventory_matches_codex_summary_shape",
       "compact_json",
       "compact_text",
       "comparable_path",
@@ -91873,6 +93519,7 @@
       "completed_turn_repair_keeps_web_search_completed_label",
       "completion_after",
       "completion_separator_localizes_elapsed_label",
+      "composer_placeholder",
       "composite_history_cell_separates_non_empty_parts",
       "computer_activity_bounds_multiline_titles_before_projection",
       "computer_activity_bounds_provider_diagnostics",
@@ -91882,6 +93529,8 @@
       "connect_session",
       "constrained_halfwidth_table_keeps_display_width_bounded",
       "constrained_tables_wrap_without_exceeding_available_width",
+      "contains_cancel_hint",
+      "contains_submit_hint",
       "content_previews",
       "content_previews_cap_items_and_length",
       "content_spans",
@@ -91891,6 +93540,8 @@
       "continuation_style",
       "control",
       "control_and_alt_characters_are_not_plain_text",
+      "control_j_and_k_navigate_options_without_opening_notes",
+      "control_navigation_matches_codex_list_bindings",
       "control_p_and_control_n_cycle_selection",
       "copy_last_response_with",
       "copy_shortcut_and_slash_command_do_not_become_turn_input",
@@ -91915,6 +93566,10 @@
       "current_at_token_range",
       "current_dollar_token_range",
       "current_line_range",
+      "current_prefixed_token_accepts_utf8_cursor_boundaries",
+      "current_prefixed_token_does_not_cross_trailing_horizontal_whitespace_into_plain_text",
+      "current_prefixed_token_handles_cursor_inside_utf8_codepoint_fail_closed",
+      "current_prefixed_token_preserves_separator_affinity_between_sigil_targets",
       "current_select_state_mut",
       "current_skill_token_range",
       "current_transcript_page_size",
@@ -91930,6 +93585,7 @@
       "cwds_differ_resolves_existing_symlink_targets",
       "cycle_permission_profile",
       "cycle_setting",
+      "dangerous_permissions_are_visible_without_becoming_a_fixed_header",
       "decimal_width",
       "decline_response",
       "declined_permissions",
@@ -91939,13 +93595,16 @@
       "delete_queued_submission",
       "delete_to_line_end",
       "deleted_raw_diff_keeps_source_extension_when_destination_is_dev_null",
-      "desired_height_with_locale",
+      "desired_height_with_locale_for_width",
+      "desired_height_with_messages",
+      "details_are_wrapped_and_bounded_by_max_lines",
       "diff_gallery_120x40",
       "diff_gallery_80x24",
       "diff_gallery_94x35",
       "diff_keeps_independent_multiline_syntax_state_for_old_and_new_files",
       "diff_uses_file_extension_for_syntax_highlighting",
       "direct_paste_replaces_stale_redo",
+      "disabled_reason_is_visible_and_width_bounded",
       "disabling_vim_cancels_an_active_query",
       "disconnected_edit_preserves_draft_and_cancels_history_preview",
       "disconnected_editing_preserves_graphemes_and_cursor_boundaries",
@@ -91953,6 +93612,7 @@
       "disconnected_input_edits_locally_without_submit_or_queue",
       "disconnected_paste_and_ctrl_c_are_handled_at_the_app_boundary",
       "disconnected_repeat_key_is_editable_but_never_submits",
+      "disconnected_submit_keys_clear_history_recall_state",
       "discovers_punctuated_and_balanced_web_urls",
       "dismiss_command",
       "dismissed_file_tokens_are_scoped_to_their_occurrence",
@@ -91960,9 +93620,11 @@
       "dispatch_connected_input",
       "dispatch_disconnected_input",
       "display_change_path",
+      "dollar_query_classifies_shell_parameter_edge_cases",
       "dollar_token_range_is_utf8_safe_and_rejects_embedded_prefixes",
       "down_selects_session_decision",
       "draft_content_equals",
+      "draft_ready_hint",
       "drain_snapshot",
       "dump_windows_clipboard_image",
       "dynamic_content_previews",
@@ -91974,6 +93636,7 @@
       "edit_draft_with_command",
       "edit_hint_requires_a_lossless_composer_projection",
       "edit_queued_input_hint",
+      "editor_display_width",
       "editor_failure_is_returned_without_leaking_the_tempfile",
       "editor_word_and_kill_shortcuts_share_textarea_semantics",
       "edits_draft_after_closing_the_tempfile_handle",
@@ -91984,12 +93647,16 @@
       "emit_skill_load_warnings",
       "emit_skill_load_warnings_projects_summary_and_details",
       "empty_catalog_has_no_mode",
+      "empty_composer_left_opens_agents_overview_when_local_navigation_is_enabled",
+      "empty_composer_left_stays_in_editor_when_navigation_is_disabled",
+      "empty_filter_keeps_catalog_order_and_narrow_render_is_bounded",
       "empty_notes_submit_the_selected_option",
       "empty_queries_and_missing_selection_do_not_match",
       "empty_query_has_no_matches",
       "empty_repeat_search_is_a_noop_and_backward_search_finds_previous_match",
       "empty_schema_decline_and_persisted_accept_are_typed",
       "empty_schema_uses_generic_approval_actions",
+      "empty_thread_starts_with_exactly_one_session_header",
       "empty_threads_produce_an_empty_canonical_transcript",
       "empty_transcript_is_rejected",
       "empty_undo_and_redo_are_consumed_in_normal_mode",
@@ -92003,6 +93670,7 @@
       "enter_collects_multiple_fields_and_emits_typed_content",
       "enter_executes_immediate_commands_and_completes_argument_commands",
       "entered",
+      "entry_status_style",
       "escape_cancels_instead_of_approving",
       "escape_interrupts_only_an_active_turn_and_preserves_the_draft",
       "escape_returns_an_empty_fail_closed_response",
@@ -92010,6 +93678,7 @@
       "evicted_request_does_not_replay",
       "exited",
       "expanded_transcript_uses_canonical_entries_and_stays_bounded",
+      "explicit_status_clears_reasoning_summary_header",
       "export_copy_description",
       "export_copy_label",
       "export_file_description",
@@ -92032,6 +93701,7 @@
       "fail_closed",
       "fail_thread_load",
       "failed_image_submission_can_restore_pending_attachments",
+      "failure_style",
       "fence_helpers_reject_short_or_indented_markers",
       "fence_tracker_tracks_markdown_other_and_blockquotes",
       "fenced_code_uses_the_first_info_token_for_syntax_highlighting",
@@ -92079,9 +93749,13 @@
       "flash_state_expires_without_mutating_mode",
       "flat_page_can_continue_an_existing_review_interval",
       "flat_page_only_filters_explicit_review_boundary",
+      "footer_control_lines",
       "footer_flash",
       "footer_has_draft",
+      "footer_hint_for_width",
+      "footer_hint_label_style_for",
       "footer_renders_the_active_agent_label",
+      "footer_styles_keep_labels_quiet_on_all_palettes",
       "for_composer",
       "form_surface_localizes_generated_labels_and_controls",
       "format_line",
@@ -92092,6 +93766,8 @@
       "from_name",
       "from_navigation",
       "from_server_request",
+      "full_inventory_preserves_resource_order_from_app_server",
+      "full_inventory_uses_codex_empty_tool_label",
       "fuzzy_file_search_request",
       "fuzzy_score",
       "grouped_history_does_not_move_completion_to_a_previous_visible_item",
@@ -92119,9 +93795,10 @@
       "hides_user_messages_inside_review_interval",
       "highlight_line",
       "highlighter_for",
+      "history_navigation_clears_completion_popups_for_recalled_text",
+      "history_navigation_does_not_replace_an_arbitrary_draft",
       "history_next",
       "history_previous",
-      "history_restores_the_unsent_draft",
       "history_search_cancel_restores_cursor_and_attachments",
       "history_search_cursor_position",
       "history_search_footer_cursor_tracks_query_and_clamps_to_narrow_width",
@@ -92134,10 +93811,12 @@
       "history_search_preview_highlights_matches_until_accepted",
       "history_search_query",
       "home_dir",
+      "hook_and_details_reflow_to_distinct_rows_without_dropping_the_header",
       "hook_completed",
       "hook_started",
       "hook_started_exposes_running_status_without_transcript_entry",
-      "hook_status",
+      "hook_status_message",
+      "hook_status_moves_to_a_second_line_when_the_header_does_not_fit",
       "hydrate_paginated_thread",
       "hydrate_thread",
       "hydrate_thread_hides_review_prompt_but_keeps_boundaries",
@@ -92145,18 +93824,23 @@
       "hydrate_thread_restores_items_and_active_turn_identity",
       "hydrated_thread_uses_the_same_phase_aware_final_answer_rule",
       "hyperlink_lines_with_locale",
+      "idle_app_does_not_interrupt",
+      "idle_composer_uses_codex_prompt_and_localized_placeholder",
+      "idle_footer_drops_ambient_agent_context_as_one_unit_when_it_cannot_fit",
+      "idle_footer_keeps_localized_shortcut_entry_point_across_supported_widths",
       "image_clipboard_statuses_cover_all_product_locales",
       "image_generation_status",
       "image_label",
       "image_shortcut_attaches_and_allows_image_only_submission",
       "image_view_paths_are_relative_to_the_current_working_directory",
+      "initial_history_page_uses_turn_metadata_for_filtering_and_completion",
+      "initial_history_page_without_turn_metadata_stays_item_only",
       "initialize_history_pagination",
       "initialize_params",
       "initialize_session",
       "inline_viewport_shrinks_into_terminal_bounds",
       "inline_viewport_stays_bottom_aligned_when_terminal_grows",
       "input_insert_mode",
-      "input_line_offset",
       "input_mode",
       "input_replace_mode",
       "insert",
@@ -92164,25 +93848,32 @@
       "insert_vim_replace_text",
       "insert_vim_search_text",
       "install_panic_hook",
+      "interactive_overlay_controls_cover_all_product_locales",
+      "interactive_overlays_remain_actionable_across_supported_widths_and_locales",
       "interrupt_hint",
       "interrupted_sub_agent_activity_stops_running_liveness",
       "invalid_percent_encoding_stays_visible",
       "invalidate_thread_list",
       "invalidate_viewport_sets_repaint_marker",
       "invalidate_wrap_cache",
+      "inventory_empty_state_is_localized",
+      "inventory_is_sorted_and_full_detail_includes_tool_counts_and_names",
       "invocation_text",
       "is_absolute_path",
-      "is_common_shell_variable",
       "is_editor_key_event",
       "is_empty_object_schema",
       "is_filename_prompt",
+      "is_horizontal_whitespace",
+      "is_input_line",
       "is_no_active_turn_error",
+      "is_option_line",
       "is_quiet_success",
       "is_searching",
       "is_select_field",
       "is_table_start",
       "is_text_field",
       "is_transcript",
+      "is_vertical_boundary",
       "item_kinds_have_distinct_terminal_layouts",
       "item_result_fields_become_structured_display_summaries",
       "item_started_clears_command_and_file_approval_by_item_id",
@@ -92195,18 +93886,30 @@
       "language_for_path",
       "languages_for_change_path",
       "last_known_cursor_position",
+      "late_agent_delta_does_not_reopen_completed_item",
+      "late_reasoning_section_boundary_does_not_mutate_completed_history",
       "leave_alternate_screen",
       "leaving_alternate_without_saved_area_is_a_noop",
+      "left",
+      "left_key_returns_open_agents_overview_only_when_available",
+      "left_navigation_does_not_steal_active_vim_search",
+      "left_navigation_does_not_steal_popup_or_vim_operator_input",
+      "left_navigation_is_disabled_by_default_and_for_remote_sessions",
+      "left_navigation_requires_an_empty_unblocked_composer",
       "legacy_agent_messages_without_phase_remain_final_answers",
       "len",
+      "lifecycle_status_suffixes_use_the_shared_semantic_tones",
       "line_end",
       "line_navigation_stays_inside_the_current_logical_line",
       "line_start",
       "line_style",
       "lines_with_locale",
+      "lines_with_locale_inner",
       "lines_with_locale_unbounded",
       "lines_with_locale_with_width",
+      "lines_with_locale_with_width_at",
       "list_collaboration_modes",
+      "list_mcp_server_statuses",
       "list_models",
       "list_permission_profiles",
       "list_queued_submissions",
@@ -92224,8 +93927,14 @@
       "loaded_history_is_bounded_to_the_recent_entries",
       "local_file_links_collapse_matching_labels_and_keep_descriptions",
       "local_file_links_preserve_tilde_unc_and_invalid_percent_spelling",
+      "localized_status_keeps_interrupt_hint_and_width_bound",
       "localized_tool_detail",
+      "long_agent_catalog_keeps_selected_row_inside_bounded_popup",
+      "long_catalog_keeps_selected_row_visible_with_a_bounded_popup",
       "long_diff_lines_wrap_with_an_aligned_continuation_gutter",
+      "long_model_catalog_keeps_selected_row_inside_bounded_popup",
+      "long_request_input_keeps_the_selected_option_inside_the_eight_row_window",
+      "long_resume_list_keeps_selected_session_visible_after_end_navigation",
       "long_single_line_falls_back_and_preserves_text",
       "map_composer_action",
       "maps_windows_temp_paths_for_wsl",
@@ -92242,6 +93951,9 @@
       "matching_path_labels_collapse_but_descriptive_labels_remain",
       "matching_ranges_stay_on_grapheme_boundaries",
       "mcp_approval_labels_cover_all_product_locales",
+      "mcp_auth_label",
+      "mcp_auth_status",
+      "mcp_connection_status_label",
       "mcp_content_previews",
       "mcp_elicitation_approval_option",
       "mcp_elicitation_boolean_option",
@@ -92252,9 +93964,24 @@
       "mcp_elicitation_text_placeholder",
       "mcp_elicitation_title",
       "mcp_entry_status",
+      "mcp_inventory_labels_cover_all_product_locales",
+      "mcp_inventory_lines",
+      "mcp_inventory_title",
+      "mcp_no_servers",
+      "mcp_no_tools_available",
+      "mcp_none",
+      "mcp_resource_templates_label",
+      "mcp_resources_label",
+      "mcp_slash_command_rejects_unknown_arguments_with_localized_usage",
+      "mcp_slash_commands_request_the_matching_inventory_detail",
       "mcp_startup_status_is_app_scoped_and_clears_when_ready",
       "mcp_startup_warning_state_clears_only_the_ready_server",
+      "mcp_status",
       "mcp_text_previews_are_compact_bounded_and_capped",
+      "mcp_tool_unit",
+      "mcp_tools_label",
+      "mcp_usage",
+      "mcp_use_verbose",
       "merge_canonical_items",
       "merge_export_entries",
       "message_entry",
@@ -92268,14 +93995,17 @@
       "model_route_requires_model_and_provider_together",
       "model_upgrade_target",
       "modified_enter_adds_a_newline_and_plain_enter_submits",
+      "modified_left_stays_in_the_editor",
       "move_insert_vertical",
       "move_left",
       "move_left_normal",
       "move_line_end",
       "move_line_start",
+      "move_option",
       "move_right",
       "move_right_normal",
       "move_vertical",
+      "move_visual_vertical",
       "move_word_forward",
       "multi_agent",
       "multi_agent_titles_are_localized_at_the_render_boundary",
@@ -92284,8 +94014,15 @@
       "multiline_wrap_returns_owned_lines",
       "multiple_hunks_use_a_vertical_ellipsis_instead_of_protocol_headers",
       "multiple_running_hooks_use_shared_message_or_plural_status",
+      "muted_style",
       "n_declines_exec_decision",
+      "narrow_footer_keeps_submit_and_cancel_before_secondary_hints",
+      "narrow_footer_wraps_actions_in_priority_order_for_all_locales",
+      "narrow_height_uses_the_same_width_as_rendered_content",
+      "narrow_multiline_text_keeps_physical_rows_and_cursor_aligned",
       "narrow_preview_wraps_and_caps_each_submission",
+      "narrow_rows_stack_description_without_splitting_graphemes",
+      "narrow_select_surface_bounds_rows_and_keeps_cancel_visible",
       "narrow_terminal_does_not_overflow_or_panic",
       "nearest_ansi256_color_is_indexed",
       "nearest_char_boundary",
@@ -92297,11 +94034,17 @@
       "next_page_is_hidden_while_loading",
       "next_transcript_cursor",
       "next_word_start",
+      "no_color_disables_semantic_colors_without_mutating_process_env",
       "no_questions",
+      "non_blocking_request",
+      "non_blocking_request_expires_with_empty_answers",
+      "non_blocking_request_is_snoozed_by_user_input",
+      "non_blocking_request_uses_hidden_grace_then_visible_countdown",
       "non_breaking_spaces_stay_inside_the_word",
       "non_context_outputs_are_bounded_and_compact",
       "non_empty",
       "non_interactive_responses_fail_closed_for_every_supported_interaction",
+      "non_key_and_key_release_events_do_not_change_popup_state",
       "non_successful_hooks_render_bounded_user_visible_summary",
       "normal_edit_undo_and_redo_restore_text",
       "normalize_cwd",
@@ -92312,23 +94055,29 @@
       "not_set_label",
       "note_outbound_response",
       "note_startup_protected_request",
+      "notes_focus_returns_to_options_without_submitting_on_escape_or_empty_backspace",
       "numbered_image_label",
       "observe_item",
       "observe_notification",
       "older_and_newer_matches_are_case_insensitive_and_bounded",
+      "older_page_reconciles_nested_review_prompt_from_adjacent_turn_metadata",
       "omit_completed_agent_deltas_removes_only_replaced_streams",
       "one_column_wrap_uses_a_visible_placeholder_for_wide_graphemes",
       "only_safe_web_destinations_receive_osc8",
+      "open_mcp_inventory",
       "open_model_picker",
       "open_status_pager",
       "open_transcript_pager",
       "option_count",
       "option_labels",
       "option_line",
+      "option_navigation_wraps_at_both_ends",
       "option_notes_follow_codex_answer_shape",
       "optional_string_property",
+      "options_typing_does_not_open_notes",
       "osc52_encoding_roundtrips_and_wraps_tmux",
       "osc52_rejects_oversized_payloads",
+      "other_enter_opens_notes_before_submitting_custom_answer",
       "other_option",
       "other_option_enabled",
       "other_option_is_only_added_when_the_contract_enables_it",
@@ -92344,9 +94093,12 @@
       "overview_rename_accepts_shifted_characters",
       "overview_render_is_bounded_on_wide_and_narrow_terminals",
       "overview_render_shows_localized_new_task_input_without_overflow",
+      "overview_render_uses_selection_row_for_status_and_current_context",
       "overview_search_filters_and_enter_selects",
+      "own_line",
       "own_lines",
       "owned_line",
+      "padded_label",
       "page_navigation_matches_codex_shape_and_reaches_the_next_cursor",
       "pager_footer",
       "paginated_hydration_fails_closed_when_item_turn_metadata_is_missing",
@@ -92384,6 +94136,7 @@
       "persist_temp_png",
       "persisted_items_share_the_live_projection_shape",
       "picker",
+      "picker_control_navigation_matches_codex_list_bindings",
       "picker_controls_match_codex_resume_shortcut_shapes",
       "picker_copy_and_status_render_for_every_product_locale",
       "picker_empty",
@@ -92392,12 +94145,14 @@
       "picker_filters_ephemeral_threads_and_navigates",
       "picker_filters_hidden_models_and_selects_default_first",
       "picker_footer",
+      "picker_navigation_wraps_and_accepts_control_bindings",
       "picker_only_reloads_for_query_mutations",
       "picker_render_is_bounded_for_narrow_unicode_terminal",
       "picker_search_filters_preview_name_path_and_thread_id",
       "picker_selects_rows_in_stable_navigation_order",
       "picker_subtitle_mentions_codex_shortcuts",
       "picker_title",
+      "picker_vertical_constraints",
       "plain",
       "plain_char",
       "plan_and_diff_notifications_replace_stable_projection_entries",
@@ -92409,7 +94164,10 @@
       "popup_filter_tracks_the_cursor_inside_a_command_name",
       "popup_is_created_only_for_a_single_slash_token",
       "popup_state_has_single_active_command_popup",
+      "prefixed_candidate",
       "prepend_grouped_items_with_hidden_ids",
+      "prepend_history_page",
+      "prepend_initial_history_page",
       "prepend_items",
       "prepend_page_entries",
       "prepend_page_items",
@@ -92423,9 +94181,11 @@
       "preview_needs_load",
       "preview_uses_canonical_multimodal_queue_and_caps_visible_items",
       "previous_grapheme_start",
+      "previous_grapheme_start_at",
       "project_item",
       "project_item_with_lifecycle",
       "projected_item_id",
+      "projection_transition_starts_and_finishes_timer",
       "provider_label",
       "push_auto_link_span",
       "push_style",
@@ -92437,8 +94197,13 @@
       "query_changes_keep_previous_rows_visible_while_waiting",
       "query_mutation_invalidates_a_previous_page_cursor",
       "query_paste_does_not_consume_draft_redo",
+      "question_navigation_preserves_each_question_draft_and_selection",
+      "queue_and_draft_footer_hints_cover_all_product_locales",
       "queue_header_and_image_label_cover_all_product_locales",
+      "queue_hint_shortens_before_it_disappears",
       "queue_input",
+      "queue_message_hint",
+      "queue_short_hint",
       "queue_unavailable_status_covers_all_product_locales",
       "queued_skill_input_restores_as_an_editable_dollar_mention",
       "queued_submission_projection_updates_by_id_and_clears_on_thread_change",
@@ -92453,6 +94218,8 @@
       "real_stdio_unavailable_backend_fails_closed_without_provider",
       "realtime_review_boundary_hides_only_messages_inside_interval",
       "reasoning_markdown_keeps_reasoning_tone_and_inline_emphasis",
+      "reasoning_summary_parts_keep_streamed_section_boundaries",
+      "reasoning_summary_updates_running_status_with_latest_usable_line",
       "recognizes_unix_windows_unc_and_file_url_paths",
       "reconnect_session",
       "record_assistant_phase",
@@ -92461,6 +94228,8 @@
       "release_startup_input_boundary_if_ready",
       "reload_skills",
       "remap_transcript_anchor",
+      "remap_transcript_offset",
+      "remember_reasoning_status",
       "remote_image_rows_are_selectable_and_deletable_from_the_composer",
       "remote_images_require_selection_before_delete",
       "remote_images_support_selection_delete_and_round_trip",
@@ -92477,10 +94246,14 @@
       "render_pipe_fallback",
       "render_row",
       "render_separator",
+      "render_session_list",
+      "render_summary_footer",
       "render_transcript_entry_lines",
       "render_transcript_entry_lines_wrapped",
+      "render_transient_status",
       "render_unconstrained",
       "render_with_locale",
+      "render_with_messages",
       "rendered",
       "rendered_text_at_width",
       "renders_active_agent_context",
@@ -92498,12 +94271,21 @@
       "replace_entry",
       "replace_text",
       "replace_threads",
+      "request_all_older_history_pages",
+      "request_cancel_hint",
+      "request_notes_hint",
+      "request_question_nav_hint",
+      "request_select_hint",
+      "request_submit_hint",
       "request_unarchive_for_selected_session",
       "request_user_input",
+      "request_user_input_narrow_layout_keeps_submit_and_cancel_visible",
+      "request_with_options",
       "required_test_path",
       "required_validation_moves_to_missing_field_and_cancel_is_typed",
       "reset_discards_cursor_and_scan_progress",
       "reset_history_navigation",
+      "reset_transcript_anchor_at_top",
       "resize_keeps_non_bottom_aligned_viewport_position",
       "resize_recomputes_scroll_bounds_and_tiny_areas_do_not_panic",
       "resolve_editor_executable",
@@ -92511,6 +94293,7 @@
       "respond",
       "respond_current_time",
       "response_for_selected",
+      "restore_current_state",
       "restore_failure_preserves_archived_thread_and_allows_retry",
       "restore_pending_images",
       "restore_queued_submission_for_edit",
@@ -92528,7 +94311,11 @@
       "resume_loading",
       "resume_picker_controls_cover_all_product_locales",
       "resume_picker_owns_input_until_cancelled",
+      "resume_picker_render_matrix_stays_bounded_across_locales_and_widths",
+      "resume_picker_short_terminal_heights_remain_renderable",
       "resume_picker_title",
+      "resume_search_line",
+      "resume_search_line_preserves_toolbar_and_display_width_on_narrow_terminals",
       "resume_search_placeholder",
       "resume_slash_command_opens_the_shared_picker_action",
       "resume_sort_label",
@@ -92550,6 +94337,8 @@
       "run_session_picker_with_app_server",
       "run_tui",
       "rust_keywords_receive_terminal_palette_styles",
+      "safe_cursor",
+      "save_current_state",
       "save_text_draft",
       "scan_progress_accumulates_and_cap_is_sticky",
       "screen_chunks",
@@ -92561,6 +94350,7 @@
       "search_cancel_preserves_draft_and_clears_operator_pending",
       "search_command",
       "search_motion_can_complete_delete_operator",
+      "searchable_picker_keeps_plain_vim_letters_for_query_input",
       "secret_user_input_is_masked_in_the_test_backend",
       "select_fields_support_horizontal_navigation_and_digits",
       "select_history_match",
@@ -92576,13 +94366,18 @@
       "selection_wraps_and_enter_completes",
       "server_requests_expose_their_thread_target",
       "server_resolution_clears_request_identity_and_category",
+      "session_header_is_a_bounded_codex_shaped_box",
+      "session_header_labels_cover_all_product_locales",
       "session_id",
+      "session_list_item",
       "session_picker_action_keeps_resume_and_fork_selection_distinct",
       "session_target_uses_thread_id_when_path_is_not_available",
       "set_collaboration_modes",
       "set_cwd",
+      "set_interrupt_hint",
       "set_locale",
       "set_model_catalog",
+      "set_older_history_available",
       "set_permission_profiles",
       "set_queued_submissions",
       "set_settings",
@@ -92594,7 +94389,10 @@
       "shell_parameters_do_not_open_skill_popup_without_an_exact_skill",
       "shifted_characters_are_plain_text",
       "shortcuts_cycle_codex_order_and_recover_unknown_values",
+      "shortcuts_hint",
+      "should_handle_history_navigation",
       "should_hide_realtime_item",
+      "should_interrupt_turn",
       "should_load_more",
       "single_line_replacement_counts",
       "skill",
@@ -92618,12 +94416,14 @@
       "soft_break_spaces_hang_on_the_previous_row",
       "spawn_archive_request",
       "spawn_file_search",
+      "spawn_marks_receiver_thread_as_parent_owned",
       "spawn_preview_load",
       "spawn_request_summary_preserves_model_and_effort",
       "spawn_thread_load",
       "spawn_transcript_load",
       "spawn_unarchive_request",
       "split_colon_location",
+      "split_input_lines",
       "splits_editor_command_without_losing_quotes",
       "ssh_uses_terminal_clipboard_and_local_prefers_native",
       "stale_request_cannot_finish_newer_load",
@@ -92640,7 +94440,9 @@
       "startup_protected_request_keeps_draft_until_the_request_is_resolved",
       "state_label",
       "stateful_render_clears_rows_outside_the_current_draft",
+      "static_overlay_never_requests_older_history",
       "static_overlay_wraps_scrolls_jumps_and_closes",
+      "status_and_footer_geometry_remains_stable_across_supported_widths_and_locales",
       "status_command_opens_an_ephemeral_pager_and_consumes_input_until_closed",
       "status_grouping",
       "status_line",
@@ -92651,9 +94453,11 @@
       "status_summary_text",
       "status_text",
       "status_title",
+      "status_tones_preserve_light_dark_and_no_color_semantics",
       "status_value",
       "stdio_config",
       "stdio_config_appends_host_arguments_after_the_current_runtime_default",
+      "stdout_color_level_for_env",
       "steer_turn_input",
       "stop",
       "stopped_activity_does_not_revive_after_liveness_terminal_state",
@@ -92663,6 +94467,7 @@
       "string_property",
       "strips_osc8_without_changing_visible_text",
       "styles",
+      "sub_agent_activity_updates_navigation_liveness",
       "sub_agent_activity_updates_navigation_liveness_and_label",
       "subagent_activity_marks_the_thread_parent_owned_before_resume",
       "subagents_slash_command_opens_the_codex_named_picker",
@@ -92677,7 +94482,9 @@
       "summary",
       "summary_keeps_bounded_text_and_structured_facts",
       "supports_request",
+      "switching_threads_resets_the_main_transcript_to_the_tail",
       "sync_default_collaboration_mode",
+      "sync_projection_turn",
       "sync_server_cwd",
       "sync_server_cwd_updates_only_for_a_different_normalized_path",
       "sync_view_state",
@@ -92688,6 +94495,7 @@
       "systemic_compact_fragmentation_uses_stacked_records",
       "tab_queues_a_follow_up_without_submitting_the_active_turn",
       "tab_queues_non_empty_draft_and_clears_composer",
+      "table_separator_blends_on_truecolor_and_dims_without_palette_support",
       "table_start_requires_header_and_delimiter",
       "tabs_and_blank_context_lines_preserve_diff_geometry",
       "tag",
@@ -92696,11 +94504,15 @@
       "take_refresh_pending",
       "take_submission",
       "take_thread_event_snapshot",
+      "taking_attachment_state_exits_history_navigation",
       "target",
       "temporary_clipboard_image_uses_png_suffix_and_bytes",
       "terminal_copy",
       "terminal_mut",
       "terminal_screen_text",
+      "terminal_turn_closes_unrepaired_stream_tail_against_late_delta",
+      "terminal_turn_rejects_late_delta_for_unknown_item",
+      "terminal_turn_rejects_late_item_started_but_accepts_canonical_completion",
       "test_backend_marks_markdown_links_with_osc8",
       "test_backend_renders_bounded_command_output_marker",
       "test_backend_renders_canonical_queue_between_transcript_and_composer",
@@ -92758,9 +94570,14 @@
       "transcript_load_event_records_loaded_and_failed_states",
       "transcript_overlay_preserves_manual_anchor_when_history_is_prepended",
       "transcript_overlay_preserves_manual_scroll_when_projection_grows",
+      "transcript_overlay_remaps_manual_anchor_when_streaming_line_grows_in_place",
       "transcript_overlay_remaps_manual_anchor_when_width_reflows",
       "transcript_overlay_renders_live_canonical_projection_with_markdown_and_links",
+      "transcript_overlay_requests_older_history_only_when_session_has_more_pages",
+      "transcript_overlay_requests_older_history_when_scrolled_to_the_top",
+      "transcript_overlay_reset_anchor_keeps_newly_loaded_beginning_visible",
       "transcript_overlay_starts_at_tail_follows_updates_and_closes_with_ctrl_t",
+      "transcript_overlay_without_older_history_consumes_top_navigation",
       "transcript_page_size",
       "transcript_page_size_tracks_resize",
       "transcript_pager_footer",
@@ -92769,6 +94586,8 @@
       "transcript_preview_text",
       "transcript_scroll_offset",
       "transcript_title",
+      "transient_status",
+      "transient_status_keeps_action_feedback_visible_without_idle_status_bar",
       "translates_statuses_and_dynamic_detail_labels_without_changing_unknown_text",
       "trim_trailing_separator",
       "truncate_command_output_line",
@@ -92782,11 +94601,15 @@
       "turn_completion_repairs_missing_streamed_items_from_canonical_turn",
       "turn_completion_replaces_streaming_item_with_canonical_text",
       "turn_label",
+      "turn_lookup_does_not_treat_an_unrelated_turn_as_the_item_page_target",
       "turn_lookup_keeps_paging_when_target_is_oldest_loaded_turn",
       "turn_lookup_requires_one_older_context_turn_after_targets",
       "turn_lookup_returns_chronological_order_for_history_filtering",
       "turn_status",
       "turn_terminal_status_settles_in_progress_items",
+      "ultra_narrow_footer_keeps_cancel_action_visible_without_overflow",
+      "unhandled_control_keys_do_not_pollute_model_query",
+      "unhandled_control_keys_do_not_pollute_resume_query",
       "unicode_cursor_and_grapheme_deletion_match_codex_textarea_semantics",
       "unicode_labels_remain_single_stable_row",
       "unified_diff_uses_stable_line_numbers_and_gutter_signs",
@@ -92814,11 +94637,16 @@
       "user_message",
       "user_message_id",
       "user_message_images_are_numbered_without_retaining_sources",
+      "user_message_surface_adapts_to_dark_light_and_no_color",
       "user_visible_header_labels_cover_all_product_locales",
       "validate_model_route",
       "vertical_ellipsis_between_hunks",
       "vertical_motion_preserves_display_column_for_wide_graphemes",
+      "vertical_navigation_preserves_preferred_column_across_short_wrapped_rows",
       "viewport_area",
+      "viewport_keeps_pinned_bottom_following_new_content",
+      "viewport_preserves_manual_anchor_when_stream_tail_grows",
+      "viewport_remaps_manual_anchor_when_width_reflows",
       "vim_find_and_till_stay_on_current_line_and_grapheme_boundaries",
       "vim_find_operators_delete_change_and_yank",
       "vim_insert_and_escape_preserve_normal_cursor_contract",
@@ -92837,16 +94665,20 @@
       "vim_search_owns_escape_and_paste_before_popup_or_active_turn",
       "vim_search_query",
       "vim_search_query_and_paste_do_not_mutate_the_draft",
+      "vim_search_suppresses_interrupt",
       "vim_search_wants_key",
       "vim_slash_command_toggles_composer_mode_and_projects_localized_status",
       "vim_text_object",
       "vim_text_objects_delete_inner_around_words_and_pairs",
       "visible_buffer_lines",
+      "visible_item_window",
+      "visible_item_window_keeps_selection_inside_eight_row_viewport",
       "visible_model",
       "visible_models",
       "visible_rows",
       "visible_terminal_text",
       "visible_terminal_text_ignores_cursor_controls",
+      "wait_for_any_marker",
       "wait_for_ledger_kind_and_scenario",
       "wait_for_marker",
       "wait_for_marker_after",
@@ -92858,10 +94690,11 @@
       "web_search_malformed_or_unknown_action_falls_back_to_query",
       "web_search_persisted_projection_is_status_agnostic",
       "web_search_realtime_lifecycle_uses_codex_started_and_completed_labels",
+      "whitespace_delimited_range",
+      "wide_rows_align_description_with_display_width",
       "width_allocation_preserves_compact_columns_after_token_heavy_columns",
       "windows_path_to_wsl",
       "with_locale",
-      "with_status_suffix",
       "word_end_cursor",
       "word_wrap_preserves_styled_spans_and_indent",
       "worked_label",
@@ -92873,8 +94706,11 @@
       "wrap_hyperlink_line",
       "wrap_plain_line",
       "wrap_ranges_are_utf8_safe",
+      "wrap_request_lines",
+      "wrap_row",
       "wrapped_line_starts",
       "wrapped_lines_keep_utf8_boundaries_and_reserve_cursor_rows",
+      "wrapped_single_line_vertical_navigation_stays_in_editor_until_visual_boundary",
       "wrapped_table_link_fragments_keep_complete_destination",
       "wrapped_transcript_scroll_uses_visual_rows",
       "wrapping_keeps_explicit_destination_on_every_fragment",
@@ -92886,7 +94722,9 @@
       "suite/directory_trust.rs",
       "suite/worktree_stack.rs"
     ],
-    "testFilesOnlyInLime": []
+    "testFilesOnlyInLime": [
+      "suite/history_pagination.rs"
+    ]
   },
   "rules": [
     "Codex TUI directory, module, type and function names are the baseline.",

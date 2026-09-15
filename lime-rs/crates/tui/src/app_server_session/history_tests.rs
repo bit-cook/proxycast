@@ -138,3 +138,10 @@ fn turn_lookup_returns_chronological_order_for_history_filtering() {
         .collect::<Vec<_>>();
     assert_eq!(ids, vec!["oldest", "older", "newest"]);
 }
+
+#[test]
+fn turn_lookup_does_not_treat_an_unrelated_turn_as_the_item_page_target() {
+    let turns_desc = vec![test_turn("unrelated")];
+    let targets = std::collections::HashSet::from([String::from("missing")]);
+    assert!(!all_target_turns_loaded(&turns_desc, &targets));
+}

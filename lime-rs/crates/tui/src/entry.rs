@@ -8,6 +8,10 @@ use crate::exec_cell::{output_lines, CommandOutput, OutputLinesParams};
 use crate::locale::Locale;
 use crate::markdown_render;
 use crate::projection::{EntryKind, EntryStatus, TranscriptEntry};
+use crate::style::{
+    accent_style, attention_style, failure_style, muted_style, status_style, user_message_style,
+    StatusTone,
+};
 use crate::terminal_hyperlinks::{prefix_hyperlink_lines, HyperlinkLine};
 
 #[cfg(test)]
@@ -41,17 +45,20 @@ pub(crate) fn hyperlink_lines_with_locale(
         if rendered.is_empty() {
             rendered.push(HyperlinkLine::default());
         }
-        let status_suffix = entry
-            .status
-            .map(|status| format!(" [{}]", locale.status(status.label())));
         rendered = prefix_hyperlink_lines(
             rendered,
             Span::styled(prefix, prefix_style),
             Span::styled("  ", prefix_style),
         );
-        if let Some(suffix) = status_suffix {
+        if let Some(status) = entry.status {
             if let Some(line) = rendered.first_mut() {
-                line.push_span(Span::styled(suffix, text_style), None);
+                line.push_span(
+                    Span::styled(
+                        format!(" [{}]", locale.status(status.label())),
+                        entry_status_style(status),
+                    ),
+                    None,
+                );
             }
         }
         rendered.extend(entry.summary.iter().map(|detail| {
@@ -73,14 +80,14 @@ pub(crate) fn hyperlink_lines_with_locale(
         EntryKind::MultiAgent => locale.multi_agent(first),
         _ => first.to_string(),
     };
-    let first = with_status_suffix(&first, entry.status, locale);
-    let mut lines = vec![HyperlinkLine::new(format_line(
-        entry.kind,
-        prefix,
-        prefix_style,
-        text_style,
-        &first,
-    ))];
+    let mut first_line = format_line(entry.kind, prefix, prefix_style, text_style, &first);
+    if let Some(status) = entry.status {
+        first_line.spans.push(Span::styled(
+            format!(" [{}]", locale.status(status.label())),
+            entry_status_style(status),
+        ));
+    }
+    let mut lines = vec![HyperlinkLine::new(first_line)];
     if entry.kind == EntryKind::Command {
         let output = CommandOutput::from_lines(source, locale);
         let rendered_output = output_lines(
@@ -144,25 +151,19 @@ fn formatted_summary(kind: EntryKind, detail: &str, locale: Locale) -> String {
     format!("- {}", locale.detail(detail))
 }
 
-fn with_status_suffix(text: &str, status: Option<EntryStatus>, locale: Locale) -> String {
-    status
-        .map(|status| format!("{text} [{}]", locale.status(status.label())))
-        .unwrap_or_else(|| text.to_string())
+fn entry_status_style(status: EntryStatus) -> Style {
+    match status {
+        EntryStatus::Completed => status_style(StatusTone::Success),
+        EntryStatus::Running => attention_style(),
+        EntryStatus::Failed | EntryStatus::Declined | EntryStatus::Interrupted => failure_style(),
+    }
 }
 
 fn styles(kind: EntryKind) -> (&'static str, Style, Style) {
     match kind {
-        EntryKind::User => (
-            "> ",
-            Style::default().fg(Color::Cyan),
-            Style::default().fg(Color::Cyan),
-        ),
+        EntryKind::User => ("› ", accent_style(), user_message_style()),
         EntryKind::Assistant => ("  ", Style::default(), Style::default()),
-        EntryKind::Reasoning => (
-            "· ",
-            Style::default().fg(Color::DarkGray),
-            Style::default().fg(Color::DarkGray),
-        ),
+        EntryKind::Reasoning => ("· ", muted_style(), muted_style()),
         EntryKind::Command => (
             "$ ",
             Style::default().fg(Color::Yellow),
@@ -172,7 +173,7 @@ fn styles(kind: EntryKind) -> (&'static str, Style, Style) {
         EntryKind::Mcp => ("@ ", Style::default().fg(Color::Magenta), Style::default()),
         EntryKind::Plan => (
             "• ",
-            Style::default().fg(Color::Cyan),
+            accent_style(),
             Style::default().add_modifier(Modifier::BOLD),
         ),
         EntryKind::MultiAgent => (
@@ -181,17 +182,13 @@ fn styles(kind: EntryKind) -> (&'static str, Style, Style) {
             Style::default(),
         ),
         EntryKind::Tool => ("• ", Style::default().fg(Color::Yellow), Style::default()),
-        EntryKind::System => (
-            "! ",
-            Style::default().fg(Color::Red),
-            Style::default().fg(Color::Red),
-        ),
+        EntryKind::System => ("! ", failure_style(), failure_style()),
     }
 }
 
 fn continuation_style(kind: EntryKind, base_style: Style) -> Style {
     if kind == EntryKind::Command {
-        Style::default().fg(Color::DarkGray)
+        muted_style()
     } else {
         base_style
     }
@@ -208,13 +205,11 @@ fn format_line(
         EntryKind::Patch if text.starts_with('+') => Style::default().fg(Color::Green),
         EntryKind::Patch if text.starts_with('-') => Style::default().fg(Color::Red),
         EntryKind::Patch if text.starts_with("@@") => Style::default().fg(Color::Cyan),
-        EntryKind::Plan if text.starts_with("[x]") => Style::default()
-            .fg(Color::DarkGray)
-            .add_modifier(Modifier::CROSSED_OUT),
-        EntryKind::Plan if text.starts_with("[~]") => Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD),
-        EntryKind::Plan if text.starts_with("[ ]") => Style::default().fg(Color::DarkGray),
+        EntryKind::Plan if text.starts_with("[x]") => {
+            muted_style().add_modifier(Modifier::CROSSED_OUT)
+        }
+        EntryKind::Plan if text.starts_with("[~]") => accent_style(),
+        EntryKind::Plan if text.starts_with("[ ]") => muted_style(),
         _ => base_style,
     };
     Line::from(vec![
@@ -247,7 +242,10 @@ mod tests {
         let multi_agent = lines(&entry(EntryKind::MultiAgent, "SpawnAgent [InProgress]"));
 
         assert_eq!(command[0].spans[0].content.as_ref(), "$ ");
-        assert!(command[0].spans[1].content.contains("[running]"));
+        assert!(command[0]
+            .spans
+            .iter()
+            .any(|span| span.content.contains("[running]")));
         assert_eq!(patch[0].spans[0].content.as_ref(), "Δ ");
         assert_eq!(mcp[0].spans[0].content.as_ref(), "@ ");
         assert_eq!(plan[0].spans[0].content.as_ref(), "• ");
@@ -256,7 +254,10 @@ mod tests {
             .spans
             .iter()
             .any(|span| span.style.fg == Some(Color::Green)));
-        assert_eq!(command[1].spans[1].style.fg, Some(Color::DarkGray));
+        assert!(command[1].spans[1]
+            .style
+            .add_modifier
+            .contains(Modifier::DIM));
     }
 
     #[test]
@@ -323,8 +324,39 @@ mod tests {
             .style
             .add_modifier
             .contains(Modifier::CROSSED_OUT));
-        assert_eq!(running[0].spans[1].style.fg, Some(Color::Cyan));
-        assert_eq!(pending[0].spans[1].style.fg, Some(Color::DarkGray));
+        assert!(running[0].spans[1]
+            .style
+            .add_modifier
+            .contains(Modifier::BOLD));
+        assert!(pending[0].spans[1]
+            .style
+            .add_modifier
+            .contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn lifecycle_status_suffixes_use_the_shared_semantic_tones() {
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (255, 255, 255),
+                bg: (0, 0, 0),
+            },
+            || {
+                for (status, expected) in [
+                    (EntryStatus::Completed, Color::Green),
+                    (EntryStatus::Running, Color::Yellow),
+                    (EntryStatus::Failed, Color::Red),
+                ] {
+                    let mut item = entry(EntryKind::Mcp, "server.tool");
+                    item.status = Some(status);
+                    let rendered = lines(&item);
+                    assert_eq!(
+                        rendered[0].spans.last().and_then(|span| span.style.fg),
+                        Some(expected)
+                    );
+                }
+            },
+        );
     }
 
     #[test]
@@ -357,7 +389,7 @@ mod tests {
         let rendered = lines(&entry(EntryKind::Reasoning, "**Inspecting** `src/lib.rs`"));
 
         assert!(rendered.iter().flat_map(|line| &line.spans).any(|span| {
-            span.style.fg == Some(Color::DarkGray)
+            span.style.add_modifier.contains(Modifier::DIM)
                 && span.style.add_modifier.contains(Modifier::BOLD)
         }));
         assert!(rendered

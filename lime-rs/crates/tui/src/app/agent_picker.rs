@@ -5,15 +5,20 @@
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use super::agent_navigation::AgentNavigationState;
+use crate::bottom_pane::selection_row_layout::{
+    centered_popup, visible_item_window, wrap_row, SelectionDescriptionLayout, SelectionRow,
+    MAX_POPUP_ROWS,
+};
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
 use crate::multi_agents::format_agent_picker_item_name;
+use crate::style::{accent_style, muted_style};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AgentPickerEntry {
@@ -80,13 +85,24 @@ impl AgentPicker {
                 }
                 match key.code {
                     KeyCode::Esc => AgentPickerAction::Cancel,
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.selected = self.selected.saturating_sub(1);
+                    KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('k')
+                        if key.code == KeyCode::Up
+                            || key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        if !self.entries.is_empty() {
+                            self.selected = self
+                                .selected
+                                .checked_sub(1)
+                                .unwrap_or(self.entries.len().saturating_sub(1));
+                        }
                         AgentPickerAction::None
                     }
-                    KeyCode::Down | KeyCode::Char('j') => {
+                    KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('j')
+                        if key.code == KeyCode::Down
+                            || key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
                         if !self.entries.is_empty() {
-                            self.selected = (self.selected + 1).min(self.entries.len() - 1);
+                            self.selected = (self.selected + 1) % self.entries.len();
                         }
                         AgentPickerAction::None
                     }
@@ -109,12 +125,12 @@ impl AgentPicker {
 
 pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, picker: &AgentPicker, locale: Locale) {
     let width = area.width.saturating_mul(4).saturating_div(5).clamp(32, 72);
-    let height = area.height.saturating_mul(3).saturating_div(4).clamp(7, 18);
-    let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
-    let y = area
-        .y
-        .saturating_add(area.height.saturating_sub(height) / 2);
-    let popup = Rect::new(x, y, width.min(area.width), height.min(area.height));
+    let height = area
+        .height
+        .saturating_mul(3)
+        .saturating_div(4)
+        .clamp(7, MAX_POPUP_ROWS as u16 + 4);
+    let popup = centered_popup(area, width, height);
 
     frame.render_widget(Clear, popup);
     let chunks = Layout::default()
@@ -137,8 +153,15 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, picker: &AgentPicker, lo
         chunks[0],
     );
 
-    let items = picker
-        .rows()
+    let row_width = chunks[1].width.saturating_sub(2);
+    let desc_col = usize::from(row_width.saturating_mul(2).saturating_div(5).max(1));
+    let rows = picker.rows().collect::<Vec<_>>();
+    let max_visible = MAX_POPUP_ROWS.min(usize::from(chunks[1].height).max(1));
+    let (start, end) = visible_item_window(picker.selected, rows.len(), max_visible);
+    let items = rows
+        .into_iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
         .map(|entry| {
             let status = if entry.is_closed {
                 format!(" [{}]", locale.status("closed"))
@@ -147,25 +170,30 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, picker: &AgentPicker, lo
             } else {
                 String::new()
             };
-            ListItem::new(truncate_line_with_ellipsis_if_overflow(
-                Line::from(format!("{}{}", entry.label, status)),
-                usize::from(chunks[1].width.saturating_sub(2)),
+            let row = SelectionRow::new(
+                entry.label.clone(),
+                (!status.is_empty()).then_some(status),
+                Vec::new(),
+            );
+            ListItem::new(wrap_row(
+                &row,
+                desc_col,
+                row_width,
+                SelectionDescriptionLayout::StackBelowWhenNarrow {
+                    min_description_width: 10,
+                },
             ))
         })
         .collect::<Vec<_>>();
     let mut state = ListState::default();
     if !items.is_empty() {
-        state.select(Some(picker.selected));
+        state.select(Some(picker.selected.saturating_sub(start)));
     }
     frame.render_stateful_widget(
         List::new(items)
             .block(Block::default().borders(Borders::LEFT | Borders::RIGHT))
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("> "),
+            .highlight_style(accent_style())
+            .highlight_symbol("› "),
         chunks[1],
         &mut state,
     );
@@ -175,10 +203,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, picker: &AgentPicker, lo
         locale.agent_picker_footer()
     };
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            footer,
-            Style::default().fg(Color::DarkGray),
-        ))),
+        Paragraph::new(Line::from(Span::styled(footer, muted_style()))),
         chunks[2],
     );
 }
@@ -186,6 +211,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, picker: &AgentPicker, lo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyEvent;
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
@@ -217,6 +243,44 @@ mod tests {
                 KeyModifiers::NONE,
             ))),
             AgentPickerAction::Select("agent-1".to_string())
+        );
+    }
+
+    #[test]
+    fn picker_navigation_wraps_and_accepts_control_bindings() {
+        let mut agent_picker = picker();
+
+        agent_picker.handle_event(Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)));
+        assert_eq!(
+            agent_picker.handle_event(Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            ))),
+            AgentPickerAction::Select("agent-1".to_string())
+        );
+
+        let mut agent_picker = picker();
+        agent_picker.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('n'),
+            KeyModifiers::CONTROL,
+        )));
+        assert_eq!(
+            agent_picker.handle_event(Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            ))),
+            AgentPickerAction::Select("agent-1".to_string())
+        );
+        agent_picker.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('k'),
+            KeyModifiers::CONTROL,
+        )));
+        assert_eq!(
+            agent_picker.handle_event(Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            ))),
+            AgentPickerAction::Select("main".to_string())
         );
     }
 
@@ -275,5 +339,41 @@ mod tests {
                 "locale={locale:?} text={text:?}"
             );
         }
+    }
+
+    #[test]
+    fn long_agent_catalog_keeps_selected_row_inside_bounded_popup() {
+        let mut navigation = AgentNavigationState::default();
+        for index in 0..20 {
+            navigation.upsert(
+                format!("agent-{index:02}"),
+                Some(format!("Agent {index:02}")),
+                Some("worker".to_string()),
+                false,
+            );
+        }
+        let mut picker = AgentPicker::from_navigation(&navigation, None);
+        for _ in 0..12 {
+            picker.handle_event(Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)));
+        }
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, frame.area(), &picker, Locale::EnUs))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        let text = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("Agent 12"),
+            "selected agent was clipped: {text}"
+        );
+        assert!(text.lines().all(|line| line.chars().count() <= 80));
     }
 }

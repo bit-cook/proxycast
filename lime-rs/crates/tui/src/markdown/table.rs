@@ -1,10 +1,11 @@
 //! Width-aware Markdown table rendering adapted from Codex TUI.
 
 use pulldown_cmark::Alignment;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use super::{TableRow, TableState};
+use crate::style::table_separator_style;
 use crate::terminal_hyperlinks::{wrap_hyperlink_line, HyperlinkLine};
 use crate::width::display_width;
 
@@ -328,7 +329,7 @@ fn render_separator(widths: &[usize], separator: char) -> HyperlinkLine {
         .map(|width| segment.repeat(width + CELL_PADDING * 2))
         .collect::<Vec<_>>()
         .join(&" ".repeat(COLUMN_GAP));
-    HyperlinkLine::new(Line::styled(text, Style::default().fg(Color::DarkGray)))
+    HyperlinkLine::new(Line::styled(text, table_separator_style()))
 }
 
 fn render_records(
@@ -362,7 +363,7 @@ fn render_records(
                 width.unwrap_or_else(|| out.iter().map(HyperlinkLine::width).max().unwrap_or(1));
             out.push(HyperlinkLine::new(Line::styled(
                 "─".repeat(separator_width.max(1)),
-                Style::default().fg(Color::DarkGray),
+                table_separator_style(),
             )));
         }
     }

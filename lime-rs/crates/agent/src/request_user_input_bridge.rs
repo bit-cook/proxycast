@@ -57,6 +57,7 @@ impl RequestUserInputGateway for RuntimeActionRequiredGateway {
                                 "toolCallId": queued.tool_id,
                                 "prompt": queued.message,
                                 "questions": questions,
+                                "isBlocking": action.is_blocking,
                                 "autoResolutionMs": action.auto_resolution_ms,
                                 "createdAtMs": queued.created_at_ms,
                                 "deadlineAtMs": queued.deadline_at_ms,
@@ -75,6 +76,7 @@ pub(crate) fn create_request_user_input_callback(
     state: Arc<ActionRequiredState>,
     response_handle: RuntimeSessionInputHandle,
     item_id: String,
+    is_blocking: bool,
     scope: Option<RuntimeActionRequiredScope>,
     event_sender: UnboundedSender<AgentEvent>,
 ) -> RequestUserInputCallback {
@@ -87,6 +89,7 @@ pub(crate) fn create_request_user_input_callback(
         Box::pin(async move {
             let run_request = RequestUserInputRunRequest::new(
                 request,
+                is_blocking,
                 scope,
                 Duration::from_secs(DEFAULT_REQUEST_USER_INPUT_TIMEOUT_SECS),
             );
@@ -190,6 +193,7 @@ mod tests {
                     Arc::clone(&task_state),
                     context.input_handle(),
                     "item-request-user-input-1".to_string(),
+                    false,
                     Some(task_scope.clone()),
                     event_sender.clone(),
                 );
@@ -226,6 +230,7 @@ mod tests {
         };
         assert_eq!(action_type, "ask_user");
         assert_eq!(data["toolCallId"], "item-request-user-input-1");
+        assert_eq!(data["isBlocking"], false);
         assert_eq!(data["autoResolutionMs"], 60_000);
         assert_eq!(event_scope, Some(scope.clone()));
 

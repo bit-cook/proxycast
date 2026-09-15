@@ -214,7 +214,10 @@ impl AppServerSession {
                 return Ok(chronological_turns(turns_desc));
             }
             let Some(next_cursor) = page.next_cursor else {
-                return Ok(chronological_turns(turns_desc));
+                if all_target_turns_loaded(&turns_desc, target_turn_ids) {
+                    return Ok(chronological_turns(turns_desc));
+                }
+                bail!("thread turns page is missing an item page target turn");
             };
             if !seen_cursors.insert(next_cursor.clone()) {
                 bail!("thread turns pagination repeated cursor {next_cursor}");

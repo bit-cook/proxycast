@@ -71,6 +71,7 @@ fn user_input_request(id: i64, thread_id: &str) -> ServerRequest {
             turn_id: "turn".to_string(),
             item_id: format!("item-{id}"),
             questions: Vec::new(),
+            is_blocking: true,
             auto_resolution_ms: None,
         },
     }

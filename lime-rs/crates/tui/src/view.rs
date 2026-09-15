@@ -1,15 +1,15 @@
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, FrameExt as _, Paragraph};
+use ratatui::widgets::{Clear, FrameExt as _, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
 use crate::bottom_pane;
-use crate::command_popup;
+use crate::bottom_pane::command_popup;
+use crate::bottom_pane::pending_input_preview;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::model_picker;
-use crate::pending_input_preview;
 use crate::status_indicator_widget;
 use crate::terminal_hyperlinks::HyperlinkParagraph;
 use std::time::Instant;
@@ -34,31 +34,41 @@ pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
         crate::app::transcript_export::render_picker(frame, area, picker, app.locale);
         return;
     }
-    let chunks = screen_chunks(area, app);
+    let active_elapsed = app.active_turn_elapsed(Instant::now());
+    let chunks = screen_chunks(area, app, active_elapsed);
 
-    render_header(frame, chunks[0], app);
-    render_transcript(frame, chunks[1], app);
+    render_transcript(frame, chunks.transcript, app);
     if !app.bottom_pane.is_active() {
-        if let Some(elapsed) = app.active_turn_elapsed(Instant::now()) {
-            status_indicator_widget::render(frame, chunks[2], app.locale, elapsed);
+        if let Some(elapsed) = active_elapsed {
+            let inline_status = active_status_message(app);
+            status_indicator_widget::render_with_messages(
+                frame,
+                chunks.status,
+                app.locale,
+                elapsed,
+                inline_status.as_deref(),
+                app.projection.hook_status_message(),
+            );
+        } else if let Some(status) = transient_status(app) {
+            render_transient_status(frame, chunks.status, app.locale, &status);
         }
-        pending_input_preview::render(frame, chunks[3], &app.queued_submissions, app.locale);
+        pending_input_preview::render(frame, chunks.preview, &app.queued_submissions, app.locale);
     }
     if app.bottom_pane.is_active() {
-        bottom_pane::render_with_locale(frame, chunks[4], &app.bottom_pane, app.locale);
+        bottom_pane::render_with_locale(frame, chunks.input, &app.bottom_pane, app.locale);
     } else {
-        render_composer(frame, chunks[4], app);
+        render_composer(frame, chunks.input, app);
     }
-    bottom_pane::render_footer(frame, chunks[5], app);
+    bottom_pane::render_footer(frame, chunks.footer, app);
     if !app.bottom_pane.is_active() {
         if let Some(popup) = app.composer.command_popup() {
-            command_popup::render(frame, chunks[4], popup, app.locale);
+            command_popup::render(frame, chunks.input, popup, app.locale);
         }
         if let Some(popup) = app.composer.file_search_popup() {
-            popup.render(frame, chunks[4], app.locale);
+            popup.render(frame, chunks.input, app.locale);
         }
         if let Some(popup) = app.composer.skill_popup() {
-            popup.render(frame, chunks[4], app.locale);
+            popup.render(frame, chunks.input, app.locale);
         }
     }
     if let Some(picker) = app.model_picker.as_ref() {
@@ -66,6 +76,11 @@ pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
     }
     if let Some(overview) = app.agents_overview.as_ref() {
         crate::app::agents_overview_view::render(frame, area, &overview.view, app.locale);
+        // Keep app-scoped action feedback visible while the centered overview owns the main
+        // viewport. Its popup intentionally leaves the footer row available for this status.
+        if let Some(status) = transient_status(app) {
+            render_transient_status(frame, chunks.footer, app.locale, &status);
+        }
     }
     if let Some(picker) = app.agent_picker.as_ref() {
         if app.agents_overview.is_none() {
@@ -74,9 +89,36 @@ pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
     }
 }
 
-fn screen_chunks(area: Rect, app: &App) -> [Rect; 6] {
-    let status_height =
-        u16::from(!app.bottom_pane.is_active() && app.projection.active_turn_id().is_some());
+#[derive(Debug, Clone, Copy)]
+struct ScreenChunks {
+    transcript: Rect,
+    status: Rect,
+    preview: Rect,
+    input: Rect,
+    footer: Rect,
+}
+
+fn screen_chunks(
+    area: Rect,
+    app: &App,
+    active_elapsed: Option<std::time::Duration>,
+) -> ScreenChunks {
+    let status_height = if app.bottom_pane.is_active() {
+        0
+    } else if let Some(elapsed) = active_elapsed {
+        let inline_status = active_status_message(app);
+        status_indicator_widget::desired_height_with_messages(
+            area.width,
+            app.locale,
+            elapsed,
+            inline_status.as_deref(),
+            app.projection.hook_status_message(),
+        )
+    } else if transient_status(app).is_some() {
+        1
+    } else {
+        0
+    };
     let preview_height = if app.bottom_pane.is_active() {
         0
     } else {
@@ -85,26 +127,25 @@ fn screen_chunks(area: Rect, app: &App) -> [Rect; 6] {
             .min(area.height.saturating_sub(6 + status_height))
     };
     let input_height = if app.bottom_pane.is_active() {
-        bottom_pane::desired_height_with_locale(&app.bottom_pane, app.locale)
+        bottom_pane::desired_height_with_locale_for_width(&app.bottom_pane, app.locale, area.width)
     } else {
         let desired = app
             .composer
             .desired_height(area.width.saturating_sub(2))
             .saturating_add(u16::try_from(app.composer.pending_image_count()).unwrap_or(u16::MAX))
-            .saturating_add(2)
-            .clamp(3, 12);
+            .saturating_add(1)
+            .clamp(2, 12);
         desired.min(
             area.height
                 .saturating_sub(preview_height)
                 .saturating_sub(status_height)
-                .saturating_sub(3)
+                .saturating_sub(2)
                 .max(1),
         )
     };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(status_height),
             Constraint::Length(preview_height),
@@ -112,33 +153,45 @@ fn screen_chunks(area: Rect, app: &App) -> [Rect; 6] {
             Constraint::Length(1),
         ])
         .split(area);
-    [
-        chunks[0], chunks[1], chunks[2], chunks[3], chunks[4], chunks[5],
-    ]
+    ScreenChunks {
+        transcript: chunks[0],
+        status: chunks[1],
+        preview: chunks[2],
+        input: chunks[3],
+        footer: chunks[4],
+    }
 }
 
-pub(crate) fn transcript_page_size(width: u16, height: u16, app: &App) -> usize {
-    let transcript = screen_chunks(Rect::new(0, 0, width, height), app)[1];
-    usize::from(transcript.height.saturating_sub(1).max(1))
+fn transient_status(app: &App) -> Option<String> {
+    let status = app.status_value();
+    if status.is_empty() || status == "ready" {
+        None
+    } else {
+        Some(status)
+    }
 }
 
-fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let status = status_text(app);
-    let model = app.model.as_deref().unwrap_or("auto");
-    let effort = app.reasoning_effort.as_deref().unwrap_or("auto");
-    let permissions = app.permissions.as_deref().unwrap_or("default");
-    let suffix = format!(
-        "  {}:{model} {}:{effort} {}:{permissions}",
-        app.locale.model_label(),
-        app.locale.effort_label(),
-        app.locale.permissions_label()
-    );
+fn active_status_message(app: &App) -> Option<String> {
+    let status = transient_status(app)?;
+    if status == "running" {
+        None
+    } else {
+        Some(app.locale.status(&status))
+    }
+}
+
+fn render_transient_status(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    locale: crate::locale::Locale,
+    status: &str,
+) {
+    if area.is_empty() {
+        return;
+    }
     let line = Line::from(vec![
-        Span::styled(" Lime ", Style::default().add_modifier(Modifier::BOLD)),
-        Span::styled(
-            format!("{}{suffix}", status),
-            Style::default().fg(Color::DarkGray),
-        ),
+        Span::styled("• ", crate::style::accent_style()),
+        Span::styled(locale.status(status), crate::style::muted_style()),
     ]);
     frame.render_widget(
         Paragraph::new(truncate_line_with_ellipsis_if_overflow(
@@ -149,17 +202,26 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
     );
 }
 
+pub(crate) fn transcript_page_size(width: u16, height: u16, app: &App) -> usize {
+    let transcript = screen_chunks(
+        Rect::new(0, 0, width, height),
+        app,
+        app.active_turn_elapsed(Instant::now()),
+    )
+    .transcript;
+    usize::from(transcript.height.saturating_sub(1).max(1))
+}
+
 fn render_transcript(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let lines = crate::app::history_ui::render_transcript_content_lines(app, area.width, false);
     let paragraph = HyperlinkParagraph::new(&lines);
-    let scroll = transcript_scroll_offset(
-        paragraph.line_count(area.width),
-        area,
-        app.transcript_scroll,
-    );
+    let scroll = app
+        .transcript_viewport
+        .resolve(&lines, area, app.transcript_scroll);
     frame.render_widget(paragraph.scroll(scroll), area);
 }
 
+#[cfg(test)]
 fn transcript_scroll_offset(
     rendered_line_count: usize,
     area: Rect,
@@ -171,11 +233,7 @@ fn transcript_scroll_offset(
 }
 
 fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let block = Block::default()
-        .borders(Borders::TOP | Borders::BOTTOM)
-        .border_style(Style::default().fg(Color::DarkGray));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = area;
 
     let remote_count = app.composer.remote_image_urls().len();
     let mut image_lines = app.composer.remote_image_lines();
@@ -203,10 +261,11 @@ fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
         frame.render_widget(Paragraph::new(image_lines), image_area);
     }
 
+    let prompt_width = 2_u16.min(inner.width);
     let text_area = Rect::new(
-        inner.x,
+        inner.x.saturating_add(prompt_width),
         inner.y.saturating_add(image_height),
-        inner.width,
+        inner.width.saturating_sub(prompt_width),
         inner.height.saturating_sub(image_height),
     );
     if text_area.is_empty() {
@@ -227,8 +286,24 @@ fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 )
             })
             .collect::<Vec<_>>();
+        let prompt = Line::from(Span::styled("› ", crate::style::accent_style()));
+        frame.render_widget(
+            Paragraph::new(prompt),
+            Rect::new(inner.x, text_area.y, prompt_width, 1),
+        );
         if highlights.is_empty() {
-            frame.render_stateful_widget_ref(app.composer.textarea(), text_area, &mut *state);
+            if app.composer.is_empty() {
+                // Keep attachment rows visible above the input baseline. The prompt occupies its
+                // own gutter, while the placeholder is rendered inside the text area so both
+                // share the same input baseline.
+                let placeholder = Line::from(Span::styled(
+                    app.locale.composer_placeholder(),
+                    crate::style::muted_style(),
+                ));
+                frame.render_widget(Paragraph::new(placeholder), text_area);
+            } else {
+                frame.render_stateful_widget_ref(app.composer.textarea(), text_area, &mut *state);
+            }
         } else {
             app.composer.textarea().render_ref_styled_with_highlights(
                 text_area,
@@ -244,13 +319,6 @@ fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     };
     if let Some((x, y)) = cursor {
         frame.set_cursor_position(Position::new(x, y));
-    }
-}
-
-fn status_text(app: &App) -> String {
-    match app.status_value().as_str() {
-        "" => app.locale.ready_label().to_string(),
-        status => app.locale.status(status),
     }
 }
 
@@ -308,11 +376,11 @@ mod tests {
     fn transcript_page_size_tracks_resize() {
         let mut app = App::default();
 
-        assert_eq!(transcript_page_size(80, 10, &app), 4);
-        assert_eq!(transcript_page_size(80, 6, &app), 1);
+        assert_eq!(transcript_page_size(80, 10, &app), 6);
+        assert_eq!(transcript_page_size(80, 6, &app), 2);
         app.attach_image(std::path::PathBuf::from("/tmp/one.png"));
         app.attach_image(std::path::PathBuf::from("/tmp/two.png"));
-        assert_eq!(transcript_page_size(80, 10, &app), 2);
+        assert_eq!(transcript_page_size(80, 10, &app), 4);
     }
 
     fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
@@ -345,7 +413,7 @@ mod tests {
             },
         ));
         app.composer.insert("继续");
-        let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("terminal");
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).expect("terminal");
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
 
@@ -356,8 +424,12 @@ mod tests {
         assert!(text.contains("terminal"));
         assert!(text.contains('继'));
         assert!(text.contains('续'));
-        assert!(text.contains("model:fixture-model"));
-        assert!(text.contains("effort:high"));
+        let compact = text
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        assert!(compact.contains("model:fixture-model"));
+        assert!(compact.contains("high"));
     }
 
     #[test]
@@ -374,6 +446,45 @@ mod tests {
         assert!(text.contains("[Image #1]"));
         assert!(text.contains("[Image #2]"));
         assert!(text.contains("describe these"));
+    }
+
+    #[test]
+    fn idle_composer_uses_codex_prompt_and_localized_placeholder() {
+        let mut app = App::default();
+        app.set_locale(Locale::EnUs);
+        let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("terminal");
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("› "), "missing composer prompt: {text}");
+        assert!(
+            text.contains("Ask Lime to do anything"),
+            "missing composer placeholder: {text}"
+        );
+    }
+
+    #[test]
+    fn transient_status_keeps_action_feedback_visible_without_idle_status_bar() {
+        let mut app = App::default();
+        app.projection.set_status("interrupting");
+        let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("terminal");
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+
+        let text = buffer_text(&terminal);
+        assert!(
+            text.contains("• interrupting"),
+            "missing transient status: {text}"
+        );
+        assert!(
+            text.contains("› Ask Lime to do anything"),
+            "missing composer: {text}"
+        );
+        assert!(
+            !text.contains("Lime ready"),
+            "idle header leaked into status: {text}"
+        );
     }
 
     #[test]
@@ -502,6 +613,78 @@ mod tests {
     }
 
     #[test]
+    fn status_and_footer_geometry_remains_stable_across_supported_widths_and_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            for width in [40, 80, 120] {
+                let mut app = App::default();
+                app.set_locale(locale);
+                app.start_turn(format!("turn-{width}"));
+                app.set_queued_submissions(vec![QueuedSubmission {
+                    id: format!("queue-{width}"),
+                    input: vec![UserInput::Text {
+                        text: "queued follow-up".to_string(),
+                        text_elements: Vec::new(),
+                    }],
+                    client_user_message_id: format!("client-{width}"),
+                }]);
+                app.composer.insert("draft");
+
+                let height = 20;
+                let mut terminal =
+                    Terminal::new(TestBackend::new(width, height)).expect("terminal");
+                terminal.draw(|frame| render(frame, &app)).expect("draw");
+                let text = buffer_text(&terminal);
+                assert_eq!(text.lines().count(), usize::from(height));
+                let compact = text
+                    .chars()
+                    .filter(|character| !character.is_whitespace())
+                    .collect::<String>();
+                assert!(
+                    compact.contains('›'),
+                    "missing composer for {locale:?} at {width}: {text}"
+                );
+                assert!(
+                    compact.contains(
+                        &locale
+                            .working_label()
+                            .chars()
+                            .filter(|character| !character.is_whitespace())
+                            .collect::<String>()
+                    ),
+                    "missing active status for {locale:?} at {width}: {text}"
+                );
+                assert!(
+                    compact.contains(
+                        &locale
+                            .status("queued")
+                            .chars()
+                            .filter(|character| !character.is_whitespace())
+                            .collect::<String>()
+                    ),
+                    "missing queue preview for {locale:?} at {width}: {text}"
+                );
+
+                let chunks = screen_chunks(
+                    Rect::new(0, 0, width, height),
+                    &app,
+                    app.active_turn_elapsed(Instant::now()),
+                );
+                assert!(chunks.transcript.bottom() <= chunks.status.top());
+                assert!(chunks.status.bottom() <= chunks.preview.top());
+                assert!(chunks.preview.bottom() <= chunks.input.top());
+                assert!(chunks.input.bottom() <= chunks.footer.top());
+                assert_eq!(chunks.footer.height, 1);
+            }
+        }
+    }
+
+    #[test]
     fn history_search_footer_shows_localized_query_without_hiding_composer() {
         let mut app = App::default();
         app.set_locale(Locale::ZhCn);
@@ -612,7 +795,7 @@ mod tests {
         terminal
             .draw(|frame| render(frame, &app))
             .expect("draw wide");
-        let footer = screen_chunks(wide, &app)[5];
+        let footer = screen_chunks(wide, &app, app.active_turn_elapsed(Instant::now())).footer;
         let prefix_width =
             Line::from(format!(" {}", app.locale.history_search_label())).width() as u16;
         assert_eq!(
@@ -626,7 +809,7 @@ mod tests {
         terminal
             .draw(|frame| render(frame, &app))
             .expect("draw narrow");
-        let footer = screen_chunks(narrow, &app)[5];
+        let footer = screen_chunks(narrow, &app, app.active_turn_elapsed(Instant::now())).footer;
         assert_eq!(
             terminal.backend().cursor_position(),
             Position::new(footer.right().saturating_sub(1), footer.y)
@@ -655,9 +838,13 @@ mod tests {
             .chars()
             .filter(|character| !character.is_whitespace())
             .collect::<String>();
-        assert!(text.contains("> /permissions"));
+        assert!(text.contains("› /permissions"));
         assert!(compact.contains("设置权限配置"), "{text}");
-        assert!(!text.contains("/model"));
+        assert_eq!(
+            text.matches("/model").count(),
+            1,
+            "session header only: {text}"
+        );
         assert!(text.contains("/pe"));
     }
 
@@ -817,7 +1004,7 @@ mod tests {
             (Locale::JaJp, "モデル:fixture-model", "設定を更新しました"),
             (Locale::KoKr, "모델:fixture-model", "설정이 업데이트됨"),
         ];
-        for (locale, model_label, status_label) in cases {
+        for (locale, model_label, _status_label) in cases {
             let mut app = App::default();
             app.set_locale(locale);
             app.set_settings(
@@ -826,8 +1013,8 @@ mod tests {
                 Some("high".to_string()),
                 Some(":workspace".to_string()),
             );
-            app.projection.set_status("settings updated");
-            let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("terminal");
+            app.set_cwd(std::path::PathBuf::from("/workspace"));
+            let mut terminal = Terminal::new(TestBackend::new(80, 16)).expect("terminal");
             terminal.draw(|frame| render(frame, &app)).expect("draw");
             let text = buffer_text(&terminal);
             let compact = text
@@ -835,11 +1022,7 @@ mod tests {
                 .filter(|character| !character.is_whitespace())
                 .collect::<String>();
             assert!(compact.contains(model_label), "{locale:?}: {text}");
-            let compact_status = status_label
-                .chars()
-                .filter(|character| !character.is_whitespace())
-                .collect::<String>();
-            assert!(compact.contains(&compact_status), "{locale:?}: {text}");
+            assert!(compact.contains("/workspace"), "{locale:?}: {text}");
         }
     }
 
@@ -1092,7 +1275,14 @@ mod tests {
 
         let text = buffer_text(&terminal);
         assert_eq!(text.lines().count(), 6);
-        assert!(text.contains("Lime"));
+        assert!(
+            text.contains("╰"),
+            "narrow session header remains bounded: {text}"
+        );
+        assert!(
+            !text.contains("Lime"),
+            "narrow header should clip safely: {text}"
+        );
     }
 
     #[test]
@@ -1165,6 +1355,205 @@ mod tests {
     }
 
     #[test]
+    fn approval_narrow_layout_keeps_primary_controls_visible() {
+        let mut app = App::default();
+        app.bottom_pane
+            .enqueue(ServerRequest::ItemCommandExecutionRequestApproval {
+                id: RequestId::Integer(10),
+                params: CommandExecutionRequestApprovalParams {
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    item_id: "command-1".to_string(),
+                    started_at_ms: 1,
+                    approval_id: None,
+                    reason: Some("a long reason that should wrap safely".to_string()),
+                    network_approval_context: None,
+                    command: Some("cargo test -p tui --lib".to_string()),
+                    cwd: Some("/workspace/project".to_string()),
+                    available_decisions: None,
+                },
+            })
+            .expect("queue approval");
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).expect("terminal");
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("Allow once"), "{text}");
+        assert!(text.contains("Enter confirm"), "{text}");
+        assert!(text.contains("Esc cancel"), "{text}");
+        assert!(text.lines().all(|line| line.chars().count() <= 40));
+    }
+
+    #[test]
+    fn request_user_input_narrow_layout_keeps_submit_and_cancel_visible() {
+        let mut app = App::default();
+        app.bottom_pane
+            .enqueue(ServerRequest::ItemToolRequestUserInput {
+                id: RequestId::Integer(11),
+                params: ToolRequestUserInputParams {
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    item_id: "question-1".to_string(),
+                    questions: vec![ToolRequestUserInputQuestion {
+                        id: "mode".to_string(),
+                        header: "Mode".to_string(),
+                        question: "Choose the next step for this task".to_string(),
+                        is_other: false,
+                        is_secret: false,
+                        options: Some(vec![
+                            app_server_protocol::protocol::v2::ToolRequestUserInputOption {
+                                label: "Run tests".to_string(),
+                                description: "Pick the most relevant crate and validate behavior"
+                                    .to_string(),
+                            },
+                            app_server_protocol::protocol::v2::ToolRequestUserInputOption {
+                                label: "Review diff".to_string(),
+                                description: "Summarize the current changes".to_string(),
+                            },
+                        ]),
+                    }],
+                    is_blocking: true,
+                    auto_resolution_ms: None,
+                },
+            })
+            .expect("queue user input");
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).expect("terminal");
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+
+        let text = buffer_text(&terminal);
+        assert!(text.contains("1. Run tests"), "{text}");
+        assert!(text.contains("Enter submit"), "{text}");
+        assert!(text.contains("Esc cancel"), "{text}");
+        assert!(text.lines().all(|line| line.chars().count() <= 40));
+    }
+
+    #[test]
+    fn interactive_overlays_remain_actionable_across_supported_widths_and_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            for width in [40, 80, 120] {
+                let mut approval = App::default();
+                approval.set_locale(locale);
+                approval
+                    .bottom_pane
+                    .enqueue(ServerRequest::ItemCommandExecutionRequestApproval {
+                        id: RequestId::Integer(12),
+                        params: CommandExecutionRequestApprovalParams {
+                            thread_id: "thread-1".to_string(),
+                            turn_id: "turn-1".to_string(),
+                            item_id: "command-1".to_string(),
+                            started_at_ms: 1,
+                            approval_id: None,
+                            reason: Some("focused regression".to_string()),
+                            network_approval_context: None,
+                            command: Some("cargo test -p tui".to_string()),
+                            cwd: Some("/workspace".to_string()),
+                            available_decisions: None,
+                        },
+                    })
+                    .expect("queue approval");
+                let mut terminal = Terminal::new(TestBackend::new(width, 20)).expect("terminal");
+                terminal
+                    .draw(|frame| render(frame, &approval))
+                    .expect("draw approval");
+                let approval_text = buffer_text(&terminal);
+                let approval_compact = approval_text
+                    .chars()
+                    .filter(|character| !character.is_whitespace())
+                    .collect::<String>();
+                assert!(
+                    approval_compact.contains(
+                        &locale
+                            .approval_title("command")
+                            .chars()
+                            .filter(|character| !character.is_whitespace())
+                            .collect::<String>(),
+                    ),
+                    "approval title for {locale:?} at {width}: {approval_text}"
+                );
+                assert!(
+                    approval_compact.contains(
+                        &locale
+                            .approval_controls()
+                            .chars()
+                            .filter(|character| !character.is_whitespace())
+                            .collect::<String>(),
+                    ),
+                    "approval controls for {locale:?} at {width}: {approval_text}"
+                );
+
+                let mut question = App::default();
+                question.set_locale(locale);
+                question
+                    .bottom_pane
+                    .enqueue(ServerRequest::ItemToolRequestUserInput {
+                        id: RequestId::Integer(13),
+                        params: ToolRequestUserInputParams {
+                            thread_id: "thread-1".to_string(),
+                            turn_id: "turn-1".to_string(),
+                            item_id: "question-1".to_string(),
+                            questions: vec![ToolRequestUserInputQuestion {
+                                id: "mode".to_string(),
+                                header: "Mode".to_string(),
+                                question: "Choose one option".to_string(),
+                                is_other: false,
+                                is_secret: false,
+                                options: Some(vec![
+                                    app_server_protocol::protocol::v2::ToolRequestUserInputOption {
+                                        label: "Fast".to_string(),
+                                        description: "Continue immediately".to_string(),
+                                    },
+                                ]),
+                            }],
+                            is_blocking: true,
+                            auto_resolution_ms: None,
+                        },
+                    })
+                    .expect("queue user input");
+                terminal
+                    .draw(|frame| render(frame, &question))
+                    .expect("draw user input");
+                let question_text = buffer_text(&terminal);
+                let question_compact = question_text
+                    .chars()
+                    .filter(|character| !character.is_whitespace())
+                    .collect::<String>();
+                assert!(
+                    question_compact.contains(
+                        &locale
+                            .request_submit_hint()
+                            .chars()
+                            .filter(|character| !character.is_whitespace())
+                            .collect::<String>(),
+                    ),
+                    "submit control for {locale:?} at {width}: {question_text}"
+                );
+                assert!(
+                    question_compact.contains(
+                        &locale
+                            .request_cancel_hint()
+                            .chars()
+                            .filter(|character| !character.is_whitespace())
+                            .collect::<String>(),
+                    ),
+                    "cancel control for {locale:?} at {width}: {question_text}"
+                );
+                assert!(
+                    question_compact.contains("1.Fast"),
+                    "option for {locale:?} at {width}: {question_text}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn secret_user_input_is_masked_in_the_test_backend() {
         let mut app = App::default();
         app.bottom_pane
@@ -1182,6 +1571,7 @@ mod tests {
                         is_secret: true,
                         options: None,
                     }],
+                    is_blocking: true,
                     auto_resolution_ms: None,
                 },
             })

@@ -3012,6 +3012,7 @@ fn typed_v2_server_envelopes_fail_closed_for_unknown_methods() {
                     {"label": "确认后执行", "description": "再次确认"}
                 ]
             }],
+            "isBlocking": true,
             "autoResolutionMs": null
         }
     });
@@ -3027,6 +3028,22 @@ fn typed_v2_server_envelopes_fail_closed_for_unknown_methods() {
             .expect("round trip user input request"),
         user_input
     );
+
+    let legacy_user_input: ServerRequest = serde_json::from_value(json!({
+        "id": 9,
+        "method": "item/tool/requestUserInput",
+        "params": {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "itemId": "item_request_user_input",
+            "questions": []
+        }
+    }))
+    .expect("decode legacy user input request");
+    let ServerRequest::ItemToolRequestUserInput { params, .. } = legacy_user_input else {
+        panic!("expected user input request");
+    };
+    assert!(params.is_blocking);
 
     let notification = ServerNotification::TurnCompleted(TurnCompletedNotification {
         thread_id: "thread_1".to_string(),

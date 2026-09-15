@@ -1144,6 +1144,32 @@ mod tests {
         event(sequence, event_type, json!({ "item": item }))
     }
 
+    fn canonical_review_boundary_event(sequence: u64, name: &str) -> AgentEvent {
+        let item = ThreadItem {
+            session_id: SessionId::new("session-1"),
+            thread_id: ThreadId::new("thread-1"),
+            turn_id: TurnId::new("turn-1"),
+            item_id: ItemId::new(format!("review-{name}")),
+            sequence,
+            ordinal: 1,
+            created_at_ms: 1,
+            updated_at_ms: 2,
+            completed_at_ms: Some(2),
+            kind: ItemKind::Extension,
+            status: ItemStatus::Completed,
+            payload: ThreadItemPayload::Extension {
+                name: name.to_string(),
+                data: json!({"review": "fixture review"}),
+            },
+            metadata: Value::Null,
+        };
+        event(
+            sequence,
+            crate::runtime::thread_fork::FORK_CANONICAL_ITEM_EVENT_TYPE,
+            json!({ "item": item }),
+        )
+    }
+
     #[test]
     fn canonical_history_preserves_tool_call_result_and_order() {
         let arguments = json!({ "path": "README.md" });
@@ -1193,6 +1219,21 @@ mod tests {
         assert!(matches!(
             &messages[3].content[..],
             [CurrentProviderContent::Text(text)] if text == "Done."
+        ));
+    }
+
+    #[test]
+    fn canonical_history_ignores_review_boundary_extensions() {
+        let messages = messages_from_events(&[
+            canonical_review_boundary_event(1, "enteredReviewMode"),
+            event(2, "message.delta", json!({"text": "review output"})),
+            canonical_review_boundary_event(3, "exitedReviewMode"),
+        ]);
+
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(
+            &messages[0].content[..],
+            [CurrentProviderContent::Text(text)] if text == "review output"
         ));
     }
 

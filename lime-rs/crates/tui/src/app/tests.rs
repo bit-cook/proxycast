@@ -1,8 +1,9 @@
 use super::*;
-use crate::command_popup::CommandPopup;
+use crate::bottom_pane::command_popup::CommandPopup;
 use app_server_protocol::protocol::v2::{
     CommandExecutionApprovalDecision, CommandExecutionRequestApprovalParams, McpServerStartupState,
-    McpServerStatusUpdatedNotification, ServerNotification, ServerRequest, UserInput,
+    McpServerStatusDetail, McpServerStatusUpdatedNotification, ServerNotification, ServerRequest,
+    UserInput,
 };
 use app_server_protocol::RequestId;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -264,6 +265,43 @@ fn slash_pwd_and_cwd_alias_display_current_working_directory_from_composer() {
             "Usage: /pwd",
         ]
     );
+}
+
+#[test]
+fn mcp_slash_commands_request_the_matching_inventory_detail() {
+    for (command, detail) in [
+        ("/mcp", McpServerStatusDetail::ToolsAndAuthOnly),
+        ("/mcp verbose", McpServerStatusDetail::Full),
+    ] {
+        let mut app = App::default();
+        app.replace_composer(command.to_string());
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            ),
+            AppAction::FetchMcpInventory { detail }
+        );
+        assert!(app.composer.is_empty());
+        assert!(app.composer.command_popup().is_none());
+    }
+}
+
+#[test]
+fn mcp_slash_command_rejects_unknown_arguments_with_localized_usage() {
+    let mut app = App::default();
+    app.set_locale(Locale::ZhCn);
+    app.replace_composer("/mcp compact".to_string());
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert_eq!(app.projection.status(), "用法：/mcp [verbose]");
+    assert!(app.composer.is_empty());
 }
 
 #[test]
@@ -923,6 +961,40 @@ fn ctrl_t_opens_transcript_without_copying_or_mutating_conversation_state() {
 }
 
 #[test]
+fn transcript_overlay_requests_older_history_only_when_session_has_more_pages() {
+    let mut app = App {
+        scrollback_has_older_history: true,
+        ..App::default()
+    };
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL,))
+        ),
+        AppAction::None
+    );
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE,))
+        ),
+        AppAction::LoadOlderHistory
+    );
+}
+
+#[test]
+fn switching_threads_resets_the_main_transcript_to_the_tail() {
+    let mut app = App::default();
+    app.set_thread_id("thread-1".to_string());
+    app.transcript_scroll = 12;
+
+    app.set_thread_id("thread-2".to_string());
+
+    assert_eq!(app.transcript_scroll, 0);
+}
+
+#[test]
 fn image_shortcut_attaches_and_allows_image_only_submission() {
     let mut app = App::default();
     assert_eq!(
@@ -1267,6 +1339,38 @@ fn agents_slash_command_opens_the_agents_overview() {
     );
     assert!(app.agents_overview.is_some());
     assert!(app.agent_picker.is_none());
+    assert!(app.composer.is_empty());
+}
+
+#[test]
+fn empty_composer_left_opens_agents_overview_when_local_navigation_is_enabled() {
+    let mut app = App::default();
+    app.composer.set_agents_navigation_enabled(true);
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
+        ),
+        AppAction::RefreshAgentsOverview
+    );
+    assert!(app.agents_overview.is_some());
+    assert!(app.composer.is_empty());
+}
+
+#[test]
+fn empty_composer_left_stays_in_editor_when_navigation_is_disabled() {
+    let mut app = App::default();
+    app.composer.set_agents_navigation_enabled(false);
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(app.agents_overview.is_none());
     assert!(app.composer.is_empty());
 }
 

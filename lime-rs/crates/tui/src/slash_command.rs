@@ -13,11 +13,12 @@ pub(crate) enum SlashCommand {
     Agents,
     MultiAgents,
     Resume,
+    Mcp,
     Vim,
 }
 
 impl SlashCommand {
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 13] = [
         Self::Model,
         Self::Plan,
         Self::Effort,
@@ -29,6 +30,7 @@ impl SlashCommand {
         Self::Agents,
         Self::MultiAgents,
         Self::Resume,
+        Self::Mcp,
         Self::Vim,
     ];
 
@@ -45,6 +47,7 @@ impl SlashCommand {
             Self::Agents => "agents",
             Self::MultiAgents => "subagents",
             Self::Resume => "resume",
+            Self::Mcp => "mcp",
             Self::Vim => "vim",
         }
     }
@@ -110,6 +113,7 @@ mod tests {
                 "agents",
                 "subagents",
                 "resume",
+                "mcp",
                 "vim",
             ]
         );

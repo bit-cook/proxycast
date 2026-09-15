@@ -5,7 +5,7 @@ use crate::guardian_review;
 use crate::protocol::{AgentEvent, AgentToolProgressPayload};
 use crate::request_tool_policy::RequestToolPolicy;
 use crate::runtime_state::{AgentRuntimeState, EffectivePermissionGrant};
-use agent_protocol::ThreadId;
+use agent_protocol::{ModeKind, ThreadId};
 use agent_runtime::session_loop::RuntimeSessionInputHandle;
 use futures::StreamExt;
 use rmcp::model::{CallToolResult, ErrorData, ServerNotification};
@@ -208,6 +208,7 @@ impl RuntimeToolExecutor for CurrentTurnToolExecutor {
                     self.state.action_required_state(),
                     response_handle,
                     request_call_id,
+                    request_user_input_is_blocking(request.turn_context),
                     scope,
                     self.event_sender.clone(),
                 );
@@ -861,6 +862,14 @@ fn collect_text_fields(value: &Value, target: &mut Vec<String>) {
     }
 }
 
+fn request_user_input_is_blocking(
+    turn_context: Option<&tool_runtime::tool_executor::RuntimeToolTurnContext>,
+) -> bool {
+    turn_context
+        .and_then(|context| context.collaboration_mode.as_ref())
+        .is_none_or(|mode| mode.mode == ModeKind::Plan)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -871,6 +880,27 @@ mod tests {
         ProgressNotificationParam, ProgressToken, PromptListChangedNotification,
         ResourceListChangedNotification, ToolListChangedNotification,
     };
+
+    #[test]
+    fn request_user_input_blocking_follows_collaboration_mode() {
+        assert!(request_user_input_is_blocking(None));
+
+        let mut context = tool_runtime::tool_executor::RuntimeToolTurnContext {
+            collaboration_mode: Some(agent_protocol::CollaborationMode {
+                mode: ModeKind::Default,
+                settings: agent_protocol::CollaborationModeSettings::default(),
+            }),
+            ..Default::default()
+        };
+        assert!(!request_user_input_is_blocking(Some(&context)));
+
+        context
+            .collaboration_mode
+            .as_mut()
+            .expect("collaboration mode")
+            .mode = ModeKind::Plan;
+        assert!(request_user_input_is_blocking(Some(&context)));
+    }
 
     #[test]
     fn shell_tool_approval_materializes_current_projection() {

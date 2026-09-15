@@ -13,6 +13,7 @@ pub use tool_runtime::request_user_input::{
 #[derive(Debug, Clone, PartialEq)]
 pub struct RequestUserInputRunRequest {
     pub request: RequestUserInputRequest,
+    pub is_blocking: bool,
     pub scope: Option<ActionRequiredScope>,
     pub timeout: Duration,
 }
@@ -20,11 +21,13 @@ pub struct RequestUserInputRunRequest {
 impl RequestUserInputRunRequest {
     pub fn new(
         request: RequestUserInputRequest,
+        is_blocking: bool,
         scope: Option<ActionRequiredScope>,
         timeout: Duration,
     ) -> Self {
         Self {
             request,
+            is_blocking,
             scope,
             timeout,
         }
@@ -35,6 +38,7 @@ impl RequestUserInputRunRequest {
 pub struct RequestUserInputAction {
     pub prompt: String,
     pub requested_schema: Value,
+    pub is_blocking: bool,
     pub auto_resolution_ms: Option<u64>,
     pub scope: Option<ActionRequiredScope>,
     pub timeout: Duration,
@@ -89,6 +93,7 @@ where
     let action = RequestUserInputAction {
         prompt: prompt.clone(),
         requested_schema: build_requested_schema(&run_request.request),
+        is_blocking: run_request.is_blocking,
         auto_resolution_ms: run_request.request.auto_resolution_ms,
         scope: run_request.scope,
         timeout: run_request.timeout,
@@ -276,7 +281,7 @@ mod tests {
 
         let response = futures::executor::block_on(run_request_user_input(
             &gateway,
-            RequestUserInputRunRequest::new(request, scope.clone(), Duration::from_secs(5)),
+            RequestUserInputRunRequest::new(request, true, scope.clone(), Duration::from_secs(5)),
         ))
         .expect("request should run")
         .expect("response should normalize");
@@ -294,6 +299,7 @@ mod tests {
         let actions = actions.lock().expect("actions lock");
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].prompt, "请选择执行模式");
+        assert!(actions[0].is_blocking);
         assert_eq!(actions[0].scope, scope);
         assert_eq!(actions[0].timeout, Duration::from_secs(5));
         assert_eq!(

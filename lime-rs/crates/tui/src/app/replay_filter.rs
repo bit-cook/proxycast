@@ -127,6 +127,7 @@ mod tests {
                 turn_id: "turn".to_string(),
                 item_id: "item".to_string(),
                 questions: Vec::new(),
+                is_blocking: true,
                 auto_resolution_ms: None,
             },
         };

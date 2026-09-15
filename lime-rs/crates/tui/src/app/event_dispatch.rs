@@ -187,6 +187,15 @@ impl App {
                 }
                 Ok(EventDispatch::Handled)
             }
+            AppAction::FetchMcpInventory { detail } => {
+                match context.session.list_mcp_server_statuses(detail).await {
+                    Ok(statuses) => self.open_mcp_inventory(statuses, detail),
+                    Err(error) => self
+                        .projection
+                        .set_status(format!("MCP inventory failed: {error}")),
+                }
+                Ok(EventDispatch::Handled)
+            }
             other => Ok(EventDispatch::Unhandled(other)),
         }
     }

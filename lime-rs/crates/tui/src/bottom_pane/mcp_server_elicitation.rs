@@ -18,8 +18,12 @@ use ratatui::Frame;
 use serde_json::{Map, Value};
 
 use super::{AppServerResponse, TextArea, TextAreaState};
+use crate::bottom_pane::selection_row_layout::{visible_item_window, MAX_POPUP_ROWS};
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
+use crate::style::{accent_style, muted_style};
 use crate::width::display_width;
+use crate::wrapping::{word_wrap_line, RtOptions};
 
 const APPROVAL_META_KIND_KEY: &str = "codex_approval_kind";
 const APPROVAL_META_KIND_MCP_TOOL_CALL: &str = "mcp_tool_call";
@@ -487,19 +491,6 @@ impl McpServerElicitationOverlay {
         !self.is_select_field()
     }
 
-    fn input_line_offset(&self) -> usize {
-        let mut offset = 4;
-        if self
-            .fields
-            .get(self.current_field)
-            .and_then(|field| field.description.as_ref())
-            .is_some()
-        {
-            offset += 1;
-        }
-        offset
-    }
-
     #[cfg(test)]
     pub(super) fn is_complete(&self) -> bool {
         self.done
@@ -509,6 +500,52 @@ impl McpServerElicitationOverlay {
 pub(super) fn lines_with_locale(
     overlay: &McpServerElicitationOverlay,
     locale: Locale,
+) -> Vec<Line<'static>> {
+    lines_with_locale_inner(overlay, locale, None)
+}
+
+pub(super) fn lines_with_locale_with_width(
+    overlay: &McpServerElicitationOverlay,
+    locale: Locale,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let width = width.max(1);
+    if width == usize::MAX {
+        return lines_with_locale(overlay, locale);
+    }
+    let lines = lines_with_locale_inner(overlay, locale, Some(width));
+
+    let footer_index = lines.len().saturating_sub(1);
+    lines
+        .into_iter()
+        .enumerate()
+        .flat_map(|(index, line)| {
+            if index == footer_index {
+                return vec![line].into_iter();
+            }
+            if is_input_line(&line) {
+                return split_input_lines(line)
+                    .into_iter()
+                    .map(|line| truncate_line_with_ellipsis_if_overflow(line, width))
+                    .collect::<Vec<_>>()
+                    .into_iter();
+            }
+            if is_option_line(&line) {
+                return vec![truncate_line_with_ellipsis_if_overflow(line, width)].into_iter();
+            }
+            word_wrap_line(&line, RtOptions::new(width).break_words(true))
+                .into_iter()
+                .map(line_to_owned)
+                .collect::<Vec<_>>()
+                .into_iter()
+        })
+        .collect()
+}
+
+fn lines_with_locale_inner(
+    overlay: &McpServerElicitationOverlay,
+    locale: Locale,
+    width: Option<usize>,
 ) -> Vec<Line<'static>> {
     let Some(field) = overlay.fields.get(overlay.current_field) else {
         return vec![Line::from(locale.mcp_elicitation_invalid())];
@@ -521,7 +558,7 @@ pub(super) fn lines_with_locale(
         Line::from(overlay.message.clone()),
         Line::styled(
             locale.mcp_elicitation_progress(overlay.current_field + 1, overlay.fields.len()),
-            Style::default().fg(Color::DarkGray),
+            muted_style(),
         ),
     ];
     if !field.label.is_empty() {
@@ -531,10 +568,7 @@ pub(super) fn lines_with_locale(
         ));
     }
     if let Some(description) = field.description.as_ref().filter(|value| !value.is_empty()) {
-        lines.push(Line::styled(
-            description.clone(),
-            Style::default().fg(Color::DarkGray),
-        ));
+        lines.push(Line::styled(description.clone(), muted_style()));
     }
 
     match &field.input {
@@ -553,7 +587,7 @@ pub(super) fn lines_with_locale(
                 Style::default()
             };
             lines.push(Line::from(vec![
-                Span::styled("> ", Style::default().fg(Color::Cyan)),
+                Span::styled("› ", accent_style()),
                 Span::styled(value, style),
             ]));
         }
@@ -562,9 +596,11 @@ pub(super) fn lines_with_locale(
                 Some(McpFieldState::Select { selected, .. }) => *selected,
                 _ => None,
             };
-            for (index, option) in options.iter().enumerate() {
+            let selected_index = selected.unwrap_or(0);
+            let (start, end) = visible_item_window(selected_index, options.len(), MAX_POPUP_ROWS);
+            for (index, option) in options.iter().enumerate().skip(start).take(end - start) {
                 let is_selected = selected == Some(index);
-                let prefix = if is_selected { ">" } else { " " };
+                let prefix = if is_selected { "›" } else { " " };
                 let label = match (&option.value, overlay.response_mode) {
                     (Value::Bool(value), _) => {
                         locale.mcp_elicitation_boolean_option(*value).to_string()
@@ -580,7 +616,7 @@ pub(super) fn lines_with_locale(
                     _ => option.label.clone(),
                 };
                 let style = if is_selected {
-                    Style::default().fg(Color::Cyan)
+                    accent_style()
                 } else {
                     Style::default()
                 };
@@ -597,39 +633,210 @@ pub(super) fn lines_with_locale(
             Style::default().fg(Color::Red),
         ));
     }
-    lines.push(Line::styled(
-        locale.mcp_elicitation_controls(overlay.is_select_field()),
-        Style::default().fg(Color::DarkGray),
+    lines.extend(footer_control_lines(
+        locale,
+        overlay.is_select_field(),
+        width,
     ));
     lines
 }
 
-pub(super) fn lines_with_locale_with_width(
-    overlay: &McpServerElicitationOverlay,
-    locale: Locale,
-    _width: usize,
-) -> Vec<Line<'static>> {
-    lines_with_locale(overlay, locale)
+fn is_option_line(line: &Line<'_>) -> bool {
+    let text = line.to_string();
+    let text = text.trim_start_matches(['›', '>', ' ']);
+    text.as_bytes().first().is_some_and(u8::is_ascii_digit) && text.contains(". ")
+}
+
+fn is_input_line(line: &Line<'_>) -> bool {
+    line.to_string().starts_with(['›', '>'])
+}
+
+/// Split the editable line at explicit newlines before applying the width projection.
+///
+/// `Line` may contain a newline inside a span, but ratatui lays out each physical row
+/// independently. Keeping the split here makes the rendered rows and cursor calculation share
+/// the same source of truth, including continuation rows that do not carry the `›` prompt.
+fn split_input_lines(line: Line<'static>) -> Vec<Line<'static>> {
+    let Line {
+        style,
+        alignment,
+        spans,
+    } = line;
+    let mut rows = vec![Vec::<Span<'static>>::new()];
+    for span in spans {
+        let content = span.content.into_owned();
+        let mut segments = content.split('\n').peekable();
+        while let Some(segment) = segments.next() {
+            if !segment.is_empty() {
+                rows.last_mut()
+                    .expect("input row exists")
+                    .push(Span::styled(segment.to_string(), span.style));
+            }
+            if segments.peek().is_some() {
+                rows.push(Vec::new());
+            }
+        }
+    }
+    rows.into_iter()
+        .map(|spans| Line {
+            style,
+            alignment,
+            spans,
+        })
+        .collect()
+}
+
+fn line_to_owned(line: Line<'_>) -> Line<'static> {
+    let style = line.style;
+    let spans = line
+        .spans
+        .into_iter()
+        .map(|span| Span::styled(span.content.into_owned(), span.style))
+        .collect::<Vec<_>>();
+    Line::from(spans).style(style)
+}
+
+fn footer_control_lines(locale: Locale, select: bool, width: Option<usize>) -> Vec<Line<'static>> {
+    let full = locale.mcp_elicitation_controls(select);
+    let Some(width) = width else {
+        return vec![Line::styled(full, muted_style())];
+    };
+    let width = width.max(1);
+    if display_width(&full) <= width {
+        return vec![Line::styled(full, muted_style())];
+    }
+
+    // Locale strings intentionally keep two spaces between tips. Reusing those boundaries lets
+    // the wide layout remain byte-for-byte stable while allowing narrow terminals to pack each
+    // action independently. Submit and cancel stay ahead of navigation hints so the primary
+    // action set remains visible when the footer needs multiple rows.
+    let segments = full
+        .split("  ")
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if segments.len() < 2 {
+        return vec![Line::styled(
+            compact_control_segment(&full, width),
+            muted_style(),
+        )];
+    }
+    let submit_index = segments
+        .iter()
+        .position(|segment| contains_submit_hint(segment))
+        .unwrap_or(0);
+    let cancel_index = segments
+        .iter()
+        .position(|segment| contains_cancel_hint(segment))
+        .unwrap_or(segments.len().saturating_sub(1));
+    let cancel_segment = (cancel_index != submit_index).then(|| segments[cancel_index].clone());
+    let mut ordered = Vec::with_capacity(segments.len());
+    ordered.push(segments[submit_index].clone());
+    for (index, segment) in segments.into_iter().enumerate() {
+        if index != submit_index && index != cancel_index {
+            ordered.push(segment);
+        }
+    }
+    if let Some(cancel_segment) = cancel_segment {
+        ordered.push(cancel_segment);
+    }
+
+    let mut rows = Vec::<String>::new();
+    let mut current = String::new();
+    for segment in ordered {
+        let segment = compact_control_segment(&segment, width);
+        if current.is_empty() {
+            current = segment;
+            continue;
+        }
+        let candidate = format!("{current}  {segment}");
+        if display_width(&candidate) <= width {
+            current = candidate;
+        } else {
+            rows.push(current);
+            current = segment;
+        }
+    }
+    if !current.is_empty() {
+        rows.push(current);
+    }
+    rows.into_iter()
+        .map(|line| Line::styled(line, muted_style()))
+        .collect()
+}
+
+fn contains_submit_hint(segment: &str) -> bool {
+    segment.contains("Enter")
+        || segment.contains("↵")
+        || segment.contains("确认")
+        || segment.contains("確定")
+        || segment.contains("확인")
+}
+
+fn contains_cancel_hint(segment: &str) -> bool {
+    segment.contains("Esc")
+        || segment.contains('⎋')
+        || segment.contains("取消")
+        || segment.contains("キャンセル")
+        || segment.contains("취소")
+}
+
+fn compact_control_segment(segment: &str, width: usize) -> String {
+    if display_width(segment) <= width {
+        return segment.to_owned();
+    }
+    let candidates = if contains_cancel_hint(segment) {
+        vec!["Esc", "⎋"]
+    } else if contains_submit_hint(segment) {
+        vec!["Enter", "↵"]
+    } else if segment.contains('↑') || segment.contains('↓') {
+        vec!["↑/↓", "↑↓", "↑", "↓"]
+    } else if segment.contains("Tab")
+        || segment.contains("欄位")
+        || segment.contains("字段")
+        || segment.contains("フィールド")
+        || segment.contains("필드")
+    {
+        vec!["Tab", "⇥"]
+    } else {
+        Vec::new()
+    };
+    if let Some(candidate) = candidates
+        .into_iter()
+        .find(|candidate| display_width(candidate) <= width)
+    {
+        return candidate.to_owned();
+    }
+    truncate_line_with_ellipsis_if_overflow(Line::from(segment.to_owned()), width).to_string()
 }
 
 pub(super) fn set_cursor_position(
     frame: &mut Frame<'_>,
     inner: Rect,
     overlay: &McpServerElicitationOverlay,
+    content: &[Line<'static>],
 ) {
     if !overlay.is_text_field() || inner.is_empty() {
         return;
     }
     let before = &overlay.text_area.text()[..overlay.text_area.cursor()];
+    let current_line = before.rsplit('\n').next().unwrap_or(before);
+    let input_row = content
+        .iter()
+        .position(is_input_line)
+        .unwrap_or_else(|| content.len().saturating_sub(1));
+    let prefix_width = if before.contains('\n') { 0 } else { 2 };
     let x = inner
         .x
-        .saturating_add(2)
-        .saturating_add(u16::try_from(display_width(before)).unwrap_or(u16::MAX))
+        .saturating_add(prefix_width)
+        .saturating_add(u16::try_from(display_width(current_line)).unwrap_or(u16::MAX))
         .min(inner.right().saturating_sub(1));
-    let y = inner
-        .y
-        .saturating_add(u16::try_from(overlay.input_line_offset()).unwrap_or(u16::MAX))
-        .min(inner.bottom().saturating_sub(1));
+    let input_row = input_row.saturating_add(before.matches('\n').count());
+    let y = inner.y.saturating_add(
+        u16::try_from(input_row)
+            .unwrap_or(u16::MAX)
+            .min(inner.height.saturating_sub(1)),
+    );
     frame.set_cursor_position(Position::new(x, y));
 }
 
@@ -884,6 +1091,9 @@ mod tests {
     use super::*;
     use app_server_protocol::protocol::v2::McpServerElicitationRequest;
     use crossterm::event::KeyModifiers;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+    use ratatui::Terminal;
     use serde_json::json;
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -1157,5 +1367,123 @@ mod tests {
             assert!(text.contains(locale.mcp_elicitation_boolean_option(true)));
             assert!(text.contains(locale.mcp_elicitation_controls(true).trim()));
         }
+    }
+
+    #[test]
+    fn narrow_select_surface_bounds_rows_and_keeps_cancel_visible() {
+        let options = (0..12)
+            .map(|index| format!("choice-{index}"))
+            .collect::<Vec<_>>();
+        let mut overlay = overlay(json!({
+            "type": "object",
+            "properties": {
+                "choice": { "type": "string", "enum": options }
+            }
+        }));
+        for _ in 0..11 {
+            assert!(overlay.handle_key_event(key(KeyCode::Down)).is_none());
+        }
+
+        for width in [1, 4, 12, 24] {
+            let lines = lines_with_locale_with_width(&overlay, Locale::EnUs, width);
+            if width >= 8 {
+                let option_lines = lines
+                    .iter()
+                    .filter(|line| is_option_line(line))
+                    .collect::<Vec<_>>();
+                assert_eq!(option_lines.len(), MAX_POPUP_ROWS);
+                assert!(option_lines
+                    .iter()
+                    .any(|line| line.to_string().starts_with('›')));
+            }
+            assert!(lines
+                .iter()
+                .all(|line| display_width(&line.to_string()) <= width));
+            let footer = lines.last().expect("footer line").to_string();
+            if width >= display_width("Esc") {
+                assert!(footer.contains("Esc"), "footer={footer:?}, width={width}");
+            }
+        }
+    }
+
+    #[test]
+    fn narrow_footer_wraps_actions_in_priority_order_for_all_locales() {
+        let overlay = overlay(json!({
+            "type": "object",
+            "properties": {
+                "choice": { "type": "string", "enum": ["one", "two"] },
+                "note": { "type": "string" }
+            },
+            "required": ["choice", "note"]
+        }));
+
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            let lines = lines_with_locale_with_width(&overlay, locale, 8);
+            let footer = lines
+                .iter()
+                .skip_while(|line| {
+                    !line.to_string().contains("Enter")
+                        && !line.to_string().contains("确认")
+                        && !line.to_string().contains("確定")
+                        && !line.to_string().contains("확인")
+                })
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            assert!(!footer.is_empty(), "missing submit footer for {locale:?}");
+            assert!(
+                footer.last().is_some_and(|line| line.contains("Esc")
+                    || line.contains("取消")
+                    || line.contains("キャンセル")
+                    || line.contains("취소")
+                    || line.contains('⎋')),
+                "cancel action must remain last for {locale:?}: {footer:?}"
+            );
+            assert!(
+                lines
+                    .iter()
+                    .all(|line| display_width(&line.to_string()) <= 8),
+                "footer overflow for {locale:?}: {lines:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn narrow_multiline_text_keeps_physical_rows_and_cursor_aligned() {
+        let mut overlay = overlay(json!({
+            "type": "object",
+            "properties": {
+                "answer": { "type": "string", "title": "回答" }
+            },
+            "required": ["answer"]
+        }));
+        overlay.handle_paste("你好\n👩🏽‍💻");
+
+        let width = 12usize;
+        let lines = lines_with_locale_with_width(&overlay, Locale::ZhCn, width);
+        let input_index = lines.iter().position(is_input_line).expect("editable row");
+        assert_eq!(lines[input_index].to_string(), "› 你好");
+        assert_eq!(lines[input_index + 1].to_string(), "👩🏽‍💻");
+        assert!(lines
+            .iter()
+            .all(|line| display_width(&line.to_string()) <= width));
+
+        let mut terminal = Terminal::new(TestBackend::new(width as u16, 16)).expect("terminal");
+        terminal
+            .draw(|frame| {
+                set_cursor_position(frame, Rect::new(0, 0, width as u16, 16), &overlay, &lines)
+            })
+            .expect("draw");
+        let cursor = terminal.backend().cursor_position();
+        assert_eq!(
+            cursor.y,
+            u16::try_from(input_index + 1).expect("cursor row")
+        );
+        assert_eq!(cursor.x, display_width("👩🏽‍💻") as u16);
     }
 }

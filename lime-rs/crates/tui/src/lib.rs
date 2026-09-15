@@ -4,6 +4,7 @@ mod bottom_pane;
 mod clipboard_copy;
 mod clipboard_paste;
 mod collaboration_modes;
+#[allow(dead_code)]
 mod command_popup;
 #[allow(dead_code)]
 mod cwd_prompt;
@@ -30,6 +31,7 @@ mod model_catalog;
 mod model_picker;
 mod multi_agents;
 mod pager_overlay;
+#[allow(dead_code)]
 mod pending_input_preview;
 mod projection;
 #[allow(dead_code)]
@@ -41,8 +43,11 @@ mod selection_list;
 mod session_resume;
 mod settings;
 mod slash_command;
+// Kept as a compatibility delegate while callers converge on the widget owner.
+#[allow(dead_code)]
 mod status_indicator;
 mod status_indicator_widget;
+mod style;
 mod table_detect;
 mod terminal_hyperlinks;
 mod terminal_palette;

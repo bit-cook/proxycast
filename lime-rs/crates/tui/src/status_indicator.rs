@@ -1,40 +1,17 @@
 use std::time::Duration;
 
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
 
 pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, locale: Locale, elapsed: Duration) {
-    if area.is_empty() {
-        return;
-    }
-
-    frame.render_widget(
-        Paragraph::new(status_line(locale, elapsed, area.width)),
-        area,
-    );
+    crate::status_indicator_widget::render(frame, area, locale, elapsed);
 }
 
 fn status_line(locale: Locale, elapsed: Duration, width: u16) -> Line<'static> {
-    truncate_line_with_ellipsis_if_overflow(
-        Line::styled(
-            format!(
-                "• {} ({} • {})",
-                locale.working_label(),
-                fmt_elapsed_compact(elapsed.as_secs()),
-                locale.interrupt_hint()
-            ),
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
-        ),
-        usize::from(width),
-    )
+    crate::status_indicator_widget::StatusIndicatorWidget::new(locale, elapsed).status_line(width)
 }
 
 fn fmt_elapsed_compact(elapsed_secs: u64) -> String {

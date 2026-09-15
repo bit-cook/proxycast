@@ -5,7 +5,9 @@ use std::cell::RefMut;
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 
+mod agents_navigation;
 mod attachment_state;
+mod completion_target;
 mod draft_state;
 mod file_search_popup;
 mod footer_state;
@@ -27,8 +29,8 @@ use self::popup_state::{ActivePopup, DismissedToken, PopupState};
 use self::skill_popup::SkillPopup;
 pub(crate) use self::skill_popup::SkillPopupAction;
 use self::vim_history::VimHistory;
+use super::command_popup::{CommandPopup, CommandPopupAction};
 use crate::bottom_pane::textarea::{TextArea, TextAreaState};
-use crate::command_popup::{CommandPopup, CommandPopupAction};
 use app_server_protocol::protocol::v2::{FuzzyFileSearchResult, SkillMetadata};
 
 const MAX_HISTORY_ENTRIES: usize = 200;
@@ -51,6 +53,7 @@ pub(crate) enum InputResult {
     PreviousPermissions,
     NextPermissions,
     OpenExternalEditor,
+    OpenAgentsOverview,
     Quit,
 }
 
@@ -67,10 +70,8 @@ pub(crate) struct ChatComposer {
     vim_history: VimHistory,
     file_search_generation: u64,
     file_search_request: Option<FileSearchRequest>,
-    file_search_requested_query: Option<String>,
-    dismissed_file_token: Option<DismissedToken>,
     skills: Vec<SkillMetadata>,
-    dismissed_skill_token: Option<DismissedToken>,
+    agents_navigation_enabled: bool,
 }
 
 impl ChatComposer {
@@ -401,7 +402,7 @@ impl ChatComposer {
         match action {
             SkillPopupAction::Cancel => {
                 if let Some((range, query)) = self.current_skill_token_range() {
-                    self.dismissed_skill_token =
+                    self.popups.dismissed_skill_token =
                         Some(DismissedToken::new(self.text(), range, query));
                 }
                 self.popups.active = ActivePopup::None;
@@ -423,7 +424,7 @@ impl ChatComposer {
                     let inserted_range = start..start.saturating_add(inserted.len());
                     self.draft.textarea.set_cursor(inserted_range.end);
                     self.advance_past_file_completion_separator();
-                    self.dismissed_skill_token =
+                    self.popups.dismissed_skill_token =
                         Some(DismissedToken::new(self.text(), inserted_range, name));
                     self.reset_history_navigation();
                     if started {
@@ -464,7 +465,7 @@ impl ChatComposer {
         match action {
             FileSearchPopupAction::Cancel => {
                 if let Some((range, query)) = self.current_at_token_range() {
-                    self.dismissed_file_token =
+                    self.popups.dismissed_file_token =
                         Some(DismissedToken::new(self.text(), range, query));
                 }
                 self.popups.active = ActivePopup::None;
@@ -483,7 +484,7 @@ impl ChatComposer {
                         .textarea
                         .set_cursor(start.saturating_add(path.len()));
                     self.advance_past_file_completion_separator();
-                    self.dismissed_file_token = None;
+                    self.popups.dismissed_file_token = None;
                     self.popups.active = ActivePopup::None;
                     self.sync_command_popup();
                     self.reset_history_navigation();
@@ -536,13 +537,14 @@ impl ChatComposer {
         if self.history_index.is_some() {
             self.popups.active = ActivePopup::None;
             self.file_search_request = None;
-            self.file_search_requested_query = None;
+            self.popups.file_search_requested_query = None;
             return;
         }
         if !self.skills.is_empty() {
             if let Some((range, query)) = self.current_skill_token_range() {
                 if skill_query_is_candidate(&query, &self.skills) {
                     if self
+                        .popups
                         .dismissed_skill_token
                         .as_ref()
                         .is_some_and(|dismissed| dismissed.matches(self.text(), &range, &query))
@@ -552,7 +554,7 @@ impl ChatComposer {
                         }
                         return;
                     }
-                    self.dismissed_skill_token = None;
+                    self.popups.dismissed_skill_token = None;
                     match &mut self.popups.active {
                         ActivePopup::Skill(popup) => {
                             popup.set_query(query.clone());
@@ -567,12 +569,13 @@ impl ChatComposer {
                 }
             }
         }
-        self.dismissed_skill_token = None;
+        self.popups.dismissed_skill_token = None;
         if matches!(self.popups.active, ActivePopup::Skill(_)) {
             self.popups.active = ActivePopup::None;
         }
         if let Some((range, query)) = self.current_at_token_range() {
             if self
+                .popups
                 .dismissed_file_token
                 .as_ref()
                 .is_some_and(|dismissed| dismissed.matches(self.text(), &range, &query))
@@ -582,7 +585,7 @@ impl ChatComposer {
                 }
                 return;
             }
-            self.dismissed_file_token = None;
+            self.popups.dismissed_file_token = None;
             match &mut self.popups.active {
                 ActivePopup::File(popup) => popup.set_query(query.clone()),
                 ActivePopup::Command(_) | ActivePopup::Skill(_) | ActivePopup::None => {
@@ -594,7 +597,7 @@ impl ChatComposer {
                     popup.set_empty_prompt();
                 }
                 self.file_search_request = None;
-                self.file_search_requested_query = None;
+                self.popups.file_search_requested_query = None;
                 return;
             }
             let current_query = match &self.popups.active {
@@ -603,24 +606,24 @@ impl ChatComposer {
             };
             if let Some(current_query) = current_query {
                 if !current_query.is_empty()
-                    && self.file_search_requested_query.as_deref() != Some(current_query)
+                    && self.popups.file_search_requested_query.as_deref() != Some(current_query)
                 {
                     self.file_search_generation = self.file_search_generation.wrapping_add(1);
                     self.file_search_request = Some(FileSearchRequest {
                         generation: self.file_search_generation,
                         query: current_query.to_string(),
                     });
-                    self.file_search_requested_query = Some(current_query.to_string());
+                    self.popups.file_search_requested_query = Some(current_query.to_string());
                 }
             }
             return;
         }
-        self.dismissed_file_token = None;
+        self.popups.dismissed_file_token = None;
         if matches!(self.popups.active, ActivePopup::File(_)) {
             self.popups.active = ActivePopup::None;
             self.file_search_request = None;
         }
-        self.file_search_requested_query = None;
+        self.popups.file_search_requested_query = None;
         let text = self.text().to_string();
         let first_line = text.lines().next().unwrap_or("");
         let Some(filter) = slash_input::command_popup_filter_text(first_line, self.cursor()) else {
@@ -646,11 +649,11 @@ impl ChatComposer {
     }
 
     fn current_at_token_range(&self) -> Option<(Range<usize>, String)> {
-        current_at_token_range(self.text(), self.cursor())
+        completion_target::current_prefixed_token_range(&self.draft.textarea, '@', false)
     }
 
     fn current_skill_token_range(&self) -> Option<(Range<usize>, String)> {
-        current_dollar_token_range(self.text(), self.cursor())
+        completion_target::current_prefixed_token_range(&self.draft.textarea, '$', true)
     }
 
     /// Leave the cursor after one horizontal separator following a file completion.
@@ -737,6 +740,13 @@ impl ChatComposer {
             self.draft.textarea.input(key);
             self.reset_history_navigation();
             return InputResult::Changed;
+        }
+
+        if key.code == KeyCode::Left
+            && key.modifiers.is_empty()
+            && self.agents_navigation_available()
+        {
+            return InputResult::OpenAgentsOverview;
         }
 
         if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -1049,121 +1059,35 @@ impl ChatComposer {
     }
 }
 
-/// Find the editable `@token` containing the cursor. The range includes `@` and
-/// uses byte offsets so it can be passed directly to `TextArea::replace_range`.
-fn current_at_token_range(text: &str, cursor: usize) -> Option<(Range<usize>, String)> {
-    let cursor = cursor.min(text.len());
-    let cursor = if text.is_char_boundary(cursor) {
-        cursor
-    } else {
-        text.char_indices()
-            .map(|(index, _)| index)
-            .take_while(|index| *index < cursor)
-            .last()
-            .unwrap_or(0)
-    };
-    let left = &text[..cursor];
-    let start = left
-        .char_indices()
-        .rev()
-        .find(|(_, ch)| ch.is_whitespace())
-        .map(|(index, ch)| index + ch.len_utf8())
-        .unwrap_or(0);
-    let segment_end = text[cursor..]
-        .char_indices()
-        .find(|(_, ch)| ch.is_whitespace())
-        .map(|(index, _)| cursor + index)
-        .unwrap_or(text.len());
-    let segment = &text[start..segment_end];
-    let at = segment.find('@')?;
-    if at > 0 {
-        return None;
-    }
-    let range = start..segment_end;
-    Some((range, segment[1..].to_string()))
-}
-
-/// Find the editable `$name` token containing the cursor. The range includes `$` and uses byte
-/// offsets so completion can replace exactly one token without touching adjacent text.
-fn current_dollar_token_range(text: &str, cursor: usize) -> Option<(Range<usize>, String)> {
-    let cursor = cursor.min(text.len());
-    let cursor = if text.is_char_boundary(cursor) {
-        cursor
-    } else {
-        text.char_indices()
-            .map(|(index, _)| index)
-            .take_while(|index| *index < cursor)
-            .last()
-            .unwrap_or(0)
-    };
-    let left = &text[..cursor];
-    let start = left
-        .char_indices()
-        .rev()
-        .find(|(_, ch)| ch.is_whitespace())
-        .map(|(index, ch)| index + ch.len_utf8())
-        .unwrap_or(0);
-    let end = text[cursor..]
-        .char_indices()
-        .find(|(_, ch)| ch.is_whitespace())
-        .map(|(index, _)| cursor + index)
-        .unwrap_or(text.len());
-    let token = &text[start..end];
-    let query = token.strip_prefix('$')?;
-    if query
-        .chars()
-        .all(|character| character.is_alphanumeric() || matches!(character, '_' | '-' | ':'))
-    {
-        Some((start..end, query.to_string()))
-    } else {
-        None
-    }
-}
-
 fn skill_query_is_candidate(query: &str, skills: &[SkillMetadata]) -> bool {
-    if query.is_empty() {
-        return true;
+    match completion_target::dollar_query_kind(query) {
+        completion_target::DollarQueryKind::Completable => true,
+        completion_target::DollarQueryKind::AmbiguousShellParameter => {
+            skills.iter().any(|skill| skill.name == query)
+        }
+        completion_target::DollarQueryKind::ShellVariable
+        | completion_target::DollarQueryKind::DefiniteShellParameter
+        | completion_target::DollarQueryKind::Invalid => false,
     }
-    if is_common_shell_variable(query)
-        || query == "-"
-        || query == "_"
-        || query.chars().all(|character| character.is_ascii_digit())
-    {
-        return false;
-    }
-    if query
-        .chars()
-        .next()
-        .is_some_and(|character| character.is_ascii_digit() || character == '-')
-    {
-        return skills.iter().any(|skill| skill.name == query);
-    }
-    true
-}
-
-fn is_common_shell_variable(query: &str) -> bool {
-    query.bytes().all(|byte| !byte.is_ascii_lowercase())
-        && matches!(
-            query,
-            "HOME"
-                | "PATH"
-                | "SHELL"
-                | "USER"
-                | "PWD"
-                | "OLDPWD"
-                | "TMPDIR"
-                | "EDITOR"
-                | "TERM"
-                | "LANG"
-                | "RANDOM"
-                | "SECONDS"
-                | "SHLVL"
-        )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn current_at_token_range(text: &str, cursor: usize) -> Option<(Range<usize>, String)> {
+        let mut textarea = TextArea::new();
+        textarea.insert_str(text);
+        textarea.set_cursor(cursor);
+        completion_target::current_prefixed_token_range(&textarea, '@', false)
+    }
+
+    fn current_dollar_token_range(text: &str, cursor: usize) -> Option<(Range<usize>, String)> {
+        let mut textarea = TextArea::new();
+        textarea.insert_str(text);
+        textarea.set_cursor(cursor);
+        completion_target::current_prefixed_token_range(&textarea, '$', true)
+    }
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)

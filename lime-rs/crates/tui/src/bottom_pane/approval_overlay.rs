@@ -63,12 +63,22 @@ impl ApprovalOverlay {
             return Some(self.cancel_response());
         }
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.selected = self.selected.saturating_sub(1);
+            KeyCode::Up | KeyCode::Char('p') | KeyCode::Char('k')
+                if key.code == KeyCode::Up || key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                let count = self.option_count();
+                if count > 0 {
+                    self.selected = self.selected.checked_sub(1).unwrap_or(count - 1);
+                }
                 None
             }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.selected = (self.selected + 1).min(self.option_count().saturating_sub(1));
+            KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('j')
+                if key.code == KeyCode::Down || key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                let count = self.option_count();
+                if count > 0 {
+                    self.selected = (self.selected + 1) % count;
+                }
                 None
             }
             KeyCode::Enter => Some(self.response_for_selected()),
@@ -77,7 +87,7 @@ impl ApprovalOverlay {
                 self.selected = 0;
                 Some(self.response_for_selected())
             }
-            KeyCode::Char('n') => Some(self.decline_response()),
+            KeyCode::Char('n') if key.modifiers.is_empty() => Some(self.decline_response()),
             _ => None,
         }
     }
@@ -369,6 +379,17 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn approval_navigation_wraps_and_accepts_control_bindings() {
+        let mut approval = command_approval();
+        approval.handle_key_event(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+        assert_eq!(approval.selected, approval.option_count() - 1);
+        approval.handle_key_event(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL));
+        assert_eq!(approval.selected, 0);
+        approval.handle_key_event(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert_eq!(approval.selected, approval.option_count() - 1);
     }
 
     #[test]
