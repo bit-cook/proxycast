@@ -18,6 +18,7 @@ const CONFIG_ROOT_KEYS: &[&str] = &[
     "server",
     "providers",
     "default_provider",
+    "tui",
     "routing",
     "retry",
     "logging",
@@ -441,6 +442,36 @@ mod tests {
         assert_eq!(
             config.pointer("/orchestrator/mcp/enabled"),
             Some(&json!(false))
+        );
+    }
+
+    #[test]
+    fn tui_keymap_is_writable_through_current_control_plane() {
+        assert!(CONFIG_ROOT_KEYS.contains(&"tui"));
+
+        let mut config = json!({});
+        apply_edit(
+            &mut config,
+            &parse_key_path("tui.keymap.global.find_transcript").expect("valid key path"),
+            json!(["f6", "ctrl-x f"]),
+            MergeStrategy::Replace,
+        )
+        .expect("TUI keymap edit");
+
+        let config: Config = serde_json::from_value(config).expect("valid TUI config");
+        assert_eq!(
+            config
+                .tui
+                .keymap
+                .global
+                .find_transcript
+                .as_ref()
+                .expect("configured Find bindings")
+                .specs()
+                .into_iter()
+                .map(|spec| spec.as_str())
+                .collect::<Vec<_>>(),
+            vec!["f6", "ctrl-x f"]
         );
     }
 }

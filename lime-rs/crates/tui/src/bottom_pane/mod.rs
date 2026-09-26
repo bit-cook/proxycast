@@ -1,3 +1,4 @@
+mod action_required_title;
 mod approval_overlay;
 mod chat_composer;
 pub(crate) mod command_popup;
@@ -21,6 +22,9 @@ use app_server_protocol::protocol::v2::{
 use app_server_protocol::RequestId;
 use crossterm::event::{Event, KeyEvent};
 
+use action_required_title::{
+    build_action_required_title_text, ActionRequiredItem, ACTION_REQUIRED_PREVIEW_PREFIX,
+};
 use approval_overlay::ApprovalOverlay;
 pub(crate) use chat_composer::{
     ChatComposer, FileSearchPopupAction, FileSearchRequest, InputResult, SkillPopupAction,
@@ -141,6 +145,29 @@ impl PendingInteraction {
             Self::Approval(_) | Self::McpElicitation(_) => None,
         }
     }
+
+    fn action_required_item(&self) -> ActionRequiredItem {
+        match self {
+            Self::Approval(_) => ActionRequiredItem::Approval,
+            Self::UserInput(_) => ActionRequiredItem::UserInput,
+            Self::McpElicitation(_) => ActionRequiredItem::McpElicitation,
+        }
+    }
+
+    fn action_required_value(&self, locale: crate::locale::Locale) -> Option<String> {
+        match self {
+            Self::Approval(approval) => {
+                let kind = match &approval.request {
+                    approval_overlay::ApprovalRequest::Exec { .. } => "command",
+                    approval_overlay::ApprovalRequest::ApplyPatch { .. } => "file",
+                    approval_overlay::ApprovalRequest::Permissions { .. } => "permissions",
+                };
+                Some(locale.approval_title(kind).to_string())
+            }
+            Self::UserInput(request) => request.action_required_label(locale),
+            Self::McpElicitation(request) => Some(request.action_required_label(locale)),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -173,17 +200,54 @@ impl BottomPane {
         !self.queue.is_empty()
     }
 
-    pub(crate) fn footer_hint(
+    /// Returns a localized, display-only title for the visible interaction request.
+    ///
+    /// The request queue remains the only state owner. This helper deliberately does not expose
+    /// request ids or synthesize a status transition; it only supplies the shared presentation
+    /// line consumed by the interaction renderer.
+    pub(crate) fn action_required_title(&self, locale: crate::locale::Locale) -> Option<String> {
+        let request = self.current()?;
+        let item = request.action_required_item();
+        let prefix = format!(
+            "{ACTION_REQUIRED_PREVIEW_PREFIX} {}",
+            locale.action_required_label()
+        );
+        Some(build_action_required_title_text(
+            &prefix,
+            [item],
+            &[],
+            |candidate| (candidate == item).then(|| request.action_required_value(locale))?,
+        ))
+    }
+
+    pub(crate) fn footer_hint_lines(
         &self,
         locale: crate::locale::Locale,
         width: usize,
-    ) -> Option<String> {
+    ) -> Option<Vec<String>> {
         match self.queue.front() {
-            Some(PendingInteraction::Approval(_)) => Some(locale.approval_controls().to_string()),
+            Some(PendingInteraction::Approval(_)) => {
+                Some(vec![locale.approval_controls().to_string()])
+            }
             Some(PendingInteraction::UserInput(request)) => {
-                Some(request.footer_hint_for_width(locale, width))
+                Some(request.footer_hint_lines(locale, width))
             }
             Some(PendingInteraction::McpElicitation(_)) | None => None,
+        }
+    }
+
+    pub(crate) fn footer_required_height(
+        &self,
+        locale: crate::locale::Locale,
+        width: usize,
+    ) -> u16 {
+        match self.queue.front() {
+            Some(PendingInteraction::UserInput(request)) => {
+                request.footer_required_height(locale, width).max(1)
+            }
+            Some(PendingInteraction::Approval(_))
+            | Some(PendingInteraction::McpElicitation(_))
+            | None => 1,
         }
     }
 
@@ -290,6 +354,11 @@ mod tests {
         })
         .expect("queue user input");
 
+        assert_eq!(
+            pane.action_required_title(crate::locale::Locale::EnUs),
+            Some("[ ! ] Action required Approve command?".to_string())
+        );
+
         let first = pane.handle_event(key(KeyCode::Enter));
         assert!(matches!(
             first,
@@ -309,6 +378,44 @@ mod tests {
             })
         ));
         assert!(!pane.is_active());
+    }
+
+    #[test]
+    fn action_required_title_localizes_the_shared_prefix() {
+        let mut pane = BottomPane::default();
+        pane.enqueue(ServerRequest::ItemToolRequestUserInput {
+            id: RequestId::Integer(8),
+            params: ToolRequestUserInputParams {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "question-1".to_string(),
+                questions: vec![ToolRequestUserInputQuestion {
+                    id: "mode".to_string(),
+                    header: "Mode".to_string(),
+                    question: "Choose a mode".to_string(),
+                    is_other: false,
+                    is_secret: false,
+                    options: None,
+                }],
+                is_blocking: true,
+                auto_resolution_ms: None,
+            },
+        })
+        .expect("queue user input");
+
+        for (locale, label) in [
+            (crate::locale::Locale::ZhCn, "需要操作"),
+            (crate::locale::Locale::ZhTw, "需要操作"),
+            (crate::locale::Locale::EnUs, "Action required"),
+            (crate::locale::Locale::JaJp, "操作が必要"),
+            (crate::locale::Locale::KoKr, "조치 필요"),
+        ] {
+            let title = pane
+                .action_required_title(locale)
+                .expect("action-required title");
+            assert!(title.contains(label), "{locale:?}: {title}");
+            assert!(title.ends_with(" Mode"), "{locale:?}: {title}");
+        }
     }
 
     #[test]

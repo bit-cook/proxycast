@@ -59,6 +59,7 @@ describe("Codex TUI structure inventory", () => {
       "bottom_pane/chat_composer/attachment_state.rs",
       "bottom_pane/chat_composer/draft_state.rs",
       "bottom_pane/chat_composer/history_search.rs",
+      "bottom_pane/chat_composer/mouse.rs",
       "bottom_pane/chat_composer/reconnect.rs",
       "bottom_pane/chat_composer/reconnect_tests.rs",
       "bottom_pane/chat_composer/vim_history.rs",
@@ -75,6 +76,7 @@ describe("Codex TUI structure inventory", () => {
       "app/app_server_requests.rs",
       "app/event_dispatch.rs",
       "app/input.rs",
+      "app/interaction.rs",
       "app/reconnect.rs",
       "app/session_lifecycle.rs",
       "app/startup.rs",
@@ -95,8 +97,12 @@ describe("Codex TUI structure inventory", () => {
       "bottom_pane/textarea.rs",
       "bottom_pane/textarea/hyperlinks.rs",
       "bottom_pane/textarea/hyperlinks_tests.rs",
+      "bottom_pane/textarea/mouse.rs",
+      "bottom_pane/textarea/mouse_tests.rs",
       "bottom_pane/textarea/wrapping.rs",
       "bottom_pane/textarea/wrapping_tests.rs",
+      "bottom_pane/action_required_title.rs",
+      "text_selection.rs",
       "terminal_palette.rs",
       "table_detect.rs",
       "wrapping.rs",
@@ -135,6 +141,13 @@ describe("Codex TUI structure inventory", () => {
       "selection_list.rs",
       "thread_transcript.rs",
       "transcript_reflow.rs",
+      "transcript_view.rs",
+      "transcript_view/disclosure.rs",
+      "transcript_view/input.rs",
+      "transcript_view/input_tests.rs",
+      "transcript_view/selection.rs",
+      "transcript_view/selection_tests.rs",
+      "pager_overlay/disclosure_tests.rs",
     ]) {
       expect(files.has(file), file).toBe(true);
     }
@@ -155,6 +168,9 @@ describe("Codex TUI structure inventory", () => {
       "TextArea",
       "TextAreaState",
       "HyperlinkCache",
+      "SelectionUnit",
+      "wrapped_line_starts",
+      "build_action_required_title_text",
       "input",
       "delete_backward",
       "delete_forward",
@@ -175,7 +191,12 @@ describe("Codex TUI structure inventory", () => {
       "wrapped_lines",
       "cursor_position",
       "visible_prefix",
+      "handle_mouse",
+      "mouse_selection_range",
+      "copy_selection_request",
+      "clear_mouse_selection",
       "ApprovalOverlay",
+      "ActionRequiredItem",
       "Tui",
       "Terminal",
       "with_restored",
@@ -199,6 +220,8 @@ describe("Codex TUI structure inventory", () => {
       "selection_option_row_with_dim",
       "TranscriptReflowState",
       "TranscriptWidthChange",
+      "TranscriptSelection",
+      "TranscriptSelectionAction",
       "SessionTranscriptState",
       "ModelCatalog",
       "default_mask",
@@ -507,8 +530,12 @@ describe("Codex TUI structure inventory", () => {
       path.resolve(process.cwd(), "lime-rs/crates/tui/src/app.rs"),
       "utf8",
     );
-    const input = readFileSync(
-      path.resolve(process.cwd(), "lime-rs/crates/tui/src/app/input.rs"),
+    const inputFlow = readFileSync(
+      path.resolve(process.cwd(), "lime-rs/crates/tui/src/app/input_flow.rs"),
+      "utf8",
+    );
+    const interaction = readFileSync(
+      path.resolve(process.cwd(), "lime-rs/crates/tui/src/app/interaction.rs"),
       "utf8",
     );
     const runtime = readFileSync(
@@ -516,13 +543,89 @@ describe("Codex TUI structure inventory", () => {
       "utf8",
     );
 
-    expect(app).toContain("mod input;");
+    expect(app).toContain("mod input_flow;");
+    expect(app).toContain("mod input_submission;");
+    expect(app).toContain("mod interaction;");
     expect(app).toContain("mod tests;");
-    expect(app).toContain("fn handle_tui_event");
-    expect(input).toContain("fn handle_key_event");
+    expect(app).not.toContain("fn handle_tui_event");
+    expect(interaction).toContain("fn handle_tui_event");
+    expect(inputFlow).toContain("fn handle_key_event");
     expect(runtime).toContain("app.handle_tui_event(event, connected)");
     expect(runtime).not.toContain("handle_terminal_event");
     expect(runtime).not.toContain("handle_disconnected_event");
+  });
+
+  it("keeps transcript selection on the canonical rendered projection", () => {
+    const transcriptView = readFileSync(
+      path.resolve(process.cwd(), "lime-rs/crates/tui/src/transcript_view.rs"),
+      "utf8",
+    );
+    const selection = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "lime-rs/crates/tui/src/transcript_view/selection.rs",
+      ),
+      "utf8",
+    );
+    const input = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "lime-rs/crates/tui/src/transcript_view/input.rs",
+      ),
+      "utf8",
+    );
+    const disclosure = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "lime-rs/crates/tui/src/transcript_view/disclosure.rs",
+      ),
+      "utf8",
+    );
+    const historyCell = readFileSync(
+      path.resolve(process.cwd(), "lime-rs/crates/tui/src/history_cell/mod.rs"),
+      "utf8",
+    );
+    const pager = readFileSync(
+      path.resolve(process.cwd(), "lime-rs/crates/tui/src/pager_overlay.rs"),
+      "utf8",
+    );
+    const runtime = readFileSync(
+      path.resolve(process.cwd(), "lime-rs/crates/tui/src/runtime.rs"),
+      "utf8",
+    );
+
+    expect(transcriptView).toContain("mod disclosure;");
+    expect(transcriptView).toContain("mod input;");
+    expect(transcriptView).toContain("mod selection;");
+    expect(selection).toContain("pub(crate) struct TranscriptSelection");
+    expect(selection).toContain("snapshot: Arc<Vec<HyperlinkLine>>");
+    expect(selection).toContain("fn selected_text");
+    expect(selection).toContain("fn word_wrap_cells");
+    expect(selection).toContain("moved_vertically: bool");
+    expect(selection).toContain("pointer_origin_row: u16");
+    expect(selection).toContain("fn edge_scroll_direction");
+    expect(selection).toContain("fn end_drag");
+    expect(input).toContain("fn handle_event");
+    expect(input).toContain("TranscriptSelectionAction::OpenLink");
+    expect(input).toContain("TranscriptSelectionAction::RevealRow");
+    expect(pager).toContain("transcript_selection: TranscriptSelection");
+    expect(pager).toContain("PagerAction::CopyTranscriptSelection");
+    expect(pager).toContain("ContinueTranscriptSelection");
+    expect(pager).toContain("fn tick_transcript_selection");
+    expect(pager).toContain("disclosure: TranscriptDisclosure");
+    expect(disclosure).toContain("pub(crate) struct TranscriptContent");
+    expect(disclosure).toContain("pub(crate) struct TranscriptDisclosure");
+    expect(disclosure).toContain("excluded_lines: HashSet<usize>");
+    expect(disclosure).toContain("pending_anchor");
+    expect(historyCell).toContain("fn compact_hyperlink_lines");
+    expect(historyCell).toContain("fn activity_ids");
+    expect(historyCell).toContain("fn expanded_hyperlink_lines");
+    expect(runtime).toContain("fn copy_transcript_selection_with");
+    expect(runtime).toContain("frame_requester.schedule_frame_in(delay)");
+    expect(selection).not.toContain("ThreadStore");
+    expect(selection).not.toContain("AppServerSession");
+    expect(disclosure).not.toContain("AppServerSession");
+    expect(disclosure).not.toContain("ThreadStore");
   });
 
   it("keeps reconnect lifecycle in the Codex-named app owner", () => {
@@ -576,10 +679,18 @@ describe("Codex TUI structure inventory", () => {
       ),
       "utf8",
     );
+    const toolLifecycle = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "lime-rs/crates/tui/src/app/tool_lifecycle.rs",
+      ),
+      "utf8",
+    );
 
     expect(threadEvents).toContain("fn apply_notification");
     expect(threadEvents).toContain("fn observe_notification");
-    expect(threadEvents).toContain("fn observe_item");
+    expect(threadEvents).toContain("tool_lifecycle::observe_item");
+    expect(toolLifecycle).toContain("fn observe_item");
     expect(appServerEvents).toContain("self.apply_notification(notification)");
     expect(appServerEvents).not.toContain("fn observe_notification");
   });

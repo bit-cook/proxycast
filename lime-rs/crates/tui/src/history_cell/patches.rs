@@ -30,6 +30,8 @@ impl HistoryCell for PatchHistoryCell {
                 streaming: false,
                 status: None,
                 summary: Vec::new(),
+                activity_group: None,
+                activity_detail: None,
             },
             Locale::default(),
             std::path::PathBuf::new(),

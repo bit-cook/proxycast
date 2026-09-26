@@ -96,11 +96,11 @@ pub(crate) fn emit_skill_load_warnings(app: &mut App, errors: &[SkillErrorInfo])
     }
 
     app.projection
-        .add_system_message(app.locale.skipped_skills_message(errors.len()));
+        .add_warning_message(app.locale.skipped_skills_message(errors.len()));
     for error in errors {
         let path = error.path.display().to_string();
         app.projection
-            .add_system_message(app.locale.skill_load_error_message(&path, &error.message));
+            .add_error_message(app.locale.skill_load_error_message(&path, &error.message));
     }
 }
 
@@ -197,6 +197,7 @@ pub(crate) fn select_model_availability_nux(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::projection::EntryKind;
     use app_server_protocol::protocol::v2::{InputModality, ModelAvailabilityNux};
     use app_server_protocol::CapabilitySnapshot;
 
@@ -406,6 +407,8 @@ mod tests {
                 "/repo/.agents/skills/example/SKILL.md: invalid description",
             ]
         );
+        assert_eq!(app.projection.entries()[0].kind, EntryKind::Warning);
+        assert_eq!(app.projection.entries()[1].kind, EntryKind::Error);
     }
 
     #[test]

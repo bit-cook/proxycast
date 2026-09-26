@@ -7,12 +7,12 @@ use std::collections::HashMap;
 
 use app_server_protocol::protocol::v2::{ThreadItem, Turn, TurnStatus};
 
-use crate::projection::CompletionMetadata;
+use crate::projection::{CompletionMetadata, HistoryItemGroup};
 
 pub(crate) fn group_completed_turn_items(
     items: Vec<ThreadItem>,
     turns: &[Turn],
-) -> Vec<(Vec<ThreadItem>, Option<CompletionMetadata>)> {
+) -> Vec<HistoryItemGroup> {
     let completed_boundaries: HashMap<_, _> = turns
         .iter()
         .filter(|turn| turn.status == TurnStatus::Completed)
@@ -30,18 +30,46 @@ pub(crate) fn group_completed_turn_items(
             })
         })
         .collect();
+    let activity_scopes = turns
+        .iter()
+        .flat_map(|turn| {
+            turn.items
+                .iter()
+                .map(|item| (thread_item_id(item).to_string(), turn.id.clone()))
+        })
+        .collect::<HashMap<_, _>>();
 
     let mut groups = Vec::new();
     let mut pending = Vec::new();
+    let mut pending_scope = None;
     for item in items {
+        let activity_scope = activity_scopes.get(thread_item_id(&item)).cloned();
+        if !pending.is_empty() && pending_scope != activity_scope {
+            groups.push(HistoryItemGroup {
+                items: std::mem::take(&mut pending),
+                activity_scope: pending_scope.take(),
+                completion: None,
+            });
+        }
+        if pending.is_empty() {
+            pending_scope = activity_scope;
+        }
         let completed_turn = completed_boundaries.get(thread_item_id(&item)).cloned();
         pending.push(item);
-        if completed_turn.is_some() {
-            groups.push((std::mem::take(&mut pending), completed_turn));
+        if let Some(completion) = completed_turn {
+            groups.push(HistoryItemGroup {
+                items: std::mem::take(&mut pending),
+                activity_scope: pending_scope.take(),
+                completion: Some(completion),
+            });
         }
     }
     if !pending.is_empty() {
-        groups.push((pending, None));
+        groups.push(HistoryItemGroup {
+            items: pending,
+            activity_scope: pending_scope,
+            completion: None,
+        });
     }
     groups
 }

@@ -12,6 +12,7 @@ use app_server_protocol::protocol::v2::{
 use super::AppServerSession;
 
 pub(crate) const HISTORY_ITEM_PAGE_LIMIT: u32 = 100;
+pub(crate) const HISTORY_ITEM_SCAN_LIMIT: usize = 4 * HISTORY_ITEM_PAGE_LIMIT as usize;
 
 /// The first page of a paginated transcript and the optional Turn metadata used to render it.
 ///
@@ -38,6 +39,14 @@ pub(crate) fn thread_items_page_params(
     }
 }
 
+fn pending_cursor_matches(
+    next_item_cursor: Option<&str>,
+    loading_older: bool,
+    cursor: &str,
+) -> bool {
+    loading_older && next_item_cursor == Some(cursor)
+}
+
 fn advancing_cursor(
     current: Option<&str>,
     next: Option<String>,
@@ -54,6 +63,50 @@ pub(crate) struct ThreadHistoryPagination {
     next_item_cursor: Option<String>,
     seen_item_cursors: HashSet<String>,
     loading_older: bool,
+}
+
+impl ThreadHistoryPagination {
+    fn has_older_history(&self) -> bool {
+        self.next_item_cursor.is_some()
+    }
+
+    fn begin_older_history_page(&mut self) -> Option<String> {
+        if self.loading_older {
+            return None;
+        }
+        let cursor = self.next_item_cursor.clone()?;
+        self.loading_older = true;
+        Some(cursor)
+    }
+
+    fn is_older_history_page_pending(&self, cursor: &str) -> bool {
+        pending_cursor_matches(self.next_item_cursor.as_deref(), self.loading_older, cursor)
+    }
+
+    fn cancel_older_history_page(&mut self, cursor: &str) {
+        if self.is_older_history_page_pending(cursor) {
+            self.loading_older = false;
+        }
+    }
+
+    fn apply_older_history_page(
+        &mut self,
+        cursor: &str,
+        page: ThreadItemsListResponse,
+    ) -> Result<Vec<ThreadItem>> {
+        if !self.is_older_history_page_pending(cursor) {
+            return Ok(Vec::new());
+        }
+        self.next_item_cursor =
+            advancing_cursor(Some(cursor), page.next_cursor, &mut self.seen_item_cursors);
+        self.loading_older = false;
+        Ok(page
+            .data
+            .into_iter()
+            .map(|entry| entry.item)
+            .rev()
+            .collect())
+    }
 }
 
 impl AppServerSession {
@@ -108,22 +161,24 @@ impl AppServerSession {
     pub(crate) fn has_older_history(&self, thread_id: &str) -> bool {
         self.history_pagination
             .get(thread_id)
-            .is_some_and(|page| page.next_item_cursor.is_some())
+            .is_some_and(ThreadHistoryPagination::has_older_history)
     }
 
     pub(crate) fn begin_older_history_page(&mut self, thread_id: &str) -> Option<String> {
         let page = self.history_pagination.get_mut(thread_id)?;
-        if page.loading_older {
-            return None;
-        }
-        let cursor = page.next_item_cursor.clone()?;
-        page.loading_older = true;
-        Some(cursor)
+        page.begin_older_history_page()
     }
 
-    pub(crate) fn cancel_older_history_page(&mut self, thread_id: &str) {
+    /// Match cancellation to the request cursor so an older response cannot cancel a newer load.
+    pub(crate) fn is_older_history_page_pending(&self, thread_id: &str, cursor: &str) -> bool {
+        self.history_pagination
+            .get(thread_id)
+            .is_some_and(|page| page.is_older_history_page_pending(cursor))
+    }
+
+    pub(crate) fn cancel_older_history_page(&mut self, thread_id: &str, cursor: &str) {
         if let Some(page) = self.history_pagination.get_mut(thread_id) {
-            page.loading_older = false;
+            page.cancel_older_history_page(cursor);
         }
     }
 
@@ -136,18 +191,7 @@ impl AppServerSession {
         let Some(state) = self.history_pagination.get_mut(thread_id) else {
             return Ok(Vec::new());
         };
-        if !state.loading_older || state.next_item_cursor.as_deref() != Some(cursor) {
-            return Ok(Vec::new());
-        }
-        state.next_item_cursor =
-            advancing_cursor(Some(cursor), page.next_cursor, &mut state.seen_item_cursors);
-        state.loading_older = false;
-        Ok(page
-            .data
-            .into_iter()
-            .map(|entry| entry.item)
-            .rev()
-            .collect())
+        state.apply_older_history_page(cursor, page)
     }
 
     pub(crate) async fn thread_items_page(

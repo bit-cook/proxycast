@@ -12,6 +12,7 @@ mod draft_state;
 mod file_search_popup;
 mod footer_state;
 mod history_search;
+mod mouse;
 mod popup_state;
 mod reconnect;
 mod skill_popup;

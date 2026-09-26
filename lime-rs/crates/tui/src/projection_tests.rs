@@ -2,16 +2,16 @@ use super::*;
 use agent_protocol::response_item::MessagePhase;
 use app_server_protocol::protocol::v2::{
     AgentMessageDeltaNotification, CollabAgentState, CollabAgentStatus, CollabAgentTool,
-    CommandExecutionOutputDeltaNotification, CommandExecutionSource,
-    DynamicToolCallOutputContentItem, FileChangePatchUpdatedNotification, FileUpdateChange,
-    HookCompletedNotification, HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry,
-    HookOutputEntryKind, HookRunStatus, HookRunSummary, HookScope, HookSource,
+    CommandAction, CommandExecutionOutputDeltaNotification, CommandExecutionSource,
+    DynamicToolCallOutputContentItem, ErrorNotification, FileChangePatchUpdatedNotification,
+    FileUpdateChange, HookCompletedNotification, HookEventName, HookExecutionMode, HookHandlerType,
+    HookOutputEntry, HookOutputEntryKind, HookRunStatus, HookRunSummary, HookScope, HookSource,
     HookStartedNotification, ImageGenerationItem, ItemCompletedNotification,
     ItemStartedNotification, McpToolCallError, McpToolCallResult, PatchChangeKind,
     ReasoningSummaryPartAddedNotification, ReasoningSummaryTextDeltaNotification, SessionSource,
     SleepItem, Thread, ThreadActiveFlag, ThreadItem, ThreadStatus, Turn, TurnCompletedNotification,
-    TurnDiffUpdatedNotification, TurnItemsView, TurnPlanStep, TurnPlanStepStatus,
-    TurnPlanUpdatedNotification, WebSearchItem,
+    TurnDiffUpdatedNotification, TurnError, TurnItemsView, TurnPlanStep, TurnPlanStepStatus,
+    TurnPlanUpdatedNotification, WarningNotification, WebSearchItem,
 };
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -145,6 +145,32 @@ fn hook_completed(run: HookRunSummary, turn_id: Option<&str>) -> ServerNotificat
         turn_id: turn_id.map(str::to_string),
         run,
     })
+}
+
+#[test]
+fn typed_warning_and_error_notifications_keep_distinct_visual_kinds() {
+    let mut projection = ConversationProjection::default();
+    projection.apply(ServerNotification::Warning(WarningNotification {
+        thread_id: Some("thread-1".to_string()),
+        message: "credentials expire soon".to_string(),
+        code: None,
+    }));
+    projection.apply(ServerNotification::Error(ErrorNotification {
+        error: TurnError {
+            message: "401 Unauthorized".to_string(),
+            codex_error_info: None,
+            additional_details: None,
+        },
+        will_retry: false,
+        thread_id: "thread-1".to_string(),
+        turn_id: "turn-1".to_string(),
+    }));
+
+    assert_eq!(projection.entries()[0].kind, EntryKind::Warning);
+    assert_eq!(projection.entries()[0].text, "credentials expire soon");
+    assert_eq!(projection.entries()[1].kind, EntryKind::Error);
+    assert_eq!(projection.entries()[1].text, "401 Unauthorized");
+    assert_eq!(projection.status(), "failed");
 }
 
 #[test]
@@ -605,6 +631,12 @@ fn reasoning_summary_parts_keep_streamed_section_boundaries() {
 
     assert_eq!(projection.entries()[0].text, "检查输入\n准备回答");
     assert!(projection.entries()[0].streaming);
+    assert_eq!(
+        projection.entries()[0].activity_detail,
+        Some(ActivityDetail::Reasoning {
+            scope: "turn-1".to_string(),
+        })
+    );
 }
 
 #[test]
@@ -1493,6 +1525,131 @@ fn command_item(
 }
 
 #[test]
+fn activity_group_requires_canonical_kind_and_turn_scope() {
+    let mut exploration = command_item(
+        "command-read",
+        "rg needle src",
+        CommandExecutionStatus::Completed,
+        Some("src/lib.rs"),
+    );
+    if let ThreadItem::CommandExecution {
+        command_actions, ..
+    } = &mut exploration
+    {
+        command_actions.push(CommandAction::Search {
+            command: "rg needle src".to_string(),
+            query: Some("needle".to_string()),
+            path: Some("src".to_string()),
+        });
+    }
+    let entry = project_item_with_scope(
+        &exploration,
+        false,
+        WebSearchLifecycle::Historical,
+        Some("turn-1"),
+    )
+    .expect("exploration projection");
+    assert_eq!(
+        entry.activity_group,
+        Some(ActivityGroupKey::new(
+            ActivityGroupKind::Exploration,
+            "turn-1"
+        ))
+    );
+    assert_eq!(
+        entry.activity_detail,
+        Some(ActivityDetail::Exploration {
+            actions: vec![CommandAction::Search {
+                command: "rg needle src".to_string(),
+                query: Some("needle".to_string()),
+                path: Some("src".to_string()),
+            }],
+            exit_code: Some(0),
+        })
+    );
+
+    if let ThreadItem::CommandExecution { source, .. } = &mut exploration {
+        *source = CommandExecutionSource::UserShell;
+    }
+    assert_eq!(activity_group_kind(&exploration), None);
+
+    if let ThreadItem::CommandExecution {
+        source,
+        command_actions,
+        ..
+    } = &mut exploration
+    {
+        *source = CommandExecutionSource::Agent;
+        command_actions.push(CommandAction::Unknown {
+            command: "printf changed".to_string(),
+        });
+    }
+    assert_eq!(activity_group_kind(&exploration), None);
+
+    let computer = ThreadItem::McpToolCall {
+        id: "computer-1".to_string(),
+        metadata: None,
+        server: "cua_repl".to_string(),
+        tool: "js".to_string(),
+        status: McpToolCallStatus::InProgress,
+        arguments: json!({"title": "Inspect page"}),
+        app_context: None,
+        mcp_app_resource_uri: None,
+        plugin_id: None,
+        read_only_hint: None,
+        result: Some(Box::new(McpToolCallResult {
+            content: vec![json!({"type": "image", "data": "not-projected"})],
+            structured_content: None,
+            meta: None,
+        })),
+        error: None,
+        duration_ms: None,
+    };
+    let entry =
+        project_item_with_scope(&computer, true, WebSearchLifecycle::Started, Some("turn-1"))
+            .expect("computer projection");
+    assert_eq!(
+        entry.activity_group,
+        Some(ActivityGroupKey::new(ActivityGroupKind::Computer, "turn-1"))
+    );
+    assert_eq!(
+        entry.activity_detail,
+        Some(ActivityDetail::Computer(ComputerActivityFacts {
+            title: "Inspect page".to_string(),
+            screenshots: 1,
+            error: None,
+        }))
+    );
+
+    let reasoning = ThreadItem::Reasoning {
+        id: "reasoning-1".to_string(),
+        metadata: None,
+        summary: vec!["Inspect the result".to_string()],
+        content: Vec::new(),
+    };
+    let scoped = project_item_with_scope(
+        &reasoning,
+        false,
+        WebSearchLifecycle::Historical,
+        Some("turn-1"),
+    )
+    .expect("reasoning projection");
+    assert_eq!(
+        scoped.activity_detail,
+        Some(ActivityDetail::Reasoning {
+            scope: "turn-1".to_string(),
+        })
+    );
+    assert_eq!(
+        project_item(&reasoning, false)
+            .expect("flat reasoning projection")
+            .activity_detail,
+        None,
+        "flat fallback must not invent a turn relationship"
+    );
+}
+
+#[test]
 fn collab_agent_summary_keeps_requested_model_effort_and_prompt() {
     let collab = project_item(
         &ThreadItem::CollabAgentToolCall {
@@ -1970,15 +2127,16 @@ fn unsuccessful_turns_do_not_expose_completion_separators() {
 fn grouped_history_does_not_move_completion_to_a_previous_visible_item() {
     let mut projection = ConversationProjection::default();
     projection.prepend_grouped_items_with_hidden_ids(
-        vec![(
-            vec![
+        vec![HistoryItemGroup {
+            items: vec![
                 review_boundary("enter", true),
                 user_message("hidden-final", "内部请求"),
             ],
-            Some(CompletionMetadata {
+            activity_scope: Some("turn-1".to_string()),
+            completion: Some(CompletionMetadata {
                 elapsed_seconds: Some(61),
             }),
-        )],
+        }],
         &HashSet::new(),
     );
 
@@ -1990,15 +2148,16 @@ fn grouped_history_does_not_move_completion_to_a_previous_visible_item() {
 fn grouped_history_filters_metadata_hidden_user_without_moving_completion() {
     let mut projection = ConversationProjection::default();
     projection.prepend_grouped_items_with_hidden_ids(
-        vec![(
-            vec![
+        vec![HistoryItemGroup {
+            items: vec![
                 user_message("hidden", "内部请求"),
                 agent_message("answer", "回答", None),
             ],
-            Some(CompletionMetadata {
+            activity_scope: Some("turn-1".to_string()),
+            completion: Some(CompletionMetadata {
                 elapsed_seconds: Some(12),
             }),
-        )],
+        }],
         &HashSet::from([String::from("hidden")]),
     );
 
@@ -2039,15 +2198,16 @@ fn grouped_history_hides_nested_review_prompts_from_turn_metadata() {
     let hidden_ids = crate::history_filter::hidden_user_message_ids(&[previous, current]);
     let mut projection = ConversationProjection::default();
     projection.prepend_grouped_items_with_hidden_ids(
-        vec![(
-            vec![
+        vec![HistoryItemGroup {
+            items: vec![
                 review_boundary("enter", true),
                 review_boundary("exit", false),
                 user_message("nested-one", "重复请求"),
                 user_message("nested-two", "重复请求"),
             ],
-            None,
-        )],
+            activity_scope: None,
+            completion: None,
+        }],
         &hidden_ids,
     );
 

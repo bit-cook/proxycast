@@ -218,6 +218,9 @@ mod tests {
     use super::*;
     use app_server_protocol::protocol::v2::SkillScope;
     use crossterm::event::KeyEvent;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+    use ratatui::Terminal;
 
     fn skill(name: &str, description: &str) -> SkillMetadata {
         SkillMetadata {
@@ -285,5 +288,28 @@ mod tests {
             popup.selected_skill().map(|skill| skill.name.as_str()),
             Some("one")
         );
+    }
+
+    #[test]
+    fn selected_skill_uses_codex_marker_without_narrow_overflow() {
+        let popup = SkillPopup::new(vec![skill("deploy", "release")], "");
+        for width in [40, 80, 120] {
+            let mut terminal = Terminal::new(TestBackend::new(width, 8)).expect("terminal");
+            terminal
+                .draw(|frame| popup.render(frame, Rect::new(0, 6, width, 2), Locale::EnUs))
+                .expect("draw");
+            let buffer = terminal.backend().buffer();
+            let text = (0..buffer.area.height)
+                .map(|y| {
+                    (0..buffer.area.width)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>();
+            assert!(text.iter().any(|line| line.contains("› $deploy")));
+            assert!(text
+                .iter()
+                .all(|line| line.chars().count() <= width as usize));
+        }
     }
 }

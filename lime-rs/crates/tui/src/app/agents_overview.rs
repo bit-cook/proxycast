@@ -2,6 +2,7 @@
 
 use super::agents_overview_view::{AgentsOverviewGroup, AgentsOverviewRow, AgentsOverviewView};
 use crate::app_server_session::AppServerSession;
+use crate::keymap::AgentsKeymap;
 use anyhow::{anyhow, Result};
 use app_server_protocol::protocol::v2::ServerNotification;
 use app_server_protocol::protocol::v2::{Thread, TurnStatus, UserInput};
@@ -45,7 +46,14 @@ pub(crate) struct AgentsOverviewState {
 
 impl AgentsOverviewState {
     pub(crate) fn new(primary_thread_id: Option<&str>) -> Self {
-        let view = AgentsOverviewView::new(Vec::new(), primary_thread_id);
+        Self::new_with_keymap(primary_thread_id, AgentsKeymap::default())
+    }
+
+    pub(crate) fn new_with_keymap(
+        primary_thread_id: Option<&str>,
+        keymap: AgentsKeymap,
+    ) -> Self {
+        let view = AgentsOverviewView::new_with_keymap(Vec::new(), primary_thread_id, keymap);
         Self {
             threads: Vec::new(),
             initialized: false,
@@ -193,7 +201,10 @@ pub(crate) fn agents_overview_group(
 impl super::App {
     pub(crate) fn open_agents_overview(&mut self) {
         let primary = self.primary_thread_id.as_deref();
-        let mut overview = AgentsOverviewState::new(primary);
+        let mut overview = AgentsOverviewState::new_with_keymap(
+            primary,
+            self.runtime_keymap.agents().clone(),
+        );
         overview.rendered_full_screen = true;
         self.agents_overview = Some(overview);
         if !self.composer.text().trim_start().starts_with("/subagents") {
@@ -237,7 +248,11 @@ impl super::App {
         selected_thread_id: Option<&str>,
     ) -> AgentsOverviewView {
         let rows = build_rows(&threads, self.primary_thread_id.as_deref());
-        AgentsOverviewView::new(rows, selected_thread_id)
+        AgentsOverviewView::new_with_keymap(
+            rows,
+            selected_thread_id,
+            self.runtime_keymap.agents().clone(),
+        )
     }
 
     #[allow(dead_code)]

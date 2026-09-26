@@ -6,7 +6,14 @@ use app_server_protocol::protocol::v2::{
     UserInput,
 };
 use app_server_protocol::RequestId;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::widgets::StatefulWidgetRef;
+
+use crate::tui::TuiEvent;
 
 fn dispatch_connected_input(app: &mut App, event: Event) -> AppAction {
     app.handle_tui_event(to_tui_event(event), true)
@@ -20,10 +27,10 @@ fn to_tui_event(event: Event) -> TuiEvent {
     match event {
         Event::Key(key) => TuiEvent::Key(key),
         Event::Paste(text) => TuiEvent::Paste(text),
+        Event::Mouse(mouse) => TuiEvent::Mouse(mouse),
         Event::Resize(width, height) => TuiEvent::Resize(ratatui::layout::Size { width, height }),
         Event::FocusGained => TuiEvent::FocusGained,
         Event::FocusLost => TuiEvent::FocusLost,
-        _ => TuiEvent::Draw,
     }
 }
 
@@ -659,6 +666,43 @@ fn vim_slash_command_toggles_composer_mode_and_projects_localized_status() {
 }
 
 #[test]
+fn raw_slash_command_and_global_shortcut_toggle_only_local_presentation() {
+    let mut app = App::default();
+    app.set_locale(Locale::ZhCn);
+    app.composer.insert("/raw");
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(app.raw_output_mode());
+    assert!(app.composer.is_empty());
+    assert_eq!(app.projection.status(), "已启用原始输出模式");
+
+    dispatch_connected_input(
+        &mut app,
+        Event::Key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL)),
+    );
+    assert!(app.pager_overlay.is_some());
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::ALT)),
+        ),
+        AppAction::None
+    );
+    assert!(!app.raw_output_mode());
+    assert!(
+        app.pager_overlay.is_some(),
+        "global toggle must not close Ctrl+T"
+    );
+    assert_eq!(app.projection.status(), "已恢复富文本输出模式");
+}
+
+#[test]
 fn vim_insert_escape_returns_to_normal_before_interrupting_an_active_turn() {
     let mut app = App::default();
     app.composer.set_vim_enabled(true);
@@ -1245,6 +1289,275 @@ fn disconnected_paste_and_ctrl_c_are_handled_at_the_app_boundary() {
         ),
         AppAction::Quit
     );
+}
+
+#[test]
+fn composer_mouse_selection_precedes_shortcuts_and_requests_copy() {
+    let mut app = App::default();
+    app.composer.insert("hello world");
+    let area = Rect::new(10, 5, 20, 2);
+    let mut buffer = Buffer::empty(area);
+    {
+        let mut state = app.composer.textarea_state_mut();
+        StatefulWidgetRef::render_ref(&app.composer.textarea(), area, &mut buffer, &mut *state);
+    }
+
+    for (kind, column) in [
+        (MouseEventKind::Down(MouseButton::Left), 11),
+        (MouseEventKind::Drag(MouseButton::Left), 15),
+        (MouseEventKind::Up(MouseButton::Left), 15),
+    ] {
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Mouse(MouseEvent {
+                    kind,
+                    column,
+                    row: 5,
+                    modifiers: KeyModifiers::NONE,
+                }),
+            ),
+            AppAction::None
+        );
+    }
+    assert_eq!(app.composer.text(), "hello world");
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Right),
+                column: 12,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            }),
+        ),
+        AppAction::CopyComposerSelection {
+            text: "ello".to_string(),
+            clear_selection: true,
+        }
+    );
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            )),
+        ),
+        AppAction::CopyComposerSelection {
+            text: "ello".to_string(),
+            clear_selection: false,
+        }
+    );
+}
+
+#[test]
+fn transcript_pager_routes_mouse_selection_copy_to_runtime_action() {
+    let mut app = App {
+        pager_overlay: Some(PagerOverlay::transcript(Locale::EnUs)),
+        ..App::default()
+    };
+    let lines = vec![crate::terminal_hyperlinks::HyperlinkLine::from(
+        "alpha beta",
+    )];
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 8)).expect("terminal");
+    terminal
+        .draw(|frame| {
+            app.pager_overlay.as_ref().expect("pager").render(
+                frame,
+                frame.area(),
+                Locale::EnUs,
+                &lines,
+            );
+        })
+        .expect("draw");
+
+    for (kind, column) in [
+        (MouseEventKind::Down(MouseButton::Left), 0),
+        (MouseEventKind::Drag(MouseButton::Left), 5),
+        (MouseEventKind::Up(MouseButton::Left), 5),
+    ] {
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Mouse(MouseEvent {
+                    kind,
+                    column,
+                    row: 1,
+                    modifiers: KeyModifiers::NONE,
+                }),
+            ),
+            AppAction::None
+        );
+    }
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL,)),
+        ),
+        AppAction::CopyTranscriptSelection {
+            text: "alpha".to_string(),
+            follow: false,
+            target: TranscriptSelectionTarget::MainPager,
+        }
+    );
+}
+
+#[test]
+fn transcript_pager_routes_stationary_link_release_to_runtime_action() {
+    let mut app = App {
+        pager_overlay: Some(PagerOverlay::transcript(Locale::EnUs)),
+        ..App::default()
+    };
+    let mut link = crate::terminal_hyperlinks::HyperlinkLine::from("docs");
+    link.hyperlinks
+        .push(crate::terminal_hyperlinks::TerminalHyperlink::web(
+            0..4,
+            "https://example.com/docs".to_string(),
+        ));
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 8)).expect("terminal");
+    terminal
+        .draw(|frame| {
+            app.pager_overlay.as_ref().expect("pager").render(
+                frame,
+                frame.area(),
+                Locale::EnUs,
+                &[link],
+            );
+        })
+        .expect("draw");
+
+    for (kind, expected) in [
+        (MouseEventKind::Down(MouseButton::Left), AppAction::None),
+        (
+            MouseEventKind::Up(MouseButton::Left),
+            AppAction::OpenLink("https://example.com/docs".to_string()),
+        ),
+    ] {
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Mouse(MouseEvent {
+                    kind,
+                    column: 1,
+                    row: 1,
+                    modifiers: KeyModifiers::NONE,
+                }),
+            ),
+            expected
+        );
+    }
+}
+
+#[test]
+fn transcript_edge_drag_routes_frame_continuation_and_focus_loss_stops_it() {
+    let mut app = App {
+        pager_overlay: Some(PagerOverlay::transcript(Locale::EnUs)),
+        ..App::default()
+    };
+    let lines = (0..20)
+        .map(|index| crate::terminal_hyperlinks::HyperlinkLine::from(format!("line {index}")))
+        .collect::<Vec<_>>();
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 8)).expect("terminal");
+    terminal
+        .draw(|frame| {
+            app.pager_overlay.as_ref().expect("pager").render(
+                frame,
+                frame.area(),
+                Locale::EnUs,
+                &lines,
+            );
+        })
+        .expect("tail draw");
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE))
+        ),
+        AppAction::None
+    );
+    terminal
+        .draw(|frame| {
+            app.pager_overlay.as_ref().expect("pager").render(
+                frame,
+                frame.area(),
+                Locale::EnUs,
+                &lines,
+            );
+        })
+        .expect("top draw");
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 0,
+                row: 2,
+                modifiers: KeyModifiers::NONE,
+            })
+        ),
+        AppAction::None
+    );
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Drag(MouseButton::Left),
+                column: 6,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            })
+        ),
+        AppAction::ScheduleFrameIn(crate::tui::TARGET_FRAME_INTERVAL)
+    );
+    assert_eq!(
+        app.handle_tui_event(TuiEvent::Draw, true),
+        AppAction::ScheduleFrameIn(crate::tui::TARGET_FRAME_INTERVAL)
+    );
+    assert_eq!(
+        app.handle_tui_event(TuiEvent::FocusLost, true),
+        AppAction::None
+    );
+    assert!(app
+        .pager_overlay
+        .as_ref()
+        .is_some_and(PagerOverlay::has_transcript_selection));
+    assert_eq!(app.handle_tui_event(TuiEvent::Draw, true), AppAction::None);
+
+    for kind in [
+        MouseEventKind::Down(MouseButton::Left),
+        MouseEventKind::Drag(MouseButton::Left),
+    ] {
+        let action = app.handle_tui_event(
+            TuiEvent::Mouse(MouseEvent {
+                kind,
+                column: 6,
+                row: if matches!(kind, MouseEventKind::Down(_)) {
+                    2
+                } else {
+                    5
+                },
+                modifiers: KeyModifiers::NONE,
+            }),
+            true,
+        );
+        if matches!(kind, MouseEventKind::Drag(_)) {
+            assert_eq!(
+                action,
+                AppAction::ScheduleFrameIn(crate::tui::TARGET_FRAME_INTERVAL)
+            );
+        }
+    }
+    assert_eq!(
+        app.handle_tui_event(TuiEvent::Resume, true),
+        AppAction::None
+    );
+    assert_eq!(app.handle_tui_event(TuiEvent::Draw, true), AppAction::None);
 }
 
 #[test]

@@ -598,6 +598,28 @@ mod tests {
     }
 
     #[test]
+    fn narrow_wrap_preserves_emoji_and_cjk_graphemes() {
+        let wrapped = hard_wrap("🚀界e", 4);
+
+        assert_eq!(wrapped, vec!["🚀界", "e"]);
+        assert!(wrapped.iter().all(|line| display_width(line) <= 4));
+    }
+
+    #[test]
+    fn fallback_wrapping_uses_display_width_for_tabs_and_wide_chars() {
+        let lines = render("@@ -1 +1 @@\n+abcd\t界🙂", Some(8), Path::new(""));
+
+        assert!(lines.len() >= 2, "expected wrapped output, got {lines:?}");
+        assert!(lines.iter().all(|line| {
+            line.spans
+                .iter()
+                .map(|span| display_width(span.content.as_ref()))
+                .sum::<usize>()
+                <= 8
+        }));
+    }
+
+    #[test]
     fn tabs_and_blank_context_lines_preserve_diff_geometry() {
         let lines = render("@@ -1,2 +1,2 @@\n \n-\told\n+\tnew", None, Path::new(""));
 

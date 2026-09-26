@@ -41,6 +41,28 @@ pub(crate) fn user_message_style() -> Style {
     user_message_style_for(default_bg(), effective_stdout_color_level())
 }
 
+/// Sticky transcript prompts use a slightly stronger fill than ordinary submitted messages.
+pub(crate) fn history_prompt_style() -> Style {
+    let Some(background) = default_bg() else {
+        return Style::default();
+    };
+    if matches!(
+        effective_stdout_color_level(),
+        StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown
+    ) {
+        return Style::default();
+    }
+    let (foreground, alpha) = if is_light(background) {
+        ((0, 0, 0), 0.02)
+    } else {
+        ((255, 255, 255), 0.16)
+    };
+    Style::default().bg(best_color_for_level(
+        blend(foreground, background, alpha),
+        effective_stdout_color_level(),
+    ))
+}
+
 pub(crate) fn table_separator_style() -> Style {
     table_separator_style_for(default_fg(), default_bg(), stdout_color_level())
 }

@@ -22,12 +22,15 @@ use crate::bottom_pane::selection_row_layout::{visible_item_window, MAX_POPUP_RO
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
 use crate::style::{accent_style, muted_style};
+use crate::text_formatting::{format_json_compact, truncate_text};
 use crate::width::display_width;
 use crate::wrapping::{word_wrap_line, RtOptions};
 
 const APPROVAL_META_KIND_KEY: &str = "codex_approval_kind";
 const APPROVAL_META_KIND_MCP_TOOL_CALL: &str = "mcp_tool_call";
 const APPROVAL_META_KIND_TOOL_SUGGESTION: &str = "tool_suggestion";
+const APPROVAL_TOOL_PARAMS_KEY: &str = "tool_params";
+const APPROVAL_TOOL_PARAMS_DISPLAY_KEY: &str = "tool_params_display";
 const APPROVAL_PERSIST_KEY: &str = "persist";
 const APPROVAL_PERSIST_SESSION_VALUE: &str = "session";
 const APPROVAL_PERSIST_ALWAYS_VALUE: &str = "always";
@@ -36,6 +39,8 @@ const APPROVAL_ACCEPT_SESSION_VALUE: &str = "accept_session";
 const APPROVAL_ACCEPT_ALWAYS_VALUE: &str = "accept_always";
 const APPROVAL_DECLINE_VALUE: &str = "decline";
 const APPROVAL_CANCEL_VALUE: &str = "cancel";
+const APPROVAL_TOOL_PARAM_DISPLAY_LIMIT: usize = 3;
+const APPROVAL_TOOL_PARAM_VALUE_TRUNCATE_GRAPHEMES: usize = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum McpResponseMode {
@@ -66,7 +71,15 @@ enum McpFieldInput {
 #[derive(Debug, Clone, PartialEq)]
 struct McpOption {
     label: String,
+    description: Option<String>,
     value: Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct McpToolApprovalDisplayParam {
+    name: String,
+    value: Value,
+    display_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -86,6 +99,7 @@ pub(super) struct McpServerElicitationOverlay {
     id: RequestId,
     server_name: String,
     message: String,
+    approval_display_params: Vec<McpToolApprovalDisplayParam>,
     response_mode: McpResponseMode,
     fields: Vec<McpField>,
     states: Vec<McpFieldState>,
@@ -143,6 +157,13 @@ impl McpServerElicitationOverlay {
             id,
             server_name: params.server_name.clone(),
             message: message.clone(),
+            approval_display_params: if response_mode == McpResponseMode::ApprovalAction
+                && is_tool_call_approval(meta.as_ref())
+            {
+                parse_tool_approval_display_params(meta.as_ref())
+            } else {
+                Vec::new()
+            },
             response_mode,
             fields,
             states,
@@ -156,13 +177,26 @@ impl McpServerElicitationOverlay {
         Some(overlay)
     }
 
+    pub(super) fn action_required_label(&self, locale: crate::locale::Locale) -> String {
+        locale.mcp_elicitation_title(&self.server_name)
+    }
+
     pub(super) fn handle_key_event(&mut self, key: KeyEvent) -> Option<AppServerResponse> {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return None;
         }
-        if key.code == KeyCode::Esc
-            || key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c')
-        {
+        if key.code == KeyCode::Esc {
+            return Some(self.cancel_response());
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            // Ctrl-C clears an in-progress text draft before it cancels the elicitation, matching
+            // Codex's bottom-pane request boundary. Selection fields and empty drafts cancel.
+            if self.is_text_field() && !self.text_area.is_empty() {
+                self.text_area.replace(String::new());
+                self.save_text_draft();
+                self.mark_text_changed();
+                return None;
+            }
             return Some(self.cancel_response());
         }
 
@@ -550,17 +584,21 @@ fn lines_with_locale_inner(
     let Some(field) = overlay.fields.get(overlay.current_field) else {
         return vec![Line::from(locale.mcp_elicitation_invalid())];
     };
-    let mut lines = vec![
-        Line::styled(
-            locale.mcp_elicitation_title(&overlay.server_name),
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
-        Line::from(overlay.message.clone()),
-        Line::styled(
-            locale.mcp_elicitation_progress(overlay.current_field + 1, overlay.fields.len()),
-            muted_style(),
-        ),
-    ];
+    let mut lines = vec![Line::styled(
+        locale.mcp_elicitation_title(&overlay.server_name),
+        Style::default().add_modifier(Modifier::BOLD),
+    )];
+    let request_message =
+        format_tool_approval_display_message(&overlay.message, &overlay.approval_display_params);
+    lines.extend(
+        request_message
+            .lines()
+            .map(|line| Line::from(line.to_string())),
+    );
+    lines.push(Line::styled(
+        locale.mcp_elicitation_progress(overlay.current_field + 1, overlay.fields.len()),
+        muted_style(),
+    ));
     if !field.label.is_empty() {
         lines.push(Line::styled(
             format!("{}{}", field.label, if field.required { " *" } else { "" }),
@@ -620,8 +658,14 @@ fn lines_with_locale_inner(
                 } else {
                     Style::default()
                 };
+                let description = option
+                    .description
+                    .as_deref()
+                    .filter(|description| !description.is_empty())
+                    .map(|description| format!("  {description}"))
+                    .unwrap_or_default();
                 lines.push(Line::styled(
-                    format!("{prefix} {}. {label}", index + 1),
+                    format!("{prefix} {}. {label}{description}", index + 1),
                     style,
                 ));
             }
@@ -878,36 +922,145 @@ fn is_tool_suggestion(meta: Option<&Value>) -> bool {
         == Some(APPROVAL_META_KIND_TOOL_SUGGESTION)
 }
 
-fn approval_fields(meta: Option<&Value>) -> Option<Vec<McpField>> {
-    let is_tool_call = meta
-        .and_then(Value::as_object)
+fn is_tool_call_approval(meta: Option<&Value>) -> bool {
+    meta.and_then(Value::as_object)
         .and_then(|meta| meta.get(APPROVAL_META_KIND_KEY))
         .and_then(Value::as_str)
-        == Some(APPROVAL_META_KIND_MCP_TOOL_CALL);
+        == Some(APPROVAL_META_KIND_MCP_TOOL_CALL)
+}
+
+fn parse_tool_approval_display_params(meta: Option<&Value>) -> Vec<McpToolApprovalDisplayParam> {
+    let Some(meta) = meta.and_then(Value::as_object) else {
+        return Vec::new();
+    };
+
+    let display_params = meta
+        .get(APPROVAL_TOOL_PARAMS_DISPLAY_KEY)
+        .and_then(Value::as_array)
+        .map(|params| {
+            params
+                .iter()
+                .filter_map(parse_tool_approval_display_param)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !display_params.is_empty() {
+        return display_params;
+    }
+
+    let mut fallback = meta
+        .get(APPROVAL_TOOL_PARAMS_KEY)
+        .and_then(Value::as_object)
+        .map(|params| {
+            params
+                .iter()
+                .map(|(name, value)| McpToolApprovalDisplayParam {
+                    name: name.clone(),
+                    value: value.clone(),
+                    display_name: name.clone(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    fallback.sort_by(|left, right| left.name.cmp(&right.name));
+    fallback
+}
+
+fn parse_tool_approval_display_param(value: &Value) -> Option<McpToolApprovalDisplayParam> {
+    let value = value.as_object()?;
+    let name = value.get("name")?.as_str()?.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let display_name = value
+        .get("display_name")
+        .and_then(Value::as_str)
+        .unwrap_or(name)
+        .trim();
+    if display_name.is_empty() {
+        return None;
+    }
+    Some(McpToolApprovalDisplayParam {
+        name: name.to_string(),
+        value: value.get("value")?.clone(),
+        display_name: display_name.to_string(),
+    })
+}
+
+fn format_tool_approval_display_message(
+    message: &str,
+    display_params: &[McpToolApprovalDisplayParam],
+) -> String {
+    let message = message.trim();
+    if display_params.is_empty() {
+        return message.to_string();
+    }
+
+    let mut sections = Vec::new();
+    if !message.is_empty() {
+        sections.push(message.to_string());
+    }
+    let params = display_params
+        .iter()
+        .take(APPROVAL_TOOL_PARAM_DISPLAY_LIMIT)
+        .map(format_tool_approval_display_param_line)
+        .collect::<Vec<_>>();
+    if !params.is_empty() {
+        sections.push(params.join("\n"));
+    }
+    sections.join("\n\n")
+}
+
+fn format_tool_approval_display_param_line(param: &McpToolApprovalDisplayParam) -> String {
+    format!(
+        "{}: {}",
+        param.display_name,
+        format_tool_approval_display_param_value(&param.value)
+    )
+}
+
+fn format_tool_approval_display_param_value(value: &Value) -> String {
+    let formatted = match value {
+        Value::String(text) => text.split_whitespace().collect::<Vec<_>>().join(" "),
+        _ => {
+            let compact_json = value.to_string();
+            format_json_compact(&compact_json).unwrap_or(compact_json)
+        }
+    };
+    truncate_text(&formatted, APPROVAL_TOOL_PARAM_VALUE_TRUNCATE_GRAPHEMES)
+}
+
+fn approval_fields(meta: Option<&Value>) -> Option<Vec<McpField>> {
+    let is_tool_call = is_tool_call_approval(meta);
     let mut options = vec![McpOption {
         label: APPROVAL_ACCEPT_ONCE_VALUE.to_string(),
+        description: None,
         value: Value::String(APPROVAL_ACCEPT_ONCE_VALUE.to_string()),
     }];
     if approval_supports_persist_mode(meta, APPROVAL_PERSIST_SESSION_VALUE) {
         options.push(McpOption {
             label: APPROVAL_ACCEPT_SESSION_VALUE.to_string(),
+            description: None,
             value: Value::String(APPROVAL_ACCEPT_SESSION_VALUE.to_string()),
         });
     }
     if approval_supports_persist_mode(meta, APPROVAL_PERSIST_ALWAYS_VALUE) {
         options.push(McpOption {
             label: APPROVAL_ACCEPT_ALWAYS_VALUE.to_string(),
+            description: None,
             value: Value::String(APPROVAL_ACCEPT_ALWAYS_VALUE.to_string()),
         });
     }
     if !is_tool_call {
         options.push(McpOption {
             label: APPROVAL_DECLINE_VALUE.to_string(),
+            description: None,
             value: Value::String(APPROVAL_DECLINE_VALUE.to_string()),
         });
     }
     options.push(McpOption {
         label: APPROVAL_CANCEL_VALUE.to_string(),
+        description: None,
         value: Value::String(APPROVAL_CANCEL_VALUE.to_string()),
     });
     Some(vec![McpField {
@@ -980,10 +1133,12 @@ fn parse_field(id: &str, property: &Value, required: bool) -> Option<McpField> {
             options: vec![
                 McpOption {
                     label: "true".to_string(),
+                    description: None,
                     value: Value::Bool(true),
                 },
                 McpOption {
                     label: "false".to_string(),
+                    description: None,
                     value: Value::Bool(false),
                 },
             ],
@@ -1039,6 +1194,7 @@ fn parse_options(property: &Map<String, Value>) -> Option<Vec<McpOption>> {
                         .and_then(|labels| labels.get(index).copied())
                         .unwrap_or(value.as_str())
                         .to_string(),
+                    description: None,
                     value: Value::String(value),
                 })
             })
@@ -1055,6 +1211,7 @@ fn parse_options(property: &Map<String, Value>) -> Option<Vec<McpOption>> {
             let option = value.as_object()?;
             Some(McpOption {
                 label: option.get("title")?.as_str()?.to_string(),
+                description: string_property(option, "description")?,
                 value: Value::String(option.get("const")?.as_str()?.to_string()),
             })
         })
@@ -1159,12 +1316,16 @@ mod tests {
             "type": "object",
             "properties": {
                 "mode": { "type": "string", "oneOf": [
-                    { "const": "fast", "title": "Fast" },
+                    { "const": "fast", "title": "Fast", "description": "Run quickly" },
                     { "const": "safe", "title": "Safe" }
                 ] }
             }
         }));
         assert_eq!(overlay.current_options().len(), 2);
+        assert_eq!(
+            overlay.current_options()[0].description.as_deref(),
+            Some("Run quickly")
+        );
 
         for schema in [
             json!({ "type": "object", "properties": { "count": { "type": "number" } } }),
@@ -1244,6 +1405,66 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_c_clears_text_draft_before_cancelling_elicitation() {
+        let mut overlay = overlay(json!({
+            "type": "object",
+            "properties": {
+                "token": { "type": "string" }
+            }
+        }));
+        overlay.text_area.insert("sensitive draft");
+        overlay.mark_text_changed();
+
+        assert!(overlay
+            .handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .is_none());
+        assert!(overlay.text_area.is_empty());
+        assert!(!overlay.done);
+
+        let response = overlay
+            .handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .expect("second Ctrl-C cancels the request");
+        let AppServerResponse::McpElicitation { response, .. } = response else {
+            panic!("expected MCP elicitation response");
+        };
+        assert_eq!(response.action, McpServerElicitationAction::Cancel);
+    }
+
+    #[test]
+    fn ctrl_c_on_select_field_cancels_without_mutating_selection() {
+        let mut overlay = overlay(json!({
+            "type": "object",
+            "properties": {
+                "mode": { "type": "string", "enum": ["fast", "safe"] }
+            }
+        }));
+        overlay.handle_key_event(key(KeyCode::Down));
+        assert!(matches!(
+            overlay.states.first(),
+            Some(McpFieldState::Select {
+                selected: Some(1),
+                ..
+            })
+        ));
+
+        let response = overlay
+            .handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .expect("Ctrl-C cancels selection fields");
+        let AppServerResponse::McpElicitation { response, .. } = response else {
+            panic!("expected MCP elicitation response");
+        };
+        assert_eq!(response.action, McpServerElicitationAction::Cancel);
+        assert!(overlay.done);
+        assert!(matches!(
+            overlay.states.first(),
+            Some(McpFieldState::Select {
+                selected: Some(1),
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn tool_suggestion_empty_schema_remains_fail_closed_without_a_consumer() {
         let request = params_with_meta(
             json!({ "type": "object", "properties": {} }),
@@ -1253,6 +1474,82 @@ mod tests {
             McpServerElicitationOverlay::from_server_request(RequestId::Integer(11), &request)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn approval_metadata_renders_explicit_display_order_and_truncates_values() {
+        let overlay = McpServerElicitationOverlay::from_server_request(
+            RequestId::Integer(12),
+            &params_with_meta(
+                json!({ "type": "object", "properties": {} }),
+                Some(json!({
+                    "codex_approval_kind": "mcp_tool_call",
+                    "tool_params": { "zeta": 3, "alpha": 1 },
+                    "tool_params_display": [
+                        { "name": "calendar_id", "value": "primary", "display_name": "Calendar" },
+                        { "name": "title", "value": "Roadmap review", "display_name": "Title" },
+                        { "name": "extra", "value": "ignored", "display_name": "Extra" },
+                        { "name": "fourth", "value": "ignored", "display_name": "Fourth" }
+                    ]
+                })),
+            ),
+        )
+        .expect("tool approval should use the approval surface");
+
+        let lines = lines_with_locale_with_width(&overlay, Locale::EnUs, 80);
+        let text = lines.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let calendar = text
+            .iter()
+            .position(|line| line.contains("Calendar: primary"))
+            .expect("explicit display parameter should be visible");
+        let title = text
+            .iter()
+            .position(|line| line.contains("Title: Roadmap review"))
+            .expect("second display parameter should be visible");
+        assert!(
+            calendar < title,
+            "display metadata order must be stable: {text:?}"
+        );
+        assert!(text.iter().all(|line| !line.contains("Fourth:")));
+        assert!(text.iter().all(|line| display_width(line) <= 80));
+
+        let fallback_overlay = McpServerElicitationOverlay::from_server_request(
+            RequestId::Integer(13),
+            &params_with_meta(
+                json!({ "type": "object", "properties": {} }),
+                Some(json!({
+                    "codex_approval_kind": "mcp_tool_call",
+                    "tool_params": { "zeta": 3, "alpha": 1 }
+                })),
+            ),
+        )
+        .expect("tool approval fallback should remain supported");
+        let fallback_text = lines_with_locale_with_width(&fallback_overlay, Locale::EnUs, 80)
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let alpha = fallback_text
+            .iter()
+            .position(|line| line.contains("alpha: 1"))
+            .expect("fallback alpha parameter should be visible");
+        let zeta = fallback_text
+            .iter()
+            .position(|line| line.contains("zeta: 3"))
+            .expect("fallback zeta parameter should be visible");
+        assert!(alpha < zeta, "fallback parameters should sort by name");
+
+        let long_value = "x".repeat(80);
+        let param = McpToolApprovalDisplayParam {
+            name: "value".to_string(),
+            value: Value::String(long_value),
+            display_name: "Value".to_string(),
+        };
+        let formatted =
+            format_tool_approval_display_message("Approve", std::slice::from_ref(&param));
+        assert!(formatted.starts_with("Approve\n\nValue: "));
+        let param_line = format_tool_approval_display_param_line(&param);
+        assert!(param_line.chars().count() < 80);
+        assert!(param_line.ends_with("..."));
     }
 
     #[test]
@@ -1366,6 +1663,38 @@ mod tests {
             assert!(text.contains(&locale.mcp_elicitation_progress(1, 1)));
             assert!(text.contains(locale.mcp_elicitation_boolean_option(true)));
             assert!(text.contains(locale.mcp_elicitation_controls(true).trim()));
+        }
+    }
+
+    #[test]
+    fn option_descriptions_are_visible_and_width_bounded() {
+        let overlay = overlay(json!({
+            "type": "object",
+            "properties": {
+                "mode": { "type": "string", "oneOf": [
+                    {
+                        "const": "fast",
+                        "title": "Fast",
+                        "description": "Continue quickly without additional checks"
+                    },
+                    {
+                        "const": "safe",
+                        "title": "Safe",
+                        "description": "Review every step before execution"
+                    }
+                ] }
+            }
+        }));
+
+        let wide = lines_with_locale_with_width(&overlay, Locale::EnUs, 80);
+        assert!(wide
+            .iter()
+            .any(|line| line.to_string().contains("Continue quickly")));
+        for width in [8, 16, 32] {
+            let lines = lines_with_locale_with_width(&overlay, Locale::EnUs, width);
+            assert!(lines
+                .iter()
+                .all(|line| display_width(&line.to_string()) <= width));
         }
     }
 

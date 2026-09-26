@@ -2,6 +2,7 @@ use std::path::Path;
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
+use unicode_width::UnicodeWidthStr;
 
 use crate::diff_render;
 use crate::exec_cell::{output_lines, CommandOutput, OutputLinesParams};
@@ -13,6 +14,7 @@ use crate::style::{
     StatusTone,
 };
 use crate::terminal_hyperlinks::{prefix_hyperlink_lines, HyperlinkLine};
+use crate::wrapping::{adaptive_wrap_lines, RtOptions};
 
 #[cfg(test)]
 pub(crate) fn lines(entry: &TranscriptEntry) -> Vec<Line<'static>> {
@@ -30,9 +32,19 @@ pub(crate) fn hyperlink_lines_with_locale(
 ) -> Vec<HyperlinkLine> {
     let (prefix, prefix_style, text_style) = styles(entry.kind);
     let rich_lines = match entry.kind {
-        EntryKind::Assistant | EntryKind::Reasoning => Some(
-            markdown_render::render_markdown_lines_with_width(&entry.text, text_style, width),
-        ),
+        EntryKind::Assistant | EntryKind::Reasoning => {
+            Some(markdown_render::render_markdown_lines_with_width_and_cwd(
+                &entry.text,
+                text_style,
+                width,
+                cwd,
+            ))
+        }
+        EntryKind::Warning | EntryKind::Error => Some(notice_content_lines(
+            &entry.text,
+            text_style,
+            width.map(|width| width.saturating_sub(UnicodeWidthStr::width(prefix)).max(1)),
+        )),
         EntryKind::Patch => Some(
             diff_render::render(&entry.text, width, cwd)
                 .into_iter()
@@ -133,6 +145,22 @@ pub(crate) fn hyperlink_lines_with_locale(
     lines
 }
 
+/// Compact activity presentation used by the full-screen transcript disclosure owner.
+///
+/// The canonical entry remains unchanged: only the invocation/title line is retained while
+/// output, diffs, plan steps, and summary facts stay available through the expanded rendering.
+pub(crate) fn compact_hyperlink_lines_with_locale(
+    entry: &TranscriptEntry,
+    locale: Locale,
+    width: Option<usize>,
+    cwd: &Path,
+) -> Vec<HyperlinkLine> {
+    let mut compact = entry.clone();
+    compact.text = entry.text.lines().next().unwrap_or_default().to_string();
+    compact.summary.clear();
+    hyperlink_lines_with_locale(&compact, locale, width, cwd)
+}
+
 fn localized_tool_detail(detail: &str, cwd: &Path) -> String {
     detail
         .strip_prefix("view image: ")
@@ -163,7 +191,11 @@ fn styles(kind: EntryKind) -> (&'static str, Style, Style) {
     match kind {
         EntryKind::User => ("› ", accent_style(), user_message_style()),
         EntryKind::Assistant => ("  ", Style::default(), Style::default()),
-        EntryKind::Reasoning => ("· ", muted_style(), muted_style()),
+        EntryKind::Reasoning => (
+            "• ",
+            muted_style(),
+            muted_style().add_modifier(Modifier::ITALIC),
+        ),
         EntryKind::Command => (
             "$ ",
             Style::default().fg(Color::Yellow),
@@ -182,8 +214,26 @@ fn styles(kind: EntryKind) -> (&'static str, Style, Style) {
             Style::default(),
         ),
         EntryKind::Tool => ("• ", Style::default().fg(Color::Yellow), Style::default()),
+        EntryKind::Warning => ("⚠ ", attention_style(), attention_style()),
+        EntryKind::Error => ("■ ", failure_style(), failure_style()),
         EntryKind::System => ("! ", failure_style(), failure_style()),
     }
+}
+
+fn notice_content_lines(
+    text: &str,
+    style: Style,
+    content_width: Option<usize>,
+) -> Vec<HyperlinkLine> {
+    let lines = text
+        .lines()
+        .map(|line| Line::styled(line.to_string(), style))
+        .collect::<Vec<_>>();
+    let lines = match content_width {
+        Some(width) => adaptive_wrap_lines(lines, RtOptions::new(width)),
+        None => lines,
+    };
+    lines.into_iter().map(HyperlinkLine::new).collect()
 }
 
 fn continuation_style(kind: EntryKind, base_style: Style) -> Style {
@@ -230,6 +280,8 @@ mod tests {
             streaming: false,
             status: (kind == EntryKind::Command).then_some(EntryStatus::Running),
             summary: Vec::new(),
+            activity_group: None,
+            activity_detail: None,
         }
     }
 
@@ -354,6 +406,41 @@ mod tests {
                         rendered[0].spans.last().and_then(|span| span.style.fg),
                         Some(expected)
                     );
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn warning_and_error_notices_use_codex_markers_and_bounded_wrapping() {
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (255, 255, 255),
+                bg: (0, 0, 0),
+            },
+            || {
+                for (kind, marker, color) in [
+                    (EntryKind::Warning, "⚠ ", Color::Yellow),
+                    (EntryKind::Error, "■ ", Color::Red),
+                ] {
+                    for width in [40, 80, 120] {
+                        let rendered = hyperlink_lines_with_locale(
+                            &entry(
+                                kind,
+                                "401 Unauthorized: provider credentials expired before the request completed; refresh them and retry",
+                            ),
+                            Locale::EnUs,
+                            Some(width),
+                            Path::new("/workspace"),
+                        );
+                        assert_eq!(rendered[0].line.spans[0].content, marker);
+                        assert_eq!(rendered[0].line.spans[0].style.fg, Some(color));
+                        assert!(rendered.iter().all(|line| line.line.width() <= width));
+                        assert!(rendered
+                            .iter()
+                            .skip(1)
+                            .all(|line| line.line.spans[0].content == "  "));
+                    }
                 }
             },
         );

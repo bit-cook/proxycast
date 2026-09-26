@@ -4,11 +4,15 @@ use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Once;
+use std::time::Duration;
 
 use crossterm::cursor::Show;
 #[cfg(not(windows))]
 use crossterm::event::EnableFocusChange;
-use crossterm::event::{DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, KeyEvent};
+use crossterm::event::{
+    DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+    EnableMouseCapture, KeyEvent, MouseEvent,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -28,11 +32,14 @@ mod frame_requester;
 pub(crate) use event_stream::{EventBroker, TuiEventStream};
 pub(crate) use frame_requester::FrameRequester;
 
+pub(crate) const TARGET_FRAME_INTERVAL: Duration = frame_rate_limiter::MIN_FRAME_INTERVAL;
+
 /// Normalized events consumed by the TUI runtime.
 #[derive(Debug, Clone)]
 pub enum TuiEvent {
     Key(KeyEvent),
     Paste(String),
+    Mouse(MouseEvent),
     Resize(ratatui::layout::Size),
     Draw,
     #[allow(dead_code)]
@@ -65,6 +72,7 @@ fn restore_terminal_state() -> io::Result<()> {
         output,
         DisableBracketedPaste,
         DisableFocusChange,
+        DisableMouseCapture,
         LeaveAlternateScreen
     ) {
         first_error.get_or_insert(error);
@@ -80,15 +88,26 @@ fn restore_terminal_state() -> io::Result<()> {
 
 fn set_modes() -> io::Result<()> {
     #[cfg(not(windows))]
-    execute!(stdout(), EnableBracketedPaste, EnableFocusChange)?;
+    execute!(
+        stdout(),
+        EnableBracketedPaste,
+        EnableFocusChange,
+        EnableMouseCapture
+    )?;
     #[cfg(windows)]
-    execute!(stdout(), EnableBracketedPaste)?;
+    execute!(stdout(), EnableBracketedPaste, EnableMouseCapture)?;
     enable_raw_mode()
 }
 
 fn restore_keep_raw() -> io::Result<()> {
     let mut output = stdout();
-    let mut first_error = execute!(output, DisableBracketedPaste, DisableFocusChange).err();
+    let mut first_error = execute!(
+        output,
+        DisableBracketedPaste,
+        DisableFocusChange,
+        DisableMouseCapture
+    )
+    .err();
     if let Err(error) = execute!(output, Show) {
         first_error.get_or_insert(error);
     }
@@ -96,6 +115,17 @@ fn restore_keep_raw() -> io::Result<()> {
         Some(error) => Err(error),
         None => Ok(()),
     }
+}
+
+fn cleanup_failed_enter(output: &mut Stdout) {
+    // `execute!` may fail after an earlier command already changed terminal state. Keep each
+    // cleanup independent so one unsupported mode does not prevent the remaining restoration.
+    let _ = execute!(output, DisableBracketedPaste);
+    #[cfg(not(windows))]
+    let _ = execute!(output, DisableFocusChange);
+    let _ = execute!(output, DisableMouseCapture);
+    let _ = execute!(output, LeaveAlternateScreen);
+    let _ = disable_raw_mode();
 }
 
 #[cfg(unix)]
@@ -148,28 +178,25 @@ impl Tui {
             output,
             EnterAlternateScreen,
             EnableBracketedPaste,
-            EnableFocusChange
+            EnableFocusChange,
+            EnableMouseCapture
         );
         #[cfg(windows)]
-        let mode_result = execute!(output, EnterAlternateScreen, EnableBracketedPaste);
+        let mode_result = execute!(
+            output,
+            EnterAlternateScreen,
+            EnableBracketedPaste,
+            EnableMouseCapture
+        );
         if let Err(error) = mode_result {
-            let _ = disable_raw_mode();
+            cleanup_failed_enter(&mut output);
             return Err(error);
         }
         let terminal = match RatatuiTerminal::new(CrosstermBackend::new(output)) {
             Ok(terminal) => terminal,
             Err(error) => {
                 let mut output = stdout();
-                #[cfg(not(windows))]
-                let _ = execute!(
-                    output,
-                    DisableBracketedPaste,
-                    DisableFocusChange,
-                    LeaveAlternateScreen
-                );
-                #[cfg(windows)]
-                let _ = execute!(output, DisableBracketedPaste, LeaveAlternateScreen);
-                let _ = disable_raw_mode();
+                cleanup_failed_enter(&mut output);
                 return Err(error);
             }
         };
@@ -348,6 +375,7 @@ impl Tui {
             self.terminal.backend_mut(),
             DisableBracketedPaste,
             DisableFocusChange,
+            DisableMouseCapture,
             LeaveAlternateScreen
         ) {
             first_error.get_or_insert(error);
@@ -366,7 +394,11 @@ impl Tui {
     /// Enter alternate screen and expand the viewport to full terminal size, saving the current
     /// inline viewport for restoration when leaving.
     pub(crate) fn enter_alt_screen(&mut self) -> io::Result<()> {
-        let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
+        let _ = execute!(
+            self.terminal.backend_mut(),
+            EnterAlternateScreen,
+            EnableMouseCapture
+        );
         if let Ok(size) = self.terminal.size() {
             self.viewport.enter_alternate_screen(size);
             self.terminal
@@ -377,7 +409,11 @@ impl Tui {
 
     /// Leave alternate screen and restore the previously saved inline viewport, if any.
     pub(crate) fn leave_alt_screen(&mut self) -> io::Result<()> {
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        let _ = execute!(
+            self.terminal.backend_mut(),
+            DisableMouseCapture,
+            LeaveAlternateScreen
+        );
         self.viewport.leave_alternate_screen();
         Ok(())
     }

@@ -1,4 +1,5 @@
 use ratatui::style::Style;
+use std::path::Path;
 
 use crate::markdown;
 use crate::terminal_hyperlinks::HyperlinkLine;
@@ -10,6 +11,15 @@ pub(crate) fn render_markdown_lines_with_width(
     width: Option<usize>,
 ) -> Vec<HyperlinkLine> {
     markdown::render(input, base_style, width)
+}
+
+pub(crate) fn render_markdown_lines_with_width_and_cwd(
+    input: &str,
+    base_style: Style,
+    width: Option<usize>,
+    cwd: &Path,
+) -> Vec<HyperlinkLine> {
+    markdown::render_with_cwd(input, base_style, width, Some(cwd))
 }
 
 #[allow(dead_code)]

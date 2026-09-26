@@ -103,6 +103,10 @@ impl AttachmentState {
         self.selected_remote_image_index
     }
 
+    pub(super) fn clear_remote_image_selection(&mut self) {
+        self.selected_remote_image_index = None;
+    }
+
     pub(super) fn remote_image_lines(&self) -> Vec<Line<'static>> {
         self.remote_image_urls
             .iter()

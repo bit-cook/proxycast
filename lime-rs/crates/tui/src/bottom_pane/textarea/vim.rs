@@ -327,10 +327,22 @@ impl TextArea {
                 self.vim_replace_steps.clear();
                 self.move_right_normal();
             }
-            KeyCode::Enter => self.insert_vim_replace_text("\n"),
+            KeyCode::Enter => {
+                if self.mouse_selection_range().is_some() {
+                    self.vim_replace_steps.clear();
+                    self.insert_str("\n");
+                } else {
+                    self.insert_vim_replace_text("\n");
+                }
+            }
             _ => {
                 if let Some(value) = plain_char(event) {
-                    self.replace_vim_text(&value);
+                    if self.mouse_selection_range().is_some() {
+                        self.vim_replace_steps.clear();
+                        self.insert_str(&value);
+                    } else {
+                        self.replace_vim_text(&value);
+                    }
                 }
             }
         }

@@ -6,7 +6,7 @@
 
 ### An agent that can actually finish the work
 
-**Open-source full-stack desktop AI agent**
+**Open-source full-stack AI agent for Desktop and CLI/TUI**
 
 Full-stack AI agent for coding, files, terminals, tools, research, content, multimodal work, and multi-agent workflows worldwide.
 
@@ -14,12 +14,12 @@ Full-stack AI agent for coding, files, terminals, tools, research, content, mult
 
 <p>
   <a href="https://github.com/limecloud/lime/releases"><img src="https://img.shields.io/github/v/release/limecloud/lime?label=release" alt="Lime GitHub Release" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-246B45" alt="Lime supports macOS and Windows" />
-  <img src="https://img.shields.io/badge/desktop-Electron-24C8DB" alt="Lime is an Electron desktop app" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-246B45" alt="Lime supports macOS, Windows, and Linux across Desktop and CLI" />
+  <img src="https://img.shields.io/badge/surfaces-Desktop%20%7C%20CLI%2FTUI-24C8DB" alt="Lime provides Desktop and CLI/TUI product surfaces" />
   <img src="https://img.shields.io/badge/license-GPLv3-2F4F4F" alt="Lime GPLv3 license" />
 </p>
 
-Lime is more than a chat box: it understands context, calls tools, edits files, runs commands, organizes material, creates deliverables, and keeps moving a task forward from one desktop workspace.
+Lime is more than a chat box: it understands context, calls tools, edits files, runs commands, organizes material, creates deliverables, and keeps moving a task forward from one desktop or terminal workspace.
 
 </div>
 
@@ -34,6 +34,7 @@ Lime is more than a chat box: it understands context, calls tools, edits files, 
 - [Core capabilities](#core-capabilities)
 - [Who Lime is for](#who-lime-is-for)
 - [Product positioning](#product-positioning)
+- [Choose a product surface](#choose-a-product-surface)
 - [Quick Start](#quick-start)
 - [Tech Stack and Platforms](#tech-stack-and-platforms)
 - [FAQ](#faq)
@@ -46,7 +47,7 @@ Lime is more than a chat box: it understands context, calls tools, edits files, 
 
 ## What is Lime?
 
-Lime is an open-source full-stack desktop AI agent for users and teams worldwide. It brings the Agent loop, filesystem, terminal processes, code changes, tool calls, MCP, Skills, multimodal input and output, model routing, and multi-agent collaboration into one traceable task chain.
+Lime is an open-source full-stack AI agent for users and teams worldwide, available as an Electron Desktop app and a CLI/TUI. It brings the Agent loop, filesystem, terminal processes, code changes, tool calls, MCP, Skills, multimodal input and output, model routing, and multi-agent collaboration into one traceable task chain.
 
 It belongs to the same category of hands-on agents as Claude Code, WorkBuddy, and Codex, while emphasizing a desktop GUI, visual workspace, configurable providers, and mixed engineering, research, and content workflows for global users and teams.
 
@@ -138,11 +139,22 @@ Lime belongs to the full-stack AI agent, coding agent, desktop AI agent, and ter
 
 Multimodality is a core Agent workflow, not a separate attachment feature. One Thread can combine a written brief, a codebase, images and screenshots, voice or video material, PDFs, and spreadsheets so the Agent can cross-understand them, call tools, and produce delivery-ready results.
 
+## Choose a product surface
+
+Lime is distributed through two product surfaces. Choose the one that matches your workflow; both surfaces use the same App Server JSON-RPC, RuntimeCore, and canonical Thread / Turn / Item data model.
+
+| Surface | Best for | Installation | Includes |
+| --- | --- | --- | --- |
+| **Desktop (Electron)** | Visual workspaces, file browsing, artifacts, and long-running tasks | Download the macOS or Windows installer from [Releases](https://github.com/limecloud/lime/releases), or use Homebrew on macOS | Electron GUI, workspace and preview surfaces, permissions, updater, and the local App Server sidecar |
+| **CLI/TUI** | SSH sessions, servers, scripts, CI, and keyboard-first work | `npm install -g @limecloud/lime` (Node.js ≥18) | `lime` / `lime tui` interactive TUI, `lime exec` non-interactive runs, history and thread commands |
+
+The CLI/TUI package is not a second runtime and does not include the Electron GUI. Its platform package carries the `lime`, `app-server`, and `code-mode-host` binaries needed for the same local product chain, so you do not install a separate App Server.
+
 ---
 
 ## Quick Start
 
-### Download and install
+### Desktop (Electron)
 
 Download the installer for your platform from [Releases](https://github.com/limecloud/lime/releases).
 
@@ -158,9 +170,35 @@ brew tap aiclientproxy/tap
 brew install --cask lime
 ```
 
-### First run
+### CLI/TUI
 
-1. Open Lime, configure a Provider, and test a model connection.
+Requirements: Node.js 18 or newer. Install the published launcher and its platform payload with npm:
+
+```bash
+npm install -g @limecloud/lime
+lime --version
+```
+
+Start the interactive terminal UI or run a single non-interactive task:
+
+```bash
+lime                         # same as `lime tui`
+lime exec "review this diff"
+lime exec --json "review this diff"
+```
+
+The launcher selects the payload for macOS arm64/x64, Windows x64, or Linux x64 GNU. Local commands start the sibling `app-server` automatically. To use another local binary, set `LIME_APP_SERVER_BIN` or pass `--app-server <PATH>`; to connect to a remote App Server, use a secure WebSocket and read the token from an environment variable:
+
+```bash
+lime exec \
+  --remote wss://cloud.example/rpc \
+  --remote-auth-token-env LIME_REMOTE_TOKEN \
+  "review this diff"
+```
+
+### First run (Desktop or CLI/TUI)
+
+1. Open the Desktop app, or run `lime` for CLI/TUI; configure a Provider and test a model connection.
 2. Choose a workspace or project directory and confirm file and terminal permissions.
 3. Create an Agent Thread with a goal, constraints, and acceptance criteria.
 4. Ask for a plan first, then approve file changes, commands, or external tool calls as needed.
@@ -174,7 +212,9 @@ brew install --cask lime
 - Agent runtime: Thread / Turn / Item projection, tool lifecycle, Skills, MCP, multi-agent work, and history restoration.
 - Frontend: React, TypeScript, Vite.
 - Local capabilities: filesystem, processes, workspaces, artifacts, and persisted state.
-- Supported platforms: macOS, Windows.
+- Desktop platforms: macOS and Windows (Linux Desktop builds are paused).
+- CLI/TUI platforms: macOS arm64/x64, Windows x64, and Linux x64 GNU.
+- CLI runtime requirement: Node.js 18 or newer.
 - License: GPLv3.
 
 ---

@@ -258,6 +258,21 @@ impl Locale {
         }
     }
 
+    pub(crate) fn raw_output_mode_message(self, enabled: bool) -> &'static str {
+        match (self, enabled) {
+            (Self::ZhCn, true) => "已启用原始输出模式",
+            (Self::ZhCn, false) => "已恢复富文本输出模式",
+            (Self::ZhTw, true) => "已啟用原始輸出模式",
+            (Self::ZhTw, false) => "已恢復富文字輸出模式",
+            (Self::EnUs, true) => "Raw output mode enabled",
+            (Self::EnUs, false) => "Rich output mode restored",
+            (Self::JaJp, true) => "RAW 出力モードを有効にしました",
+            (Self::JaJp, false) => "リッチ出力モードに戻しました",
+            (Self::KoKr, true) => "원시 출력 모드를 켰습니다",
+            (Self::KoKr, false) => "리치 출력 모드로 복원했습니다",
+        }
+    }
+
     pub(crate) fn slash_command_description(self, command: SlashCommand) -> &'static str {
         match (self, command) {
             (Self::ZhCn, SlashCommand::Model) => "选择模型",
@@ -319,6 +334,11 @@ impl Locale {
             (Self::EnUs, SlashCommand::Mcp) => "show MCP servers and tools",
             (Self::JaJp, SlashCommand::Mcp) => "MCP サーバーとツールを表示",
             (Self::KoKr, SlashCommand::Mcp) => "MCP 서버 및 도구 보기",
+            (Self::ZhCn, SlashCommand::Raw) => "切换便于复制的原始输出模式",
+            (Self::ZhTw, SlashCommand::Raw) => "切換便於複製的原始輸出模式",
+            (Self::EnUs, SlashCommand::Raw) => "toggle copy-friendly raw output",
+            (Self::JaJp, SlashCommand::Raw) => "コピーしやすい RAW 出力を切り替え",
+            (Self::KoKr, SlashCommand::Raw) => "복사하기 쉬운 원시 출력 전환",
             (Self::ZhCn, SlashCommand::Vim) => "切换 Vim 编辑模式",
             (Self::ZhTw, SlashCommand::Vim) => "切換 Vim 編輯模式",
             (Self::EnUs, SlashCommand::Vim) => "toggle Vim composer mode",
@@ -383,6 +403,16 @@ impl Locale {
             Self::EnUs => "STATUS",
             Self::JaJp => "状態",
             Self::KoKr => "상태",
+        }
+    }
+
+    pub(crate) fn action_required_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "需要操作",
+            Self::ZhTw => "需要操作",
+            Self::EnUs => "Action required",
+            Self::JaJp => "操作が必要",
+            Self::KoKr => "조치 필요",
         }
     }
 
@@ -551,6 +581,16 @@ impl Locale {
             _ => self.image_label(),
         };
         format!("[{label} #{index}]")
+    }
+
+    pub(crate) fn transcript_attachments_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "[附件]",
+            Self::ZhTw => "[附件]",
+            Self::EnUs => "[attachments]",
+            Self::JaJp => "[添付ファイル]",
+            Self::KoKr => "[첨부 파일]",
+        }
     }
 
     pub(crate) fn edit_queued_input_hint(self) -> &'static str {
@@ -784,17 +824,456 @@ impl Locale {
         }
     }
 
-    pub(crate) fn transcript_pager_footer(self) -> &'static str {
+    pub(crate) fn transcript_pager_footer(
+        self,
+        page_down_hint: &str,
+        find_hint: &str,
+        close_hint: &str,
+    ) -> String {
         match self {
-            Self::ZhCn => "上下滚动  PgUp/PgDn 翻页  Home/End 跳转  Ctrl+T/Esc/Q 关闭",
-            Self::ZhTw => "上下捲動  PgUp/PgDn 翻頁  Home/End 跳轉  Ctrl+T/Esc/Q 關閉",
-            Self::EnUs => "Up/Down scroll  PgUp/PgDn page  Home/End jump  Ctrl+T/Esc/Q close",
-            Self::JaJp => "上下スクロール  PgUp/PgDn ページ  Home/End 移動  Ctrl+T/Esc/Q 閉じる",
-            Self::KoKr => "위/아래 스크롤  PgUp/PgDn 페이지  Home/End 이동  Ctrl+T/Esc/Q 닫기",
+            Self::ZhCn => format!(
+                "上下滚动  PgUp/{page_down_hint} 翻页  {find_hint} 查找  Home/End 跳转  {close_hint} 关闭"
+            ),
+            Self::ZhTw => format!(
+                "上下捲動  PgUp/{page_down_hint} 翻頁  {find_hint} 尋找  Home/End 跳轉  {close_hint} 關閉"
+            ),
+            Self::EnUs => format!(
+                "Up/Down scroll  PgUp/{page_down_hint} page  {find_hint} find  Home/End jump  {close_hint} close"
+            ),
+            Self::JaJp => format!(
+                "上下スクロール  PgUp/{page_down_hint} ページ  {find_hint} 検索  Home/End 移動  {close_hint} 閉じる"
+            ),
+            Self::KoKr => format!(
+                "위/아래 스크롤  PgUp/{page_down_hint} 페이지  {find_hint} 찾기  Home/End 이동  {close_hint} 닫기"
+            ),
+        }
+    }
+
+    pub(crate) fn transcript_follow_labels(self, unseen_activity: bool) -> [&'static str; 5] {
+        match (self, unseen_activity) {
+            (Self::ZhCn, false) => [
+                " ↓ 返回底部 · esc ",
+                " ↓ 返回底部 ",
+                " ↓ 底部 · esc ",
+                " ↓ 底部 ",
+                " ↓ ",
+            ],
+            (Self::ZhCn, true) => [
+                " 有新动态 · ↓ 返回底部 · esc ",
+                " 有新动态 · ↓ 底部 ",
+                " 新动态 · ↓ 底部 ",
+                " ↓ 底部 ",
+                " ↓ ",
+            ],
+            (Self::ZhTw, false) => [
+                " ↓ 返回底部 · esc ",
+                " ↓ 返回底部 ",
+                " ↓ 底部 · esc ",
+                " ↓ 底部 ",
+                " ↓ ",
+            ],
+            (Self::ZhTw, true) => [
+                " 有新動態 · ↓ 返回底部 · esc ",
+                " 有新動態 · ↓ 底部 ",
+                " 新動態 · ↓ 底部 ",
+                " ↓ 底部 ",
+                " ↓ ",
+            ],
+            (Self::EnUs, false) => [
+                " ↓ Back to bottom · esc ",
+                " ↓ Back to bottom ",
+                " ↓ Bottom · esc ",
+                " ↓ Bottom ",
+                " ↓ ",
+            ],
+            (Self::EnUs, true) => [
+                " New activity · ↓ Back to bottom · esc ",
+                " New activity · ↓ Bottom ",
+                " New · ↓ Bottom ",
+                " ↓ Bottom ",
+                " ↓ ",
+            ],
+            (Self::JaJp, false) => [
+                " ↓ 最新位置へ · esc ",
+                " ↓ 最新位置へ ",
+                " ↓ 末尾 · esc ",
+                " ↓ 末尾 ",
+                " ↓ ",
+            ],
+            (Self::JaJp, true) => [
+                " 新しい動き · ↓ 最新位置へ · esc ",
+                " 新しい動き · ↓ 末尾 ",
+                " 新着 · ↓ 末尾 ",
+                " ↓ 末尾 ",
+                " ↓ ",
+            ],
+            (Self::KoKr, false) => [
+                " ↓ 맨 아래로 · esc ",
+                " ↓ 맨 아래로 ",
+                " ↓ 아래 · esc ",
+                " ↓ 아래 ",
+                " ↓ ",
+            ],
+            (Self::KoKr, true) => [
+                " 새 활동 · ↓ 맨 아래로 · esc ",
+                " 새 활동 · ↓ 아래 ",
+                " 새로움 · ↓ 아래 ",
+                " ↓ 아래 ",
+                " ↓ ",
+            ],
+        }
+    }
+
+    pub(crate) fn transcript_pager_activity_footer(self, close_hint: &str) -> String {
+        match self {
+            Self::ZhCn => format!("上下滚动  F4 查看活动详情  {close_hint} 关闭"),
+            Self::ZhTw => format!("上下捲動  F4 查看活動詳情  {close_hint} 關閉"),
+            Self::EnUs => format!("Up/Down scroll  F4 inspect activity  {close_hint} close"),
+            Self::JaJp => format!("上下スクロール  F4 アクティビティ詳細  {close_hint} 閉じる"),
+            Self::KoKr => format!("위/아래 스크롤  F4 활동 세부 정보  {close_hint} 닫기"),
+        }
+    }
+
+    pub(crate) fn transcript_activity_focus_footer(self) -> &'static str {
+        match self {
+            Self::ZhCn => "↑/↓ 上一个/下一个  Enter 展开/收起  Esc 返回",
+            Self::ZhTw => "↑/↓ 上一個/下一個  Enter 展開/收起  Esc 返回",
+            Self::EnUs => "↑/↓ previous/next  Enter details  Esc back",
+            Self::JaJp => "↑/↓ 前/次  Enter 詳細  Esc 戻る",
+            Self::KoKr => "↑/↓ 이전/다음  Enter 세부 정보  Esc 뒤로",
+        }
+    }
+
+    pub(crate) fn transcript_exploration_label(self, active: bool) -> &'static str {
+        match (self, active) {
+            (Self::ZhCn, true) => "正在探索",
+            (Self::ZhCn, false) => "已探索",
+            (Self::ZhTw, true) => "正在探索",
+            (Self::ZhTw, false) => "已探索",
+            (Self::EnUs, true) => "Exploring",
+            (Self::EnUs, false) => "Explored",
+            (Self::JaJp, true) => "探索中",
+            (Self::JaJp, false) => "探索済み",
+            (Self::KoKr, true) => "탐색 중",
+            (Self::KoKr, false) => "탐색함",
+        }
+    }
+
+    pub(crate) fn transcript_activity_action_label(self, action: &str) -> &'static str {
+        match action {
+            "read" => match self {
+                Self::ZhCn => "读取",
+                Self::ZhTw => "讀取",
+                Self::EnUs => "Read",
+                Self::JaJp => "読取",
+                Self::KoKr => "읽기",
+            },
+            "list" => match self {
+                Self::ZhCn => "列出",
+                Self::ZhTw => "列出",
+                Self::EnUs => "List",
+                Self::JaJp => "一覧",
+                Self::KoKr => "목록",
+            },
+            "search" => match self {
+                Self::ZhCn => "搜索",
+                Self::ZhTw => "搜尋",
+                Self::EnUs => "Search",
+                Self::JaJp => "検索",
+                Self::KoKr => "검색",
+            },
+            _ => match self {
+                Self::ZhCn => "运行",
+                Self::ZhTw => "執行",
+                Self::EnUs => "Run",
+                Self::JaJp => "実行",
+                Self::KoKr => "실행",
+            },
+        }
+    }
+
+    pub(crate) fn transcript_activity_search_target(self, query: &str, path: &str) -> String {
+        match self {
+            Self::ZhCn => format!("{query}，位于 {path}"),
+            Self::ZhTw => format!("{query}，位於 {path}"),
+            Self::EnUs => format!("{query} in {path}"),
+            Self::JaJp => format!("{path} 内の {query}"),
+            Self::KoKr => format!("{path}에서 {query}"),
+        }
+    }
+
+    pub(crate) fn transcript_activity_exit(self, code: i32, compound: bool) -> String {
+        match (self, compound) {
+            (Self::ZhCn, true) => format!("（命令退出 {code}）"),
+            (Self::ZhCn, false) => format!("（退出 {code}）"),
+            (Self::ZhTw, true) => format!("（命令結束 {code}）"),
+            (Self::ZhTw, false) => format!("（結束 {code}）"),
+            (Self::EnUs, true) => format!("(command exit {code})"),
+            (Self::EnUs, false) => format!("(exit {code})"),
+            (Self::JaJp, true) => format!("（コマンド終了 {code}）"),
+            (Self::JaJp, false) => format!("（終了 {code}）"),
+            (Self::KoKr, true) => format!("(명령 종료 {code})"),
+            (Self::KoKr, false) => format!("(종료 {code})"),
+        }
+    }
+
+    pub(crate) fn transcript_computer_label(self, active: bool) -> &'static str {
+        match (self, active) {
+            (Self::ZhCn, true) => "正在操作电脑",
+            (Self::ZhCn, false) => "已操作电脑",
+            (Self::ZhTw, true) => "正在操作電腦",
+            (Self::ZhTw, false) => "已操作電腦",
+            (Self::EnUs, true) => "Using computer",
+            (Self::EnUs, false) => "Used computer",
+            (Self::JaJp, true) => "コンピュータを操作中",
+            (Self::JaJp, false) => "コンピュータを操作しました",
+            (Self::KoKr, true) => "컴퓨터 사용 중",
+            (Self::KoKr, false) => "컴퓨터 사용함",
+        }
+    }
+
+    pub(crate) fn transcript_activity_count(self, count: usize) -> String {
+        match self {
+            Self::ZhCn => format!("{count} 个操作"),
+            Self::ZhTw => format!("{count} 個操作"),
+            Self::EnUs if count == 1 => "1 action".to_string(),
+            Self::EnUs => format!("{count} actions"),
+            Self::JaJp => format!("{count} 件の操作"),
+            Self::KoKr => format!("작업 {count}개"),
+        }
+    }
+
+    pub(crate) fn transcript_activity_failed_count(self, count: usize) -> String {
+        match self {
+            Self::ZhCn => format!("{count} 个失败"),
+            Self::ZhTw => format!("{count} 個失敗"),
+            Self::EnUs => format!("{count} failed"),
+            Self::JaJp => format!("{count} 件失敗"),
+            Self::KoKr => format!("실패 {count}개"),
+        }
+    }
+
+    pub(crate) fn transcript_computer_action_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "电脑操作",
+            Self::ZhTw => "電腦操作",
+            Self::EnUs => "Computer action",
+            Self::JaJp => "コンピュータ操作",
+            Self::KoKr => "컴퓨터 작업",
+        }
+    }
+
+    pub(crate) fn transcript_computer_capture(self, title: &str) -> String {
+        match self {
+            Self::ZhCn => format!("已截图 · {title}"),
+            Self::ZhTw => format!("已擷取螢幕截圖 · {title}"),
+            Self::EnUs => format!("Captured screenshot · {title}"),
+            Self::JaJp => format!("スクリーンショット取得 · {title}"),
+            Self::KoKr => format!("스크린샷 캡처 · {title}"),
+        }
+    }
+
+    pub(crate) fn transcript_computer_failure(self, title: &str, error: Option<&str>) -> String {
+        let detail = error.map_or_else(|| title.to_string(), |error| format!("{title} — {error}"));
+        match self {
+            Self::ZhCn => format!("失败：{detail}"),
+            Self::ZhTw => format!("失敗：{detail}"),
+            Self::EnUs => format!("Failed: {detail}"),
+            Self::JaJp => format!("失敗: {detail}"),
+            Self::KoKr => format!("실패: {detail}"),
+        }
+    }
+
+    pub(crate) fn transcript_copy_confirmed(self, characters: usize) -> String {
+        match self {
+            Self::ZhCn => format!("已复制 {characters} 个字符到主机剪贴板"),
+            Self::ZhTw => format!("已複製 {characters} 個字元到主機剪貼簿"),
+            Self::EnUs => format!("Copied {characters} chars to host clipboard"),
+            Self::JaJp => format!("ホストのクリップボードに {characters} 文字コピーしました"),
+            Self::KoKr => format!("호스트 클립보드에 {characters}자 복사함"),
+        }
+    }
+
+    pub(crate) fn transcript_copy_unconfirmed(self) -> &'static str {
+        match self {
+            Self::ZhCn => "已向终端发送复制请求 · 请粘贴确认",
+            Self::ZhTw => "已向終端傳送複製要求 · 請貼上確認",
+            Self::EnUs => "Copy sent to terminal · paste to verify",
+            Self::JaJp => "端末にコピー要求を送信しました · 貼り付けて確認",
+            Self::KoKr => "터미널에 복사 요청을 보냄 · 붙여넣어 확인",
+        }
+    }
+
+    pub(crate) fn transcript_copy_failed(self) -> &'static str {
+        match self {
+            Self::ZhCn => "复制失败 · 请重试",
+            Self::ZhTw => "複製失敗 · 請重試",
+            Self::EnUs => "Copy failed · try again",
+            Self::JaJp => "コピーに失敗しました · 再試行してください",
+            Self::KoKr => "복사 실패 · 다시 시도하세요",
+        }
+    }
+
+    pub(crate) fn transcript_show_details(self) -> &'static str {
+        match self {
+            Self::ZhCn => "+ 显示详情",
+            Self::ZhTw => "+ 顯示詳情",
+            Self::EnUs => "+ Show details",
+            Self::JaJp => "+ 詳細を表示",
+            Self::KoKr => "+ 세부 정보 보기",
+        }
+    }
+
+    pub(crate) fn transcript_show_less(self) -> &'static str {
+        match self {
+            Self::ZhCn => "− 收起详情",
+            Self::ZhTw => "− 收起詳情",
+            Self::EnUs => "− Show less",
+            Self::JaJp => "− 詳細を閉じる",
+            Self::KoKr => "− 간략히 보기",
+        }
+    }
+
+    pub(crate) fn transcript_pager_loading(self) -> &'static str {
+        match self {
+            Self::ZhCn => "正在加载更早历史…",
+            Self::ZhTw => "正在載入較早歷史…",
+            Self::EnUs => "Loading older history…",
+            Self::JaJp => "古い履歴を読み込み中…",
+            Self::KoKr => "이전 기록을 불러오는 중…",
+        }
+    }
+
+    pub(crate) fn transcript_pager_retry_footer(self) -> &'static str {
+        match self {
+            Self::ZhCn => "历史加载失败  Home 重试  Ctrl+T/Esc/Q 关闭",
+            Self::ZhTw => "歷史載入失敗  Home 重試  Ctrl+T/Esc/Q 關閉",
+            Self::EnUs => "History load failed  Home retry  Ctrl+T/Esc/Q close",
+            Self::JaJp => "履歴の読み込みに失敗  Home 再試行  Ctrl+T/Esc/Q 閉じる",
+            Self::KoKr => "기록 로드 실패  Home 재시도  Ctrl+T/Esc/Q 닫기",
+        }
+    }
+
+    pub(crate) fn transcript_search_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "查找：",
+            Self::ZhTw => "尋找：",
+            Self::EnUs => "Find: ",
+            Self::JaJp => "検索: ",
+            Self::KoKr => "찾기: ",
+        }
+    }
+
+    pub(crate) fn transcript_search_prompt(self) -> &'static str {
+        match self {
+            Self::ZhCn => "输入查询",
+            Self::ZhTw => "輸入查詢",
+            Self::EnUs => "Type to search",
+            Self::JaJp => "検索語を入力",
+            Self::KoKr => "검색어 입력",
+        }
+    }
+
+    pub(crate) fn transcript_search_searching(self) -> &'static str {
+        match self {
+            Self::ZhCn => "正在查找…",
+            Self::ZhTw => "正在尋找…",
+            Self::EnUs => "Searching…",
+            Self::JaJp => "検索中…",
+            Self::KoKr => "검색 중…",
+        }
+    }
+
+    pub(crate) fn transcript_search_no_matches(self) -> &'static str {
+        match self {
+            Self::ZhCn => "无匹配",
+            Self::ZhTw => "無匹配",
+            Self::EnUs => "No matches",
+            Self::JaJp => "一致なし",
+            Self::KoKr => "일치 없음",
+        }
+    }
+
+    pub(crate) fn transcript_search_matches(self) -> &'static str {
+        match self {
+            Self::ZhCn => "命中",
+            Self::ZhTw => "命中",
+            Self::EnUs => "Match",
+            Self::JaJp => "一致",
+            Self::KoKr => "일치",
+        }
+    }
+
+    pub(crate) fn transcript_search_no_more_matches(self) -> &'static str {
+        match self {
+            Self::ZhCn => "没有更多命中",
+            Self::ZhTw => "沒有更多命中",
+            Self::EnUs => "No more matches",
+            Self::JaJp => "これ以上一致なし",
+            Self::KoKr => "더 이상 일치 없음",
+        }
+    }
+
+    pub(crate) fn transcript_search_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "Enter 下一个  Shift+Enter/Ctrl+P 上一个  Esc 退出",
+            Self::ZhTw => "Enter 下一個  Shift+Enter/Ctrl+P 上一個  Esc 離開",
+            Self::EnUs => "Enter next  Shift+Enter/Ctrl+P previous  Esc close",
+            Self::JaJp => "Enter 次  Shift+Enter/Ctrl+P 前  Esc 閉じる",
+            Self::KoKr => "Enter 다음  Shift+Enter/Ctrl+P 이전  Esc 닫기",
+        }
+    }
+
+    pub(crate) fn transcript_search_query_limited(self) -> &'static str {
+        match self {
+            Self::ZhCn => "查询限制为 4 KiB",
+            Self::ZhTw => "查詢限制為 4 KiB",
+            Self::EnUs => "Query limited to 4 KiB",
+            Self::JaJp => "検索語は 4 KiB まで",
+            Self::KoKr => "검색어는 4 KiB로 제한됨",
+        }
+    }
+
+    pub(crate) fn transcript_selection_hint(self) -> &'static str {
+        match self {
+            Self::ZhCn => "Ctrl+C 复制  Enter 复制并返回底部  Esc 清除选择",
+            Self::ZhTw => "Ctrl+C 複製  Enter 複製並返回底部  Esc 清除選取",
+            Self::EnUs => "Ctrl+C copy  Enter copy and follow  Esc clear selection",
+            Self::JaJp => "Ctrl+C コピー  Enter コピーして末尾へ  Esc 選択解除",
+            Self::KoKr => "Ctrl+C 복사  Enter 복사 후 맨 아래로  Esc 선택 해제",
+        }
+    }
+
+    pub(crate) fn transcript_link_opened(self, destination: &str) -> String {
+        match self {
+            Self::ZhCn => format!("已在浏览器中打开 {destination}"),
+            Self::ZhTw => format!("已在瀏覽器中開啟 {destination}"),
+            Self::EnUs => format!("Opened {destination} in browser"),
+            Self::JaJp => format!("ブラウザーで {destination} を開きました"),
+            Self::KoKr => format!("브라우저에서 {destination} 열림"),
+        }
+    }
+
+    pub(crate) fn transcript_link_open_failed(self, error: &str) -> String {
+        match self {
+            Self::ZhCn => format!("无法打开链接：{error}"),
+            Self::ZhTw => format!("無法開啟連結：{error}"),
+            Self::EnUs => format!("Failed to open link: {error}"),
+            Self::JaJp => format!("リンクを開けませんでした: {error}"),
+            Self::KoKr => format!("링크를 열지 못했습니다: {error}"),
         }
     }
 
     pub(crate) fn status(self, status: &str) -> String {
+        if let Some(characters) = status
+            .strip_prefix("copy confirmed: ")
+            .and_then(|characters| characters.parse().ok())
+        {
+            return self.transcript_copy_confirmed(characters);
+        }
+        if status == "copy unconfirmed" {
+            return self.transcript_copy_unconfirmed().to_string();
+        }
         let (prefix, rest) = status
             .split_once(':')
             .map_or((status, None), |(prefix, rest)| {
@@ -1473,6 +1952,16 @@ impl Locale {
         }
     }
 
+    pub(crate) fn request_input_action_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "需要回答",
+            Self::ZhTw => "需要回答",
+            Self::EnUs => "Input required",
+            Self::JaJp => "入力が必要",
+            Self::KoKr => "입력 필요",
+        }
+    }
+
     pub(crate) fn approval_option(self, label: &str) -> String {
         match (self, label) {
             (Self::ZhCn, "Accept") => "批准".to_string(),
@@ -1572,6 +2061,16 @@ impl Locale {
             Self::EnUs => "←/→ questions",
             Self::JaJp => "←/→ 質問",
             Self::KoKr => "←/→ 질문",
+        }
+    }
+
+    pub(crate) fn request_option_position_hint(self, current: usize, total: usize) -> String {
+        match self {
+            Self::ZhCn => format!("选项 {current}/{total}"),
+            Self::ZhTw => format!("選項 {current}/{total}"),
+            Self::EnUs => format!("option {current}/{total}"),
+            Self::JaJp => format!("選択肢 {current}/{total}"),
+            Self::KoKr => format!("옵션 {current}/{total}"),
         }
     }
 
@@ -2532,6 +3031,48 @@ mod tests {
     }
 
     #[test]
+    fn raw_output_feedback_covers_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            assert!(!locale.raw_output_mode_message(true).is_empty());
+            assert!(!locale.raw_output_mode_message(false).is_empty());
+            assert!(!locale
+                .slash_command_description(SlashCommand::Raw)
+                .is_empty());
+        }
+    }
+
+    #[test]
+    fn transcript_follow_labels_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            for unseen_activity in [false, true] {
+                let labels = locale.transcript_follow_labels(unseen_activity);
+                assert!(labels.iter().all(|label| !label.is_empty()), "{locale:?}");
+                assert_eq!(labels.last(), Some(&" ↓ "), "{locale:?}");
+            }
+        }
+        assert_eq!(
+            Locale::EnUs.transcript_follow_labels(false)[0],
+            " ↓ Back to bottom · esc "
+        );
+        assert_eq!(
+            Locale::EnUs.transcript_follow_labels(true)[0],
+            " New activity · ↓ Back to bottom · esc "
+        );
+    }
+
+    #[test]
     fn export_picker_labels_cover_all_product_locales() {
         for locale in [
             Locale::ZhCn,
@@ -2665,6 +3206,8 @@ mod tests {
             Locale::JaJp,
             Locale::KoKr,
         ] {
+            let transcript_pager_footer =
+                locale.transcript_pager_footer("PgDn·Space·Ctrl+F", "F3·/", "Ctrl+T·Esc·Q");
             for label in [
                 locale.status_title(),
                 locale.transcript_title(),
@@ -2675,17 +3218,166 @@ mod tests {
                 locale.not_set_label(),
                 locale.history_search_label(),
                 locale.pager_footer(),
-                locale.transcript_pager_footer(),
+                transcript_pager_footer.as_str(),
+                locale.transcript_pager_loading(),
+                locale.transcript_pager_retry_footer(),
+                locale.transcript_search_label(),
+                locale.transcript_search_prompt(),
+                locale.transcript_search_searching(),
+                locale.transcript_search_no_matches(),
+                locale.transcript_search_matches(),
+                locale.transcript_search_no_more_matches(),
+                locale.transcript_search_hint(),
+                locale.transcript_search_query_limited(),
+                locale.transcript_selection_hint(),
             ] {
                 assert!(!label.is_empty(), "{locale:?}");
             }
+            assert!(locale
+                .transcript_link_opened("https://example.com")
+                .contains("https://"));
+            assert!(locale
+                .transcript_link_open_failed("offline")
+                .contains("offline"));
+            assert!(locale.transcript_copy_confirmed(5).contains('5'));
+            assert!(!locale.transcript_copy_unconfirmed().is_empty());
+            assert!(!locale.transcript_copy_failed().is_empty());
+            assert_eq!(
+                locale.status("copy confirmed: 5"),
+                locale.transcript_copy_confirmed(5)
+            );
+            assert_eq!(
+                locale.status("copy unconfirmed"),
+                locale.transcript_copy_unconfirmed()
+            );
         }
         assert_eq!(Locale::ZhCn.status_title(), "状态");
         assert_eq!(Locale::EnUs.transcript_title(), "T R A N S C R I P T");
         assert_eq!(Locale::ZhTw.state_label(), "狀態");
         assert_eq!(Locale::JaJp.not_set_label(), "未設定");
         assert!(Locale::KoKr.pager_footer().contains("Esc/Q"));
-        assert!(Locale::ZhCn.transcript_pager_footer().contains("Ctrl+T"));
+        assert!(Locale::ZhCn
+            .transcript_pager_footer("PgDn·Space·Ctrl+F", "F3·/", "Ctrl+T·Esc·Q")
+            .contains("Ctrl+T"));
+        assert!(Locale::EnUs
+            .transcript_pager_retry_footer()
+            .contains("Home retry"));
+    }
+
+    #[test]
+    fn transcript_activity_labels_are_stable_in_all_product_locales() {
+        let cases = [
+            (
+                Locale::ZhCn,
+                "正在探索",
+                "已探索",
+                "正在操作电脑",
+                "已操作电脑",
+                "读取",
+                "电脑操作",
+                "needle，位于 src",
+                "（命令退出 2）",
+                "2 个操作",
+                "1 个失败",
+                "已截图 · Capture",
+                "失败：Submit — timed out",
+            ),
+            (
+                Locale::ZhTw,
+                "正在探索",
+                "已探索",
+                "正在操作電腦",
+                "已操作電腦",
+                "讀取",
+                "電腦操作",
+                "needle，位於 src",
+                "（命令結束 2）",
+                "2 個操作",
+                "1 個失敗",
+                "已擷取螢幕截圖 · Capture",
+                "失敗：Submit — timed out",
+            ),
+            (
+                Locale::EnUs,
+                "Exploring",
+                "Explored",
+                "Using computer",
+                "Used computer",
+                "Read",
+                "Computer action",
+                "needle in src",
+                "(command exit 2)",
+                "2 actions",
+                "1 failed",
+                "Captured screenshot · Capture",
+                "Failed: Submit — timed out",
+            ),
+            (
+                Locale::JaJp,
+                "探索中",
+                "探索済み",
+                "コンピュータを操作中",
+                "コンピュータを操作しました",
+                "読取",
+                "コンピュータ操作",
+                "src 内の needle",
+                "（コマンド終了 2）",
+                "2 件の操作",
+                "1 件失敗",
+                "スクリーンショット取得 · Capture",
+                "失敗: Submit — timed out",
+            ),
+            (
+                Locale::KoKr,
+                "탐색 중",
+                "탐색함",
+                "컴퓨터 사용 중",
+                "컴퓨터 사용함",
+                "읽기",
+                "컴퓨터 작업",
+                "src에서 needle",
+                "(명령 종료 2)",
+                "작업 2개",
+                "실패 1개",
+                "스크린샷 캡처 · Capture",
+                "실패: Submit — timed out",
+            ),
+        ];
+        for (
+            locale,
+            exploring,
+            explored,
+            using_computer,
+            used_computer,
+            read,
+            computer_action,
+            search,
+            exit,
+            actions,
+            failed,
+            capture,
+            failure,
+        ) in cases
+        {
+            assert_eq!(locale.transcript_exploration_label(true), exploring);
+            assert_eq!(locale.transcript_exploration_label(false), explored);
+            assert_eq!(locale.transcript_computer_label(true), using_computer);
+            assert_eq!(locale.transcript_computer_label(false), used_computer);
+            assert_eq!(locale.transcript_activity_action_label("read"), read);
+            assert_eq!(locale.transcript_computer_action_label(), computer_action);
+            assert_eq!(
+                locale.transcript_activity_search_target("needle", "src"),
+                search
+            );
+            assert_eq!(locale.transcript_activity_exit(2, true), exit);
+            assert_eq!(locale.transcript_activity_count(2), actions);
+            assert_eq!(locale.transcript_activity_failed_count(1), failed);
+            assert_eq!(locale.transcript_computer_capture("Capture"), capture);
+            assert_eq!(
+                locale.transcript_computer_failure("Submit", Some("timed out")),
+                failure
+            );
+        }
     }
 
     #[test]

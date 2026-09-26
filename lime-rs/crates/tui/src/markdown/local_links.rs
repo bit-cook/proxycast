@@ -1,9 +1,13 @@
 //! Local file-link parsing and display adapted from Codex TUI.
 
+use std::path::Path;
+
 use url::Url;
 
 pub(super) fn is_local_path_like_link(destination: &str) -> bool {
-    destination.starts_with("file://")
+    destination
+        .get(..7)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file://"))
         || destination.starts_with('/')
         || destination.starts_with("~/")
         || destination.starts_with("./")
@@ -16,9 +20,9 @@ pub(super) fn is_local_path_like_link(destination: &str) -> bool {
         )
 }
 
-pub(super) fn render_local_link_target(destination: &str) -> Option<String> {
+pub(super) fn render_local_link_target(destination: &str, cwd: Option<&Path>) -> Option<String> {
     let (path, suffix) = parse_local_link_target(destination)?;
-    let mut rendered = normalize_path(&path);
+    let mut rendered = display_path(&path, cwd);
     if let Some(suffix) = suffix {
         rendered.push_str(&suffix);
     }
@@ -36,6 +40,7 @@ pub(super) fn should_render_local_link_label(label: &str, destination: &str) -> 
     let Some(target_path) = comparable_path(destination) else {
         return true;
     };
+    let literal_label_path = normalize_path(label).to_lowercase();
     let label_path = trim_trailing_separator(label_path.trim_start_matches("./"));
     let target_path = trim_trailing_separator(target_path.trim_start_matches("./"));
     let boundary_suffix = |path: &str, suffix: &str| {
@@ -45,8 +50,14 @@ pub(super) fn should_render_local_link_label(label: &str, destination: &str) -> 
                 .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with('/'))
     };
 
-    !(boundary_suffix(target_path, label_path)
-        || (is_absolute_path(label_path) && boundary_suffix(label_path, target_path)))
+    let matches_target = [literal_label_path.as_str(), label_path]
+        .into_iter()
+        .any(|label_path| {
+            let label_path = trim_trailing_separator(label_path.trim_start_matches("./"));
+            boundary_suffix(target_path, label_path)
+                || (is_absolute_path(label_path) && boundary_suffix(label_path, target_path))
+        });
+    !matches_target
 }
 
 fn comparable_path(text: &str) -> Option<String> {
@@ -55,8 +66,12 @@ fn comparable_path(text: &str) -> Option<String> {
 }
 
 fn parse_local_link_target(destination: &str) -> Option<(String, Option<String>)> {
-    if destination.starts_with("file://") {
-        let url = Url::parse(destination).ok()?;
+    if destination
+        .get(..7)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file://"))
+    {
+        let normalized = format!("file://{}", &destination[7..]);
+        let url = Url::parse(&normalized).ok()?;
         let path = file_url_path(&url)?;
         let suffix = url.fragment().and_then(normalize_hash_location);
         return Some((path, suffix));
@@ -73,7 +88,7 @@ fn parse_local_link_target(destination: &str) -> Option<(String, Option<String>)
     if suffix.is_none() {
         if let Some((candidate, location)) = split_colon_location(path) {
             path = candidate;
-            suffix = Some(location.to_string());
+            suffix = Some(location);
         }
     }
     let decoded = urlencoding::decode(path).unwrap_or_else(|_| path.into());
@@ -82,14 +97,21 @@ fn parse_local_link_target(destination: &str) -> Option<(String, Option<String>)
 
 fn file_url_path(url: &Url) -> Option<String> {
     if let Ok(path) = url.to_file_path() {
-        return Some(normalize_path(&path.to_string_lossy()));
+        let mut path = normalize_path(&path.to_string_lossy());
+        if matches!(
+            path.as_bytes(),
+            [b'/', drive, b':', b'/', ..] if drive.is_ascii_alphabetic()
+        ) {
+            path.remove(0);
+        }
+        return Some(path);
     }
 
     let mut path = urlencoding::decode(url.path())
         .unwrap_or_else(|_| url.path().into())
         .into_owned();
     if let Some(host) = url.host_str() {
-        if !host.is_empty() && host != "localhost" {
+        if !host.is_empty() && !host.eq_ignore_ascii_case("localhost") {
             path = format!("//{host}{path}");
         } else if matches!(
             path.as_bytes(),
@@ -105,11 +127,12 @@ fn normalize_hash_location(fragment: &str) -> Option<String> {
     let rest = fragment.strip_prefix('L')?;
     let (start, end) = rest
         .split_once("-L")
+        .or_else(|| rest.split_once("–L"))
         .map_or((rest, None), |(start, end)| (start, Some(end)));
     let start = normalize_line_column(start)?;
     match end {
-        Some(end) => Some(format!("{start}-{}", normalize_line_column(end)?)),
-        None => Some(start),
+        Some(end) => Some(format!(":{start}-{}", normalize_line_column(end)?)),
+        None => Some(format!(":{start}")),
     }
 }
 
@@ -122,37 +145,34 @@ fn normalize_line_column(value: &str) -> Option<String> {
     }
     match column {
         Some(column) if !column.is_empty() && column.bytes().all(|byte| byte.is_ascii_digit()) => {
-            Some(format!(":{line}:{column}"))
+            Some(format!("{line}:{column}"))
         }
         Some(_) => None,
-        None => Some(format!(":{line}")),
+        None => Some(line.to_string()),
     }
 }
 
-fn split_colon_location(path: &str) -> Option<(&str, &str)> {
-    let bytes = path.as_bytes();
-    let mut start = bytes.len();
-    let mut colon_count = 0usize;
-    while start > 0 {
-        let byte = bytes[start - 1];
-        if byte.is_ascii_digit() {
-            start -= 1;
-            continue;
+fn split_colon_location(path: &str) -> Option<(&str, String)> {
+    for (index, _) in path.match_indices(':') {
+        let location = &path[index..];
+        if let Some(normalized) = normalize_colon_location(location) {
+            return Some((&path[..index], normalized));
         }
-        if byte == b':' && colon_count < 2 {
-            colon_count += 1;
-            start -= 1;
-            continue;
-        }
-        break;
     }
-    let location = &path[start..];
-    let valid = matches!(colon_count, 1 | 2)
-        && location
-            .split(':')
-            .skip(1)
-            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()));
-    valid.then_some((&path[..start], location))
+    None
+}
+
+fn normalize_colon_location(location: &str) -> Option<String> {
+    let location = location.strip_prefix(':')?;
+    let (start, end) = location
+        .split_once('-')
+        .or_else(|| location.split_once('–'))
+        .map_or((location, None), |(start, end)| (start, Some(end)));
+    let start = normalize_line_column(start)?;
+    match end {
+        Some(end) => Some(format!(":{start}-{}", normalize_line_column(end)?)),
+        None => Some(format!(":{start}")),
+    }
 }
 
 fn normalize_path(path: &str) -> String {
@@ -170,6 +190,32 @@ fn is_absolute_path(path: &str) -> bool {
             path.as_bytes(),
             [drive, b':', b'/', ..] if drive.is_ascii_alphabetic()
         )
+}
+
+fn display_path(path: &str, cwd: Option<&Path>) -> String {
+    let path = normalize_path(path);
+    if !is_absolute_path(&path) {
+        return path;
+    }
+
+    let Some(cwd) = cwd.filter(|cwd| !cwd.as_os_str().is_empty()) else {
+        return path;
+    };
+    let cwd = normalize_path(&cwd.to_string_lossy());
+    strip_path_prefix(&path, &cwd).map_or(path.clone(), str::to_string)
+}
+
+fn strip_path_prefix<'a>(path: &'a str, cwd: &str) -> Option<&'a str> {
+    let path = trim_trailing_separator(path);
+    let cwd = trim_trailing_separator(cwd);
+    if path == cwd {
+        return None;
+    }
+    if cwd == "/" || cwd == "//" {
+        return path.strip_prefix('/');
+    }
+    path.strip_prefix(cwd)
+        .and_then(|rest| rest.strip_prefix('/'))
 }
 
 fn trim_trailing_separator(path: &str) -> &str {
@@ -205,17 +251,59 @@ mod tests {
     #[test]
     fn renders_encoded_paths_and_location_suffixes_without_filesystem_access() {
         assert_eq!(
-            render_local_link_target("file:///tmp/My%20File.rs#L12C3"),
+            render_local_link_target("file:///tmp/My%20File.rs#L12C3", None),
             Some("/tmp/My File.rs:12:3".to_string())
         );
         assert_eq!(
-            render_local_link_target(r"C:\Repo\src\lib.rs:8"),
+            render_local_link_target(r"C:\Repo\src\lib.rs:8", None),
             Some("C:/Repo/src/lib.rs:8".to_string())
         );
         assert_eq!(
-            render_local_link_target(r"\\server\share\My%20File.rs"),
+            render_local_link_target(r"\\server\share\My%20File.rs", None),
             Some("//server/share/My File.rs".to_string())
         );
+    }
+
+    #[test]
+    fn renders_hash_and_colon_ranges_without_duplicate_separators() {
+        for (destination, expected) in [
+            ("/repo/src/lib.rs#L12C3-L14C9", "/repo/src/lib.rs:12:3-14:9"),
+            ("/repo/src/lib.rs:12:3-14:9", "/repo/src/lib.rs:12:3-14:9"),
+            ("/repo/src/lib.rs:12–14", "/repo/src/lib.rs:12-14"),
+        ] {
+            assert_eq!(
+                render_local_link_target(destination, None),
+                Some(expected.into())
+            );
+        }
+    }
+
+    #[test]
+    fn shortens_absolute_targets_only_inside_the_session_cwd() {
+        let cwd = Path::new("/repo");
+        assert_eq!(
+            render_local_link_target("/repo/src/lib.rs:12", Some(cwd)),
+            Some("src/lib.rs:12".to_string())
+        );
+        assert_eq!(
+            render_local_link_target("/outside/src/lib.rs:12", Some(cwd)),
+            Some("/outside/src/lib.rs:12".to_string())
+        );
+        assert_eq!(
+            render_local_link_target(
+                "file:///C:/repo/report.xlsx#L4C2",
+                Some(Path::new("C:/repo"))
+            ),
+            Some("report.xlsx:4:2".to_string())
+        );
+    }
+
+    #[test]
+    fn compares_literal_percent_encoding_before_decoding_labels() {
+        assert!(!should_render_local_link_label(
+            "percent%20.rs",
+            "/repo/percent%2520.rs"
+        ));
     }
 
     #[test]
@@ -241,7 +329,7 @@ mod tests {
     #[test]
     fn invalid_percent_encoding_stays_visible() {
         assert_eq!(
-            render_local_link_target("/tmp/bad%FF.rs"),
+            render_local_link_target("/tmp/bad%FF.rs", None),
             Some("/tmp/bad%FF.rs".to_string())
         );
     }

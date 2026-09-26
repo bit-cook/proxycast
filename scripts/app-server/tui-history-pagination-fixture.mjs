@@ -58,6 +58,7 @@ async function main() {
   const appDataDir = path.join(tempDir, "app-data");
   const backendPath = path.join(tempDir, "history-backend.mjs");
   const ledgerPath = path.join(tempDir, "history-backend.jsonl");
+  let connected;
   try {
     await writeFile(backendPath, backendSource());
     const config = {
@@ -67,10 +68,11 @@ async function main() {
       backendArgs: [backendPath, ledgerPath],
       backendTimeoutMs: 5_000,
     };
-    const connected = await connectAppServerSidecar(
+    connected = await connectAppServerSidecar(
       config,
       {
         clientInfo: { name: "tui-history-pagination-fixture", version: "1" },
+        capabilities: { experimentalApi: true },
       },
       {
         initializeTimeoutMs: 10_000,
@@ -88,17 +90,24 @@ async function main() {
       modelProvider: "fixture-provider",
       historyMode: "paginated",
     });
+    assertHistoryMode(started, "paginated");
     const threadId = started.result.thread.id;
 
-    // Each completed turn contributes a user and assistant item. Keep the seed deterministic and
-    // above the TUI's 100-item page size so the resume path must fetch an older page.
-    for (let index = 0; index < 51; index += 1) {
-      const result = await connection.startTurn({
-        threadId,
-        input: [{ type: "text", text: `SEED_${String(index).padStart(3, "0")}` }],
-      });
-      await drainTurnCompletion(connection, result, result.result.turn.id);
-    }
+    // Each completed turn contributes a user and assistant item. The paginated thread spans at
+    // least three 100-item pages, matching Codex's complete transcript contract; legacy still
+    // crosses its single-page boundary without paying the extra setup cost.
+    await seedCompletedTurns(connection, threadId, "SEED", 101);
+
+    const legacyStarted = await connection.startSession({
+      cwd: tempDir,
+      runtimeWorkspaceRoots: [tempDir],
+      model: "fixture-model",
+      modelProvider: "fixture-provider",
+      historyMode: "legacy",
+    });
+    assertHistoryMode(legacyStarted, "legacy");
+    const legacyThreadId = legacyStarted.result.thread.id;
+    await seedCompletedTurns(connection, legacyThreadId, "LEGACY", 51);
 
     const review = await connection.startReview({
       threadId,
@@ -125,12 +134,16 @@ async function main() {
       threadId,
       excludeTurns: true,
     });
+    assertHistoryMode(forked, "paginated");
     const resumeThreadId = forked.result.thread.id;
+    const paginatedStats = await threadItemStats(connection, resumeThreadId);
+    assertPagination(paginatedStats, { minimumItems: 201, minimumPages: 3 });
+    const legacyStats = await threadItemStats(connection, legacyThreadId);
+    assertPagination(legacyStats, { minimumItems: 101, minimumPages: 2 });
 
     // Stop the seed sidecar before launching the independent TUI sidecar.
-    connected.sidecar.child.kill("SIGKILL");
-    await connected.sidecar.waitForExit(5_000);
-    await connected.sidecar.close().catch(() => undefined);
+    await connected.sidecar.close("SIGKILL");
+    connected = undefined;
     await blocked.catch(() => undefined);
 
     const metadataPath = path.join(tempDir, "thread.json");
@@ -143,6 +156,7 @@ async function main() {
         appDataDir,
         backendPath,
         ledgerPath,
+        legacyThreadId,
       }),
     );
     await execFileAsync(
@@ -156,9 +170,9 @@ async function main() {
         "tui",
         "--test",
         "all",
-        "suite::history_pagination::older_pagination_reconciles_review_prompts_across_page_boundaries",
+        "suite::history_pagination::",
         "--",
-        "--exact",
+        "--test-threads=1",
         "--nocapture",
       ],
       {
@@ -173,7 +187,11 @@ async function main() {
           LIME_TEST_TERMINAL_LEDGER: ledgerPath,
           LIME_TEST_TERMINAL_CWD: tempDir,
           LIME_TEST_NODE_BIN: process.execPath,
+          ...(runtimeEnv.DYLD_LIBRARY_PATH
+            ? { LIME_TEST_DYLD_LIBRARY_PATH: runtimeEnv.DYLD_LIBRARY_PATH }
+            : {}),
           LIME_TEST_TUI_HISTORY_THREAD_ID: resumeThreadId,
+          LIME_TEST_TUI_LEGACY_THREAD_ID: legacyThreadId,
           LIME_TEST_TUI_GATE_B: "1",
         },
         maxBuffer: 4 * 1024 * 1024,
@@ -181,15 +199,71 @@ async function main() {
         windowsHide: true,
       },
     );
-      console.log(
-      `[smoke:tui-history-pagination] ok thread=${resumeThreadId} items>100 review=nested-filtered alternate-screen=restored`,
+    console.log(
+      `[smoke:tui-history-pagination] ok paginated=${resumeThreadId} pages=${paginatedStats.pages} items=${paginatedStats.items} legacy=${legacyThreadId} pages=${legacyStats.pages} items=${legacyStats.items} review=nested-filtered underfilled=auto-filled alternate-screen=restored`,
     );
   } finally {
+    await connected?.sidecar.close("SIGKILL").catch(() => undefined);
     if (process.env.LIME_KEEP_TUI_HISTORY_PAGINATION_TMP !== "1") {
       await rm(tempDir, { recursive: true, force: true });
     } else {
       console.error(`[smoke:tui-history-pagination] kept temp dir ${tempDir}`);
     }
+  }
+}
+
+function assertHistoryMode(started, expected) {
+  const actual = started?.result?.thread?.historyMode;
+  if (actual !== expected) {
+    throw new Error(`thread/start historyMode mismatch: expected=${expected} actual=${actual}`);
+  }
+}
+
+async function seedCompletedTurns(connection, threadId, prefix, count) {
+  for (let index = 0; index < count; index += 1) {
+    const result = await connection.startTurn({
+      threadId,
+      input: [
+        { type: "text", text: `${prefix}_${String(index).padStart(3, "0")}` },
+      ],
+    });
+    await drainTurnCompletion(connection, result, result.result.turn.id);
+  }
+}
+
+async function threadItemStats(connection, threadId) {
+  const seenCursors = new Set();
+  let cursor;
+  let items = 0;
+  let pages = 0;
+  while (true) {
+    const response = await connection.listThreadItems({
+      threadId,
+      cursor,
+      limit: 100,
+      sortDirection: "desc",
+    });
+    pages += 1;
+    items += response.result.data.length;
+    const nextCursor = response.result.nextCursor;
+    if (!nextCursor) break;
+    if (seenCursors.has(nextCursor)) {
+      throw new Error(`thread/items/list repeated cursor for ${threadId}: ${nextCursor}`);
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+  return { items, pages };
+}
+
+function assertPagination(actual, expected) {
+  if (
+    actual.items < expected.minimumItems ||
+    actual.pages < expected.minimumPages
+  ) {
+    throw new Error(
+      `history pagination too small: expected>=${expected.minimumItems} items/${expected.minimumPages} pages actual=${actual.items} items/${actual.pages} pages`,
+    );
   }
 }
 
@@ -269,7 +343,7 @@ const threadId = request.session?.threadId || null;
 const blocked = input.kind === "turnStart" && text.includes("NESTED_REVIEW_PROMPT");
 let events = [{ type: "turn.started", payload: {} }];
 if (input.kind === "turnStart" && !blocked) {
-  const assistantText = text.includes("SEED_") ? text.match(/SEED_\\d{3}/)?.[0] || "seed" : "review complete";
+  const assistantText = text.match(/(?:SEED|LEGACY)_\\d{3}/)?.[0] || "review complete";
   events.push({ type: "message.delta", payload: { itemId: "assistant-" + turnId, text: assistantText } });
   events.push({ type: "message.completed", payload: { itemId: "assistant-" + turnId, status: "completed", text: assistantText } });
   events.push({ type: "turn.completed", payload: { status: "completed" } });

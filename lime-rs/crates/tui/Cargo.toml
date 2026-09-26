@@ -22,6 +22,7 @@ crossterm = { workspace = true, features = ["bracketed-paste", "event-stream"] }
 dirs.workspace = true
 futures.workspace = true
 image = { version = "0.25.9", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+lime-core.workspace = true
 ratatui = { workspace = true, features = [
     "scrolling-regions",
     "unstable-backend-writer",
@@ -43,6 +44,7 @@ unicode-width.workspace = true
 textwrap.workspace = true
 url.workspace = true
 urlencoding.workspace = true
+webbrowser.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

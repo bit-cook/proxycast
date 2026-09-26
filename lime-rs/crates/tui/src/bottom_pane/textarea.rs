@@ -4,7 +4,7 @@
 //! history, queueing, and attachments while this module owns cursor-safe editing primitives.
 
 use std::borrow::Cow;
-use std::cell::{OnceCell, Ref, RefCell};
+use std::cell::{Cell, OnceCell, Ref, RefCell};
 use std::ops::Range;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -17,6 +17,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::width::display_width;
 
 mod hyperlinks;
+mod mouse;
 mod vim;
 mod vim_search;
 mod wrapping;
@@ -77,6 +78,9 @@ pub(crate) struct TextArea {
     vim_pending: VimPending,
     vim_search: vim_search::VimSearch,
     vim_replace_steps: Vec<vim::VimReplaceStep>,
+    rendered_area: Cell<Rect>,
+    mouse_selection: Option<mouse::MouseSelection>,
+    last_click: Option<(std::time::Instant, u16, u16, u8)>,
 }
 
 #[derive(Debug)]
@@ -112,6 +116,7 @@ impl TextArea {
     }
 
     pub(crate) fn replace(&mut self, text: String) {
+        self.mouse_selection = None;
         self.text = text;
         self.cursor = self.text.len();
         self.preferred_col = None;
@@ -122,6 +127,7 @@ impl TextArea {
     }
 
     pub(crate) fn set_text_clearing_elements(&mut self, text: &str) {
+        self.mouse_selection = None;
         self.text = text.to_string();
         self.cursor = self.nearest_char_boundary(self.cursor.min(self.text.len()));
         self.preferred_col = None;
@@ -132,6 +138,7 @@ impl TextArea {
     }
 
     pub(crate) fn take(&mut self) -> String {
+        self.mouse_selection = None;
         self.cursor = 0;
         self.preferred_col = None;
         self.vim_pending = VimPending::None;
@@ -143,6 +150,9 @@ impl TextArea {
     }
 
     pub(crate) fn insert(&mut self, value: &str) {
+        if !value.is_empty() {
+            self.delete_mouse_selection();
+        }
         self.text.insert_str(self.cursor, value);
         self.cursor += value.len();
         self.preferred_col = None;
@@ -154,6 +164,7 @@ impl TextArea {
     }
 
     pub(crate) fn insert_str_at(&mut self, pos: usize, value: &str) {
+        self.mouse_selection = None;
         let pos = self.nearest_char_boundary(pos.min(self.text.len()));
         self.text.insert_str(pos, value);
         if pos <= self.cursor {
@@ -164,6 +175,7 @@ impl TextArea {
     }
 
     pub(crate) fn replace_range(&mut self, range: Range<usize>, value: &str) {
+        self.mouse_selection = None;
         let start = self.nearest_char_boundary(range.start.min(self.text.len()));
         let end = self.nearest_char_boundary(range.end.min(self.text.len()));
         if start > end {
@@ -183,26 +195,31 @@ impl TextArea {
     }
 
     pub(crate) fn set_cursor(&mut self, pos: usize) {
+        self.mouse_selection = None;
         self.cursor = self.nearest_char_boundary(pos.min(self.text.len()));
         self.preferred_col = None;
     }
 
     pub(crate) fn move_left(&mut self) {
+        self.mouse_selection = None;
         self.cursor = self.previous_grapheme_start();
         self.preferred_col = None;
     }
 
     pub(crate) fn move_right(&mut self) {
+        self.mouse_selection = None;
         self.cursor = self.next_grapheme_end();
         self.preferred_col = None;
     }
 
     pub(crate) fn move_line_start(&mut self) {
+        self.mouse_selection = None;
         self.cursor = self.line_start();
         self.preferred_col = None;
     }
 
     pub(crate) fn move_line_end(&mut self) {
+        self.mouse_selection = None;
         self.cursor = self.line_end();
         self.preferred_col = None;
     }
@@ -214,12 +231,14 @@ impl TextArea {
     /// logical-line navigation. The target is always chosen on grapheme boundaries, so wide
     /// characters and combining marks can never leave the cursor inside an UTF-8 sequence.
     pub(crate) fn move_up(&mut self) {
+        self.mouse_selection = None;
         if !self.move_visual_vertical(-1) {
             self.move_insert_vertical(-1);
         }
     }
 
     pub(crate) fn move_down(&mut self) {
+        self.mouse_selection = None;
         if !self.move_visual_vertical(1) {
             self.move_insert_vertical(1);
         }
@@ -357,6 +376,9 @@ impl TextArea {
     }
 
     pub(crate) fn remove_previous_grapheme(&mut self) -> bool {
+        if self.delete_mouse_selection() {
+            return true;
+        }
         if self.cursor == 0 {
             return false;
         }
@@ -369,6 +391,9 @@ impl TextArea {
     }
 
     pub(crate) fn remove_next_grapheme(&mut self) -> bool {
+        if self.delete_mouse_selection() {
+            return true;
+        }
         if self.cursor == self.text.len() {
             return false;
         }
@@ -597,6 +622,11 @@ impl TextArea {
     }
 
     fn kill_range(&mut self, range: Range<usize>) {
+        if let Some(selection) = self.mouse_selection_range() {
+            self.kill_buffer = self.text[selection.clone()].to_string();
+            self.replace_range(selection, "");
+            return;
+        }
         let start = self.nearest_char_boundary(range.start.min(self.text.len()));
         let end = self.nearest_char_boundary(range.end.min(self.text.len()));
         if start >= end {
@@ -661,6 +691,10 @@ impl TextArea {
         self.wrapped_lines(width).len().max(1) as u16
     }
 
+    pub(crate) fn remember_rendered_area(&self, area: Rect) {
+        self.rendered_area.set(area);
+    }
+
     fn effective_scroll(&self, area: Rect, lines: &[Range<usize>], current: u16) -> u16 {
         if area.height == 0 || lines.is_empty() {
             return 0;
@@ -698,6 +732,7 @@ impl TextArea {
     }
 
     fn render_lines(&self, area: Rect, buf: &mut Buffer, lines: &[Range<usize>], scroll: u16) {
+        self.rendered_area.set(area);
         let blank = " ".repeat(usize::from(area.width));
         for row in 0..area.height {
             buf.set_string(area.x, area.y + row, &blank, Style::default());
@@ -715,6 +750,7 @@ impl TextArea {
                 text_for_display(visible),
                 Style::default(),
             );
+            self.render_mouse_selection(area, buf, range, visible, area.y + row as u16);
         }
         if let Some(wrap_cache) = self.wrap_cache.borrow().as_ref() {
             wrap_cache
@@ -732,6 +768,7 @@ impl TextArea {
         state: &mut TextAreaState,
         mask_char: char,
     ) {
+        self.rendered_area.set(area);
         let lines = self.wrapped_lines(area.width);
         state.scroll = self.effective_scroll(area, &lines, state.scroll);
         let start = usize::from(state.scroll);
@@ -764,6 +801,7 @@ impl TextArea {
         base_style: Style,
         highlights: &[(Range<usize>, Style)],
     ) {
+        self.rendered_area.set(area);
         let lines = self.wrapped_lines(area.width);
         state.scroll = self.effective_scroll(area, &lines, state.scroll);
         let start = usize::from(state.scroll);
@@ -803,6 +841,7 @@ impl TextArea {
                     *style,
                 );
             }
+            self.render_mouse_selection(area, buf, range, visible, y);
         }
         if let Some(wrap_cache) = self.wrap_cache.borrow().as_ref() {
             wrap_cache

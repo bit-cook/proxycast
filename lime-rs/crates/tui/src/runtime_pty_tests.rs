@@ -24,6 +24,10 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         .unwrap_or_else(|_| "queued follow-up for editing".to_string());
     let completed_text =
         std::env::var("LIME_TEST_TERMINAL_COMPLETED_TEXT").expect("completed text");
+    let reasoning_text = std::env::var("LIME_TEST_TERMINAL_REASONING_TEXT")
+        .unwrap_or_else(|_| "TUI_GATE_B_REASONING_DETAIL".to_string());
+    let raw_text = std::env::var("LIME_TEST_TERMINAL_RAW_TEXT")
+        .unwrap_or_else(|_| "TUI_GATE_B_RAW_SOURCE".to_string());
     let permission_config = std::env::var_os("LIME_TEST_PERMISSION_CONFIG");
     let expected_permission_profile = std::env::var("LIME_TEST_PERMISSION_PROFILE").ok();
     let scenario =
@@ -124,6 +128,17 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
     let mut agents_overview_screen = None;
     let mut agents_overview_renamed_screen = None;
     let mut agents_overview_resumed_screen = None;
+    let mut transcript_mouse_selection_visible = false;
+    let mut main_transcript_mouse_selection_visible = false;
+    let mut transcript_keyboard_selection_visible = false;
+    let mut transcript_edge_drag_scrolled = false;
+    let mut transcript_disclosure_visible = false;
+    let mut transcript_reasoning_visible = false;
+    let mut transcript_bookmark_restored = false;
+    let mut raw_output_visible = false;
+    let mut follow_control_visible = false;
+    let mut sticky_prompt_header_visible = false;
+    let mut main_transcript_find_visible = false;
 
     wait_for_marker(
         &output_rx,
@@ -262,6 +277,83 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         // Re-entering the alternate screen must not synchronously query the PTY. The next
         // draw is responsible for reconciling the restored surface and showing the composer.
         wait_for_screen_marker(&output_rx, &mut output, &prompt, Duration::from_secs(10));
+
+        let (cursor_row, prompt_col) =
+            terminal_marker_position(&output, &prompt).expect("external editor prompt position");
+        let prompt_width = u16::try_from(crate::width::display_width(&prompt)).unwrap_or(u16::MAX);
+        let cursor_col = prompt_col.saturating_add(prompt_width);
+        wait_for_cursor_position(
+            &output_rx,
+            &mut output,
+            cursor_row,
+            cursor_col,
+            Duration::from_secs(10),
+        );
+        writer
+            .write_all(b"\x1b[D")
+            .expect("move restored composer cursor left");
+        writer.flush().expect("flush restored composer left");
+        wait_for_cursor_position(
+            &output_rx,
+            &mut output,
+            cursor_row,
+            cursor_col.saturating_sub(1),
+            Duration::from_secs(10),
+        );
+        writer
+            .write_all(b"\x1b[C")
+            .expect("move restored composer cursor right");
+        writer.flush().expect("flush restored composer right");
+        wait_for_cursor_position(
+            &output_rx,
+            &mut output,
+            cursor_row,
+            cursor_col,
+            Duration::from_secs(10),
+        );
+        let insertion = prompt.find(' ').map_or(0, |space| space + 1);
+        let prefix_width =
+            u16::try_from(crate::width::display_width(&prompt[..insertion])).unwrap_or(u16::MAX);
+        let target_col = prompt_col.saturating_add(prefix_width);
+        let mouse_down = format!(
+            "\u{1b}[<0;{};{}M",
+            target_col.saturating_add(1),
+            cursor_row.saturating_add(1),
+        );
+        writer
+            .write_all(mouse_down.as_bytes())
+            .expect("press inside composer with SGR mouse input");
+        writer.flush().expect("flush composer mouse press");
+        wait_for_cursor_position(
+            &output_rx,
+            &mut output,
+            cursor_row,
+            target_col,
+            Duration::from_secs(10),
+        );
+        let mouse_up = format!(
+            "\u{1b}[<0;{};{}m",
+            target_col.saturating_add(1),
+            cursor_row.saturating_add(1),
+        );
+        writer
+            .write_all(mouse_up.as_bytes())
+            .expect("release composer SGR mouse input");
+        writer.flush().expect("flush composer mouse release");
+        writer.write_all(b"X").expect("insert at mouse cursor");
+        writer.flush().expect("flush composer mouse edit");
+        let mouse_edited_prompt = format!("{}X{}", &prompt[..insertion], &prompt[insertion..]);
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            &mouse_edited_prompt,
+            Duration::from_secs(10),
+        );
+        writer
+            .write_all(&[127])
+            .expect("restore prompt after mouse edit");
+        writer.flush().expect("flush restored composer prompt");
+        wait_for_screen_marker(&output_rx, &mut output, &prompt, Duration::from_secs(10));
     } else {
         writer.write_all(prompt.as_bytes()).expect("write prompt");
     }
@@ -308,6 +400,176 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             );
         }
         if scenario == "complete" {
+            // The assistant marker arrives before the following tool and turn terminal events.
+            // Wait for both the canonical completed tool row and the completion separator added
+            // by `turn.completed`, so a late projection update cannot invalidate transcript
+            // coordinates after the overlay opens.
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "Bash [completed]",
+                Duration::from_secs(10),
+            );
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "----------",
+                Duration::from_secs(10),
+            );
+            assert!(
+                !terminal_screen_text(&output).contains(&reasoning_text),
+                "transcript-only reasoning leaked into the compact main transcript"
+            );
+            let raw_source = format!("**{raw_text}**");
+            assert!(
+                !terminal_screen_text(&output).contains(&raw_source),
+                "rich main transcript leaked raw markdown source"
+            );
+            let (prompt_header_row, _) =
+                terminal_marker_position(&output, &prompt).expect("sticky prompt header position");
+            assert_eq!(
+                prompt_header_row, 0,
+                "sticky prompt header was not reserved above the compact transcript"
+            );
+            let (main_selection_row, main_selection_col) =
+                terminal_marker_position(&output, &raw_text)
+                    .expect("main transcript raw marker position");
+            let main_selection_width = u16::try_from(crate::width::display_width(&raw_text))
+                .unwrap_or(u16::MAX)
+                .clamp(1, 4)
+                .min(99u16.saturating_sub(main_selection_col));
+            let main_selection_end = main_selection_col.saturating_add(main_selection_width);
+            let main_mouse_drag = format!(
+                "\u{1b}[<0;{};{}M\u{1b}[<32;{};{}M\u{1b}[<0;{};{}m",
+                main_selection_col.saturating_add(1),
+                main_selection_row.saturating_add(1),
+                main_selection_end.saturating_add(1),
+                main_selection_row.saturating_add(1),
+                main_selection_end.saturating_add(1),
+                main_selection_row.saturating_add(1),
+            );
+            writer
+                .write_all(main_mouse_drag.as_bytes())
+                .expect("drag main transcript selection with SGR mouse input");
+            writer
+                .flush()
+                .expect("flush main transcript mouse selection");
+            wait_for_inverse_cells(
+                &output_rx,
+                &mut output,
+                main_selection_row,
+                main_selection_col,
+                main_selection_width,
+                Duration::from_secs(10),
+            );
+            main_transcript_mouse_selection_visible = true;
+            assert_eq!(
+                terminal_marker_position(&output, &prompt).map(|(row, _)| row),
+                Some(0),
+                "main transcript selection displaced the sticky prompt header"
+            );
+            sticky_prompt_header_visible = true;
+            writer
+                .write_all(b"\x1b")
+                .expect("clear main transcript mouse selection");
+            writer
+                .flush()
+                .expect("flush main transcript selection clear");
+            wait_for_non_inverse_cells(
+                &output_rx,
+                &mut output,
+                main_selection_row,
+                main_selection_col,
+                main_selection_width,
+                Duration::from_secs(10),
+            );
+            writer
+                .write_all(b"\x1bOR")
+                .expect("open main transcript Find with F3");
+            writer.flush().expect("flush main transcript Find open");
+            wait_for_screen_marker(&output_rx, &mut output, "Find: ", Duration::from_secs(10));
+            writer
+                .write_all(completed_text.as_bytes())
+                .expect("write main transcript Find query");
+            writer.flush().expect("flush main transcript Find query");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                &format!("Find: {completed_text}"),
+                Duration::from_secs(10),
+            );
+            let (find_row, find_col) = terminal_marker_position(&output, &completed_text)
+                .expect("main transcript Find match position");
+            let find_width = u16::try_from(crate::width::display_width(&completed_text))
+                .unwrap_or(u16::MAX)
+                .clamp(1, 4)
+                .min(99u16.saturating_sub(find_col));
+            wait_for_inverse_cells(
+                &output_rx,
+                &mut output,
+                find_row,
+                find_col,
+                find_width,
+                Duration::from_secs(10),
+            );
+            assert_eq!(
+                terminal_marker_position(&output, &prompt).map(|(row, _)| row),
+                Some(0),
+                "main transcript Find displaced the sticky prompt header"
+            );
+            main_transcript_find_visible = true;
+            writer
+                .write_all(b"\x1b")
+                .expect("close main transcript Find");
+            writer.flush().expect("flush main transcript Find close");
+            wait_for_non_inverse_cells(
+                &output_rx,
+                &mut output,
+                find_row,
+                find_col,
+                find_width,
+                Duration::from_secs(10),
+            );
+            writer
+                .write_all(b"\x1br")
+                .expect("toggle raw output with Alt-R");
+            writer.flush().expect("flush raw output shortcut");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                &raw_source,
+                Duration::from_secs(10),
+            );
+            assert!(
+                !terminal_screen_text(&output).contains(&reasoning_text),
+                "transcript-only reasoning leaked into raw main transcript"
+            );
+            raw_output_visible = true;
+            writer
+                .write_all(b"\x1b[5~")
+                .expect("pause compact transcript with PageUp");
+            writer.flush().expect("flush compact transcript PageUp");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "Back to bottom",
+                Duration::from_secs(10),
+            );
+            follow_control_visible = true;
+            writer
+                .write_all(b"\x1b")
+                .expect("return compact transcript to latest with Escape");
+            writer.flush().expect("flush compact transcript Escape");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                &raw_source,
+                Duration::from_secs(10),
+            );
+            assert!(
+                !terminal_screen_text(&output).contains("Back to bottom"),
+                "compact transcript follow control remained visible at the tail"
+            );
             let transcript_at = output.len();
             writer.write_all(&[20]).expect("open transcript Ctrl-T");
             writer.flush().expect("flush transcript shortcut");
@@ -315,18 +577,187 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
                 &output_rx,
                 &mut output,
                 transcript_at,
-                "Ctrl+T/Esc/Q close",
+                "Ctrl+T·Esc·Q close",
                 Duration::from_secs(10),
             );
-            wait_for_marker_after(
+            wait_for_screen_marker(
                 &output_rx,
                 &mut output,
-                transcript_at,
                 &completed_text,
+                Duration::from_secs(10),
+            );
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                &reasoning_text,
+                Duration::from_secs(10),
+            );
+            transcript_reasoning_visible = true;
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "+ Show details",
+                Duration::from_secs(10),
+            );
+            writer.write_all(b"\x1bOS").expect("focus activity with F4");
+            writer.flush().expect("flush transcript activity focus");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "previous/next",
+                Duration::from_secs(10),
+            );
+            writer.write_all(b"\r").expect("expand transcript activity");
+            writer.flush().expect("flush transcript activity expansion");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "− Show less",
+                Duration::from_secs(10),
+            );
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "terminal-gate-b",
+                Duration::from_secs(10),
+            );
+            transcript_disclosure_visible = true;
+            let (selection_row, selection_col) = terminal_marker_position(&output, &completed_text)
+                .expect("completed transcript text position");
+            let selection_width = u16::try_from(crate::width::display_width(&completed_text))
+                .unwrap_or(u16::MAX)
+                .clamp(1, 4)
+                .min(99u16.saturating_sub(selection_col));
+            let selection_end = selection_col.saturating_add(selection_width);
+            let mouse_drag = format!(
+                "\u{1b}[<0;{};{}M\u{1b}[<32;{};{}M\u{1b}[<0;{};{}m",
+                selection_col.saturating_add(1),
+                selection_row.saturating_add(1),
+                selection_end.saturating_add(1),
+                selection_row.saturating_add(1),
+                selection_end.saturating_add(1),
+                selection_row.saturating_add(1),
+            );
+            writer
+                .write_all(mouse_drag.as_bytes())
+                .expect("drag transcript selection with SGR mouse input");
+            writer.flush().expect("flush transcript mouse selection");
+            wait_for_inverse_cells(
+                &output_rx,
+                &mut output,
+                selection_row,
+                selection_col,
+                selection_width,
+                Duration::from_secs(10),
+            );
+            transcript_mouse_selection_visible = true;
+            writer
+                .write_all(b"\x1b")
+                .expect("clear transcript mouse selection");
+            writer.flush().expect("flush transcript selection clear");
+            wait_for_non_inverse_cells(
+                &output_rx,
+                &mut output,
+                selection_row,
+                selection_col,
+                selection_width,
+                Duration::from_secs(10),
+            );
+            writer
+                .write_all(b"\0\x1b[C")
+                .expect("start and extend transcript keyboard selection");
+            writer.flush().expect("flush transcript keyboard selection");
+            wait_for_inverse_cells(
+                &output_rx,
+                &mut output,
+                /*row*/ 1,
+                /*column*/ 0,
+                /*width*/ 1,
+                Duration::from_secs(10),
+            );
+            transcript_keyboard_selection_visible = true;
+            writer
+                .write_all(b"\x1b")
+                .expect("clear transcript keyboard selection");
+            writer.flush().expect("flush keyboard selection clear");
+            wait_for_non_inverse_cells(
+                &output_rx,
+                &mut output,
+                /*row*/ 1,
+                /*column*/ 0,
+                /*width*/ 1,
+                Duration::from_secs(10),
+            );
+            writer.write_all(b"\x1b[H").expect("move transcript to top");
+            writer.flush().expect("flush transcript Home");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "TUI_EDGE_ROW_00",
+                Duration::from_secs(10),
+            );
+            writer
+                .write_all(b"\x1b[<0;1;3M\x1b[<32;12;22M")
+                .expect("hold a vertical transcript selection at the bottom edge");
+            writer.flush().expect("flush transcript edge drag");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                &completed_text,
+                Duration::from_secs(10),
+            );
+            wait_for_inverse_cells(
+                &output_rx,
+                &mut output,
+                /*row*/ 21,
+                /*column*/ 0,
+                /*width*/ 1,
+                Duration::from_secs(10),
+            );
+            transcript_edge_drag_scrolled = true;
+            writer
+                .write_all(b"\x1b[<0;12;22m")
+                .expect("release transcript edge drag");
+            writer.flush().expect("flush transcript edge release");
+            writer
+                .write_all(b"\x1b[H")
+                .expect("bookmark transcript at top");
+            writer.flush().expect("flush transcript bookmark");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "TUI_EDGE_ROW_00",
                 Duration::from_secs(10),
             );
             writer.write_all(&[20]).expect("close transcript Ctrl-T");
             writer.flush().expect("flush transcript close");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                &raw_source,
+                Duration::from_secs(10),
+            );
+            let reopened_at = output.len();
+            writer.write_all(&[20]).expect("reopen transcript Ctrl-T");
+            writer.flush().expect("flush transcript reopen");
+            wait_for_marker_after(
+                &output_rx,
+                &mut output,
+                reopened_at,
+                "Ctrl+T·Esc·Q close",
+                Duration::from_secs(10),
+            );
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "TUI_EDGE_ROW_00",
+                Duration::from_secs(10),
+            );
+            transcript_bookmark_restored = true;
+            writer
+                .write_all(&[20])
+                .expect("close reopened transcript Ctrl-T");
+            writer.flush().expect("flush reopened transcript close");
         }
         if scenario == "queue-edit" {
             let queued_at = output.len();
@@ -442,6 +873,10 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         "alternate screen not entered"
     );
     assert!(
+        output.contains("\u{1b}[?1000h"),
+        "mouse capture not enabled"
+    );
+    assert!(
         visible_terminal_text(&output).contains(visible_result),
         "terminal result was not visible"
     );
@@ -501,6 +936,10 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         output.contains("\u{1b}[?1049l"),
         "alternate screen not restored"
     );
+    assert!(
+        output.contains("\u{1b}[?1000l"),
+        "mouse capture not restored"
+    );
     if scenario == "complete" {
         assert!(
             output.contains("EDITOR_JOB_CONTROL_OK"),
@@ -517,8 +956,52 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             );
         }
         assert!(
-            visible_terminal_text(&output).contains("Ctrl+T/Esc/Q close"),
+            visible_terminal_text(&output).contains("Ctrl+T·Esc·Q close"),
             "transcript overlay was not visible"
+        );
+        assert!(
+            main_transcript_mouse_selection_visible,
+            "main transcript SGR mouse selection was not visible"
+        );
+        assert!(
+            sticky_prompt_header_visible,
+            "compact transcript sticky prompt header was not visible"
+        );
+        assert!(
+            main_transcript_find_visible,
+            "compact transcript F3 Find and match highlight were not visible"
+        );
+        assert!(
+            transcript_mouse_selection_visible,
+            "transcript SGR mouse selection was not visible"
+        );
+        assert!(
+            transcript_keyboard_selection_visible,
+            "transcript Ctrl-Space keyboard selection was not visible"
+        );
+        assert!(
+            transcript_edge_drag_scrolled,
+            "transcript edge drag did not continuously scroll the canonical projection"
+        );
+        assert!(
+            transcript_disclosure_visible,
+            "transcript activity disclosure was not visible"
+        );
+        assert!(
+            transcript_reasoning_visible,
+            "transcript-only reasoning was not retained in the detailed transcript"
+        );
+        assert!(
+            transcript_bookmark_restored,
+            "detailed transcript bookmark was not restored after Ctrl-T reopen"
+        );
+        assert!(
+            raw_output_visible,
+            "Alt-R raw output did not expose canonical markdown source"
+        );
+        assert!(
+            follow_control_visible,
+            "compact transcript return-to-latest control was not visible"
         );
     }
 }
@@ -649,6 +1132,119 @@ fn terminal_screen_text(output: &str) -> String {
     let mut parser = vt100::Parser::new(24, 100, 0);
     parser.process(output.as_bytes());
     parser.screen().contents()
+}
+
+fn terminal_cursor_position(output: &str) -> (u16, u16) {
+    let mut parser = vt100::Parser::new(24, 100, 0);
+    parser.process(output.as_bytes());
+    parser.screen().cursor_position()
+}
+
+fn wait_for_cursor_position(
+    output_rx: &mpsc::Receiver<Vec<u8>>,
+    output: &mut String,
+    row: u16,
+    column: u16,
+    timeout: Duration,
+) {
+    let deadline = Instant::now() + timeout;
+    while terminal_cursor_position(output) != (row, column) {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            panic!(
+                "timed out waiting for terminal cursor at row {row}, column {column}; output: {output}"
+            );
+        }
+        let chunk = output_rx.recv_timeout(remaining).unwrap_or_else(|_| {
+            panic!(
+                "PTY closed before terminal cursor reached row {row}, column {column}; output: {output}"
+            )
+        });
+        output.push_str(&String::from_utf8_lossy(&chunk));
+    }
+}
+
+fn terminal_marker_position(output: &str, marker: &str) -> Option<(u16, u16)> {
+    let mut parser = vt100::Parser::new(24, 100, 0);
+    parser.process(output.as_bytes());
+    let position = parser
+        .screen()
+        .rows(0, 100)
+        .enumerate()
+        .find_map(|(row, text)| {
+            let offset = text.find(marker)?;
+            let column = crate::width::display_width(&text[..offset]);
+            Some((u16::try_from(row).ok()?, u16::try_from(column).ok()?))
+        });
+    position
+}
+
+fn wait_for_inverse_cells(
+    output_rx: &mpsc::Receiver<Vec<u8>>,
+    output: &mut String,
+    row: u16,
+    column: u16,
+    width: u16,
+    timeout: Duration,
+) {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let mut parser = vt100::Parser::new(24, 100, 0);
+        parser.process(output.as_bytes());
+        let selected = (column..column.saturating_add(width)).all(|column| {
+            parser
+                .screen()
+                .cell(row, column)
+                .is_some_and(vt100::Cell::inverse)
+        });
+        if selected {
+            return;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            panic!(
+                "timed out waiting for inverse transcript selection at row {row}, column {column}, width {width}; output: {output}"
+            );
+        }
+        let chunk = output_rx.recv_timeout(remaining).unwrap_or_else(|_| {
+            panic!("PTY closed before transcript selection became visible; output: {output}")
+        });
+        output.push_str(&String::from_utf8_lossy(&chunk));
+    }
+}
+
+fn wait_for_non_inverse_cells(
+    output_rx: &mpsc::Receiver<Vec<u8>>,
+    output: &mut String,
+    row: u16,
+    column: u16,
+    width: u16,
+    timeout: Duration,
+) {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let mut parser = vt100::Parser::new(24, 100, 0);
+        parser.process(output.as_bytes());
+        let cleared = (column..column.saturating_add(width)).all(|column| {
+            !parser
+                .screen()
+                .cell(row, column)
+                .is_some_and(vt100::Cell::inverse)
+        });
+        if cleared {
+            return;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            panic!(
+                "timed out waiting for inverse transcript selection to clear at row {row}, column {column}, width {width}; output: {output}"
+            );
+        }
+        let chunk = output_rx.recv_timeout(remaining).unwrap_or_else(|_| {
+            panic!("PTY closed before transcript selection cleared; output: {output}")
+        });
+        output.push_str(&String::from_utf8_lossy(&chunk));
+    }
 }
 
 fn wait_for_ledger_kind_and_scenario(

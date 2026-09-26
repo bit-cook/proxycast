@@ -409,6 +409,10 @@ mod tests {
             text.contains("model-12"),
             "selected model was clipped: {text}"
         );
+        assert!(
+            text.contains("› model-12"),
+            "selected model marker missing: {text}"
+        );
         assert!(text.lines().all(|line| line.chars().count() <= 80));
     }
 }

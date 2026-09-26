@@ -5,7 +5,7 @@
 
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Clear, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -18,17 +18,25 @@ const FOOTER_CONTEXT_GAP_COLS: u16 = 1;
 
 pub(crate) fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     if app.bottom_pane.is_active() {
-        let hint = app
+        let hints = app
             .bottom_pane
-            .footer_hint(app.locale, usize::from(area.width.saturating_sub(1)));
-        if let Some(hint) = hint {
+            .footer_hint_lines(app.locale, usize::from(area.width.saturating_sub(1)));
+        if let Some(hints) = hints {
             let width =
                 usable_content_width_u16(area.width, FOOTER_INDENT_COLS).unwrap_or_default();
-            let line = Line::from(Span::styled(format!(" {hint}"), footer_hint_label_style()));
-            frame.render_widget(
-                Paragraph::new(truncate_line_with_ellipsis_if_overflow(line, width)),
-                area,
-            );
+            let lines = hints
+                .into_iter()
+                .take(usize::from(area.height))
+                .map(|hint| {
+                    let line =
+                        Line::from(Span::styled(format!(" {hint}"), footer_hint_label_style()));
+                    truncate_line_with_ellipsis_if_overflow(line, width)
+                })
+                .collect::<Vec<_>>();
+            // The interaction footer can grow from one row to several between frames. Clear the
+            // full allocation so a former input border cannot remain beneath wide glyph cells.
+            frame.render_widget(Clear, area);
+            frame.render_widget(Paragraph::new(lines), area);
             return;
         }
     }

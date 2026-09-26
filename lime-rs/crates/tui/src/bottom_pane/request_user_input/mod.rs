@@ -5,9 +5,12 @@ use app_server_protocol::protocol::v2::{
 };
 use app_server_protocol::RequestId;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::text::Line;
 use std::time::{Duration, Instant};
 
 use super::{AppServerResponse, ChatComposer, InputResult};
+use crate::bottom_pane::selection_row_layout::MAX_POPUP_ROWS;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::width::display_width;
 
 pub(super) mod render;
@@ -32,6 +35,10 @@ fn format_auto_resolution_remaining(remaining: Duration) -> String {
         return format!("{seconds}s");
     }
     format!("{}m {:02}s", seconds / 60, seconds % 60)
+}
+
+fn fit_footer_hint(hint: String, width: usize) -> String {
+    truncate_line_with_ellipsis_if_overflow(Line::from(hint), width).to_string()
 }
 
 #[derive(Debug)]
@@ -80,6 +87,15 @@ impl RequestUserInputOverlay {
             request_started_at: Instant::now(),
             auto_resolution_snoozed: false,
         }
+    }
+
+    pub(super) fn action_required_label(&self, locale: crate::locale::Locale) -> Option<String> {
+        self.params
+            .questions
+            .first()
+            .map(|question| question.header.clone())
+            .filter(|header| !header.trim().is_empty())
+            .or_else(|| Some(locale.request_input_action_label().to_string()))
     }
 
     fn snooze_auto_resolution(&mut self) {
@@ -149,42 +165,82 @@ impl RequestUserInputOverlay {
         }
     }
 
-    pub(super) fn footer_hint(&self, locale: crate::locale::Locale) -> String {
-        let mut hints = Vec::with_capacity(5);
+    fn footer_hints(&self, locale: crate::locale::Locale) -> Vec<String> {
+        let mut hints = Vec::with_capacity(6);
         // The submit/cancel pair is the non-negotiable action set on narrow terminals.
         // Secondary navigation may be clipped, but these two controls must remain visible.
-        hints.push(locale.request_submit_hint());
-        hints.push(locale.request_cancel_hint());
+        hints.push(locale.request_submit_hint().to_string());
+        hints.push(locale.request_cancel_hint().to_string());
+        if let Some(position) = self.option_position_hint(locale) {
+            hints.push(position);
+        }
         if self.has_options() && !self.editing {
-            hints.push(locale.request_select_hint());
+            hints.push(locale.request_select_hint().to_string());
         }
         if self.has_options() {
-            hints.push(locale.request_notes_hint());
+            hints.push(locale.request_notes_hint().to_string());
         }
         if self.params.questions.len() > 1 {
-            hints.push(locale.request_question_nav_hint());
+            hints.push(locale.request_question_nav_hint().to_string());
         }
-        hints.join(" · ")
+        hints
     }
 
-    pub(super) fn footer_hint_for_width(
+    pub(super) fn footer_hint_lines(
         &self,
         locale: crate::locale::Locale,
         width: usize,
-    ) -> String {
-        let all = self.footer_hint(locale);
-        if display_width(&all) <= width {
-            return all;
+    ) -> Vec<String> {
+        if width == 0 {
+            return Vec::new();
         }
 
-        // Keep the primary actions first. At very narrow widths use key-only labels instead of
-        // truncating the pair in the middle and hiding the cancellation affordance.
+        let hints = self.footer_hints(locale);
+        let mut tips = Vec::with_capacity(hints.len().saturating_sub(1));
+        tips.push(self.primary_footer_hint_for_width(locale, width));
+        tips.extend(
+            hints
+                .into_iter()
+                .skip(2)
+                .map(|hint| fit_footer_hint(hint, width)),
+        );
+
+        let mut lines = Vec::new();
+        let mut current = String::new();
+        for tip in tips.into_iter().filter(|tip| !tip.is_empty()) {
+            let candidate = if current.is_empty() {
+                tip.clone()
+            } else {
+                format!("{current} · {tip}")
+            };
+            if display_width(&candidate) <= width {
+                current = candidate;
+            } else {
+                lines.push(current);
+                current = tip;
+            }
+        }
+        if !current.is_empty() {
+            lines.push(current);
+        }
+        lines
+    }
+
+    pub(super) fn footer_required_height(
+        &self,
+        locale: crate::locale::Locale,
+        width: usize,
+    ) -> u16 {
+        u16::try_from(self.footer_hint_lines(locale, width).len()).unwrap_or(u16::MAX)
+    }
+
+    fn primary_footer_hint_for_width(&self, locale: crate::locale::Locale, width: usize) -> String {
         let primary = format!(
             "{} · {}",
             locale.request_submit_hint(),
             locale.request_cancel_hint()
         );
-        let compact_primary = [
+        let selected = [
             primary.as_str(),
             "Enter · Esc",
             "↵ · Esc",
@@ -194,24 +250,18 @@ impl RequestUserInputOverlay {
         ]
         .into_iter()
         .find(|candidate| display_width(candidate) <= width)
-        .unwrap_or("");
-        if compact_primary != primary {
-            return compact_primary.to_string();
-        }
+        .unwrap_or("")
+        .to_string();
+        selected
+    }
 
-        let mut hints = vec![locale.request_submit_hint(), locale.request_cancel_hint()];
-        let secondary = [
-            (self.has_options() && !self.editing).then_some(locale.request_select_hint()),
-            self.has_options().then_some(locale.request_notes_hint()),
-            (self.params.questions.len() > 1).then_some(locale.request_question_nav_hint()),
-        ];
-        for hint in secondary.into_iter().flatten() {
-            let candidate = hints.join(" · ") + " · " + hint;
-            if display_width(&candidate) <= width {
-                hints.push(hint);
-            }
+    fn option_position_hint(&self, locale: crate::locale::Locale) -> Option<String> {
+        let total = self.option_count();
+        if total <= MAX_POPUP_ROWS {
+            return None;
         }
-        hints.join(" · ")
+        let selected = self.selected.min(total.saturating_sub(1)) + 1;
+        Some(locale.request_option_position_hint(selected, total))
     }
 
     fn save_current_state(&mut self) {
@@ -286,7 +336,16 @@ impl RequestUserInputOverlay {
                 && key.modifiers.contains(KeyModifiers::CONTROL)
                 && key.code == KeyCode::Char('c') =>
             {
-                Some(self.cancel())
+                // Match Codex's overlay boundary: while editing notes, the first Ctrl-C
+                // clears the local draft; only an empty draft cancels the request. This keeps
+                // cancellation explicit and never fabricates a partial answer response.
+                if self.editing && !self.composer.is_empty() {
+                    self.composer.replace(String::new());
+                    self.save_current_state();
+                    None
+                } else {
+                    Some(self.cancel())
+                }
             }
             key if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Esc if self.editing && self.has_options() => {
@@ -601,7 +660,7 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_c_returns_an_empty_fail_closed_response() {
+    fn ctrl_c_clears_notes_before_cancelling_request() {
         let mut request = RequestUserInputOverlay::new(
             RequestId::Integer(10),
             ToolRequestUserInputParams {
@@ -622,6 +681,11 @@ mod tests {
         );
         request.editing = true;
         request.composer.insert("sensitive");
+
+        let first =
+            request.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(first.is_none());
+        assert!(request.composer.is_empty());
 
         let response =
             request.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
@@ -1053,11 +1117,84 @@ mod tests {
     #[test]
     fn narrow_footer_keeps_submit_and_cancel_before_secondary_hints() {
         let request = RequestUserInputOverlay::new(RequestId::Integer(21), non_blocking_request());
-        let footer = request.footer_hint_for_width(crate::locale::Locale::EnUs, 28);
+        let lines = request.footer_hint_lines(crate::locale::Locale::EnUs, 28);
+        let footer = lines.first().expect("primary footer line");
 
         assert!(footer.contains("Enter submit"));
         assert!(footer.contains("Esc cancel"));
-        assert!(crate::width::display_width(&footer) <= 28);
+        assert!(crate::width::display_width(footer) <= 28);
+    }
+
+    #[test]
+    fn footer_wraps_hints_without_splitting_individual_hints() {
+        let mut params = non_blocking_request();
+        params.questions.push(params.questions[0].clone());
+        let request = RequestUserInputOverlay::new(RequestId::Integer(26), params);
+
+        let lines = request.footer_hint_lines(crate::locale::Locale::EnUs, 36);
+        assert!(lines.len() > 1, "{lines:?}");
+        assert!(
+            lines
+                .iter()
+                .all(|line| crate::width::display_width(line) <= 36),
+            "{lines:?}"
+        );
+        let footer = lines.join(" · ");
+        for hint in [
+            "Enter submit · Esc cancel",
+            "↑/↓ select",
+            "Tab notes",
+            "←/→ questions",
+        ] {
+            assert!(footer.contains(hint), "missing {hint:?}: {lines:?}");
+        }
+    }
+
+    #[test]
+    fn long_option_lists_expose_the_hidden_selection_position() {
+        let mut params = non_blocking_request();
+        params.questions[0].options = Some(
+            (0..12)
+                .map(|index| ToolRequestUserInputOption {
+                    label: format!("Choice {index}"),
+                    description: String::new(),
+                })
+                .collect(),
+        );
+        let mut request = RequestUserInputOverlay::new(RequestId::Integer(24), params);
+        request.selected = 10;
+
+        let lines = request.footer_hint_lines(crate::locale::Locale::EnUs, 80);
+        let footer = lines.join(" · ");
+        assert!(footer.contains("option 11/12"), "{footer}");
+        assert!(crate::width::display_width(&footer) > 0);
+        let narrow = request
+            .footer_hint_lines(crate::locale::Locale::EnUs, 40)
+            .join(" · ");
+        assert!(narrow.contains("option 11/12"), "{narrow}");
+    }
+
+    #[test]
+    fn option_position_hint_is_localized_across_product_locales() {
+        let mut params = non_blocking_request();
+        params.questions[0].options = Some(
+            (0..9)
+                .map(|index| ToolRequestUserInputOption {
+                    label: format!("Choice {index}"),
+                    description: String::new(),
+                })
+                .collect(),
+        );
+        let request = RequestUserInputOverlay::new(RequestId::Integer(25), params);
+        for locale in [
+            crate::locale::Locale::ZhCn,
+            crate::locale::Locale::ZhTw,
+            crate::locale::Locale::EnUs,
+            crate::locale::Locale::JaJp,
+            crate::locale::Locale::KoKr,
+        ] {
+            assert!(!request.footer_hint_lines(locale, 80).is_empty());
+        }
     }
 
     #[test]
@@ -1072,12 +1209,17 @@ mod tests {
             let request =
                 RequestUserInputOverlay::new(RequestId::Integer(23), non_blocking_request());
             for width in [3, 4, 7, 12, 18] {
-                let footer = request.footer_hint_for_width(locale, width);
+                let lines = request.footer_hint_lines(locale, width);
                 assert!(
-                    crate::width::display_width(&footer) <= width,
-                    "{locale:?} at {width}: {footer:?}"
+                    lines
+                        .iter()
+                        .all(|line| crate::width::display_width(line) <= width),
+                    "{locale:?} at {width}: {lines:?}"
                 );
-                assert!(footer.contains("Esc"), "{locale:?} at {width}: {footer:?}");
+                assert!(
+                    lines.first().is_some_and(|line| line.contains("Esc")),
+                    "{locale:?} at {width}: {lines:?}"
+                );
             }
         }
     }

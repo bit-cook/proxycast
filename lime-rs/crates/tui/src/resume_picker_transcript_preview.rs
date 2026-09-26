@@ -1,10 +1,20 @@
-#[cfg(test)]
-use app_server_protocol::protocol::v2::{ThreadItem, UserInput};
 use std::io;
 
-use crate::app_server_session::AppServerSession;
+use app_server_client::RequestHandle;
+#[cfg(test)]
+use app_server_protocol::protocol::v2::UserInput;
+use app_server_protocol::protocol::v2::{
+    ThreadHistoryMode, ThreadItem, ThreadItemsListResponse, ThreadReadParams, ThreadReadResponse,
+    METHOD_THREAD_ITEMS_LIST, METHOD_THREAD_READ,
+};
+
+use crate::app_server_session::{
+    thread_items_page_params, AppServerSession, HISTORY_ITEM_PAGE_LIMIT, HISTORY_ITEM_SCAN_LIMIT,
+};
+use crate::projection::{ConversationProjection, EntryKind};
 
 const MAX_TRANSCRIPT_PREVIEW_LINES: usize = 6;
+const TRANSCRIPT_PREVIEW_ITEMS_PAGE_SIZE: u32 = 6;
 
 /// A bounded, display-only transcript line used by the resume picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +35,31 @@ pub(crate) async fn load_transcript_preview(
     app_server: &AppServerSession,
     thread_id: &str,
 ) -> io::Result<Vec<TranscriptPreviewLine>> {
-    let entries = crate::thread_transcript::load_session_transcript(app_server, thread_id).await?;
+    load_transcript_preview_with_handle(app_server.request_handle(), thread_id.to_string()).await
+}
+
+pub(crate) async fn load_transcript_preview_with_handle(
+    request_handle: RequestHandle,
+    thread_id: String,
+) -> io::Result<Vec<TranscriptPreviewLine>> {
+    let metadata: ThreadReadResponse = request_handle
+        .request(
+            METHOD_THREAD_READ,
+            ThreadReadParams {
+                thread_id: thread_id.clone(),
+                include_turns: false,
+            },
+        )
+        .await
+        .map_err(io::Error::other)?;
+
+    if metadata.thread.history_mode == ThreadHistoryMode::Paginated {
+        return load_paginated_preview(request_handle, thread_id).await;
+    }
+
+    let entries =
+        crate::thread_transcript::load_session_transcript_with_handle(request_handle, thread_id)
+            .await?;
     let entries = entries
         .into_iter()
         .filter_map(|entry| {
@@ -38,6 +72,82 @@ pub(crate) async fn load_transcript_preview(
         })
         .collect();
     preview_from_entries(entries)
+}
+
+async fn load_paginated_preview(
+    request_handle: RequestHandle,
+    thread_id: String,
+) -> io::Result<Vec<TranscriptPreviewLine>> {
+    let mut items = Vec::new();
+    let mut cursor = None;
+    let mut seen_cursors = std::collections::HashSet::new();
+    let mut scanned_items = 0_usize;
+
+    loop {
+        let remaining_items = HISTORY_ITEM_SCAN_LIMIT.saturating_sub(scanned_items);
+        let page_size = if cursor.is_none() {
+            TRANSCRIPT_PREVIEW_ITEMS_PAGE_SIZE
+        } else {
+            HISTORY_ITEM_PAGE_LIMIT
+        }
+        .min(remaining_items as u32);
+        if page_size == 0 {
+            break;
+        }
+
+        let page: ThreadItemsListResponse = request_handle
+            .request(
+                METHOD_THREAD_ITEMS_LIST,
+                thread_items_page_params(thread_id.clone(), None, cursor.clone(), page_size),
+            )
+            .await
+            .map_err(io::Error::other)?;
+        scanned_items = scanned_items.saturating_add(page.data.len());
+        let page_items = page
+            .data
+            .into_iter()
+            .take(remaining_items)
+            .map(|entry| entry.item)
+            .rev()
+            .collect::<Vec<_>>();
+        items.splice(0..0, page_items);
+        if preview_from_items(&items).len() == MAX_TRANSCRIPT_PREVIEW_LINES
+            || scanned_items >= HISTORY_ITEM_SCAN_LIMIT
+        {
+            break;
+        }
+        let Some(next_cursor) = next_preview_cursor(page.next_cursor, &mut seen_cursors) else {
+            break;
+        };
+        cursor = Some(next_cursor);
+    }
+
+    Ok(preview_from_items(&items))
+}
+
+fn preview_from_items(items: &[ThreadItem]) -> Vec<TranscriptPreviewLine> {
+    let mut projection = ConversationProjection::default();
+    projection.prepend_items(items.iter().cloned());
+    let entries = projection
+        .entries()
+        .iter()
+        .filter_map(|entry| {
+            let speaker = match entry.kind {
+                EntryKind::User => TranscriptPreviewSpeaker::User,
+                EntryKind::Assistant => TranscriptPreviewSpeaker::Assistant,
+                _ => return None,
+            };
+            Some((speaker, entry.text.clone()))
+        })
+        .collect();
+    preview_from_entries(entries).expect("preview projection is infallible")
+}
+
+fn next_preview_cursor(
+    next_cursor: Option<String>,
+    seen_cursors: &mut std::collections::HashSet<String>,
+) -> Option<String> {
+    next_cursor.filter(|next| seen_cursors.insert(next.clone()))
 }
 
 pub(crate) fn preview_from_entries(
@@ -65,40 +175,6 @@ pub(crate) fn preview_from_entries(
 
     lines.reverse();
     Ok(lines)
-}
-
-#[cfg(test)]
-fn append_item_preview_lines(lines: &mut Vec<TranscriptPreviewLine>, item: &ThreadItem) {
-    let (speaker, text) = match item {
-        ThreadItem::UserMessage { content, .. } => (
-            TranscriptPreviewSpeaker::User,
-            content
-                .iter()
-                .filter_map(|input| match input {
-                    UserInput::Text { text, .. } => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join(" "),
-        ),
-        ThreadItem::AgentMessage { text, .. } => {
-            (TranscriptPreviewSpeaker::Assistant, text.clone())
-        }
-        _ => return,
-    };
-
-    let remaining = MAX_TRANSCRIPT_PREVIEW_LINES.saturating_sub(lines.len());
-    lines.extend(
-        text.lines()
-            .rev()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .take(remaining)
-            .map(|line| TranscriptPreviewLine {
-                speaker,
-                text: line.to_string(),
-            }),
-    );
 }
 
 #[cfg(test)]

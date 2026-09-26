@@ -42,6 +42,8 @@ fn message_entry(kind: EntryKind, text: String, streaming: bool) -> TranscriptEn
         streaming,
         status: None,
         summary: Vec::new(),
+        activity_group: None,
+        activity_detail: None,
     }
 }
 

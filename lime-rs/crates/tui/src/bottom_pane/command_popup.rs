@@ -319,7 +319,7 @@ mod tests {
         let rows_with_marker = (0..buffer.area.height)
             .filter(|y| {
                 let row = (0..buffer.area.width)
-                .map(|x| buffer[(x, *y)].symbol())
+                    .map(|x| buffer[(x, *y)].symbol())
                     .collect::<String>();
                 row.contains(&format!("› /{}", selected.command()))
             })

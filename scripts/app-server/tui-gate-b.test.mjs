@@ -15,6 +15,10 @@ const ptyTestSource = readFileSync(
   path.resolve(process.cwd(), "lime-rs/crates/tui/src/runtime_pty_tests.rs"),
   "utf8",
 );
+const terminalFixtureSource = readFileSync(
+  path.resolve(process.cwd(), "scripts/app-server/terminal-gate-fixture.mjs"),
+  "utf8",
+);
 const focusTestSource = readFileSync(
   path.resolve(process.cwd(), "lime-rs/crates/tui/tests/suite/focus_palette.rs"),
   "utf8",
@@ -86,7 +90,75 @@ describe("TUI Gate B", () => {
     expect(ptyTestSource).toContain("configure_external_editor");
     expect(ptyTestSource).not.toContain('write_all(b"\\x1b[1;1R")');
     expect(ptyTestSource).toContain("writer.write_all(&[20])");
-    expect(ptyTestSource).toContain('"Ctrl+T/Esc/Q close"');
+    expect(ptyTestSource).toContain('"Ctrl+T·Esc·Q close"');
+    expect(ptyTestSource).toContain(
+      '"drag main transcript selection with SGR mouse input"',
+    );
+    expect(ptyTestSource).toContain(
+      '"main transcript SGR mouse selection was not visible"',
+    );
+    expect(ptyTestSource).toContain('"sticky prompt header position"');
+    expect(ptyTestSource).toContain(
+      '"main transcript selection displaced the sticky prompt header"',
+    );
+    expect(ptyTestSource).toContain(
+      '"compact transcript sticky prompt header was not visible"',
+    );
+    expect(gateSource).toContain('"sticky-prompt=ok"');
+    expect(ptyTestSource).toContain('write_all(b"\\x1bOR")');
+    expect(ptyTestSource).toContain('"open main transcript Find with F3"');
+    expect(ptyTestSource).toContain(
+      '"compact transcript F3 Find and match highlight were not visible"',
+    );
+    expect(gateSource).toContain('"main-find=ok"');
+    expect(ptyTestSource).toContain(
+      '"drag transcript selection with SGR mouse input"',
+    );
+    expect(ptyTestSource).toContain("wait_for_inverse_cells");
+    expect(ptyTestSource).toContain(
+      '"transcript SGR mouse selection was not visible"',
+    );
+    expect(ptyTestSource).toContain('write_all(b"\\0\\x1b[C")');
+    expect(ptyTestSource).toContain(
+      '"transcript Ctrl-Space keyboard selection was not visible"',
+    );
+    expect(gateSource).toContain("scrollableCompletedText");
+    expect(ptyTestSource).toContain(
+      '"hold a vertical transcript selection at the bottom edge"',
+    );
+    expect(ptyTestSource).toContain(
+      '"transcript edge drag did not continuously scroll the canonical projection"',
+    );
+    expect(ptyTestSource).toContain('"bookmark transcript at top"');
+    expect(ptyTestSource).toContain('"reopen transcript Ctrl-T"');
+    expect(ptyTestSource).toContain(
+      '"detailed transcript bookmark was not restored after Ctrl-T reopen"',
+    );
+    expect(ptyTestSource).toContain('writer.write_all(b"\\x1bOS")');
+    expect(ptyTestSource).toContain('"+ Show details"');
+    expect(ptyTestSource).toContain('"− Show less"');
+    expect(ptyTestSource).toContain(
+      '"transcript activity disclosure was not visible"',
+    );
+    expect(terminalFixtureSource).toContain('kind: "reasoning"');
+    expect(terminalFixtureSource).toContain('type: "reasoning"');
+    expect(gateSource).toContain("LIME_TEST_TERMINAL_REASONING_TEXT");
+    expect(gateSource).toContain("LIME_TEST_TERMINAL_RAW_TEXT");
+    expect(ptyTestSource).toContain(
+      '"transcript-only reasoning leaked into the compact main transcript"',
+    );
+    expect(ptyTestSource).toContain(
+      '"transcript-only reasoning was not retained in the detailed transcript"',
+    );
+    expect(ptyTestSource).toContain('write_all(b"\\x1br")');
+    expect(ptyTestSource).toContain(
+      '"Alt-R raw output did not expose canonical markdown source"',
+    );
+    expect(ptyTestSource).toContain('write_all(b"\\x1b[5~")');
+    expect(ptyTestSource).toContain('"Back to bottom"');
+    expect(ptyTestSource).toContain(
+      '"compact transcript return-to-latest control was not visible"',
+    );
     expect(ptyTestSource).toContain('writer.write_all(b"\\x1b")');
     expect(ptyTestSource).toContain('"esc to interrupt"');
     expect(ptyTestSource).toContain('write_all(b"\\x1b[1;3A")');
@@ -119,6 +191,7 @@ describe("TUI Gate B", () => {
     expect(gateSource).not.toContain('APP_SERVER_BACKEND_MODE: "mock"');
     expect(gateSource).not.toContain("turn.final_done");
     expect(runtimeSource).not.toContain("final_done");
+    expect(runtimeSource).not.toContain("poll_crossterm_event");
   });
 
   it("keeps Windows CLI and TUI current-path evidence in the package workflow", () => {

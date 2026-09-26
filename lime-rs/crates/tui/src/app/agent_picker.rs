@@ -374,6 +374,10 @@ mod tests {
             text.contains("Agent 12"),
             "selected agent was clipped: {text}"
         );
+        assert!(
+            text.contains("› Agent 12"),
+            "selected agent marker missing: {text}"
+        );
         assert!(text.lines().all(|line| line.chars().count() <= 80));
     }
 }

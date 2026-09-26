@@ -1,40 +1,40 @@
-## Lime v1.145.0
+## Lime v1.146.0
 
 ### 新功能
 
-- TUI 继续按 Codex current owner 对齐，补齐历史分页、resume/transcript 浏览、导出、MCP
-  inventory、请求用户输入、审批、模型/Agent/resume picker 与 slash popup 的交互路径。
-- Composer 支持 Vim 编辑会话、撤销/重做、反向历史搜索接受、图片附件队列编辑，以及
-  多 Agent、工具生命周期和 reasoning 状态的统一投影。
+- TUI 新增主 transcript 的 Find 搜索、sticky prompt header、双阅读模式、跟随控制和未读活动提示。
+- 支持 transcript 的鼠标/键盘选择、连续边缘滚动、链接打开、剪贴板反馈，以及主视图和 pager 的统一复制体验。
+- 补齐 transcript raw scrollback、reasoning/activity compact presentation、分页历史加载和跨页视图状态保持。
+- 新增运行时 keymap owner，统一主 transcript、pager、composer 和 footer 的默认快捷键语义。
 
 ### 修复
 
-- 修复 streaming 回合结束后迟到 delta 重新打开已完成条目或凭空创建 transcript 行的问题。
-- 修复跨页历史的 completed-turn 分隔线、review prompt 去重、分页 cursor 重读和终端滚动锚点。
-- 修复窄终端下 CJK/emoji 换行、选项窗口、footer、光标定位、picker 锚定与 composer 布局越界。
-- 修复 CLI npm 平台包解析、平台包命名、V8/Linux 依赖和发布 job npm token 传递。
+- 修复窄终端下 CJK、emoji、长 URL、Markdown 链接、ANSI/OSC 8 hyperlink 和 diff 换行的几何与选择边界。
+- 修复历史分页 stale cursor、失败重试、older-page 插入、完成分隔线、sticky header 锚定和主视图滚动位置恢复。
+- 修复 streaming 终态、reasoning activity、MCP/approval/request_user_input、composer 鼠标编辑和终端恢复路径中的状态泄漏。
+- 修复 TUI footer、picker、overlay、textarea、resume transcript 和请求用户输入在窄屏下的布局溢出。
 
 ### 优化与重构
 
-- 将 TUI 输入、提交、中断、turn/tool 生命周期和历史 cell 拆分为 Codex 形状的唯一 owner，
-  继续复用 App Server JSON-RPC 与 canonical Thread/Turn/Item projection。
-- 收敛 MCP、approval、request_user_input、status/footer 和 streaming 的多语言文案与
-  fail-closed 降级；补充五语言窄屏显示规则。
+- 按 Codex current owner 拆分 TUI 的 interaction、transcript view、history cell、pager、keymap、selection、footer 和 activity presentation，继续复用 App Server JSON-RPC 与 canonical Thread/Turn/Item projection。
+- 将 transcript 搜索、复制、选择、阅读位置、raw/rich 模式和 follow control 收敛为 session-local presentation 状态，不引入第二套 history store 或 runtime。
+- CLI/TUI 文档明确 Desktop 与 CLI/TUI 的产品边界、平台包内容、安装方式和共享 App Server 主链。
 
 ### 测试与质量
 
-- 增加 TUI TestBackend/VT100、分页/overlay、composer、picker、MCP 与 projection 回归，
-  并刷新 TUI 结构 inventory 与协议生成物。
-- 本轮已通过 TUI 定向与 all-targets 测试、Clippy `-D warnings`、Cargo fmt、协议契约测试、
-  真实 PTY/alternate-screen Gate B 和 `git diff --check`。
+- TUI library 定向与 all-targets 回归扩展至 `1052/1052`，integration `18/18`，manager regression `1/1`。
+- 通过 TUI `--all-targets --no-deps` Clippy `-D warnings`、workspace fmt、locked Cargo metadata、结构/snapshot/Gate 守卫 `22/22`、脚本治理和 `git diff --check`。
+- 真实 TUI Gate B 覆盖 complete、approval、user-input、interrupt、failure、queue-edit、agents-overview、F3 Find、focus palette、resize/reflow、reconnect 和 terminal restore。
+- 保留 App Server JSON-RPC、RuntimeCore、PTY、alternate screen、canonical read model 与终端可见状态的真实证据；未触及 Electron/App Server protocol 的部分不宣称 GUI Gate B。
 
 ### 文档
 
-- 更新 TUI/CLI Codex 对齐执行计划与结构 inventory。
+- 同步中英文 README 的 Desktop 与 CLI/TUI 入口、安装和平台说明。
+- 更新 TUI/CLI Codex 对齐执行计划与结构 inventory 记录。
 
 ### 其他
 
-- App Server request user input schema 与 TypeScript 生成类型保持同步；CLI 跨平台产物继续
-  由 GitHub Actions 发布。
+- App Server 配置合同继续承载 TUI keymap 的单一事实源；未新增 TUI 私有配置文件、环境变量配置面或 compat 双轨。
+- CLI 跨平台产物继续由现有 GitHub Actions 发布链构建和分发。
 
-**完整变更**: `v1.144.1` -> `v1.145.0`
+**完整变更**: `v1.145.0` -> `v1.146.0`

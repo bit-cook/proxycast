@@ -159,6 +159,9 @@ mod tests {
     use super::*;
     use app_server_protocol::protocol::v2::{FuzzyFileSearchMatchType, FuzzyFileSearchResult};
     use crossterm::event::{KeyEvent, KeyModifiers};
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+    use ratatui::Terminal;
 
     fn result(path: &str) -> FuzzyFileSearchResult {
         FuzzyFileSearchResult {
@@ -209,5 +212,29 @@ mod tests {
         assert_eq!(popup.selected_path(), Some("src/lib.rs"));
         popup.set_matches("main", Vec::new());
         assert!(popup.selected_path().is_none());
+    }
+
+    #[test]
+    fn selected_file_uses_codex_marker_without_narrow_overflow() {
+        let mut popup = FileSearchPopup::new("src");
+        popup.set_matches("src", vec![result("src/main.rs")]);
+        for width in [40, 80, 120] {
+            let mut terminal = Terminal::new(TestBackend::new(width, 8)).expect("terminal");
+            terminal
+                .draw(|frame| popup.render(frame, Rect::new(0, 6, width, 2), Locale::EnUs))
+                .expect("draw");
+            let buffer = terminal.backend().buffer();
+            let text = (0..buffer.area.height)
+                .map(|y| {
+                    (0..buffer.area.width)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>();
+            assert!(text.iter().any(|line| line.contains("› src/main.rs")));
+            assert!(text
+                .iter()
+                .all(|line| line.chars().count() <= width as usize));
+        }
     }
 }

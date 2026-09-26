@@ -1,6 +1,7 @@
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
+use std::path::{Path, PathBuf};
 
 use crate::render::highlight::highlight_code_to_lines;
 use crate::terminal_hyperlinks::HyperlinkLine;
@@ -94,10 +95,13 @@ struct Renderer {
     code_block_buffer: String,
     link: Option<LinkState>,
     table: Option<TableState>,
+    cwd: Option<PathBuf>,
+    line_ends_with_local_link_target: bool,
+    pending_local_link_soft_break: bool,
 }
 
 impl Renderer {
-    fn new(base_style: Style, width: Option<usize>) -> Self {
+    fn new(base_style: Style, width: Option<usize>, cwd: Option<&Path>) -> Self {
         Self {
             lines: Vec::new(),
             current: HyperlinkLine::default(),
@@ -113,6 +117,9 @@ impl Renderer {
             code_block_buffer: String::new(),
             link: None,
             table: None,
+            cwd: cwd.map(Path::to_path_buf),
+            line_ends_with_local_link_target: false,
+            pending_local_link_soft_break: false,
         }
     }
 
@@ -173,6 +180,7 @@ impl Renderer {
             }
             return;
         }
+        self.line_ends_with_local_link_target = false;
         let destination = self
             .link
             .as_ref()
@@ -210,6 +218,7 @@ impl Renderer {
 
     fn finish_line(&mut self) {
         self.lines.push(std::mem::take(&mut self.current));
+        self.line_ends_with_local_link_target = false;
     }
 
     fn blank_line(&mut self) {
@@ -237,6 +246,14 @@ impl Renderer {
         options.insert(Options::ENABLE_FOOTNOTES);
 
         for event in Parser::new_ext(input, options) {
+            if self.pending_local_link_soft_break {
+                let keep_inline =
+                    matches!(&event, Event::Text(text) if text.trim_start().starts_with(':'));
+                self.pending_local_link_soft_break = false;
+                if !keep_inline {
+                    self.finish_line();
+                }
+            }
             match event {
                 Event::Start(tag) => self.start(tag),
                 Event::End(tag) => self.end(tag),
@@ -253,10 +270,23 @@ impl Renderer {
                 Event::Html(html) | Event::InlineHtml(html) => {
                     self.push_text(&html, self.style());
                 }
-                Event::SoftBreak | Event::HardBreak => {
+                Event::SoftBreak => {
                     let style = self.style();
-                    if let Some(table) = self.table.as_mut() {
+                    if self.collecting_local_link_label() {
+                        self.push_local_link_label_break(style);
+                    } else if let Some(table) = self.table.as_mut() {
                         table.push_text(" ", style, None, false);
+                    } else if self.line_ends_with_local_link_target && !self.lists.is_empty() {
+                        self.pending_local_link_soft_break = true;
+                        self.line_ends_with_local_link_target = false;
+                    } else {
+                        self.finish_line();
+                    }
+                }
+                Event::HardBreak => {
+                    let style = self.style();
+                    if self.collecting_local_link_label() {
+                        self.push_local_link_label_break(style);
                     } else {
                         self.finish_line();
                     }
@@ -461,6 +491,25 @@ impl Renderer {
         }
     }
 
+    fn collecting_local_link_label(&self) -> bool {
+        self.link
+            .as_ref()
+            .is_some_and(|link| link.local_label.is_some())
+    }
+
+    fn push_local_link_label_break(&mut self, style: Style) {
+        let needs_space = self
+            .link
+            .as_ref()
+            .and_then(|link| link.local_label.as_ref())
+            .and_then(|label| label.last())
+            .and_then(|span| span.content.chars().last())
+            .is_some_and(|character| !character.is_whitespace());
+        if needs_space {
+            self.push_text_with_link_detection(" ", style, false);
+        }
+    }
+
     fn finish_link(&mut self) {
         let Some(link) = self.link.take() else {
             return;
@@ -469,7 +518,9 @@ impl Renderer {
             return;
         }
         if let Some(label) = link.local_label {
-            let Some(target) = local_links::render_local_link_target(&link.destination) else {
+            let Some(target) =
+                local_links::render_local_link_target(&link.destination, self.cwd.as_deref())
+            else {
                 return;
             };
             let label_text = label
@@ -497,6 +548,9 @@ impl Renderer {
                         .add_modifier(Modifier::UNDERLINED),
                     false,
                 );
+            }
+            if self.table.is_none() {
+                self.line_ends_with_local_link_target = true;
             }
             return;
         }
@@ -527,7 +581,16 @@ impl Renderer {
 }
 
 pub(crate) fn render(input: &str, base_style: Style, width: Option<usize>) -> Vec<HyperlinkLine> {
-    Renderer::new(base_style, width).render(input)
+    render_with_cwd(input, base_style, width, None)
+}
+
+pub(crate) fn render_with_cwd(
+    input: &str,
+    base_style: Style,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+) -> Vec<HyperlinkLine> {
+    Renderer::new(base_style, width, cwd).render(input)
 }
 
 #[cfg(test)]
@@ -549,6 +612,10 @@ mod tests {
 
     fn render_unconstrained(input: &str, style: Style) -> Vec<HyperlinkLine> {
         render(input, style, None)
+    }
+
+    fn render_at_cwd(input: &str, cwd: &str) -> Vec<HyperlinkLine> {
+        render_with_cwd(input, Style::default(), None, Some(Path::new(cwd)))
     }
 
     #[test]
@@ -817,6 +884,61 @@ mod tests {
         let text = plain(&lines).join("\n");
         assert!(text.contains("~/notes"));
         assert!(text.contains("//server/share/My File.rs"));
+    }
+
+    #[test]
+    fn file_links_shorten_targets_to_cwd_and_keep_location_ranges() {
+        let lines = render_at_cwd(
+            "[source](/repo/src/lib.rs#L12C3)\n\n[range](/repo/src/main.rs:74:3-76:9)",
+            "/repo",
+        );
+        assert_eq!(
+            plain(&lines),
+            vec![
+                "source (src/lib.rs:12:3)",
+                "",
+                "range (src/main.rs:74:3-76:9)"
+            ]
+        );
+    }
+
+    #[test]
+    fn file_links_keep_foreign_windows_targets_and_decode_urls_once() {
+        assert_eq!(
+            plain(&render_at_cwd(
+                "[report](file:///C:/repo/Quarterly%20Report.xlsx#L4C2)",
+                "C:/repo",
+            )),
+            vec!["report (Quarterly Report.xlsx:4:2)"]
+        );
+        assert_eq!(
+            plain(&render_at_cwd(
+                "[percent%20.rs](/repo/percent%2520.rs)",
+                "/repo"
+            )),
+            vec!["percent%20.rs"]
+        );
+    }
+
+    #[test]
+    fn local_file_link_soft_break_stays_inline_with_following_list_text() {
+        let lines = render_at_cwd(
+            "- [binary](/repo/README.md:93)\n  : core is the agent runtime.",
+            "/repo",
+        );
+        assert_eq!(
+            plain(&lines),
+            vec!["- binary (README.md:93): core is the agent runtime."]
+        );
+    }
+
+    #[test]
+    fn multiline_local_file_link_labels_collapse_without_detaching_styled_prefixes() {
+        let lines = render_at_cwd("**bold** plain [foo\nbar](/repo/src/lib.rs#L74C3)", "/repo");
+        assert_eq!(
+            plain(&lines),
+            vec!["bold plain foo bar (src/lib.rs:74:3)".to_string()]
+        );
     }
 
     #[test]

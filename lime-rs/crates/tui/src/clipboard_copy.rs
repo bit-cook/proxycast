@@ -13,6 +13,33 @@ pub(crate) struct ClipboardLease {
     _clipboard: Option<arboard::Clipboard>,
 }
 
+/// A confirmed native clipboard write or an unacknowledged terminal request.
+pub(crate) enum CopyOutcome {
+    Copied(Option<ClipboardLease>),
+    Requested,
+}
+
+impl CopyOutcome {
+    /// Preserve an existing Linux clipboard owner unless a confirmed write replaces it.
+    pub(crate) fn store(self, lease: &mut Option<ClipboardLease>) -> CopyStatus {
+        match self {
+            Self::Copied(next_lease) => {
+                if let Some(next_lease) = next_lease {
+                    *lease = Some(next_lease);
+                }
+                CopyStatus::Confirmed
+            }
+            Self::Requested => CopyStatus::Unconfirmed,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CopyStatus {
+    Confirmed,
+    Unconfirmed,
+}
+
 impl fmt::Debug for ClipboardLease {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("ClipboardLease")
@@ -43,7 +70,7 @@ struct CopyEnvironment {
     wsl_session: bool,
 }
 
-pub(crate) fn copy_to_clipboard(text: &str) -> Result<Option<ClipboardLease>, String> {
+pub(crate) fn copy_to_clipboard(text: &str) -> Result<CopyOutcome, String> {
     copy_to_clipboard_with(
         text,
         CopyEnvironment {
@@ -65,46 +92,32 @@ fn copy_to_clipboard_with(
     osc52_copy: impl Fn(&str) -> Result<(), String>,
     native_copy: impl Fn(&str) -> Result<Option<ClipboardLease>, String>,
     wsl_copy: impl Fn(&str) -> Result<(), String>,
-) -> Result<Option<ClipboardLease>, String> {
-    if environment.ssh_session {
-        return terminal_copy(text, environment.tmux_session, &tmux_copy, &osc52_copy)
-            .map(|()| None)
-            .map_err(|error| {
-                if environment.tmux_session {
-                    format!("terminal clipboard copy failed over SSH: {error}")
-                } else {
-                    format!("OSC 52 clipboard copy failed over SSH: {error}")
-                }
-            });
+) -> Result<CopyOutcome, String> {
+    if text.is_empty() {
+        return Err("nothing to copy: the selected content is empty".to_string());
     }
 
-    match native_copy(text) {
-        Ok(lease) => Ok(lease),
-        Err(native_error) if environment.wsl_session => match wsl_copy(text) {
-            Ok(()) => Ok(None),
-            Err(wsl_error) => terminal_copy(
-                text,
-                environment.tmux_session,
-                &tmux_copy,
-                &osc52_copy,
-            )
-            .map(|()| None)
+    let terminal_copy = || terminal_copy(text, environment.tmux_session, &tmux_copy, &osc52_copy);
+    let native_result = native_copy(text).or_else(|native_error| {
+        if environment.wsl_session {
+            wsl_copy(text).map(|()| None).map_err(|wsl_error| {
+                format!("native clipboard: {native_error}; WSL fallback: {wsl_error}")
+            })
+        } else {
+            Err(format!("native clipboard: {native_error}"))
+        }
+    });
+    // Terminal writes have no delivery acknowledgement, so they never suppress a native attempt.
+    // tmux forwarding also runs for local sessions because future attached clients need the copy.
+    let terminal_result = (environment.tmux_session || environment.ssh_session).then(terminal_copy);
+    match native_result {
+        Ok(lease) => Ok(CopyOutcome::Copied(lease)),
+        Err(native_error) => terminal_result
+            .unwrap_or_else(terminal_copy)
+            .map(|()| CopyOutcome::Requested)
             .map_err(|terminal_error| {
-                format!(
-                    "native clipboard: {native_error}; WSL fallback: {wsl_error}; terminal fallback: {terminal_error}"
-                )
+                format!("{native_error}; terminal clipboard: {terminal_error}")
             }),
-        },
-        Err(native_error) => terminal_copy(
-            text,
-            environment.tmux_session,
-            &tmux_copy,
-            &osc52_copy,
-        )
-        .map(|()| None)
-        .map_err(|terminal_error| {
-            format!("native clipboard: {native_error}; terminal fallback: {terminal_error}")
-        }),
     }
 }
 
@@ -399,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn ssh_uses_terminal_clipboard_and_local_prefers_native() {
+    fn ssh_attempts_native_and_terminal_while_local_prefers_native() {
         let native_calls = Cell::new(0);
         let osc_calls = Cell::new(0);
         let remote = copy_to_clipboard_with(
@@ -420,9 +433,9 @@ mod tests {
             },
             |_| Ok(()),
         );
-        assert!(remote.is_ok());
+        assert!(matches!(remote, Ok(CopyOutcome::Copied(None))));
         assert_eq!(osc_calls.get(), 1);
-        assert_eq!(native_calls.get(), 0);
+        assert_eq!(native_calls.get(), 1);
 
         let local = copy_to_clipboard_with(
             "local",
@@ -436,7 +449,7 @@ mod tests {
             |_| Ok(Some(ClipboardLease::test())),
             |_| Ok(()),
         );
-        assert!(matches!(local, Ok(Some(_))));
+        assert!(matches!(local, Ok(CopyOutcome::Copied(Some(_)))));
     }
 
     #[test]
@@ -457,8 +470,64 @@ mod tests {
             |_| Err("native unavailable".to_string()),
             |_| Ok(()),
         );
-        assert!(result.is_ok());
+        assert!(matches!(result, Ok(CopyOutcome::Requested)));
         assert_eq!(osc_calls.get(), 1);
+    }
+
+    #[test]
+    fn terminal_only_copy_is_unconfirmed_and_preserves_native_lease() {
+        let outcome = copy_to_clipboard_with(
+            "hello",
+            CopyEnvironment {
+                ssh_session: true,
+                tmux_session: false,
+                wsl_session: false,
+            },
+            |_| Ok(()),
+            |_| Ok(()),
+            |_| Err("native unavailable".to_string()),
+            |_| Ok(()),
+        )
+        .expect("terminal request");
+        let mut lease = Some(ClipboardLease::test());
+
+        assert_eq!(outcome.store(&mut lease), CopyStatus::Unconfirmed);
+        assert!(lease.is_some());
+    }
+
+    #[test]
+    fn wsl_copy_is_confirmed_and_native_success_wins_over_terminal_failure() {
+        let wsl = copy_to_clipboard_with(
+            "wsl",
+            CopyEnvironment {
+                ssh_session: false,
+                tmux_session: false,
+                wsl_session: true,
+            },
+            |_| Ok(()),
+            |_| panic!("terminal fallback should not run"),
+            |_| Err("native unavailable".to_string()),
+            |_| Ok(()),
+        )
+        .expect("WSL clipboard write");
+        let mut lease = None;
+        assert_eq!(wsl.store(&mut lease), CopyStatus::Confirmed);
+
+        let native = copy_to_clipboard_with(
+            "native",
+            CopyEnvironment {
+                ssh_session: true,
+                tmux_session: false,
+                wsl_session: false,
+            },
+            |_| Ok(()),
+            |_| Err("terminal blocked".to_string()),
+            |_| Ok(Some(ClipboardLease::test())),
+            |_| Ok(()),
+        )
+        .expect("native clipboard write");
+        assert_eq!(native.store(&mut lease), CopyStatus::Confirmed);
+        assert!(lease.is_some());
     }
 
     #[test]

@@ -6,7 +6,7 @@
 
 ### 一个真正能把事情推进下去的 Agent
 
-**面向全球用户的开源全栈桌面 AI Agent**
+**面向全球用户的开源全栈 AI Agent（Desktop + CLI/TUI）**
 
 代码、文件、终端、工具、研究、内容、多模态和多 Agent 协作，都在同一个可恢复的任务空间里完成。
 
@@ -14,8 +14,8 @@
 
 <p>
   <a href="https://github.com/limecloud/lime/releases"><img src="https://img.shields.io/github/v/release/limecloud/lime?label=release" alt="Lime GitHub Release" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-246B45" alt="Lime supports macOS and Windows" />
-  <img src="https://img.shields.io/badge/desktop-Electron-24C8DB" alt="Lime is an Electron desktop app" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-246B45" alt="Lime supports macOS, Windows, and Linux across Desktop and CLI" />
+  <img src="https://img.shields.io/badge/surfaces-Desktop%20%7C%20CLI%2FTUI-24C8DB" alt="Lime provides Desktop and CLI/TUI product surfaces" />
   <img src="https://img.shields.io/badge/license-GPLv3-2F4F4F" alt="Lime GPLv3 license" />
 </p>
 
@@ -25,7 +25,7 @@
 
 ## Lime 是什么
 
-Lime 是一个全栈桌面 AI Agent。它能理解目标和工作区，读取和修改文件，运行终端命令，调用工具、MCP 和 Skills，处理多模态输入，生成可交付 artifact，并把整个过程保留在 Thread / Turn / Item 中。
+Lime 是一个同时提供 Electron Desktop 和 CLI/TUI 的全栈 AI Agent。它能理解目标和工作区，读取和修改文件，运行终端命令，调用工具、MCP 和 Skills，处理多模态输入，生成可交付 artifact，并把整个过程保留在 Thread / Turn / Item 中。
 
 它和 Claude Code、WorkBuddy、Codex 属于同一类“能动手完成任务”的 Agent 产品，同时提供桌面 GUI、可视化工作区、Provider 选择和跨工程/研究/内容的统一工作流。
 
@@ -46,6 +46,17 @@ Lime 是一个全栈桌面 AI Agent。它能理解目标和工作区，读取和
 2. Agent 读取必要上下文，先给出计划和需要确认的边界。
 3. 在授权范围内修改文件、运行命令、调用工具和生成结果。
 4. 检查 diff、命令输出、测试结果和 artifact，继续追问或结束任务。
+
+## 选择版本：Desktop 还是 CLI/TUI
+
+Lime 提供两个产品入口。按你的工作方式选择即可；两者共用同一套 App Server JSON-RPC、RuntimeCore 和 canonical Thread / Turn / Item 数据模型。
+
+| 版本 | 适用场景 | 安装方式 | 包含能力 |
+| --- | --- | --- | --- |
+| **Desktop（Electron）** | 可视化工作区、文件浏览、artifact 预览和长任务 | 从 [Releases](https://github.com/limecloud/lime/releases) 下载 macOS 或 Windows 安装包；macOS 也可使用 Homebrew | Electron GUI、工作区与预览、权限管理、更新器和本地 App Server sidecar |
+| **CLI/TUI** | SSH、服务器、脚本、CI 和键盘优先的终端工作流 | 安装 npm 包：`npm install -g @limecloud/lime`（Node.js ≥18） | `lime` / `lime tui` 交互式 TUI、`lime exec` 非交互执行、历史和 Thread 命令 |
+
+CLI/TUI 不是另一套 runtime，也不包含 Electron GUI。平台包会原子携带 `lime`、`app-server` 和 `code-mode-host`，因此本地使用时无需另外安装 App Server。
 
 ## 核心工作区
 
@@ -69,19 +80,53 @@ Lime 不绑定单一模型服务。配置 Provider、模型和凭证后，可以
 
 ## 快速开始
 
+### Desktop（Electron）
+
 从 [Releases](https://github.com/limecloud/lime/releases) 下载 macOS 或 Windows 安装包。
 
-1. 打开 Lime，配置 Provider 并测试模型连接。
-2. 选择工作区，确认文件和终端权限。
-3. 新建 Agent Thread，写下目标和验收标准。
-4. 让 Agent 先规划，再批准需要执行的动作。
+- macOS 可下载 `.dmg`，也可以使用 Homebrew。
+- Windows 下载 `Lime_*_x64-setup.exe`。
+- 当前 Desktop 发布 macOS 和 Windows；Linux Desktop 暂停发布。
 
-macOS 也可以使用 Homebrew：
+macOS 使用 Homebrew：
 
 ```bash
 brew tap aiclientproxy/tap
 brew install --cask lime
 ```
+
+### CLI/TUI
+
+要求 Node.js 18 或更高版本。使用 npm 安装 CLI 启动器和当前平台载荷：
+
+```bash
+npm install -g @limecloud/lime
+lime --version
+```
+
+安装后可以启动交互式终端界面，或执行一次非交互任务：
+
+```bash
+lime                         # 等同于 `lime tui`
+lime exec "review this diff"
+lime exec --json "review this diff"
+```
+
+启动器会自动选择 macOS arm64/x64、Windows x64 或 Linux x64 GNU 的平台包。本地命令会自动启动同目录或 `PATH` 中的 `app-server`；如需指定其他本地二进制，可设置 `LIME_APP_SERVER_BIN` 或传入 `--app-server <PATH>`。连接远端 App Server 时使用安全 WebSocket，并从环境变量读取 token：
+
+```bash
+lime exec \
+  --remote wss://cloud.example/rpc \
+  --remote-auth-token-env LIME_REMOTE_TOKEN \
+  "review this diff"
+```
+
+### 第一次运行（Desktop 或 CLI/TUI）
+
+1. Desktop 打开 Lime，CLI/TUI 执行 `lime`；然后配置 Provider 并测试模型连接。
+2. 选择工作区，确认文件和终端权限。
+3. 新建 Agent Thread，写下目标和验收标准。
+4. 让 Agent 先规划，再批准需要执行的动作。
 
 ## 数据与权限
 

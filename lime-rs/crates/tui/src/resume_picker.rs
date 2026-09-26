@@ -18,8 +18,9 @@ use tokio::sync::mpsc;
 
 use crate::app::history_ui::render_transcript_entry_lines_wrapped;
 use crate::clipboard_paste::normalize_pasted_search_query;
-use crate::entry;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
+use crate::keymap::TranscriptKeymap;
 use crate::pager_overlay::{PagerAction, PagerOverlay};
 #[cfg(test)]
 use crate::projection::EntryKind;
@@ -27,6 +28,7 @@ use crate::projection::TranscriptEntry;
 use crate::runtime::{connect_session, TuiOptions};
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::text_formatting::center_truncate_path;
+use crate::transcript_view::TranscriptContent;
 use crate::tui::{Tui, TuiEvent};
 use crate::width::display_width;
 
@@ -270,10 +272,10 @@ struct PickerTranscriptPager {
 }
 
 impl PickerTranscriptPager {
-    fn new(thread_id: String, locale: Locale) -> Self {
+    fn new(thread_id: String, locale: Locale, keymap: TranscriptKeymap) -> Self {
         Self {
             thread_id,
-            overlay: PagerOverlay::transcript(locale),
+            overlay: PagerOverlay::transcript(locale).with_keymap(keymap),
         }
     }
 }
@@ -309,6 +311,7 @@ pub(crate) struct PickerState {
     status_message: Option<String>,
     loading: bool,
     pub(crate) load_token: usize,
+    transcript_keymap: TranscriptKeymap,
 }
 
 impl PickerState {
@@ -340,7 +343,12 @@ impl PickerState {
             status_message: None,
             loading: false,
             load_token: 0,
+            transcript_keymap: TranscriptKeymap::default(),
         }
+    }
+
+    pub(crate) fn set_transcript_keymap(&mut self, keymap: TranscriptKeymap) {
+        self.transcript_keymap = keymap;
     }
 
     pub(crate) fn selected_thread_id(&self) -> Option<&str> {
@@ -394,53 +402,50 @@ impl PickerState {
                 .insert(thread_id.clone(), SessionTranscriptState::Loading);
             true
         };
-        self.transcript_pager = Some(PickerTranscriptPager::new(thread_id.clone(), locale));
+        self.transcript_pager = Some(PickerTranscriptPager::new(
+            thread_id.clone(),
+            locale,
+            self.transcript_keymap.clone(),
+        ));
         should_load.then_some(thread_id)
     }
 
-    fn transcript_lines(&self, thread_id: &str, width: u16, locale: Locale) -> Vec<HyperlinkLine> {
+    fn transcript_content(&self, thread_id: &str, width: u16, locale: Locale) -> TranscriptContent {
         let Some(state) = self.transcripts.get(thread_id) else {
-            return vec![HyperlinkLine::new(Line::styled(
+            return TranscriptContent::from_lines(vec![HyperlinkLine::new(Line::styled(
                 locale.resume_transcript_loading(),
                 Style::default().fg(Color::DarkGray),
-            ))];
+            ))]);
         };
         match state {
-            SessionTranscriptState::Loading => vec![HyperlinkLine::new(Line::styled(
-                locale.resume_transcript_loading(),
-                Style::default().fg(Color::DarkGray),
-            ))],
-            SessionTranscriptState::Failed => vec![HyperlinkLine::new(Line::styled(
-                locale.resume_transcript_failed(),
-                Style::default().fg(Color::Red),
-            ))],
+            SessionTranscriptState::Loading => {
+                TranscriptContent::from_lines(vec![HyperlinkLine::new(Line::styled(
+                    locale.resume_transcript_loading(),
+                    Style::default().fg(Color::DarkGray),
+                ))])
+            }
+            SessionTranscriptState::Failed => {
+                TranscriptContent::from_lines(vec![HyperlinkLine::new(Line::styled(
+                    locale.resume_transcript_failed(),
+                    Style::default().fg(Color::Red),
+                ))])
+            }
             SessionTranscriptState::Loaded(entries) if entries.is_empty() => {
-                vec![HyperlinkLine::new(Line::styled(
+                TranscriptContent::from_lines(vec![HyperlinkLine::new(Line::styled(
                     locale.resume_transcript_empty(),
                     Style::default().fg(Color::DarkGray),
-                ))]
+                ))])
             }
             SessionTranscriptState::Loaded(entries) => {
-                let content_width = Some(usize::from(width.saturating_sub(2).max(1)));
                 let cwd = self
                     .threads
                     .iter()
                     .find(|thread| thread.id == thread_id)
                     .map(|thread| thread.cwd.as_path());
                 let cwd = cwd.unwrap_or_else(|| std::path::Path::new(""));
-                let mut lines = Vec::new();
-                for entry in entries {
-                    if !lines.is_empty() {
-                        lines.push(HyperlinkLine::default());
-                    }
-                    lines.extend(entry::hyperlink_lines_with_locale(
-                        entry,
-                        locale,
-                        content_width,
-                        cwd,
-                    ));
-                }
-                lines
+                crate::app::history_ui::render_transcript_entries_content(
+                    entries, width, locale, cwd,
+                )
             }
         }
     }
@@ -720,12 +725,48 @@ impl PickerState {
         self.transcript_pager.is_some()
     }
 
-    pub(crate) fn handle_transcript_pager_event(&mut self, event: &Event) {
+    pub(crate) fn transcript_search_needs_frame(&self) -> bool {
+        self.transcript_pager
+            .as_ref()
+            .is_some_and(|pager| pager.overlay.search_needs_frame())
+    }
+
+    pub(crate) fn tick_transcript_selection(&self) -> bool {
+        self.transcript_pager
+            .as_ref()
+            .is_some_and(|pager| pager.overlay.tick_transcript_selection())
+    }
+
+    pub(crate) fn end_transcript_drag(&self) {
+        if let Some(pager) = self.transcript_pager.as_ref() {
+            pager.overlay.end_transcript_drag();
+        }
+    }
+
+    pub(crate) fn handle_transcript_pager_event(&mut self, event: &Event) -> Option<PagerAction> {
         if let Some(pager) = self.transcript_pager.as_mut() {
             match pager.overlay.handle_event(event) {
                 PagerAction::Close => self.transcript_pager = None,
                 PagerAction::Consumed | PagerAction::LoadOlderHistory => {}
+                action @ PagerAction::ScheduleFrame => return Some(action),
+                action @ (PagerAction::CopyTranscriptSelection { .. }
+                | PagerAction::OpenLink(_)
+                | PagerAction::ContinueTranscriptSelection) => return Some(action),
             }
+        }
+        None
+    }
+
+    pub(crate) fn apply_transcript_copy_result(
+        &mut self,
+        follow: bool,
+        characters: usize,
+        result: &Result<crate::clipboard_copy::CopyStatus, String>,
+    ) {
+        if let Some(pager) = self.transcript_pager.as_mut() {
+            pager
+                .overlay
+                .apply_transcript_copy_result(follow, characters, result);
         }
     }
 }
@@ -817,25 +858,7 @@ async fn load_transcript_preview_with_handle(
     request_handle: RequestHandle,
     thread_id: String,
 ) -> std::io::Result<Vec<transcript_preview::TranscriptPreviewLine>> {
-    let loaded_entries =
-        crate::thread_transcript::load_session_transcript_with_handle(request_handle, thread_id)
-            .await?;
-    let preview_entries = loaded_entries
-        .into_iter()
-        .filter_map(|entry| {
-            let speaker = match entry.kind {
-                crate::projection::EntryKind::User => {
-                    transcript_preview::TranscriptPreviewSpeaker::User
-                }
-                crate::projection::EntryKind::Assistant => {
-                    transcript_preview::TranscriptPreviewSpeaker::Assistant
-                }
-                _ => return None,
-            };
-            Some((speaker, entry.text))
-        })
-        .collect();
-    transcript_preview::preview_from_entries(preview_entries)
+    transcript_preview::load_transcript_preview_with_handle(request_handle, thread_id).await
 }
 
 pub(crate) fn spawn_archive_request(
@@ -894,6 +917,7 @@ async fn run_session_picker_with_action(
     action: SessionPickerAction,
 ) -> Result<Option<String>> {
     let session = connect_session(options).await?;
+    let local_settings = crate::local_settings::LocalSettings::read(&session).await?;
     let request_handle = session.request_handle();
     let (load_tx, mut load_rx) = mpsc::unbounded_channel();
     let mut picker = PickerState::new(
@@ -903,6 +927,7 @@ async fn run_session_picker_with_action(
         Some(options.cwd.clone()),
         false,
     );
+    picker.set_transcript_keymap(local_settings.keymap.transcript().clone());
     spawn_thread_load(request_handle.clone(), &load_tx, &mut picker);
     let locale = Locale::resolve(options.locale.as_deref());
     let mut terminal = match Tui::enter().context("failed to initialize terminal") {
@@ -913,6 +938,8 @@ async fn run_session_picker_with_action(
         }
     };
     let mut input = terminal.event_stream();
+    let frame_requester = terminal.frame_requester();
+    let mut _clipboard_lease = None;
     let selected = loop {
         if let Some(thread_id) = picker.selected_thread_id().map(ToOwned::to_owned) {
             spawn_preview_load(request_handle.clone(), &load_tx, &mut picker, thread_id);
@@ -960,15 +987,50 @@ async fn run_session_picker_with_action(
                 let event = match event {
                     TuiEvent::Key(key) => Event::Key(key),
                     TuiEvent::Paste(text) => Event::Paste(text),
+                    TuiEvent::Mouse(mouse) => Event::Mouse(mouse),
                     TuiEvent::Resize(size) => Event::Resize(size.width, size.height),
                     TuiEvent::FocusGained => Event::FocusGained,
                     TuiEvent::FocusLost => Event::FocusLost,
-                    TuiEvent::Draw | TuiEvent::Resume => continue,
+                    TuiEvent::Draw => {
+                        if picker.tick_transcript_selection()
+                            || picker.transcript_search_needs_frame()
+                        {
+                            frame_requester
+                                .schedule_frame_in(crate::tui::TARGET_FRAME_INTERVAL);
+                        }
+                        continue;
+                    }
+                    TuiEvent::Resume => {
+                        picker.end_transcript_drag();
+                        continue;
+                    }
                 };
                 if let Some(pager) = picker.transcript_pager.as_mut() {
                     match pager.overlay.handle_event(&event) {
                         PagerAction::Close => picker.transcript_pager = None,
                         PagerAction::Consumed | PagerAction::LoadOlderHistory => {}
+                        PagerAction::ScheduleFrame => frame_requester
+                            .schedule_frame_in(crate::tui::TARGET_FRAME_INTERVAL),
+                        PagerAction::ContinueTranscriptSelection => frame_requester
+                            .schedule_frame_in(crate::tui::TARGET_FRAME_INTERVAL),
+                        PagerAction::CopyTranscriptSelection { text, follow } => {
+                            let characters = text.chars().count();
+                            let result = crate::clipboard_copy::copy_to_clipboard(&text)
+                                .map(|outcome| outcome.store(&mut _clipboard_lease));
+                            pager.overlay.apply_transcript_copy_result(
+                                follow,
+                                characters,
+                                &result,
+                            );
+                            if let Err(error) = result {
+                                tracing::warn!(%error, "failed to copy transcript selection");
+                            }
+                        }
+                        PagerAction::OpenLink(destination) => {
+                            if let Err(error) = crate::runtime::open_link(&destination) {
+                                tracing::warn!(%error, "failed to open transcript link");
+                            }
+                        }
                     }
                     continue;
                 }
@@ -1032,8 +1094,10 @@ fn render(frame: &mut Frame<'_>, picker: &PickerState) {
 pub(crate) fn render_with_locale(frame: &mut Frame<'_>, picker: &PickerState, locale: Locale) {
     let area = frame.area();
     if let Some(pager) = picker.transcript_pager.as_ref() {
-        let lines = picker.transcript_lines(&pager.thread_id, area.width, locale);
-        pager.overlay.render(frame, area, locale, &lines);
+        let transcript = picker.transcript_content(&pager.thread_id, area.width, locale);
+        pager
+            .overlay
+            .render_transcript(frame, area, locale, &transcript);
         return;
     }
     let chunks = Layout::default()
@@ -1510,33 +1574,14 @@ fn thread_line_with_preview(
 }
 
 fn truncate_display(text: &str, max_width: usize) -> String {
-    if max_width == 0 {
-        return String::new();
-    }
-    if display_width(text) <= max_width {
-        return text.to_string();
-    }
-    if max_width <= 1 {
-        return "…".to_string();
-    }
-    let mut output = String::new();
-    let mut width = 0;
-    for grapheme in unicode_segmentation::UnicodeSegmentation::graphemes(text, true) {
-        let grapheme_width = display_width(grapheme);
-        if width + grapheme_width + 1 > max_width {
-            break;
-        }
-        output.push_str(grapheme);
-        width += grapheme_width;
-    }
-    output.push('…');
-    output
+    truncate_line_with_ellipsis_if_overflow(Line::from(text.to_owned()), max_width).to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use app_server_protocol::protocol::v2::{SessionSource, ThreadActiveFlag, ThreadHistoryMode};
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
     use std::path::PathBuf;
@@ -2009,6 +2054,8 @@ mod tests {
                 streaming: false,
                 status: None,
                 summary: Vec::new(),
+                activity_group: None,
+                activity_detail: None,
             }]),
         );
         assert_eq!(picker.open_transcript_pager(Locale::EnUs), None);
@@ -2019,7 +2066,48 @@ mod tests {
             .expect("draw");
         let text = buffer_text(&terminal);
         assert!(text.contains("assistant line"));
+        for (kind, column) in [
+            (MouseEventKind::Down(MouseButton::Left), 0),
+            (MouseEventKind::Drag(MouseButton::Left), 4),
+            (MouseEventKind::Up(MouseButton::Left), 4),
+        ] {
+            assert!(picker
+                .handle_transcript_pager_event(&Event::Mouse(MouseEvent {
+                    kind,
+                    column,
+                    row: 1,
+                    modifiers: KeyModifiers::NONE,
+                }))
+                .is_none());
+        }
+        assert!(matches!(
+            picker.handle_transcript_pager_event(&Event::Key(
+                crossterm::event::KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL,)
+            )),
+            Some(PagerAction::CopyTranscriptSelection { text, follow: false }) if !text.is_empty()
+        ));
+        picker.apply_transcript_copy_result(
+            false,
+            5,
+            &Ok(crate::clipboard_copy::CopyStatus::Unconfirmed),
+        );
+        assert!(picker
+            .transcript_pager
+            .as_ref()
+            .expect("pager")
+            .overlay
+            .has_transcript_selection());
+        terminal
+            .draw(|frame| render_with_locale(frame, &picker, Locale::EnUs))
+            .expect("unconfirmed copy draw");
+        assert!(buffer_text(&terminal).contains("Copy sent to terminal"));
+        picker.apply_transcript_copy_result(
+            false,
+            5,
+            &Ok(crate::clipboard_copy::CopyStatus::Confirmed),
+        );
         let pager = picker.transcript_pager.as_mut().expect("pager");
+        assert!(!pager.overlay.has_transcript_selection());
         assert_eq!(
             pager
                 .overlay
@@ -2038,6 +2126,68 @@ mod tests {
                 ))),
             PagerAction::Close
         );
+    }
+
+    #[test]
+    fn transcript_pager_reuses_edge_drag_tick_and_resume_stop_contract() {
+        let mut picker = PickerState::new(
+            vec![thread("one", "first", false)],
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        picker.transcripts.insert(
+            "one".to_string(),
+            SessionTranscriptState::Loaded(vec![TranscriptEntry {
+                id: "entry-1".to_string(),
+                kind: EntryKind::Assistant,
+                text: (0..20)
+                    .map(|index| format!("assistant line {index}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                streaming: false,
+                status: None,
+                summary: Vec::new(),
+                activity_group: None,
+                activity_detail: None,
+            }]),
+        );
+        assert_eq!(picker.open_transcript_pager(Locale::EnUs), None);
+        let mut terminal = Terminal::new(TestBackend::new(40, 8)).expect("terminal");
+        terminal
+            .draw(|frame| render_with_locale(frame, &picker, Locale::EnUs))
+            .expect("tail draw");
+        assert!(picker
+            .handle_transcript_pager_event(&Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Home,
+                KeyModifiers::NONE,
+            )))
+            .is_none());
+        terminal
+            .draw(|frame| render_with_locale(frame, &picker, Locale::EnUs))
+            .expect("top draw");
+
+        assert!(picker
+            .handle_transcript_pager_event(&Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 0,
+                row: 2,
+                modifiers: KeyModifiers::NONE,
+            }))
+            .is_none());
+        assert_eq!(
+            picker.handle_transcript_pager_event(&Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Drag(MouseButton::Left),
+                column: 12,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            })),
+            Some(PagerAction::ContinueTranscriptSelection)
+        );
+        assert!(picker.tick_transcript_selection());
+        picker.end_transcript_drag();
+        assert!(!picker.tick_transcript_selection());
     }
 
     #[test]
@@ -2127,6 +2277,8 @@ mod tests {
                 streaming: false,
                 status: None,
                 summary: Vec::new(),
+                activity_group: None,
+                activity_detail: None,
             }]),
         );
         let lines = render_expanded_session_details(&picker.threads[0], &picker, 24, Locale::EnUs);
@@ -2156,6 +2308,8 @@ mod tests {
                 streaming: false,
                 status: None,
                 summary: Vec::new(),
+                activity_group: None,
+                activity_detail: None,
             }]),
         );
         assert!(matches!(

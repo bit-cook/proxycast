@@ -2,7 +2,12 @@ import { writeFile } from "node:fs/promises";
 
 export async function writeTerminalExternalBackend(
   backendPath,
-  { completedText, command, scenario = "complete" },
+  {
+    completedText,
+    command,
+    reasoningText = "TUI_GATE_B_REASONING_DETAIL",
+    scenario = "complete",
+  },
 ) {
   await writeFile(
     backendPath,
@@ -22,8 +27,8 @@ const toolItem = (
   threadId: session.threadId,
   turnId: turn.turnId,
   itemId: "item_" + callId,
-  sequence: 1,
-  ordinal: 1,
+  sequence: 3,
+  ordinal: 3,
   createdAtMs: Date.now(),
   updatedAtMs: Date.now(),
   ...(status === "completed" ? { completedAtMs: Date.now() } : {}),
@@ -42,6 +47,25 @@ const toolItem = (
           },
         }
       : {}),
+  },
+  metadata: {},
+});
+const reasoningItem = (status) => ({
+  sessionId: session.sessionId,
+  threadId: session.threadId,
+  turnId: turn.turnId,
+  itemId: "item_terminal-reasoning",
+  sequence: 2,
+  ordinal: 2,
+  createdAtMs: Date.now(),
+  updatedAtMs: Date.now(),
+  ...(status === "completed" ? { completedAtMs: Date.now() } : {}),
+  kind: "reasoning",
+  status,
+  payload: {
+    type: "reasoning",
+    summary: [${JSON.stringify(reasoningText)}],
+    content: [],
   },
   metadata: {},
 });
@@ -145,6 +169,14 @@ if (input.kind === "turnStart") {
           role: "assistant",
           text: ${JSON.stringify(completedText)},
         },
+      },
+      {
+        type: "item.started",
+        payload: { item: reasoningItem("inProgress") },
+      },
+      {
+        type: "item.completed",
+        payload: { item: reasoningItem("completed") },
       },
       {
         type: "item.started",

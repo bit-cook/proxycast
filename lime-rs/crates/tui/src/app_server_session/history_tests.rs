@@ -96,6 +96,44 @@ fn advancing_cursor_rejects_repeated_cursors() {
     );
 }
 
+#[test]
+fn pending_history_cursor_requires_loading_and_exact_cursor() {
+    assert!(pending_cursor_matches(Some("new"), true, "new"));
+    assert!(!pending_cursor_matches(Some("new"), true, "old"));
+    assert!(!pending_cursor_matches(Some("new"), false, "new"));
+}
+
+#[test]
+fn stale_completion_preserves_new_cursor_and_failed_page_can_retry() {
+    let mut state = ThreadHistoryPagination {
+        next_item_cursor: Some("head".to_string()),
+        ..ThreadHistoryPagination::default()
+    };
+    let first_cursor = state.begin_older_history_page().expect("first page");
+    assert_eq!(state.begin_older_history_page(), None);
+
+    let items = state
+        .apply_older_history_page(&first_cursor, page(&["older"], Some("tail")))
+        .expect("first page applies");
+    assert_eq!(items.len(), 1);
+
+    let second_cursor = state.begin_older_history_page().expect("second page");
+    let stale_items = state
+        .apply_older_history_page(&first_cursor, page(&["stale"], None))
+        .expect("stale page is ignored");
+    assert!(stale_items.is_empty());
+    state.cancel_older_history_page(&first_cursor);
+    assert!(state.is_older_history_page_pending(&second_cursor));
+
+    // A failed current request releases loading but leaves the cursor available for retry.
+    state.cancel_older_history_page(&second_cursor);
+    assert!(!state.is_older_history_page_pending(&second_cursor));
+    assert_eq!(
+        state.begin_older_history_page().as_deref(),
+        Some(second_cursor.as_str())
+    );
+}
+
 fn test_turn(id: &str) -> Turn {
     Turn {
         id: id.to_string(),

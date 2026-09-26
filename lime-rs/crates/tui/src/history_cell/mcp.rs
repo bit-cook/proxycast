@@ -52,6 +52,8 @@ impl HistoryCell for McpToolCallCell {
                 streaming: self.result.is_none() && !self.failed,
                 status: None,
                 summary,
+                activity_group: None,
+                activity_detail: None,
             },
             Locale::default(),
             std::path::PathBuf::new(),

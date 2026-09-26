@@ -34,6 +34,16 @@ const defaultCliBinaryPath = path.join(
 const prompt = "tui gate b prompt";
 const queuePrompt = "queued follow-up for editing";
 const completedText = "TUI_GATE_B_COMPLETED";
+const reasoningText = "TUI_GATE_B_REASONING_DETAIL";
+const rawText = "TUI_GATE_B_RAW_SOURCE";
+const scrollableCompletedText = [
+  ...Array.from(
+    { length: 40 },
+    (_, index) => `TUI_EDGE_ROW_${String(index).padStart(2, "0")}`,
+  ),
+  `**${rawText}**`,
+  completedText,
+].join("\n");
 const scenarios = (
   process.env.LIME_TUI_GATE_B_SCENARIOS ||
   "complete,approval,user-input,interrupt,failure,queue-edit,agents-overview"
@@ -78,8 +88,10 @@ async function main() {
       await mkdir(scenarioDir, { recursive: true });
       scenarioDirs.set(scenario, scenarioDir);
       await writeTerminalExternalBackend(backendPath, {
-        completedText,
+        completedText:
+          scenario === "complete" ? scrollableCompletedText : completedText,
         command: "printf tui-gate-b",
+        reasoningText,
         scenario,
       });
 
@@ -112,6 +124,8 @@ async function main() {
             LIME_TEST_TERMINAL_PROMPT: prompt,
             LIME_TEST_TERMINAL_QUEUE_PROMPT: queuePrompt,
             LIME_TEST_TERMINAL_COMPLETED_TEXT: completedText,
+            LIME_TEST_TERMINAL_REASONING_TEXT: reasoningText,
+            LIME_TEST_TERMINAL_RAW_TEXT: rawText,
             LIME_TEST_PERMISSION_CONFIG: permissionConfigPath,
             LIME_TEST_PERMISSION_PROFILE: "named-fixture",
           },
@@ -259,7 +273,7 @@ async function main() {
     });
     const expectedSequences = {
       complete:
-        "turn.started,message.delta,item.started,item.completed,turn.completed",
+        "turn.started,message.delta,item.started,item.completed,item.started,item.completed,turn.completed",
       approval: "turn.started,item.started,action.required",
       "user-input": "turn.started,item.started,action.required",
       interrupt: "turn.started,message.delta",
@@ -390,6 +404,8 @@ async function main() {
         `events=${turnStart.eventTypes.join(",")}`,
         scenarios.includes("queue-edit") ? "queue-edit=ok" : null,
         scenarios.includes("agents-overview") ? "agents-overview=ok" : null,
+        scenarios.includes("complete") ? "sticky-prompt=ok" : null,
+        scenarios.includes("complete") ? "main-find=ok" : null,
         "focus-palette=ok",
         "resize-reflow=ok",
         "reconnect=ok",

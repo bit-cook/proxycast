@@ -106,7 +106,25 @@ fn spawn_file_search(
 pub async fn run_tui(options: TuiOptions) -> Result<()> {
     validate_model_route(&options)?;
     let mut session = Some(connect_session(&options).await?);
+    let local_settings = match crate::local_settings::LocalSettings::read(
+        session
+            .as_ref()
+            .expect("session available while loading TUI settings"),
+    )
+    .await
+    {
+        Ok(settings) => settings,
+        Err(error) => {
+            let _ = session
+                .take()
+                .expect("session available after TUI settings failure")
+                .shutdown()
+                .await;
+            return Err(error);
+        }
+    };
     let mut app = App::default();
+    app.set_runtime_keymap(local_settings.keymap);
     app.set_cwd(options.cwd.clone());
     app.set_locale(Locale::resolve(options.locale.as_deref()));
     app.composer
@@ -145,6 +163,18 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
             return Err(error);
         }
     };
+    if let Err(error) = app
+        .top_up_underfilled_history_for_terminal(
+            &mut terminal,
+            session
+                .as_mut()
+                .expect("session available after terminal setup"),
+        )
+        .await
+    {
+        app.projection
+            .set_status(format!("history page failed: {error}"));
+    }
     let mut input = terminal.event_stream();
     let frame_requester = terminal.frame_requester();
     frame_requester.schedule_frame();
@@ -158,7 +188,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
         let mut reconnect: Option<Pin<Box<dyn Future<Output = Result<ReconnectedSession>>>>> = None;
         let mut reconnect_thread_id: Option<String> = None;
         let mut reconnect_failed = false;
-        let mut pending_tui_event: Option<TuiEvent> = None;
+        let mut history_top_up_requested = false;
         let (file_search_tx, mut file_search_rx) =
             tokio::sync::mpsc::unbounded_channel::<FileSearchEvent>();
         loop {
@@ -176,6 +206,21 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                     reconnect_failed = true;
                     app.projection
                         .set_status("reconnect unavailable: thread id missing");
+                }
+            }
+            if history_top_up_requested {
+                if let Some(active_session) = session.as_mut() {
+                    if let Err(error) = app
+                        .top_up_underfilled_history_for_terminal(
+                            &mut terminal,
+                            active_session,
+                        )
+                        .await
+                    {
+                        app.projection
+                            .set_status(format!("history page failed: {error}"));
+                    }
+                    history_top_up_requested = false;
                 }
             }
             if session.is_some() {
@@ -217,10 +262,9 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                     Ok(None) => app.projection.set_status("editor draft empty"),
                     Err(error) => app.projection.set_status(error.to_string()),
                 }
-                let mut context = std::task::Context::from_waker(std::task::Waker::noop());
-                if let std::task::Poll::Ready(event) = input.poll_crossterm_event(&mut context) {
-                    pending_tui_event = event;
-                }
+                // Recreate crossterm input only from the normal async event loop. Eagerly polling
+                // here races the previous reader's shutdown after an external editor and can
+                // surface a transient EOF as the end of the TUI input stream.
                 continue;
             }
 
@@ -302,7 +346,10 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 )
                                 .await
                                 {
-                                    Ok(()) => app.projection.set_status("archived session restored"),
+                                    Ok(()) => {
+                                        history_top_up_requested = true;
+                                        app.projection.set_status("archived session restored");
+                                    }
                                     Err(error) => app
                                         .projection
                                         .set_status(format!("resume failed: {error}")),
@@ -314,13 +361,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                 _ = status_tick.tick(), if app.projection.active_turn_id().is_some() => {
                     frame_requester.schedule_frame();
                 }
-                event = async {
-                    match pending_tui_event.clone() {
-                        Some(event) => Some(event),
-                        None => input.next().await,
-                    }
-                } => {
-                    pending_tui_event = None;
+                event = input.next() => {
                     let Some(event) = event else { break };
                     let event = match event {
                         TuiEvent::Draw => {
@@ -331,9 +372,9 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                         }
                         TuiEvent::Resize(size) => {
                             terminal.update_viewport(size, size.height);
+                            history_top_up_requested = true;
                             TuiEvent::Resize(size)
                         }
-                        TuiEvent::Resume => continue,
                         event => event,
                     };
                     let connected = session.is_some();
@@ -638,6 +679,41 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                         AppAction::CopyLastResponse => {
                             copy_last_response_with(&mut app, copy_to_clipboard);
                         }
+                        AppAction::CopyComposerSelection {
+                            text,
+                            clear_selection,
+                        } => {
+                            copy_composer_selection_with(
+                                &mut app,
+                                &text,
+                                clear_selection,
+                                copy_to_clipboard,
+                            );
+                        }
+                        AppAction::CopyTranscriptSelection {
+                            text,
+                            follow,
+                            target,
+                        } => {
+                            copy_transcript_selection_with(
+                                &mut app,
+                                &text,
+                                follow,
+                                target,
+                                copy_to_clipboard,
+                            );
+                        }
+                        AppAction::OpenLink(destination) => match open_link(&destination) {
+                            Ok(()) => app
+                                .projection
+                                .set_status(app.locale.transcript_link_opened(&destination)),
+                            Err(error) => app
+                                .projection
+                                .set_status(app.locale.transcript_link_open_failed(&error)),
+                        },
+                        AppAction::ScheduleFrameIn(delay) => {
+                            frame_requester.schedule_frame_in(delay);
+                        }
                         AppAction::ExportTranscript { path } => {
                             export_transcript_with(
                                 &mut app,
@@ -697,9 +773,35 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                             let page_size = current_transcript_page_size(&mut terminal, &app)?;
                             app.scroll_down(page_size);
                         }
+                        AppAction::ScrollRows(rows) => {
+                            if rows < 0 {
+                                app.scroll_up(rows.unsigned_abs());
+                                if app.scrollback_has_older_history {
+                                    if let Err(error) = app
+                                        .request_older_history_page(
+                                            session
+                                                .as_mut()
+                                                .expect("session available during TUI"),
+                                        )
+                                        .await
+                                    {
+                                        app.projection
+                                            .set_status(format!("history page failed: {error}"));
+                                    }
+                                }
+                            } else {
+                                app.scroll_down(rows.unsigned_abs());
+                            }
+                        }
                         AppAction::ScrollTop => app.scroll_top(),
                         AppAction::ScrollBottom => app.scroll_bottom(),
                         AppAction::LoadOlderHistory => {
+                            if let Some(pager) = app.pager_overlay.as_ref() {
+                                pager.begin_older_history_load();
+                            }
+                            if app.transcript_search.is_active() {
+                                app.transcript_search.begin_history_load();
+                            }
                             let result = app
                                 .request_all_older_history_pages(
                                     session.as_mut().expect(
@@ -709,13 +811,21 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 .await;
                             match result {
                                 Ok(_) => {
+                                    clear_history_page_error(&mut app);
                                     if let Some(pager) = app.pager_overlay.as_ref() {
+                                        pager.complete_older_history_load();
                                         pager.reset_transcript_anchor_at_top();
                                     }
+                                    app.transcript_search.complete_history_load();
                                 }
-                                Err(error) => app
-                                    .projection
-                                    .set_status(format!("history page failed: {error}")),
+                                Err(error) => {
+                                    if let Some(pager) = app.pager_overlay.as_ref() {
+                                        pager.fail_older_history_load();
+                                    }
+                                    app.transcript_search.fail_history_load();
+                                    app.projection
+                                        .set_status(format!("history page failed: {error}"));
+                                }
                             }
                         }
                         AppAction::OpenResumePicker => {
@@ -727,6 +837,9 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                     SessionStatus::Active,
                                     Some(app.cwd.clone()),
                                     false,
+                                );
+                                picker.set_transcript_keymap(
+                                    app.runtime_keymap.transcript().clone(),
                                 );
                                 crate::resume_picker::spawn_thread_load(
                                     session
@@ -772,7 +885,9 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                         )
                                         .await
                                         {
-                                            Ok(()) => {}
+                                            Ok(()) => {
+                                                history_top_up_requested = true;
+                                            }
                                             Err(error) => app
                                                 .projection
                                                 .set_status(format!("resume failed: {error}")),
@@ -874,7 +989,10 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                             )
                             .await
                             {
-                                Ok(()) => app.projection.set_status("switched agent"),
+                                Ok(()) => {
+                                    history_top_up_requested = true;
+                                    app.projection.set_status("switched agent");
+                                }
                                 Err(error) => app.projection.set_status(format!(
                                     "agent switch failed: {error}"
                                 )),
@@ -981,6 +1099,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                             reconnect_thread_id = None;
                             reconnect_failed = false;
                             app.projection.set_status("reconnected");
+                            history_top_up_requested = true;
                         }
                         Err(error) => {
                             reconnect_failed = true;
@@ -1010,6 +1129,12 @@ fn is_no_active_turn_error(error: &anyhow::Error) -> bool {
         let message = cause.to_string().to_ascii_lowercase();
         message.contains("no active turn") || message.contains("turn_not_active")
     })
+}
+
+fn clear_history_page_error(app: &mut App) {
+    if app.projection.status().starts_with("history page failed:") {
+        app.projection.set_status("ready");
+    }
 }
 
 fn current_transcript_page_size(terminal: &mut Tui, app: &App) -> Result<usize> {
@@ -1096,7 +1221,7 @@ fn submission_input_with_skills(
 
 fn copy_last_response_with(
     app: &mut App,
-    copy: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
+    copy: impl FnOnce(&str) -> Result<crate::clipboard_copy::CopyOutcome, String>,
 ) {
     let response = app.projection.final_answer();
     if response.is_empty() {
@@ -1104,9 +1229,91 @@ fn copy_last_response_with(
         return;
     }
     match copy(&response) {
-        Ok(lease) => {
-            app.clipboard_lease = lease;
-            app.projection.set_status("copied last response");
+        Ok(outcome) => match outcome.store(&mut app.clipboard_lease) {
+            crate::clipboard_copy::CopyStatus::Confirmed => {
+                app.projection.set_status("copied last response");
+            }
+            crate::clipboard_copy::CopyStatus::Unconfirmed => {
+                app.projection.set_status("copy unconfirmed");
+            }
+        },
+        Err(error) => app.projection.set_status(format!("copy failed: {error}")),
+    }
+}
+
+fn copy_composer_selection_with(
+    app: &mut App,
+    text: &str,
+    clear_selection: bool,
+    copy: impl FnOnce(&str) -> Result<crate::clipboard_copy::CopyOutcome, String>,
+) {
+    match copy(text) {
+        Ok(outcome) => match outcome.store(&mut app.clipboard_lease) {
+            crate::clipboard_copy::CopyStatus::Confirmed => {
+                if clear_selection {
+                    app.composer.clear_mouse_selection();
+                }
+                app.projection
+                    .set_status(format!("copy confirmed: {}", text.chars().count()));
+            }
+            crate::clipboard_copy::CopyStatus::Unconfirmed => {
+                app.projection.set_status("copy unconfirmed");
+            }
+        },
+        Err(error) => app.projection.set_status(format!("copy failed: {error}")),
+    }
+}
+
+pub(crate) fn open_link(destination: &str) -> Result<(), String> {
+    open_link_with(destination, |destination| {
+        webbrowser::open(destination).map_err(|error| error.to_string())
+    })
+}
+
+fn open_link_with(
+    destination: &str,
+    open: impl FnOnce(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    let destination = crate::terminal_hyperlinks::web_destination(destination)
+        .ok_or_else(|| "link destination must be a valid HTTP(S) URL".to_string())?;
+    open(&destination)
+}
+
+fn copy_transcript_selection_with(
+    app: &mut App,
+    text: &str,
+    follow: bool,
+    target: crate::app::TranscriptSelectionTarget,
+    copy: impl FnOnce(&str) -> Result<crate::clipboard_copy::CopyOutcome, String>,
+) {
+    let characters = text.chars().count();
+    let result = copy(text).map(|outcome| outcome.store(&mut app.clipboard_lease));
+    match target {
+        crate::app::TranscriptSelectionTarget::MainTranscript => {
+            app.transcript_composer_gap
+                .show_copy_feedback(&result, characters);
+            if matches!(result, Ok(crate::clipboard_copy::CopyStatus::Confirmed)) {
+                app.finish_main_transcript_selection(follow);
+            }
+        }
+        crate::app::TranscriptSelectionTarget::MainPager => {
+            if let Some(pager) = app.pager_overlay.as_mut() {
+                pager.apply_transcript_copy_result(follow, characters, &result);
+            }
+        }
+        crate::app::TranscriptSelectionTarget::ResumePicker => {
+            if let Some(picker) = app.resume_picker.as_mut() {
+                picker.apply_transcript_copy_result(follow, characters, &result);
+            }
+        }
+    }
+    match result {
+        Ok(crate::clipboard_copy::CopyStatus::Confirmed) => {
+            app.projection
+                .set_status(format!("copy confirmed: {characters}"));
+        }
+        Ok(crate::clipboard_copy::CopyStatus::Unconfirmed) => {
+            app.projection.set_status("copy unconfirmed");
         }
         Err(error) => app.projection.set_status(format!("copy failed: {error}")),
     }
@@ -1116,7 +1323,7 @@ async fn export_transcript_with(
     app: &mut App,
     session: &AppServerSession,
     path: Option<std::path::PathBuf>,
-    copy: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
+    copy: impl FnOnce(&str) -> Result<crate::clipboard_copy::CopyOutcome, String>,
 ) {
     let live_entries = app.projection.entries();
     let entries = match session.thread_id() {
@@ -1148,11 +1355,14 @@ async fn export_transcript_with(
             }
         }
         None => match copy(&markdown) {
-            Ok(lease) => {
-                app.clipboard_lease = lease;
-                app.projection
-                    .set_status("exported conversation to clipboard");
-            }
+            Ok(outcome) => match outcome.store(&mut app.clipboard_lease) {
+                crate::clipboard_copy::CopyStatus::Confirmed => app
+                    .projection
+                    .set_status("exported conversation to clipboard"),
+                crate::clipboard_copy::CopyStatus::Unconfirmed => {
+                    app.projection.set_status("copy unconfirmed");
+                }
+            },
             Err(error) => app.projection.set_status(format!("export failed: {error}")),
         },
     }
@@ -1304,6 +1514,9 @@ mod tests {
     use super::*;
     use crate::projection::{EntryKind, EntryStatus};
     use app_server_protocol::protocol::v2::AgentMessageDeltaNotification;
+    use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
     use std::cell::RefCell;
     use std::ffi::OsString;
 
@@ -1315,7 +1528,67 @@ mod tests {
             streaming: status == Some(EntryStatus::Running),
             status,
             summary: Vec::new(),
+            activity_group: None,
+            activity_detail: None,
         }
+    }
+
+    fn app_with_transcript_selection() -> App {
+        let mut pager = crate::pager_overlay::PagerOverlay::transcript(crate::locale::Locale::EnUs);
+        let lines = vec![crate::terminal_hyperlinks::HyperlinkLine::from(
+            "alpha beta",
+        )];
+        let mut terminal = Terminal::new(TestBackend::new(40, 8)).expect("terminal");
+        terminal
+            .draw(|frame| {
+                pager.render(frame, frame.area(), crate::locale::Locale::EnUs, &lines);
+            })
+            .expect("draw");
+        for (kind, column) in [
+            (MouseEventKind::Down(MouseButton::Left), 0),
+            (MouseEventKind::Drag(MouseButton::Left), 5),
+            (MouseEventKind::Up(MouseButton::Left), 5),
+        ] {
+            assert_eq!(
+                pager.handle_event(&Event::Mouse(MouseEvent {
+                    kind,
+                    column,
+                    row: 1,
+                    modifiers: crossterm::event::KeyModifiers::NONE,
+                })),
+                crate::pager_overlay::PagerAction::Consumed
+            );
+        }
+        assert!(pager.has_transcript_selection());
+        let mut app = App::default();
+        app.pager_overlay = Some(pager);
+        app
+    }
+
+    fn app_with_main_transcript_selection() -> App {
+        let app = App::default();
+        let lines = vec![crate::terminal_hyperlinks::HyperlinkLine::from(
+            "alpha beta",
+        )];
+        app.transcript_selection
+            .update_layout(ratatui::layout::Rect::new(0, 0, 40, 3), 0, &lines);
+        assert_eq!(
+            app.transcript_selection
+                .handle_event(&Event::Key(crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::Char(' '),
+                    crossterm::event::KeyModifiers::CONTROL,
+                ),)),
+            Some(crate::transcript_view::TranscriptSelectionAction::Consumed)
+        );
+        for _ in 0..5 {
+            app.transcript_selection
+                .handle_event(&Event::Key(crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::Right,
+                    crossterm::event::KeyModifiers::NONE,
+                )));
+        }
+        app.transcript_selection.note_resume_distance_from_bottom(4);
+        app
     }
 
     #[test]
@@ -1500,6 +1773,21 @@ mod tests {
     }
 
     #[test]
+    fn successful_history_retry_clears_only_the_history_page_error() {
+        let mut app = App::default();
+        app.projection
+            .set_status("history page failed: transport unavailable");
+
+        clear_history_page_error(&mut app);
+
+        assert_eq!(app.projection.status(), "ready");
+
+        app.projection.set_status("running");
+        clear_history_page_error(&mut app);
+        assert_eq!(app.projection.status(), "running");
+    }
+
+    #[test]
     fn stdio_config_appends_host_arguments_after_the_current_runtime_default() {
         let options = TuiOptions {
             app_server_bin: PathBuf::from("custom-app-server"),
@@ -1542,7 +1830,9 @@ mod tests {
 
         copy_last_response_with(&mut app, |text| {
             copied.replace(text.to_string());
-            Ok(Some(crate::clipboard_copy::ClipboardLease::test()))
+            Ok(crate::clipboard_copy::CopyOutcome::Copied(Some(
+                crate::clipboard_copy::ClipboardLease::test(),
+            )))
         });
 
         assert_eq!(copied.into_inner(), "**answer** with `code`");
@@ -1552,5 +1842,194 @@ mod tests {
         let mut empty = App::default();
         copy_last_response_with(&mut empty, |_| panic!("clipboard must not be called"));
         assert_eq!(empty.projection.status(), "no agent response to copy");
+    }
+
+    #[test]
+    fn composer_copy_clears_selection_only_after_confirmation() {
+        use crossterm::event::{
+            KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+        };
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+        use ratatui::widgets::StatefulWidgetRef;
+
+        let mut app = App::default();
+        app.composer.insert("hello world");
+        let area = Rect::new(0, 0, 20, 1);
+        let mut buffer = Buffer::empty(area);
+        {
+            let mut state = app.composer.textarea_state_mut();
+            StatefulWidgetRef::render_ref(&app.composer.textarea(), area, &mut buffer, &mut *state);
+        }
+        for (kind, column) in [
+            (MouseEventKind::Down(MouseButton::Left), 1),
+            (MouseEventKind::Drag(MouseButton::Left), 5),
+            (MouseEventKind::Up(MouseButton::Left), 5),
+        ] {
+            assert!(app.composer.handle_mouse(MouseEvent {
+                kind,
+                column,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            }));
+        }
+
+        copy_composer_selection_with(&mut app, "ello", true, |_| {
+            Ok(crate::clipboard_copy::CopyOutcome::Requested)
+        });
+        assert_eq!(app.projection.status(), "copy unconfirmed");
+        assert!(app
+            .composer
+            .copy_selection_request(&TuiEvent::Key(KeyEvent::new(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            )))
+            .is_some());
+
+        copy_composer_selection_with(&mut app, "ello", true, |_| {
+            Ok(crate::clipboard_copy::CopyOutcome::Copied(Some(
+                crate::clipboard_copy::ClipboardLease::test(),
+            )))
+        });
+
+        assert!(app.clipboard_lease.is_some());
+        assert_eq!(app.projection.status(), "copy confirmed: 4");
+        assert!(app
+            .composer
+            .copy_selection_request(&TuiEvent::Key(KeyEvent::new(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            )))
+            .is_none());
+    }
+
+    #[test]
+    fn transcript_copy_clears_selection_only_after_success() {
+        let mut app = app_with_transcript_selection();
+        let copied = RefCell::new(String::new());
+        copy_transcript_selection_with(
+            &mut app,
+            "alpha",
+            false,
+            crate::app::TranscriptSelectionTarget::MainPager,
+            |text| {
+                copied.replace(text.to_string());
+                Ok(crate::clipboard_copy::CopyOutcome::Copied(Some(
+                    crate::clipboard_copy::ClipboardLease::test(),
+                )))
+            },
+        );
+
+        assert_eq!(copied.into_inner(), "alpha");
+        assert!(app.clipboard_lease.is_some());
+        assert_eq!(app.projection.status(), "copy confirmed: 5");
+        assert!(!app
+            .pager_overlay
+            .as_ref()
+            .expect("pager")
+            .has_transcript_selection());
+
+        let mut failed = app_with_transcript_selection();
+        copy_transcript_selection_with(
+            &mut failed,
+            "alpha",
+            true,
+            crate::app::TranscriptSelectionTarget::MainPager,
+            |_| Err("offline".to_string()),
+        );
+        assert_eq!(failed.projection.status(), "copy failed: offline");
+        assert!(failed
+            .pager_overlay
+            .as_ref()
+            .expect("pager")
+            .has_transcript_selection());
+
+        let mut unconfirmed = app_with_transcript_selection();
+        copy_transcript_selection_with(
+            &mut unconfirmed,
+            "alpha",
+            true,
+            crate::app::TranscriptSelectionTarget::MainPager,
+            |_| Ok(crate::clipboard_copy::CopyOutcome::Requested),
+        );
+        assert_eq!(unconfirmed.projection.status(), "copy unconfirmed");
+        let pager = unconfirmed.pager_overlay.as_ref().expect("pager");
+        assert!(pager.has_transcript_selection());
+    }
+
+    #[test]
+    fn main_transcript_copy_preserves_reading_position_unless_enter_follows() {
+        let mut confirmed = app_with_main_transcript_selection();
+        copy_transcript_selection_with(
+            &mut confirmed,
+            "alpha",
+            false,
+            crate::app::TranscriptSelectionTarget::MainTranscript,
+            |_| {
+                Ok(crate::clipboard_copy::CopyOutcome::Copied(Some(
+                    crate::clipboard_copy::ClipboardLease::test(),
+                )))
+            },
+        );
+        assert!(!confirmed.transcript_selection.is_active());
+        assert_eq!(confirmed.transcript_scroll, 4);
+
+        let mut failed = app_with_main_transcript_selection();
+        copy_transcript_selection_with(
+            &mut failed,
+            "alpha",
+            false,
+            crate::app::TranscriptSelectionTarget::MainTranscript,
+            |_| Err("offline".to_string()),
+        );
+        assert!(failed.transcript_selection.is_active());
+
+        let mut unconfirmed = app_with_main_transcript_selection();
+        copy_transcript_selection_with(
+            &mut unconfirmed,
+            "alpha",
+            true,
+            crate::app::TranscriptSelectionTarget::MainTranscript,
+            |_| Ok(crate::clipboard_copy::CopyOutcome::Requested),
+        );
+        assert!(unconfirmed.transcript_selection.is_active());
+
+        let mut follow = app_with_main_transcript_selection();
+        follow.transcript_scroll = 9;
+        copy_transcript_selection_with(
+            &mut follow,
+            "alpha",
+            true,
+            crate::app::TranscriptSelectionTarget::MainTranscript,
+            |_| {
+                Ok(crate::clipboard_copy::CopyOutcome::Copied(Some(
+                    crate::clipboard_copy::ClipboardLease::test(),
+                )))
+            },
+        );
+        assert!(!follow.transcript_selection.is_active());
+        assert_eq!(follow.transcript_scroll, 0);
+    }
+
+    #[test]
+    fn transcript_link_opening_validates_destination_and_propagates_failure() {
+        let opened = RefCell::new(String::new());
+        open_link_with("https://example.com/docs", |destination| {
+            opened.replace(destination.to_string());
+            Ok(())
+        })
+        .expect("valid destination");
+        assert_eq!(opened.into_inner(), "https://example.com/docs");
+
+        assert_eq!(
+            open_link_with("file:///tmp/private", |_| panic!("must fail closed")),
+            Err("link destination must be a valid HTTP(S) URL".to_string())
+        );
+        assert_eq!(
+            open_link_with("https://example.com", |_| Err(
+                "browser unavailable".to_string()
+            )),
+            Err("browser unavailable".to_string())
+        );
     }
 }

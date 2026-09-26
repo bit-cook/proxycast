@@ -66,7 +66,7 @@ fn lines_with_locale(
     width: usize,
     now: Instant,
 ) -> Vec<Line<'static>> {
-    match pane.current() {
+    let mut lines = match pane.current() {
         Some(PendingInteraction::Approval(approval)) => {
             let (kind, details) = match &approval.request {
                 ApprovalRequest::Exec { params, .. } => (
@@ -154,7 +154,11 @@ fn lines_with_locale(
             mcp_server_elicitation::lines_with_locale_with_width(request, locale, width)
         }
         None => Vec::new(),
+    };
+    if let Some(title) = pane.action_required_title(locale) {
+        lines.insert(0, Line::styled(title, crate::style::attention_style()));
     }
+    lines
 }
 
 fn option_line(selected: bool, label: String) -> Line<'static> {

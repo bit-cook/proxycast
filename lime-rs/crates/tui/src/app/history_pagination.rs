@@ -1,12 +1,13 @@
 //! Load older transcript pages without creating a TUI-local history store.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use app_server_protocol::protocol::v2::Turn;
 use std::collections::HashSet;
 
 use super::App;
 use crate::app_server_session::{AppServerSession, InitialHistoryPage, HISTORY_ITEM_PAGE_LIMIT};
 use crate::history_filter::hidden_user_message_ids;
+use crate::pager_overlay::PagerOverlay;
 
 #[path = "history_completion.rs"]
 pub(crate) mod completion;
@@ -58,7 +59,7 @@ impl App {
             )
             .await;
         if self.thread_id.as_deref() != Some(thread_id.as_str()) {
-            app_server.cancel_older_history_page(&thread_id);
+            app_server.cancel_older_history_page(&thread_id, &cursor);
             return Ok(false);
         }
         // Turn metadata is optional for older App Servers. When available it lets the
@@ -104,14 +105,31 @@ impl App {
         result: Result<app_server_protocol::protocol::v2::ThreadItemsListResponse>,
         turns: Option<&[Turn]>,
     ) -> Result<bool> {
+        // A completion must first prove that it still owns the current cursor. This keeps a
+        // stale response from cancelling or projecting a newer request after a retry.
+        if !app_server.is_older_history_page_pending(thread_id, cursor) {
+            return Ok(false);
+        }
         if self.thread_id.as_deref() != Some(thread_id) {
-            app_server.cancel_older_history_page(thread_id);
+            app_server.cancel_older_history_page(thread_id, cursor);
+            return Ok(false);
+        }
+        // The transcript overlay owns an explicit beginning-loading intent. If another lifecycle
+        // transition already established that no older page remains, an in-flight completion is
+        // stale even when its thread/cursor still match; fail closed before touching projection.
+        if !transcript_history_surface_is_current(
+            self.pager_overlay
+                .as_ref()
+                .is_some_and(PagerOverlay::is_transcript),
+            self.scrollback_has_older_history,
+        ) {
+            app_server.cancel_older_history_page(thread_id, cursor);
             return Ok(false);
         }
         let page = match result {
             Ok(page) => page,
             Err(error) => {
-                app_server.cancel_older_history_page(thread_id);
+                app_server.cancel_older_history_page(thread_id, cursor);
                 return Err(error);
             }
         };
@@ -142,6 +160,62 @@ impl App {
         }
         Ok(loaded)
     }
+
+    /// Fill an underfull main transcript from canonical older pages without opening the pager.
+    pub(crate) async fn top_up_underfilled_history(
+        &mut self,
+        app_server: &mut AppServerSession,
+        viewport_width: u16,
+        minimum_rows: usize,
+    ) -> Result<usize> {
+        let mut loaded = 0;
+        while self.scrollback_has_older_history
+            && crate::app::history_ui::rendered_transcript_row_count(self, viewport_width)
+                < minimum_rows
+        {
+            if !self.request_older_history_page(app_server).await? {
+                break;
+            }
+            loaded += 1;
+        }
+        Ok(loaded)
+    }
+
+    /// Refill the visible main transcript after startup, session changes, reconnects, or resize.
+    pub(crate) async fn top_up_underfilled_history_for_terminal(
+        &mut self,
+        terminal: &mut crate::tui::Tui,
+        app_server: &mut AppServerSession,
+    ) -> Result<usize> {
+        if self.resume_picker.is_some()
+            || self.pager_overlay.is_some()
+            || self.export_picker.is_some()
+            || self.model_picker.is_some()
+            || self.agent_picker.is_some()
+            || self.agents_overview.is_some()
+        {
+            return Ok(0);
+        }
+        let size = terminal
+            .terminal_mut()
+            .size()
+            .context("failed to read terminal size for history top-up")?;
+        let minimum_rows = crate::view::transcript_page_size(size.width, size.height, self);
+        self.top_up_underfilled_history(app_server, size.width, minimum_rows)
+            .await
+    }
+}
+
+/// Whether the visible surface may still accept an older-history completion.
+///
+/// The inline transcript can accept a response while its cached availability flag is being
+/// refreshed. The explicit transcript overlay must reject a completion after its older-page
+/// intent has been exhausted, matching Codex's owned-transcript fail-closed boundary.
+fn transcript_history_surface_is_current(
+    transcript_overlay: bool,
+    older_history_available: bool,
+) -> bool {
+    !transcript_overlay || older_history_available
 }
 
 #[cfg(test)]
@@ -228,6 +302,13 @@ mod tests {
 
         assert_eq!(app.projection.entries().len(), 2);
         assert!(app.projection.completion_after("answer").is_none());
+    }
+
+    #[test]
+    fn transcript_history_surface_rejects_completion_after_older_history_is_exhausted() {
+        assert!(transcript_history_surface_is_current(false, false));
+        assert!(transcript_history_surface_is_current(true, true));
+        assert!(!transcript_history_surface_is_current(true, false));
     }
 
     #[test]

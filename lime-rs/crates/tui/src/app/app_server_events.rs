@@ -25,7 +25,7 @@ impl App {
             AppServerEvent::Disconnected { message } => {
                 self.bottom_pane.clear();
                 self.model_picker = None;
-                self.pager_overlay = None;
+                self.dismiss_pager_overlay();
                 self.projection
                     .set_status(format!("reconnecting: {message}"));
             }

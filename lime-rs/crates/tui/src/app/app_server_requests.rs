@@ -56,7 +56,7 @@ impl App {
                         if !unsupported_request {
                             self.note_startup_protected_request();
                         }
-                        self.pager_overlay = None;
+                        self.dismiss_pager_overlay();
                     }
                     Err(request) => {
                         if let Err(error) = app_server_client.reject_server_request(request).await {

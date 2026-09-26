@@ -2,11 +2,15 @@
 
 Lime 的官方命令行入口。CLI、TUI 和 Desktop 共用 App Server JSON-RPC、RuntimeCore 与 canonical Thread/Turn/Item，不包含独立任务 runtime。
 
+本包只负责终端版本（CLI/TUI），不包含 Electron Desktop GUI。Desktop 请查看仓库根目录 README 的[版本选择与安装说明](https://github.com/limecloud/lime#choose-a-product-surface)。
+
 ## 安装
 
 ```bash
 npm install -g @limecloud/lime
 ```
+
+需要 Node.js 18 或更高版本。安装根包时会根据当前操作系统和 CPU 自动解析 optional platform package；无需单独下载或安装 `app-server`。
 
 根 npm 包只包含 launcher，并通过 optional dependency 安装当前平台的原生载荷；安装阶段不执行网络下载脚本。平台载荷原子包含 `lime`、`app-server`、`code-mode-host`、Windows sandbox helpers 和所需动态库，保证默认 TUI 与 `exec` 都进入同一 App Server 产品链。
 

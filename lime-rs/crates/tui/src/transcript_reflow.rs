@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use ratatui::layout::Rect;
 
-use crate::terminal_hyperlinks::{HyperlinkLine, HyperlinkParagraph};
+use crate::terminal_hyperlinks::{wrapped_line_starts, HyperlinkLine, HyperlinkParagraph};
 
 pub(crate) const TRANSCRIPT_REFLOW_DEBOUNCE: Duration = Duration::from_millis(75);
 
@@ -122,12 +122,29 @@ pub(crate) struct TranscriptWidthChange {
 /// `App::transcript_scroll` remains the user-facing distance-from-bottom input contract. This
 /// state records the last rendered canonical lines and resolves that relative request into an
 /// absolute wrapped-row offset when a stream delta or resize changes the rendered height.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct TranscriptViewport {
     previous_lines: RefCell<Option<Vec<HyperlinkLine>>>,
     previous_width: Cell<u16>,
     previous_offset: Cell<usize>,
     previous_requested_scroll: Cell<Option<usize>>,
+    tail_visible: Cell<bool>,
+    unseen_activity: Cell<bool>,
+    suppress_next_activity: Cell<bool>,
+}
+
+impl Default for TranscriptViewport {
+    fn default() -> Self {
+        Self {
+            previous_lines: RefCell::new(None),
+            previous_width: Cell::new(0),
+            previous_offset: Cell::new(0),
+            previous_requested_scroll: Cell::new(None),
+            tail_visible: Cell::new(true),
+            unseen_activity: Cell::new(false),
+            suppress_next_activity: Cell::new(false),
+        }
+    }
 }
 
 impl TranscriptViewport {
@@ -136,6 +153,21 @@ impl TranscriptViewport {
         self.previous_width.set(0);
         self.previous_offset.set(0);
         self.previous_requested_scroll.set(None);
+        self.tail_visible.set(true);
+        self.unseen_activity.set(false);
+        self.suppress_next_activity.set(false);
+    }
+
+    pub(crate) fn tail_visible(&self) -> bool {
+        self.tail_visible.get()
+    }
+
+    pub(crate) fn unseen_activity(&self) -> bool {
+        self.unseen_activity.get()
+    }
+
+    pub(crate) fn suppress_next_activity(&self) {
+        self.suppress_next_activity.set(true);
     }
 
     pub(crate) fn resolve(
@@ -148,8 +180,145 @@ impl TranscriptViewport {
             return 0;
         }
 
-        let paragraph = HyperlinkParagraph::new(lines);
-        let total_height = paragraph.line_count(area.width);
+        let previous = self.previous_lines.borrow().as_ref().cloned();
+        let suppress_activity = self.suppress_next_activity.replace(false);
+        let (offset, total_height) = self.requested_offset(
+            lines,
+            area,
+            requested_distance_from_bottom,
+            previous.as_deref(),
+        );
+
+        self.commit_resolution(
+            lines,
+            area,
+            offset,
+            total_height,
+            Some(requested_distance_from_bottom),
+            previous.as_deref(),
+            suppress_activity,
+            requested_distance_from_bottom > 0,
+        )
+    }
+
+    /// Calculate the next top row without committing viewport or unseen-activity state.
+    ///
+    /// The main transcript uses this for prompt-header reservation, then commits exactly once
+    /// against the final body rectangle through [`Self::resolve`].
+    pub(crate) fn preview(
+        &self,
+        lines: &[HyperlinkLine],
+        area: Rect,
+        requested_distance_from_bottom: usize,
+    ) -> u16 {
+        if area.width == 0 || area.height == 0 {
+            return 0;
+        }
+        let previous = self.previous_lines.borrow();
+        let (offset, _) = self.requested_offset(
+            lines,
+            area,
+            requested_distance_from_bottom,
+            previous.as_deref(),
+        );
+        u16::try_from(offset).unwrap_or(u16::MAX)
+    }
+
+    /// Observe canonical output while a local selection keeps painting a frozen source snapshot.
+    ///
+    /// The returned offset follows the same logical canonical row across append, prepend and
+    /// width reflow. It is used only to resume reading after the selection ends; the selection
+    /// owner keeps its own frozen visual offset.
+    pub(crate) fn resolve_frozen_anchor(
+        &self,
+        lines: &[HyperlinkLine],
+        area: Rect,
+        fallback_offset: usize,
+    ) -> u16 {
+        if area.width == 0 || area.height == 0 {
+            return 0;
+        }
+
+        let previous = self.previous_lines.borrow().as_ref().cloned();
+        let suppress_activity = self.suppress_next_activity.replace(false);
+        let total_height = HyperlinkParagraph::new(lines).line_count(area.width);
+        let max_scroll = total_height.saturating_sub(usize::from(area.height));
+        let offset = previous
+            .as_ref()
+            .and_then(|previous| {
+                let old_width = self.previous_width.get();
+                (old_width > 0).then(|| {
+                    remap_transcript_offset(
+                        previous,
+                        old_width,
+                        self.previous_offset.get(),
+                        lines,
+                        area.width,
+                    )
+                })?
+            })
+            .unwrap_or(fallback_offset)
+            .min(max_scroll);
+        let reading_away_from_tail = offset.saturating_add(usize::from(area.height)) < total_height;
+        self.commit_resolution(
+            lines,
+            area,
+            offset,
+            total_height,
+            None,
+            previous.as_deref(),
+            suppress_activity,
+            reading_away_from_tail,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn commit_resolution(
+        &self,
+        lines: &[HyperlinkLine],
+        area: Rect,
+        offset: usize,
+        total_height: usize,
+        requested_distance_from_bottom: Option<usize>,
+        previous: Option<&[HyperlinkLine]>,
+        suppress_activity: bool,
+        reading_away_from_tail: bool,
+    ) -> u16 {
+        *self.previous_lines.borrow_mut() = Some(lines.to_vec());
+        self.previous_width.set(area.width);
+        self.previous_offset.set(offset);
+        self.previous_requested_scroll
+            .set(requested_distance_from_bottom);
+        let tail_visible = offset.saturating_add(usize::from(area.height)) >= total_height;
+        self.tail_visible.set(tail_visible);
+        if tail_visible {
+            self.unseen_activity.set(false);
+        } else if reading_away_from_tail
+            && !suppress_activity
+            && previous.is_some_and(|previous| {
+                previous != lines
+                    && !(lines.len() > previous.len() && lines.ends_with(previous))
+                    && !is_preserving_insertion_before_offset(
+                        previous,
+                        self.previous_width.get(),
+                        self.previous_offset.get(),
+                        lines,
+                    )
+            })
+        {
+            self.unseen_activity.set(true);
+        }
+        u16::try_from(offset).unwrap_or(u16::MAX)
+    }
+
+    fn requested_offset(
+        &self,
+        lines: &[HyperlinkLine],
+        area: Rect,
+        requested_distance_from_bottom: usize,
+        previous: Option<&[HyperlinkLine]>,
+    ) -> (usize, usize) {
+        let total_height = HyperlinkParagraph::new(lines).line_count(area.width);
         let max_scroll = total_height.saturating_sub(usize::from(area.height));
         let base_offset = max_scroll.saturating_sub(requested_distance_from_bottom.min(max_scroll));
         let requested_is_unchanged =
@@ -157,11 +326,11 @@ impl TranscriptViewport {
         let mut offset = base_offset;
 
         if requested_distance_from_bottom > 0 && requested_is_unchanged {
-            if let Some(previous) = self.previous_lines.borrow().as_ref().cloned() {
+            if let Some(previous) = previous {
                 let old_width = self.previous_width.get();
                 if old_width > 0 {
                     if let Some(mapped) = remap_transcript_offset(
-                        &previous,
+                        previous,
                         old_width,
                         self.previous_offset.get(),
                         lines,
@@ -176,13 +345,7 @@ impl TranscriptViewport {
                 }
             }
         }
-
-        *self.previous_lines.borrow_mut() = Some(lines.to_vec());
-        self.previous_width.set(area.width);
-        self.previous_offset.set(offset);
-        self.previous_requested_scroll
-            .set(Some(requested_distance_from_bottom));
-        u16::try_from(offset).unwrap_or(u16::MAX)
+        (offset, total_height)
     }
 }
 
@@ -226,6 +389,15 @@ fn remap_transcript_offset(
     } else if lines.len() >= previous.len() && lines[lines.len() - previous.len()..] == previous[..]
     {
         old_line + lines.len() - previous.len()
+    } else if lines.len() > previous.len()
+        && common_prefix < previous.len()
+        && common_prefix.saturating_add(common_suffix) == previous.len()
+    {
+        if old_line < common_prefix {
+            old_line
+        } else {
+            old_line + lines.len() - previous.len()
+        }
     } else if lines.len() >= previous.len() && lines[..previous.len()] == previous[..] {
         old_line
     } else {
@@ -241,18 +413,40 @@ fn remap_transcript_offset(
     Some(new_start + intra_line_offset.min(new_height.saturating_sub(1)))
 }
 
-fn wrapped_line_starts(lines: &[HyperlinkLine], width: u16) -> Vec<usize> {
-    let mut starts = Vec::with_capacity(lines.len());
-    let mut offset = 0usize;
-    for line in lines {
-        starts.push(offset);
-        offset = offset.saturating_add(
-            HyperlinkParagraph::new(std::slice::from_ref(line))
-                .line_count(width)
-                .max(1),
-        );
+fn is_preserving_insertion_before_offset(
+    previous: &[HyperlinkLine],
+    old_width: u16,
+    old_offset: usize,
+    lines: &[HyperlinkLine],
+) -> bool {
+    if lines.len() <= previous.len() || previous.is_empty() || old_width == 0 {
+        return false;
     }
-    starts
+    let common_prefix = previous
+        .iter()
+        .zip(lines)
+        .take_while(|(old, new)| old == new)
+        .count();
+    if common_prefix == previous.len() {
+        return false;
+    }
+    let common_suffix = previous
+        .iter()
+        .rev()
+        .zip(lines.iter().rev())
+        .take_while(|(old, new)| old == new)
+        .count()
+        .min(previous.len().saturating_sub(common_prefix));
+    if common_prefix.saturating_add(common_suffix) != previous.len() {
+        return false;
+    }
+    let old_top_line = wrapped_line_starts(previous, old_width)
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, start)| **start <= old_offset)
+        .map_or(0, |(index, _)| index);
+    common_prefix <= old_top_line
 }
 
 #[cfg(test)]
@@ -362,5 +556,136 @@ mod tests {
         let narrow = Rect::new(0, 0, 16, 3);
         let resolved = viewport.resolve(&initial, narrow, 3);
         assert_eq!(usize::from(resolved), wrapped_line_starts(&initial, 16)[1]);
+    }
+
+    #[test]
+    fn viewport_marks_appended_and_revised_tail_activity_while_paused() {
+        let viewport = TranscriptViewport::default();
+        let area = Rect::new(0, 0, 20, 2);
+        let initial = vec![
+            HyperlinkLine::from("one"),
+            HyperlinkLine::from("two"),
+            HyperlinkLine::from("three"),
+            HyperlinkLine::from("four"),
+        ];
+        viewport.resolve(&initial, area, 1);
+        assert!(!viewport.tail_visible());
+        assert!(!viewport.unseen_activity());
+
+        let mut appended = initial.clone();
+        appended.push(HyperlinkLine::from("five"));
+        viewport.resolve(&appended, area, 1);
+        assert!(viewport.unseen_activity());
+
+        viewport.clear();
+        viewport.resolve(&initial, area, 1);
+        let mut revised = initial.clone();
+        revised[3] = HyperlinkLine::from("four revised");
+        viewport.resolve(&revised, area, 1);
+        assert!(viewport.unseen_activity());
+    }
+
+    #[test]
+    fn frozen_selection_anchor_observes_tail_activity_and_remaps_history_prepend() {
+        let area = Rect::new(0, 0, 20, 2);
+        let initial = vec![
+            HyperlinkLine::from("one"),
+            HyperlinkLine::from("two"),
+            HyperlinkLine::from("three"),
+            HyperlinkLine::from("four"),
+        ];
+        let viewport = TranscriptViewport::default();
+        assert_eq!(viewport.resolve(&initial, area, 0), 2);
+
+        let mut appended = initial.clone();
+        appended.push(HyperlinkLine::from("five"));
+        assert_eq!(viewport.resolve_frozen_anchor(&appended, area, 2), 2);
+        assert!(!viewport.tail_visible());
+        assert!(viewport.unseen_activity());
+
+        let prepended_viewport = TranscriptViewport::default();
+        assert_eq!(prepended_viewport.resolve(&initial, area, 1), 1);
+        let mut prepended = vec![HyperlinkLine::from("zero")];
+        prepended.extend(initial);
+        assert_eq!(
+            prepended_viewport.resolve_frozen_anchor(&prepended, area, 1),
+            2
+        );
+        assert!(!prepended_viewport.unseen_activity());
+    }
+
+    #[test]
+    fn viewport_does_not_treat_older_history_prepend_as_unseen_activity() {
+        let viewport = TranscriptViewport::default();
+        let area = Rect::new(0, 0, 20, 2);
+        let initial = vec![
+            HyperlinkLine::from("three"),
+            HyperlinkLine::from("four"),
+            HyperlinkLine::from("five"),
+        ];
+        viewport.resolve(&initial, area, 1);
+        let prepended = vec![
+            HyperlinkLine::from("one"),
+            HyperlinkLine::from("two"),
+            HyperlinkLine::from("three"),
+            HyperlinkLine::from("four"),
+            HyperlinkLine::from("five"),
+        ];
+
+        viewport.resolve(&prepended, area, 1);
+
+        assert!(!viewport.unseen_activity());
+    }
+
+    #[test]
+    fn viewport_remaps_history_inserted_after_stable_session_header() {
+        let viewport = TranscriptViewport::default();
+        let area = Rect::new(0, 0, 20, 2);
+        let initial = vec![
+            HyperlinkLine::from("session"),
+            HyperlinkLine::from("gap"),
+            HyperlinkLine::from("current one"),
+            HyperlinkLine::from("current two"),
+            HyperlinkLine::from("current three"),
+        ];
+        assert_eq!(viewport.resolve(&initial, area, 1), 2);
+        let updated = vec![
+            HyperlinkLine::from("session"),
+            HyperlinkLine::from("gap"),
+            HyperlinkLine::from("older one"),
+            HyperlinkLine::from("older two"),
+            HyperlinkLine::from("current one"),
+            HyperlinkLine::from("current two"),
+            HyperlinkLine::from("current three"),
+        ];
+
+        assert_eq!(viewport.resolve(&updated, area, 1), 4);
+        assert!(!viewport.unseen_activity());
+    }
+
+    #[test]
+    fn viewport_clears_activity_at_bottom_and_hides_follow_when_tail_fits() {
+        let viewport = TranscriptViewport::default();
+        let compact = Rect::new(0, 0, 20, 2);
+        let initial = vec![
+            HyperlinkLine::from("one"),
+            HyperlinkLine::from("two"),
+            HyperlinkLine::from("three"),
+        ];
+        viewport.resolve(&initial, compact, 1);
+        let mut updated = initial.clone();
+        updated.push(HyperlinkLine::from("four"));
+        viewport.resolve(&updated, compact, 1);
+        assert!(viewport.unseen_activity());
+
+        viewport.resolve(&updated, compact, 0);
+        assert!(viewport.tail_visible());
+        assert!(!viewport.unseen_activity());
+
+        viewport.resolve(&updated, compact, 1);
+        assert!(!viewport.tail_visible());
+        viewport.resolve(&updated, Rect::new(0, 0, 20, 6), 1);
+        assert!(viewport.tail_visible());
+        assert!(!viewport.unseen_activity());
     }
 }

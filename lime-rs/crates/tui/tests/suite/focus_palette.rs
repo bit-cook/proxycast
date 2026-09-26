@@ -15,6 +15,7 @@ const FOCUS_PROBE_INPUT: &str = "focus-palette-24527";
 enum StartMode<'a> {
     Tui,
     Resume(&'a str),
+    RemoteResume(&'a str, &'a str),
 }
 
 #[test]
@@ -123,6 +124,23 @@ impl PtyLime {
         )
     }
 
+    pub(super) fn start_remote_resume(
+        cli_bin: &Path,
+        remote_url: &str,
+        cwd: &Path,
+        thread_id: &str,
+    ) -> Result<Self> {
+        Self::start_with_mode(
+            cli_bin,
+            Path::new("app-server"),
+            Path::new("backend.mjs"),
+            Path::new("ledger.jsonl"),
+            cwd,
+            Path::new("node"),
+            StartMode::RemoteResume(remote_url, thread_id),
+        )
+    }
+
     fn start_with_mode(
         cli_bin: &Path,
         app_server_bin: &Path,
@@ -140,13 +158,26 @@ impl PtyLime {
         })?;
         let mut command = CommandBuilder::new(cli_bin);
         let mut arguments = Vec::new();
-        match mode {
-            StartMode::Tui => arguments.push(OsString::from("tui")),
+        let remote = match mode {
+            StartMode::Tui => {
+                arguments.push(OsString::from("tui"));
+                false
+            }
             StartMode::Resume(thread_id) => {
                 arguments.push(OsString::from("resume"));
                 arguments.push(OsString::from(thread_id));
+                false
             }
-        }
+            StartMode::RemoteResume(remote_url, thread_id) => {
+                arguments.extend([
+                    OsString::from("resume"),
+                    OsString::from(thread_id),
+                    OsString::from("--remote"),
+                    OsString::from(remote_url),
+                ]);
+                true
+            }
+        };
         arguments.extend([
             OsString::from("--cd"),
             cwd.as_os_str().to_os_string(),
@@ -154,32 +185,39 @@ impl PtyLime {
             OsString::from("fixture-model"),
             OsString::from("--provider"),
             OsString::from("fixture-provider"),
-            OsString::from("--app-server"),
-            app_server_bin.as_os_str().to_os_string(),
-            OsString::from("--app-server-arg=--backend"),
-            OsString::from("--app-server-arg=external"),
-            OsString::from("--app-server-arg=--backend-command"),
-            OsString::from(format!("--app-server-arg={}", node_bin.display())),
-            OsString::from("--app-server-arg=--backend-arg"),
-            OsString::from(format!("--app-server-arg={}", backend_path.display())),
-            OsString::from("--app-server-arg=--backend-arg"),
-            OsString::from(format!("--app-server-arg={}", ledger_path.display())),
-            OsString::from("--app-server-arg=--backend-timeout-ms"),
-            OsString::from("--app-server-arg=5000"),
-            OsString::from("--app-server-arg=--data-dir"),
-            OsString::from(format!("--app-server-arg={}", cwd.join("data").display())),
-            OsString::from("--app-server-arg=--app-data-dir"),
-            OsString::from(format!(
-                "--app-server-arg={}",
-                cwd.join("app-data").display()
-            )),
         ]);
+        if !remote {
+            arguments.extend([
+                OsString::from("--app-server"),
+                app_server_bin.as_os_str().to_os_string(),
+                OsString::from("--app-server-arg=--backend"),
+                OsString::from("--app-server-arg=external"),
+                OsString::from("--app-server-arg=--backend-command"),
+                OsString::from(format!("--app-server-arg={}", node_bin.display())),
+                OsString::from("--app-server-arg=--backend-arg"),
+                OsString::from(format!("--app-server-arg={}", backend_path.display())),
+                OsString::from("--app-server-arg=--backend-arg"),
+                OsString::from(format!("--app-server-arg={}", ledger_path.display())),
+                OsString::from("--app-server-arg=--backend-timeout-ms"),
+                OsString::from("--app-server-arg=5000"),
+                OsString::from("--app-server-arg=--data-dir"),
+                OsString::from(format!("--app-server-arg={}", cwd.join("data").display())),
+                OsString::from("--app-server-arg=--app-data-dir"),
+                OsString::from(format!(
+                    "--app-server-arg={}",
+                    cwd.join("app-data").display()
+                )),
+            ]);
+        }
         for argument in arguments {
             command.arg(argument);
         }
         command.cwd(cwd);
         command.env("TERM", "xterm-256color");
         command.env("LIME_LOCALE", "en-US");
+        if let Some(runtime_path) = std::env::var_os("LIME_TEST_DYLD_LIBRARY_PATH") {
+            command.env("DYLD_LIBRARY_PATH", runtime_path);
+        }
 
         let child = pair.slave.spawn_command(command)?;
         let mut reader = pair.master.try_clone_reader()?;
@@ -229,7 +267,11 @@ impl PtyLime {
                 return Ok(());
             }
             if let Some(status) = self.child.try_wait()? {
-                bail!("Lime exited before focus test started ({status:?})");
+                bail!(
+                    "Lime exited before focus test started ({status:?}); screen:\n{}\nraw output:\n{}",
+                    self.screen_contents(),
+                    String::from_utf8_lossy(&self.output)
+                );
             }
         }
         bail!(

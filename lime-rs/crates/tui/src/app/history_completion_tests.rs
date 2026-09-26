@@ -33,12 +33,12 @@ fn split_turn_only_completes_on_the_page_with_its_last_item() {
     )];
     assert!(
         group_completed_turn_items(turns[0].items[1..].to_vec(), &turns)[0]
-            .1
+            .completion
             .is_some()
     );
     assert!(
         group_completed_turn_items(turns[0].items[..1].to_vec(), &turns)[0]
-            .1
+            .completion
             .is_none()
     );
 }
@@ -55,18 +55,20 @@ fn multiple_turns_keep_item_groups_and_completion_order() {
         .collect::<Vec<_>>();
     let groups = group_completed_turn_items(items, &turns);
     assert_eq!(groups.len(), 2);
-    assert_eq!(groups[0].0.len(), 2);
-    assert_eq!(groups[1].0.len(), 2);
+    assert_eq!(groups[0].items.len(), 2);
+    assert_eq!(groups[0].activity_scope.as_deref(), Some("first"));
+    assert_eq!(groups[1].items.len(), 2);
+    assert_eq!(groups[1].activity_scope.as_deref(), Some("second"));
     assert_eq!(
         groups[0]
-            .1
+            .completion
             .as_ref()
             .and_then(|boundary| boundary.elapsed_seconds),
         Some(125)
     );
     assert_eq!(
         groups[1]
-            .1
+            .completion
             .as_ref()
             .and_then(|boundary| boundary.elapsed_seconds),
         Some(125)
@@ -85,6 +87,27 @@ fn unsuccessful_and_running_turns_do_not_create_completion_boundaries() {
         .flat_map(|turn| turn.items.clone())
         .collect::<Vec<_>>();
     let groups = group_completed_turn_items(items, &turns);
+    assert_eq!(groups.len(), 3);
+    assert_eq!(
+        groups
+            .iter()
+            .map(|group| group.activity_scope.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("failed"), Some("interrupted"), Some("running")]
+    );
+    assert!(groups.iter().all(|group| group.completion.is_none()));
+}
+
+#[test]
+fn items_missing_turn_identity_are_grouped_without_activity_scope() {
+    let unknown = turn("unknown", TurnStatus::Completed, &["outside"])
+        .items
+        .into_iter()
+        .next()
+        .expect("unknown item");
+    let groups = group_completed_turn_items(vec![unknown], &[]);
+
     assert_eq!(groups.len(), 1);
-    assert!(groups[0].1.is_none());
+    assert_eq!(groups[0].activity_scope, None);
+    assert_eq!(groups[0].completion, None);
 }

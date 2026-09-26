@@ -139,7 +139,7 @@ impl App {
 
     pub(super) fn replay_thread_snapshot(&mut self, snapshot: ThreadEventSnapshot) {
         if replay_filter::snapshot_has_pending_interactive_request(&snapshot) {
-            self.pager_overlay = None;
+            self.dismiss_pager_overlay();
         }
         for event in snapshot.events {
             if replay_filter::event_is_notice(&event) {
@@ -162,7 +162,7 @@ impl App {
                         request.method()
                     );
                 } else {
-                    self.pager_overlay = None;
+                    self.dismiss_pager_overlay();
                 }
             }
         }

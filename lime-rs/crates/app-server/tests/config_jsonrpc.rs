@@ -14,7 +14,14 @@ async fn config_control_plane_uses_the_single_desktop_yaml_layer() {
     let config_path = temp.path().join("config.yaml");
     std::fs::write(
         &config_path,
-        "server:\n  api_key: config-test-key\nlanguage: zh-CN\n",
+        concat!(
+            "server:\n  api_key: config-test-key\n",
+            "language: zh-CN\n",
+            "tui:\n",
+            "  keymap:\n",
+            "    global:\n",
+            "      find_transcript: ctrl-x f\n",
+        ),
     )
     .expect("write config");
     let previous = std::env::var_os("LIME_CONFIG_PATH");
@@ -38,6 +45,10 @@ async fn config_control_plane_uses_the_single_desktop_yaml_layer() {
     )
     .await;
     assert_eq!(read["result"]["config"]["language"], "zh-CN");
+    assert_eq!(
+        read["result"]["config"]["tui"]["keymap"]["global"]["find_transcript"],
+        "ctrl-x f"
+    );
     assert_eq!(
         read["result"]["layers"][0]["name"],
         json!({
@@ -93,6 +104,19 @@ async fn config_control_plane_uses_the_single_desktop_yaml_layer() {
     let persisted = ConfigManager::load(&config_path).expect("load persisted config");
     assert_eq!(persisted.config().language, "en-US");
     assert!(persisted.config().minimize_to_tray);
+    assert_eq!(
+        persisted
+            .config()
+            .tui
+            .keymap
+            .global
+            .find_transcript
+            .as_ref()
+            .expect("persisted TUI Find binding")
+            .specs()[0]
+            .as_str(),
+        "ctrl-x f"
+    );
 
     let stale = request_error(
         &server,

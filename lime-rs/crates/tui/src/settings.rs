@@ -50,6 +50,7 @@ pub(crate) fn parse_settings_command(prompt: &str) -> Option<Result<SettingsComm
         | SlashCommand::MultiAgents
         | SlashCommand::Resume
         | SlashCommand::Mcp
+        | SlashCommand::Raw
         | SlashCommand::Vim
         | SlashCommand::Pwd => None,
     }

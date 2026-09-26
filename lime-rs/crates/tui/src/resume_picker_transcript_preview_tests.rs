@@ -26,10 +26,10 @@ fn assistant_item(text: &str) -> ThreadItem {
 
 #[test]
 fn preview_keeps_newest_lines_and_restores_transcript_order() {
-    let mut lines = Vec::new();
-    append_item_preview_lines(&mut lines, &assistant_item("third\n\nfourth"));
-    append_item_preview_lines(&mut lines, &user_item("first\nsecond"));
-    lines.reverse();
+    let lines = preview_from_items(&[
+        user_item("first\nsecond"),
+        assistant_item("third\n\nfourth"),
+    ]);
 
     assert_eq!(
         lines,
@@ -56,25 +56,21 @@ fn preview_keeps_newest_lines_and_restores_transcript_order() {
 
 #[test]
 fn preview_ignores_non_text_inputs_and_blank_lines() {
-    let mut lines = Vec::new();
-    append_item_preview_lines(
-        &mut lines,
-        &ThreadItem::UserMessage {
-            id: String::from("user"),
-            metadata: None,
-            client_id: None,
-            content: vec![
-                UserInput::Image {
-                    detail: None,
-                    url: String::from("https://example.test/image.png"),
-                },
-                UserInput::Text {
-                    text: String::from("  visible  \n\n"),
-                    text_elements: Vec::new(),
-                },
-            ],
-        },
-    );
+    let lines = preview_from_items(&[ThreadItem::UserMessage {
+        id: String::from("user"),
+        metadata: None,
+        client_id: None,
+        content: vec![
+            UserInput::Image {
+                detail: None,
+                url: String::from("https://example.test/image.png"),
+            },
+            UserInput::Text {
+                text: String::from("  visible  \n\n"),
+                text_elements: Vec::new(),
+            },
+        ],
+    }]);
 
     assert_eq!(
         lines,
@@ -87,15 +83,58 @@ fn preview_ignores_non_text_inputs_and_blank_lines() {
 
 #[test]
 fn preview_is_bounded_to_six_lines() {
-    let mut lines = Vec::new();
-    append_item_preview_lines(
-        &mut lines,
-        &assistant_item("one\ntwo\nthree\nfour\nfive\nsix\nseven"),
-    );
+    let lines = preview_from_items(&[assistant_item("one\ntwo\nthree\nfour\nfive\nsix\nseven")]);
 
     assert_eq!(lines.len(), MAX_TRANSCRIPT_PREVIEW_LINES);
-    assert_eq!(lines[0].text, "seven");
-    assert_eq!(lines[5].text, "two");
+    assert_eq!(lines[0].text, "two");
+    assert_eq!(lines[5].text, "seven");
+}
+
+#[test]
+fn preview_pagination_fails_closed_on_a_repeated_cursor() {
+    let mut seen = std::collections::HashSet::from([String::from("head")]);
+    assert_eq!(
+        next_preview_cursor(Some(String::from("tail")), &mut seen),
+        Some(String::from("tail"))
+    );
+    assert_eq!(
+        next_preview_cursor(Some(String::from("tail")), &mut seen),
+        None
+    );
+}
+
+#[test]
+fn preview_scan_budget_is_four_item_pages() {
+    assert_eq!(
+        HISTORY_ITEM_SCAN_LIMIT,
+        4 * HISTORY_ITEM_PAGE_LIMIT as usize
+    );
+}
+
+#[test]
+fn preview_uses_canonical_review_filtering_before_selecting_speakers() {
+    let lines = preview_from_items(&[
+        ThreadItem::EnteredReviewMode {
+            id: String::from("review-enter"),
+            metadata: None,
+            review: String::from("review"),
+        },
+        user_item("hidden review prompt"),
+        ThreadItem::ExitedReviewMode {
+            id: String::from("review-exit"),
+            metadata: None,
+            review: String::from("review"),
+        },
+        assistant_item("visible answer"),
+    ]);
+
+    assert_eq!(
+        lines,
+        vec![TranscriptPreviewLine {
+            speaker: TranscriptPreviewSpeaker::Assistant,
+            text: String::from("visible answer"),
+        }]
+    );
 }
 
 #[test]

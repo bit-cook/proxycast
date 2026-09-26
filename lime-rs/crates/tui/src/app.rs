@@ -11,6 +11,7 @@ pub(crate) mod history_pagination;
 pub(crate) mod history_ui;
 mod input_flow;
 mod input_submission;
+mod interaction;
 mod interrupts;
 mod pending_interactive_replay;
 pub(crate) mod reconnect;
@@ -24,35 +25,36 @@ mod thread_events;
 mod thread_settings;
 mod tool_lifecycle;
 pub(crate) mod transcript_export;
+mod transcript_presentation;
 mod turn_lifecycle;
 pub(crate) mod working_directory;
 
 use app_server_protocol::protocol::v2::{
     McpServerStatus, McpServerStatusDetail, QueuedSubmission, Thread,
 };
-use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use self::agent_navigation::{AgentNavigationDirection, AgentNavigationState};
-use self::agent_picker::{AgentPicker, AgentPickerAction};
+use self::agent_picker::AgentPicker;
 use self::agents_overview::AgentsOverviewState;
-use self::agents_overview_view::AgentsOverviewAction;
-use self::transcript_export::{ExportPicker, ExportPickerAction};
-use crate::bottom_pane::command_popup::CommandPopupAction;
+use self::transcript_export::ExportPicker;
 use crate::bottom_pane::{AppServerResponse, BottomPane, ChatComposer};
+use crate::history_cell::HistoryRenderMode;
 use crate::locale::Locale;
 use crate::model_catalog::ModelCatalog;
-use crate::model_picker::{ModelPicker, ModelPickerAction, ModelSelection};
-use crate::pager_overlay::{PagerAction, PagerOverlay, StatusFacts};
+use crate::model_picker::{ModelPicker, ModelSelection};
+use crate::pager_overlay::{PagerOverlay, StatusFacts};
 use crate::projection::ConversationProjection;
 use crate::resume_picker::{PickerAction, PickerState};
 use crate::slash_command::SlashCommand;
-use crate::tui::TuiEvent;
 
-fn normalize_paste(text: String) -> String {
-    text.replace("\r\n", "\n").replace('\r', "\n")
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TranscriptSelectionTarget {
+    MainTranscript,
+    MainPager,
+    ResumePicker,
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,6 +68,17 @@ pub(crate) enum AppAction {
     PreviousPermissions,
     NextPermissions,
     CopyLastResponse,
+    CopyComposerSelection {
+        text: String,
+        clear_selection: bool,
+    },
+    CopyTranscriptSelection {
+        text: String,
+        follow: bool,
+        target: TranscriptSelectionTarget,
+    },
+    OpenLink(String),
+    ScheduleFrameIn(Duration),
     ExportTranscript {
         path: Option<PathBuf>,
     },
@@ -73,6 +86,7 @@ pub(crate) enum AppAction {
     EditQueuedSubmission(QueuedSubmission),
     ScrollUp,
     ScrollDown,
+    ScrollRows(isize),
     ScrollTop,
     ScrollBottom,
     LoadOlderHistory,
@@ -122,6 +136,7 @@ pub(crate) struct App {
     pub(crate) mcp_startup_warnings: startup_prompts::McpStartupWarningState,
     pub(crate) collaboration_mode: Option<agent_protocol::CollaborationMode>,
     pub(crate) pager_overlay: Option<PagerOverlay>,
+    transcript_presentation: transcript_presentation::TranscriptPresentation,
     pub(crate) export_picker: Option<ExportPicker>,
     pub(crate) thread_id: Option<String>,
     pub(crate) primary_thread_id: Option<String>,
@@ -135,6 +150,15 @@ pub(crate) struct App {
     pub(crate) transcript_scroll: usize,
     pub(crate) scrollback_has_older_history: bool,
     pub(crate) transcript_viewport: crate::transcript_reflow::TranscriptViewport,
+    pub(crate) transcript_follow_control: crate::transcript_view::TranscriptFollowControl,
+    pub(crate) transcript_composer_gap: crate::transcript_view::TranscriptComposerGap,
+    pub(crate) transcript_footer: crate::transcript_view::TranscriptFooter,
+    pub(crate) transcript_prompt_header: crate::transcript_view::TranscriptPromptHeader,
+    pub(crate) transcript_search: crate::transcript_view::TranscriptSearch,
+    pub(crate) transcript_selection: crate::transcript_view::TranscriptSelection,
+    pub(crate) runtime_keymap: crate::keymap::RuntimeKeymap,
+    pub(crate) global_key_chord_matcher: crate::keymap::KeyChordMatcher,
+    history_render_mode: HistoryRenderMode,
     pub(crate) locale: Locale,
     pub(crate) cwd: PathBuf,
     pub(crate) clipboard_lease: Option<crate::clipboard_copy::ClipboardLease>,
@@ -152,6 +176,31 @@ pub(crate) struct App {
 }
 
 impl App {
+    pub(crate) fn set_runtime_keymap(&mut self, keymap: crate::keymap::RuntimeKeymap) {
+        self.runtime_keymap = keymap;
+        self.global_key_chord_matcher.reset();
+    }
+
+    pub(crate) fn history_render_mode(&self) -> HistoryRenderMode {
+        self.history_render_mode
+    }
+
+    pub(crate) fn raw_output_mode(&self) -> bool {
+        self.history_render_mode == HistoryRenderMode::Raw
+    }
+
+    fn toggle_raw_output_mode(&mut self) {
+        self.finish_main_transcript_selection(false);
+        self.transcript_viewport.suppress_next_activity();
+        self.transcript_prompt_header.clear();
+        self.history_render_mode = match self.history_render_mode {
+            HistoryRenderMode::Rich => HistoryRenderMode::Raw,
+            HistoryRenderMode::Raw => HistoryRenderMode::Rich,
+        };
+        self.projection
+            .set_status(self.locale.raw_output_mode_message(self.raw_output_mode()));
+    }
+
     pub(crate) fn set_cwd(&mut self, cwd: PathBuf) {
         self.cwd = cwd;
     }
@@ -210,9 +259,15 @@ impl App {
 
     pub(crate) fn set_thread_id(&mut self, thread_id: String) {
         if self.thread_id.as_deref() != Some(thread_id.as_str()) {
+            self.reset_transcript_presentation();
             self.queued_submissions.clear();
             self.transcript_scroll = 0;
             self.transcript_viewport.clear();
+            self.transcript_follow_control.clear();
+            self.transcript_composer_gap.clear();
+            self.transcript_prompt_header.clear();
+            self.transcript_search.clear();
+            self.transcript_selection.reset();
             self.turn_lifecycle.reset_thread();
             self.turn_lifecycle
                 .restore_running(self.projection.active_turn_id(), Instant::now());
@@ -276,6 +331,11 @@ impl App {
     pub(crate) fn hydrate_thread(&mut self, thread: Thread) {
         self.transcript_scroll = 0;
         self.transcript_viewport.clear();
+        self.transcript_follow_control.clear();
+        self.transcript_composer_gap.clear();
+        self.transcript_prompt_header.clear();
+        self.transcript_search.clear();
+        self.transcript_selection.reset();
         self.turn_lifecycle.reset_thread();
         self.agent_navigation.upsert(
             thread.id.clone(),
@@ -346,280 +406,44 @@ impl App {
         if matches!(action, AppAction::Respond(_)) && !self.bottom_pane.is_active() {
             self.startup_pending_protected_request = false;
         }
-        action
-    }
-
-    pub(crate) fn handle_tui_event(&mut self, event: TuiEvent, connected: bool) -> AppAction {
-        if !connected {
-            return match event {
-                TuiEvent::Key(key)
-                    if key.kind == KeyEventKind::Press
-                        && key.modifiers.contains(KeyModifiers::CONTROL)
-                        && matches!(key.code, KeyCode::Char(value) if value.eq_ignore_ascii_case(&'c')) =>
-                {
-                    AppAction::Quit
-                }
-                TuiEvent::Key(key) => {
-                    self.composer.handle_disconnected_key(key);
-                    self.clear_command_popup();
-                    AppAction::None
-                }
-                TuiEvent::Paste(text) => {
-                    self.composer.handle_paste(&normalize_paste(text));
-                    self.clear_command_popup();
-                    AppAction::None
-                }
-                _ => AppAction::None,
-            };
-        }
-
-        let event = match event {
-            TuiEvent::Key(key) => Event::Key(key),
-            TuiEvent::Paste(text) => Event::Paste(normalize_paste(text)),
-            TuiEvent::Resize(size) => Event::Resize(size.width, size.height),
-            TuiEvent::FocusGained => Event::FocusGained,
-            TuiEvent::FocusLost => Event::FocusLost,
-            TuiEvent::Draw => return self.pre_draw_tick(Instant::now()),
-            TuiEvent::Resume => return AppAction::None,
-        };
-
-        if let Some(pager) = self.pager_overlay.as_mut() {
-            return match pager.handle_event(&event) {
-                PagerAction::Close => {
-                    self.pager_overlay = None;
-                    AppAction::None
-                }
-                PagerAction::LoadOlderHistory => AppAction::LoadOlderHistory,
-                PagerAction::Consumed => AppAction::None,
-            };
-        }
-
-        if let Some(picker) = self.export_picker.as_mut() {
-            let action = picker.handle_event(&event);
-            return match action {
-                ExportPickerAction::None => AppAction::None,
-                ExportPickerAction::Cancel => {
-                    self.export_picker = None;
-                    AppAction::None
-                }
-                ExportPickerAction::Copy => {
-                    self.export_picker = None;
-                    AppAction::ExportTranscript { path: None }
-                }
-                ExportPickerAction::Save => {
-                    let path = picker.selected_path();
-                    self.export_picker = None;
-                    path.map(|path| AppAction::ExportTranscript { path: Some(path) })
-                        .unwrap_or(AppAction::None)
-                }
-            };
-        }
-
-        if self.bottom_pane.is_active() {
-            let action = self
-                .bottom_pane
-                .handle_event(event)
-                .map(AppAction::Respond)
-                .unwrap_or(AppAction::None);
-            if matches!(action, AppAction::Respond(_)) && !self.bottom_pane.is_active() {
-                self.startup_pending_protected_request = false;
-            }
+        if !matches!(action, AppAction::None) {
             return action;
         }
-
-        // A delayed startup approval/user-input request owns the terminal until it is shown.
-        // This guard intentionally sits after `BottomPane`: once visible, the pane must receive
-        // the key that resolves the request instead of being blocked by its own boundary.
-        if self.has_queued_startup_protected_request() {
-            return AppAction::None;
-        }
-
-        self.release_startup_input_boundary_if_ready(matches!(
-            &event,
-            Event::Key(_) | Event::Paste(_)
-        ));
-
-        if let Some(picker) = self.resume_picker.as_mut() {
-            if picker.transcript_pager_is_open() {
-                picker.handle_transcript_pager_event(&event);
-                return AppAction::None;
-            }
-            let action = picker.handle_event(event);
-            if action == PickerAction::Cancel {
-                self.resume_picker = None;
-                return AppAction::None;
-            }
-            return AppAction::ResumePicker(action);
-        }
-
-        if let Some(overview) = self.agents_overview.as_mut() {
-            let action = overview.view.handle_event(event);
-            overview.visible_thread_ids = overview
-                .view
-                .visible_rows()
-                .into_iter()
-                .map(|row| row.thread.id.clone())
-                .collect();
-            overview.sync_view_state();
-            return match action {
-                AgentsOverviewAction::Select => {
-                    let thread_id = overview.view.selected_thread_id().map(str::to_owned);
-                    self.agents_overview = None;
-                    self.agent_picker = None;
-                    thread_id
-                        .map(AppAction::SwitchThread)
-                        .unwrap_or(AppAction::None)
-                }
-                AgentsOverviewAction::Cancel => {
-                    self.agents_overview = None;
-                    self.agent_picker = None;
-                    AppAction::None
-                }
-                AgentsOverviewAction::Refresh => AppAction::RefreshAgentsOverview,
-                AgentsOverviewAction::Dispatch { prompt, cwd } => {
-                    AppAction::DispatchAgentsOverviewTask { prompt, cwd }
-                }
-                AgentsOverviewAction::Rename { thread_id, name } => {
-                    AppAction::RenameAgentsOverviewThread { thread_id, name }
-                }
-                AgentsOverviewAction::Stop { thread_id } => {
-                    AppAction::StopAgentsOverviewThread { thread_id }
-                }
-                AgentsOverviewAction::OpenResumePicker => AppAction::OpenResumePicker,
-                AgentsOverviewAction::None => AppAction::None,
-            };
-        }
-
-        if let Some(picker) = self.model_picker.as_mut() {
-            return match picker.handle_event(event) {
-                ModelPickerAction::Select(index) => {
-                    let selection = picker.selected_model(index);
-                    self.model_picker = None;
-                    selection
-                        .map(AppAction::SelectModel)
-                        .unwrap_or(AppAction::None)
-                }
-                ModelPickerAction::Cancel => {
-                    self.model_picker = None;
-                    AppAction::None
-                }
-                ModelPickerAction::None => AppAction::None,
-            };
-        }
-
-        if let Some(picker) = self.agent_picker.as_mut() {
-            return match picker.handle_event(event) {
-                AgentPickerAction::Select(thread_id) => {
-                    self.agent_picker = None;
-                    AppAction::SwitchThread(thread_id)
-                }
-                AgentPickerAction::Cancel => {
-                    self.agent_picker = None;
-                    AppAction::None
-                }
-                AgentPickerAction::None => AppAction::None,
-            };
-        }
-
-        // Vim query input is owned by the composer and must precede popups, global shortcuts,
-        // and submission handling. Query paste edits the ephemeral query editor, never the draft.
-        let vim_query_owns_event = self.composer.vim_search_active()
-            || matches!(&event, Event::Key(key) if self.composer.vim_search_wants_key(*key));
-        if vim_query_owns_event {
-            match event {
-                Event::Key(key) => {
-                    let action = self.composer.handle_key_event(key);
-                    return self.map_composer_action(action);
-                }
-                Event::Paste(text) => {
-                    self.composer.handle_paste(&text);
-                    return AppAction::None;
-                }
-                _ => {}
-            }
-        }
-
-        if self.composer.file_search_popup_active() {
-            let action = self.composer.handle_file_search_popup_event(&event);
-            match action {
-                crate::bottom_pane::FileSearchPopupAction::Pass => {}
-                crate::bottom_pane::FileSearchPopupAction::Consumed => {
-                    if !matches!(
-                        event,
-                        Event::Key(key) if key.code == KeyCode::Enter
-                    ) {
-                        return AppAction::None;
-                    }
-                }
-                crate::bottom_pane::FileSearchPopupAction::Cancel
-                | crate::bottom_pane::FileSearchPopupAction::Complete => {
-                    return AppAction::None;
-                }
-            }
-        }
-
-        if self.composer.skill_popup_active() {
-            let action = self.composer.handle_skill_popup_event(&event);
-            match action {
-                crate::bottom_pane::SkillPopupAction::Pass => {}
-                crate::bottom_pane::SkillPopupAction::Consumed => return AppAction::None,
-                crate::bottom_pane::SkillPopupAction::Cancel
-                | crate::bottom_pane::SkillPopupAction::Complete => return AppAction::None,
-            }
-        }
-
-        if self.composer.command_popup_active() {
-            let action = self.composer.handle_command_popup_event(&event);
-            match action {
-                CommandPopupAction::Pass => {}
-                CommandPopupAction::Consumed => return AppAction::None,
-                CommandPopupAction::Cancel => {
-                    return AppAction::None;
-                }
-                CommandPopupAction::Complete(command) => {
-                    self.complete_slash_command(command);
-                    return AppAction::None;
-                }
-                CommandPopupAction::Execute(command) => {
-                    self.composer.replace(format!("/{}", command.command()));
-                    self.clear_command_popup();
-                    if let Some(action) = self.run_local_command() {
-                        return action;
-                    }
-                    let action = self
-                        .composer
-                        .handle_key_event(crossterm::event::KeyEvent::new(
-                            KeyCode::Enter,
-                            KeyModifiers::NONE,
-                        ));
-                    return self.map_composer_action(action);
-                }
-            }
-        }
-
-        if self.composer.history_search_active() {
-            if let Event::Key(key) = event {
-                let action = self.composer.handle_key_event(key);
-                return self.map_composer_action(action);
-            }
-            return AppAction::None;
-        }
-
-        if let Event::Key(key) = event {
-            if self.composer.should_handle_vim_insert_escape(key) {
-                let action = self.composer.handle_key_event(key);
-                return self.map_composer_action(action);
-            }
-        }
-
-        match event {
-            Event::Key(key) => self.handle_key_event(key),
-            Event::Paste(text) => {
-                self.composer.handle_paste(&text);
-                self.sync_command_popup();
-                AppAction::None
-            }
-            _ => AppAction::None,
+        let selection_scrolled = if let Some(picker) = self.resume_picker.as_ref() {
+            picker.tick_transcript_selection()
+        } else if self.pager_overlay.is_some() {
+            self.pager_overlay
+                .as_ref()
+                .is_some_and(PagerOverlay::tick_transcript_selection)
+        } else {
+            self.transcript_selection.tick_edge_scroll()
+        };
+        if selection_scrolled {
+            AppAction::ScheduleFrameIn(crate::tui::TARGET_FRAME_INTERVAL)
+        } else if self
+            .transcript_search
+            .take_history_request(self.scrollback_has_older_history)
+            || self
+                .pager_overlay
+                .as_ref()
+                .is_some_and(PagerOverlay::take_search_history_request)
+        {
+            AppAction::LoadOlderHistory
+        } else if self.transcript_search.needs_frame()
+            || self
+                .pager_overlay
+                .as_ref()
+                .is_some_and(PagerOverlay::search_needs_frame)
+            || self
+                .resume_picker
+                .as_ref()
+                .is_some_and(PickerState::transcript_search_needs_frame)
+        {
+            AppAction::ScheduleFrameIn(crate::tui::TARGET_FRAME_INTERVAL)
+        } else if let Some(delay) = self.transcript_composer_gap.tick(now) {
+            AppAction::ScheduleFrameIn(delay)
+        } else {
+            AppAction::None
         }
     }
 
@@ -637,6 +461,16 @@ impl App {
 
     pub(crate) fn scroll_bottom(&mut self) {
         self.transcript_scroll = 0;
+    }
+
+    pub(crate) fn finish_main_transcript_selection(&mut self, follow: bool) {
+        if follow {
+            self.scroll_bottom();
+        } else if let Some(distance) = self.transcript_selection.take_resume_distance_from_bottom()
+        {
+            self.transcript_scroll = distance;
+        }
+        self.transcript_selection.clear();
     }
 
     fn complete_slash_command(&mut self, command: SlashCommand) {
@@ -658,6 +492,10 @@ impl App {
         let text = self.composer.text().trim();
         let command = self.composer.command_from_prompt(text)?;
         let action = match command {
+            SlashCommand::Raw => {
+                self.toggle_raw_output_mode();
+                AppAction::None
+            }
             SlashCommand::Vim => {
                 let enabled = self.composer.toggle_vim_enabled();
                 self.projection
@@ -724,19 +562,23 @@ impl App {
     }
 
     fn open_status_pager(&mut self) {
+        self.dismiss_pager_overlay();
         let cwd = self.cwd.to_string_lossy();
-        self.pager_overlay = Some(PagerOverlay::status(
-            self.locale,
-            StatusFacts {
-                thread_id: self.thread_id.as_deref(),
-                model: self.model.as_deref(),
-                provider: self.model_provider.as_deref(),
-                effort: self.reasoning_effort.as_deref(),
-                permissions: self.permissions.as_deref(),
-                cwd: &cwd,
-                status: &self.status_value(),
-            },
-        ));
+        self.pager_overlay = Some(
+            PagerOverlay::status(
+                self.locale,
+                StatusFacts {
+                    thread_id: self.thread_id.as_deref(),
+                    model: self.model.as_deref(),
+                    provider: self.model_provider.as_deref(),
+                    effort: self.reasoning_effort.as_deref(),
+                    permissions: self.permissions.as_deref(),
+                    cwd: &cwd,
+                    status: &self.status_value(),
+                },
+            )
+            .with_keymap(self.runtime_keymap.transcript().clone()),
+        );
     }
 
     pub(crate) fn open_mcp_inventory(
@@ -745,12 +587,17 @@ impl App {
         detail: McpServerStatusDetail,
     ) {
         let lines = crate::history_cell::mcp_inventory_lines(&statuses, detail, self.locale);
-        self.pager_overlay = Some(PagerOverlay::new(
-            self.locale.mcp_inventory_title().to_string(),
-            lines,
-        ));
+        self.dismiss_pager_overlay();
+        self.pager_overlay = Some(
+            PagerOverlay::new(self.locale.mcp_inventory_title().to_string(), lines)
+                .with_keymap(self.runtime_keymap.transcript().clone()),
+        );
     }
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "app/transcript_presentation_tests.rs"]
+mod transcript_presentation_tests;

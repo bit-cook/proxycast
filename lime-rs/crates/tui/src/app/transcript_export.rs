@@ -309,6 +309,8 @@ pub(crate) fn render_markdown_transcript(entries: &[TranscriptEntry]) -> Result<
             | EntryKind::Mcp
             | EntryKind::MultiAgent
             | EntryKind::Tool
+            | EntryKind::Warning
+            | EntryKind::Error
             | EntryKind::System => "Activity",
         };
         markdown.push_str(&format!("\n## {heading}\n\n"));
@@ -420,6 +422,8 @@ mod tests {
             streaming: false,
             status: None,
             summary: Vec::new(),
+            activity_group: None,
+            activity_detail: None,
         }
     }
 

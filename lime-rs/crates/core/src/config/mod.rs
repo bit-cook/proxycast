@@ -10,6 +10,7 @@ mod hot_reload;
 mod import;
 mod path_utils;
 mod tool_execution;
+mod tui_keymap;
 mod types;
 mod yaml;
 
@@ -26,6 +27,10 @@ pub use tool_execution::{
     ToolExecutionNetworkRuleTargetConfig, ToolExecutionOverrideConfig, ToolExecutionPolicyConfig,
     ToolExecutionRestrictionProfileConfig, ToolExecutionSandboxProfileConfig,
     ToolExecutionWarningPolicyConfig,
+};
+pub use tui_keymap::{
+    KeybindingSpec, KeybindingsSpec, TuiAgentsKeymap, TuiConfig, TuiGlobalKeymap, TuiKeymap,
+    TuiPagerKeymap, MAX_FUNCTION_KEY,
 };
 pub use types::{
     generate_secure_api_key, AmpConfig, AmpModelMapping, ApiKeyEntry, AsrCredentialEntry,

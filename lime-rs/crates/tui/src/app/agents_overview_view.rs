@@ -12,7 +12,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::path::PathBuf;
 
 use crate::key_hint::is_plain_text_key_event;
-use crate::keymap::AgentsKeymap;
+use crate::keymap::{AgentsKeymap, AgentsKeymapAction, KeyChordMatcher, KeymapMatch};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum AgentsOverviewGroup {
@@ -92,10 +92,19 @@ pub(crate) struct AgentsOverviewView {
     input: String,
     input_mode: Option<AgentsOverviewInputMode>,
     agents_keymap: AgentsKeymap,
+    key_chord_matcher: KeyChordMatcher,
 }
 
 impl AgentsOverviewView {
     pub(crate) fn new(rows: Vec<AgentsOverviewRow>, selected_thread_id: Option<&str>) -> Self {
+        Self::new_with_keymap(rows, selected_thread_id, AgentsKeymap::default())
+    }
+
+    pub(crate) fn new_with_keymap(
+        rows: Vec<AgentsOverviewRow>,
+        selected_thread_id: Option<&str>,
+        agents_keymap: AgentsKeymap,
+    ) -> Self {
         let mut view = Self {
             rows,
             selected: 0,
@@ -104,7 +113,8 @@ impl AgentsOverviewView {
             status_grouping: false,
             input: String::new(),
             input_mode: None,
-            agents_keymap: AgentsKeymap,
+            agents_keymap,
+            key_chord_matcher: KeyChordMatcher::default(),
         };
         let visible = view.visible_rows();
         view.selected = selected_thread_id
@@ -292,9 +302,13 @@ impl AgentsOverviewView {
             }
             return AgentsOverviewAction::Cancel;
         }
+        let keymap_match = self
+            .agents_keymap
+            .dispatch(&mut self.key_chord_matcher, key);
         if (key.code == KeyCode::Char('/') && key.modifiers.is_empty())
-            || self.agents_keymap.search(key)
+            || keymap_match == KeymapMatch::Completed(AgentsKeymapAction::Search)
         {
+            self.key_chord_matcher.reset();
             self.searching = !self.searching;
             if !self.searching {
                 self.search.clear();
@@ -323,26 +337,23 @@ impl AgentsOverviewView {
                 .min(self.visible_rows().len().saturating_sub(1));
             return AgentsOverviewAction::None;
         }
-        match key.code {
-            KeyCode::Up | KeyCode::Char('k') => self.move_selection(false),
-            KeyCode::Down | KeyCode::Char('j') => self.move_selection(true),
-            KeyCode::Enter => return AgentsOverviewAction::Select,
-            KeyCode::Char('o') if self.agents_keymap.resume(key) => {
+        match keymap_match {
+            KeymapMatch::Completed(AgentsKeymapAction::Resume) => {
                 return AgentsOverviewAction::OpenResumePicker;
             }
-            KeyCode::Char('n') if self.agents_keymap.new_task(key) => {
+            KeymapMatch::Completed(AgentsKeymapAction::NewTask) => {
                 self.input.clear();
                 self.input_mode = Some(AgentsOverviewInputMode::NewTask);
                 return AgentsOverviewAction::None;
             }
-            KeyCode::Char('r') if self.agents_keymap.rename(key) => {
+            KeymapMatch::Completed(AgentsKeymapAction::Rename) => {
                 if let Some(row) = self.selected_row() {
                     self.input = row.thread.name.clone().unwrap_or_default();
                     self.input_mode = Some(AgentsOverviewInputMode::Rename);
                 }
                 return AgentsOverviewAction::None;
             }
-            KeyCode::Char('x') if self.agents_keymap.stop(key) => {
+            KeymapMatch::Completed(AgentsKeymapAction::Stop) => {
                 if let Some(row) = self.selected_row() {
                     if matches!(row.thread.status, ThreadStatus::Active { .. }) {
                         return AgentsOverviewAction::Stop {
@@ -352,13 +363,22 @@ impl AgentsOverviewView {
                 }
                 return AgentsOverviewAction::None;
             }
-            KeyCode::Char('s') if self.agents_keymap.toggle_grouping(key) => {
+            KeymapMatch::Completed(AgentsKeymapAction::ToggleGrouping) => {
                 self.status_grouping = !self.status_grouping;
                 self.selected = self
                     .selected
                     .min(self.visible_rows().len().saturating_sub(1));
                 return AgentsOverviewAction::None;
             }
+            KeymapMatch::Completed(AgentsKeymapAction::Search)
+            | KeymapMatch::Pending
+            | KeymapMatch::Cancelled => return AgentsOverviewAction::None,
+            KeymapMatch::PassThrough => {}
+        }
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => self.move_selection(false),
+            KeyCode::Down | KeyCode::Char('j') => self.move_selection(true),
+            KeyCode::Enter => return AgentsOverviewAction::Select,
             KeyCode::Char('r') if key.modifiers.is_empty() => {
                 return AgentsOverviewAction::Refresh;
             }

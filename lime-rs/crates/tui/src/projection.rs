@@ -1,14 +1,15 @@
 use agent_protocol::response_item::MessagePhase;
 use app_server_protocol::protocol::v2::{
-    CollabAgentToolCallStatus, CommandExecutionStatus, DynamicToolCallStatus, HookRunStatus,
-    McpToolCallStatus, PatchApplyStatus, PatchChangeKind, ServerNotification, Thread, ThreadItem,
-    TurnStatus, UserInput,
+    CollabAgentToolCallStatus, CommandAction, CommandExecutionSource, CommandExecutionStatus,
+    DynamicToolCallStatus, HookRunStatus, McpToolCallStatus, PatchApplyStatus, PatchChangeKind,
+    ServerNotification, Thread, ThreadItem, TurnStatus, UserInput,
 };
 use std::collections::{HashMap, HashSet};
 
 use crate::history_cell::{
-    compact_text, computer_activity_summary, invocation_text as mcp_invocation_text,
-    is_computer_activity, summary as mcp_summary, web_search_detail,
+    compact_text, computer_activity_facts, computer_activity_summary,
+    invocation_text as mcp_invocation_text, is_computer_activity, summary as mcp_summary,
+    web_search_detail, ComputerActivityFacts,
 };
 use crate::history_filter::{
     filter_review_mode_items, filter_review_mode_items_with_state, filter_user_message_ids,
@@ -44,6 +45,8 @@ pub(crate) enum EntryKind {
     Plan,
     MultiAgent,
     Tool,
+    Warning,
+    Error,
     System,
 }
 
@@ -54,6 +57,49 @@ pub(crate) enum EntryStatus {
     Failed,
     Declined,
     Interrupted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ActivityGroupKind {
+    Exploration,
+    Computer,
+}
+
+/// Render-only grouping key derived from canonical item facts and a canonical turn boundary.
+///
+/// The key never crosses the App Server protocol or persistence boundary. Transcript surfaces use
+/// it only to combine adjacent compatible activities while retaining every canonical item id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ActivityGroupKey {
+    pub(crate) kind: ActivityGroupKind,
+    pub(crate) scope: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ActivityDetail {
+    Exploration {
+        actions: Vec<CommandAction>,
+        exit_code: Option<i32>,
+    },
+    Computer(ComputerActivityFacts),
+    /// Transcript-only reasoning may stay inside the preceding activity when this canonical
+    /// turn scope matches. The text remains owned by the reasoning entry itself.
+    Reasoning {
+        scope: String,
+    },
+}
+
+// `CommandAction` contains only strings and optional strings, but the protocol type intentionally
+// derives only `PartialEq`. The render-only projection can still promise equivalence safely.
+impl Eq for ActivityDetail {}
+
+impl ActivityGroupKey {
+    pub(crate) fn new(kind: ActivityGroupKind, scope: impl Into<String>) -> Self {
+        Self {
+            kind,
+            scope: scope.into(),
+        }
+    }
 }
 
 impl EntryStatus {
@@ -77,6 +123,10 @@ pub(crate) struct TranscriptEntry {
     pub(crate) status: Option<EntryStatus>,
     /// Stable, display-ready facts derived from the canonical item payload.
     pub(crate) summary: Vec<String>,
+    /// Adjacent activity entries may share a disclosure group only when this full key matches.
+    pub(crate) activity_group: Option<ActivityGroupKey>,
+    /// Structured canonical facts used by grouped compact presentation.
+    pub(crate) activity_detail: Option<ActivityDetail>,
 }
 
 /// Completion metadata is attached to the last visible item of a completed turn.
@@ -93,6 +143,13 @@ pub(crate) struct CompletionBoundary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CompletionMetadata {
     pub(crate) elapsed_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct HistoryItemGroup {
+    pub(crate) items: Vec<ThreadItem>,
+    pub(crate) activity_scope: Option<String>,
+    pub(crate) completion: Option<CompletionMetadata>,
 }
 
 #[derive(Debug, Default)]
@@ -209,8 +266,12 @@ impl ConversationProjection {
         self.status = status.into();
     }
 
-    pub(crate) fn add_system_message(&mut self, message: impl Into<String>) {
-        self.push_system(message.into());
+    pub(crate) fn add_warning_message(&mut self, message: impl Into<String>) {
+        self.push_notice(EntryKind::Warning, message.into());
+    }
+
+    pub(crate) fn add_error_message(&mut self, message: impl Into<String>) {
+        self.push_notice(EntryKind::Error, message.into());
     }
 
     pub(crate) fn start_turn(&mut self, turn_id: String) {
@@ -257,19 +318,29 @@ impl ConversationProjection {
     /// hiding a canonical user message cannot move a separator onto a previous visible item.
     pub(crate) fn prepend_grouped_items_with_hidden_ids(
         &mut self,
-        groups: impl IntoIterator<Item = (Vec<ThreadItem>, Option<CompletionMetadata>)>,
+        groups: impl IntoIterator<Item = HistoryItemGroup>,
         hidden_ids: &HashSet<String>,
     ) {
         let mut older = Vec::new();
         let mut boundaries = Vec::new();
-        for (items, completion) in groups {
+        for group in groups {
+            let HistoryItemGroup {
+                items,
+                activity_scope,
+                completion,
+            } = group;
             let final_entry_id = items
                 .last()
                 .and_then(|item| project_item(item, false).map(|entry| entry.id));
             let filtered = filter_user_message_ids(&filter_review_mode_items(&items), hidden_ids);
             for item in filtered {
                 self.record_assistant_phase(&item);
-                if let Some(entry) = project_item(&item, false) {
+                if let Some(entry) = project_item_with_scope(
+                    &item,
+                    false,
+                    WebSearchLifecycle::Historical,
+                    activity_scope.as_deref(),
+                ) {
                     if !self.entries.iter().any(|current| current.id == entry.id)
                         && !older
                             .iter()
@@ -317,6 +388,7 @@ impl ConversationProjection {
 
         let hidden_user_messages = hidden_user_message_ids(&thread.turns);
         for turn in thread.turns {
+            let activity_scope = turn.id.clone();
             if matches!(
                 turn.status,
                 TurnStatus::Completed | TurnStatus::Failed | TurnStatus::Interrupted
@@ -330,14 +402,27 @@ impl ConversationProjection {
             let final_entry_id = (turn.status == TurnStatus::Completed)
                 .then(|| turn.items.last())
                 .flatten()
-                .and_then(|item| project_item(item, false).map(|entry| entry.id));
+                .and_then(|item| {
+                    project_item_with_scope(
+                        item,
+                        false,
+                        WebSearchLifecycle::Historical,
+                        Some(&activity_scope),
+                    )
+                    .map(|entry| entry.id)
+                });
             for item in turn.items {
                 self.update_review_mode(&item);
                 self.record_assistant_phase(&item);
                 if user_message_id(&item).is_some_and(|id| hidden_user_messages.contains(id)) {
                     continue;
                 }
-                if let Some(entry) = project_item(&item, false) {
+                if let Some(entry) = project_item_with_scope(
+                    &item,
+                    false,
+                    WebSearchLifecycle::Historical,
+                    Some(&activity_scope),
+                ) {
                     self.remember_reasoning_status(turn.id.as_str(), &entry);
                     self.replace_entry(entry);
                 }
@@ -383,7 +468,11 @@ impl ConversationProjection {
                         WebSearchLifecycle::Historical
                     }
                 };
-                self.merge_canonical_items(&params.turn.items, web_search_lifecycle);
+                self.merge_canonical_items(
+                    &params.turn.items,
+                    web_search_lifecycle,
+                    &params.turn.id,
+                );
                 if params.turn.status == TurnStatus::Completed {
                     let last_entry_id = params.turn.items.last().and_then(|item| {
                         project_item(item, false)
@@ -417,9 +506,12 @@ impl ConversationProjection {
                 if self.should_hide_realtime_item(&params.item) {
                     return;
                 }
-                if let Some(entry) =
-                    project_item_with_lifecycle(&params.item, true, WebSearchLifecycle::Started)
-                {
+                if let Some(entry) = project_item_with_scope(
+                    &params.item,
+                    true,
+                    WebSearchLifecycle::Started,
+                    Some(&params.turn_id),
+                ) {
                     self.remember_reasoning_status(&params.turn_id, &entry);
                     self.record_assistant_phase(&params.item);
                     self.replace_entry(entry);
@@ -429,9 +521,12 @@ impl ConversationProjection {
                 if self.should_hide_realtime_item(&params.item) {
                     return;
                 }
-                if let Some(entry) =
-                    project_item_with_lifecycle(&params.item, false, WebSearchLifecycle::Completed)
-                {
+                if let Some(entry) = project_item_with_scope(
+                    &params.item,
+                    false,
+                    WebSearchLifecycle::Completed,
+                    Some(&params.turn_id),
+                ) {
                     self.remember_reasoning_status(&params.turn_id, &entry);
                     self.record_assistant_phase(&params.item);
                     self.replace_entry(entry);
@@ -491,6 +586,8 @@ impl ConversationProjection {
                     streaming: true,
                     status: Some(EntryStatus::Running),
                     summary: Vec::new(),
+                    activity_group: None,
+                    activity_detail: None,
                 });
             }
             ServerNotification::TurnDiffUpdated(params) => {
@@ -504,6 +601,8 @@ impl ConversationProjection {
                     streaming: true,
                     status: Some(EntryStatus::Running),
                     summary: Vec::new(),
+                    activity_group: None,
+                    activity_detail: None,
                 });
             }
             ServerNotification::TurnPlanUpdated(params) => {
@@ -523,10 +622,12 @@ impl ConversationProjection {
                     streaming: true,
                     status: Some(EntryStatus::Running),
                     summary: Vec::new(),
+                    activity_group: None,
+                    activity_detail: None,
                 });
             }
             ServerNotification::Warning(params) => {
-                self.push_system(format!("warning: {}", params.message));
+                self.push_notice(EntryKind::Warning, params.message);
             }
             ServerNotification::Error(params) => {
                 self.reasoning_status = None;
@@ -535,7 +636,7 @@ impl ConversationProjection {
                 } else {
                     "failed".to_string()
                 };
-                self.push_system(params.error.message);
+                self.push_notice(EntryKind::Error, params.error.message);
             }
             ServerNotification::HookStarted(params) => {
                 self.start_hook(params.turn_id, params.run);
@@ -589,6 +690,8 @@ impl ConversationProjection {
             streaming: false,
             status: Some(status),
             summary: crate::history_cell::output_details(&run),
+            activity_group: None,
+            activity_detail: None,
         });
     }
 
@@ -606,6 +709,11 @@ impl ConversationProjection {
             }
             entry.text.push_str(&delta);
             entry.streaming = true;
+            if kind == EntryKind::Reasoning && entry.activity_detail.is_none() {
+                entry.activity_detail = Some(ActivityDetail::Reasoning {
+                    scope: turn_id.clone(),
+                });
+            }
             let reasoning_status = (active_turn && kind == EntryKind::Reasoning)
                 .then(|| latest_summary_line(&entry.text))
                 .flatten();
@@ -622,6 +730,10 @@ impl ConversationProjection {
             status: (kind == EntryKind::Command || kind == EntryKind::Plan)
                 .then_some(EntryStatus::Running),
             summary: Vec::new(),
+            activity_group: None,
+            activity_detail: (kind == EntryKind::Reasoning).then_some(ActivityDetail::Reasoning {
+                scope: turn_id.clone(),
+            }),
         };
         if active_turn {
             self.remember_reasoning_status(&turn_id, &entry);
@@ -655,6 +767,8 @@ impl ConversationProjection {
             streaming: true,
             status: None,
             summary: Vec::new(),
+            activity_group: None,
+            activity_detail: Some(ActivityDetail::Reasoning { scope: turn_id }),
         });
     }
 
@@ -697,6 +811,7 @@ impl ConversationProjection {
         &mut self,
         items: &[ThreadItem],
         web_search_lifecycle: WebSearchLifecycle,
+        activity_scope: &str,
     ) {
         let initial_review_mode = self.review_mode;
         let filtered = filter_review_mode_items_with_state(items, initial_review_mode);
@@ -706,7 +821,9 @@ impl ConversationProjection {
         }
         let projected = filtered
             .iter()
-            .filter_map(|item| project_item_with_lifecycle(item, false, web_search_lifecycle))
+            .filter_map(|item| {
+                project_item_with_scope(item, false, web_search_lifecycle, Some(activity_scope))
+            })
             .collect::<Vec<_>>();
 
         for (index, entry) in projected.into_iter().enumerate() {
@@ -739,14 +856,20 @@ impl ConversationProjection {
         }
     }
 
-    fn push_system(&mut self, text: String) {
+    fn push_notice(&mut self, kind: EntryKind, text: String) {
+        debug_assert!(matches!(
+            kind,
+            EntryKind::Warning | EntryKind::Error | EntryKind::System
+        ));
         self.entries.push(TranscriptEntry {
             id: format!("system-{}", self.entries.len()),
-            kind: EntryKind::System,
+            kind,
             text,
             streaming: false,
             status: None,
             summary: Vec::new(),
+            activity_group: None,
+            activity_detail: None,
         });
     }
 
@@ -821,6 +944,28 @@ fn project_item_with_lifecycle(
     streaming: bool,
     web_search_lifecycle: WebSearchLifecycle,
 ) -> Option<TranscriptEntry> {
+    project_item_with_scope(item, streaming, web_search_lifecycle, None)
+}
+
+fn project_item_with_scope(
+    item: &ThreadItem,
+    streaming: bool,
+    web_search_lifecycle: WebSearchLifecycle,
+    activity_scope: Option<&str>,
+) -> Option<TranscriptEntry> {
+    let activity_group = activity_scope
+        .and_then(|scope| activity_group_kind(item).map(|kind| ActivityGroupKey::new(kind, scope)));
+    let activity_detail = activity_group
+        .as_ref()
+        .and_then(|_| project_activity_detail(item))
+        .or_else(|| {
+            (matches!(item, ThreadItem::Reasoning { .. }))
+                .then(|| activity_scope)
+                .flatten()
+                .map(|scope| ActivityDetail::Reasoning {
+                    scope: scope.to_string(),
+                })
+        });
     let (id, kind, text, status, summary) = match item {
         ThreadItem::UserMessage {
             id,
@@ -1079,7 +1224,59 @@ fn project_item_with_lifecycle(
         streaming,
         status,
         summary,
+        activity_group,
+        activity_detail,
     })
+}
+
+fn activity_group_kind(item: &ThreadItem) -> Option<ActivityGroupKind> {
+    match item {
+        ThreadItem::CommandExecution {
+            source,
+            command_actions,
+            ..
+        } if *source != CommandExecutionSource::UserShell
+            && !command_actions.is_empty()
+            && command_actions.iter().all(|action| {
+                matches!(
+                    action,
+                    CommandAction::Read { .. }
+                        | CommandAction::ListFiles { .. }
+                        | CommandAction::Search { .. }
+                )
+            }) =>
+        {
+            Some(ActivityGroupKind::Exploration)
+        }
+        ThreadItem::McpToolCall { server, .. } if is_computer_activity(server) => {
+            Some(ActivityGroupKind::Computer)
+        }
+        _ => None,
+    }
+}
+
+fn project_activity_detail(item: &ThreadItem) -> Option<ActivityDetail> {
+    match item {
+        ThreadItem::CommandExecution {
+            command_actions,
+            exit_code,
+            ..
+        } => Some(ActivityDetail::Exploration {
+            actions: command_actions.clone(),
+            exit_code: *exit_code,
+        }),
+        ThreadItem::McpToolCall {
+            arguments,
+            result,
+            error,
+            ..
+        } => Some(ActivityDetail::Computer(computer_activity_facts(
+            arguments,
+            result.as_deref(),
+            error.as_ref(),
+        ))),
+        _ => None,
+    }
 }
 
 fn command_text(command: &str, output: Option<&str>, streaming: bool) -> String {

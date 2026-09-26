@@ -61,6 +61,14 @@ impl App {
                 code: KeyCode::Esc,
                 kind: KeyEventKind::Press,
                 ..
+            } if self.transcript_scroll > 0 => {
+                self.scroll_bottom();
+                AppAction::None
+            }
+            KeyEvent {
+                code: KeyCode::Esc,
+                kind: KeyEventKind::Press,
+                ..
             } if super::interrupts::should_interrupt_turn(self) => AppAction::Interrupt,
             KeyEvent {
                 code: KeyCode::Char(value),
@@ -79,18 +87,6 @@ impl App {
                 ..
             } if modifiers.contains(KeyModifiers::CONTROL) && value.eq_ignore_ascii_case(&'o') => {
                 AppAction::CopyLastResponse
-            }
-            KeyEvent {
-                code: KeyCode::Char(value),
-                modifiers,
-                kind: KeyEventKind::Press,
-                ..
-            } if modifiers.contains(KeyModifiers::CONTROL) && value.eq_ignore_ascii_case(&'t') => {
-                self.composer.clear_command_popup();
-                let pager = PagerOverlay::transcript(self.locale);
-                pager.set_older_history_available(self.scrollback_has_older_history);
-                self.pager_overlay = Some(pager);
-                AppAction::None
             }
             KeyEvent {
                 code: KeyCode::Up,

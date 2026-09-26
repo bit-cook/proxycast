@@ -17,20 +17,24 @@ use std::time::Instant;
 pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
     if let Some(picker) = app.resume_picker.as_ref() {
+        app.transcript_follow_control.clear();
         frame.render_widget(Clear, area);
         crate::resume_picker::render_with_locale(frame, picker, app.locale);
         return;
     }
     if let Some(pager) = app.pager_overlay.as_ref() {
-        let transcript_lines = if pager.is_transcript() {
-            crate::app::history_ui::render_transcript_content_lines(app, area.width, true)
+        app.transcript_follow_control.clear();
+        if pager.is_transcript() {
+            let transcript =
+                crate::app::history_ui::render_transcript_pager_content(app, area.width);
+            pager.render_transcript(frame, area, app.locale, &transcript);
         } else {
-            Vec::new()
-        };
-        pager.render(frame, area, app.locale, &transcript_lines);
+            pager.render(frame, area, app.locale, &[]);
+        }
         return;
     }
     if let Some(picker) = app.export_picker.as_ref() {
+        app.transcript_follow_control.clear();
         crate::app::transcript_export::render_picker(frame, area, picker, app.locale);
         return;
     }
@@ -59,7 +63,44 @@ pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
     } else {
         render_composer(frame, chunks.input, app);
     }
-    bottom_pane::render_footer(frame, chunks.footer, app);
+    let follow_area = (!app.bottom_pane.is_active()
+        && !app.composer.command_popup_active()
+        && !app.composer.file_search_popup_active()
+        && !app.composer.skill_popup_active()
+        && app.model_picker.is_none()
+        && app.agents_overview.is_none()
+        && app.agent_picker.is_none())
+    .then(|| Rect::new(chunks.input.x, chunks.input.y, chunks.input.width, 1));
+    if app.transcript_footer.render_search_query(
+        frame,
+        follow_area,
+        app.locale,
+        &app.transcript_search,
+    ) || app
+        .transcript_composer_gap
+        .render(frame, follow_area, app.locale)
+    {
+        app.transcript_follow_control.clear();
+    } else {
+        app.transcript_follow_control.render(
+            frame,
+            follow_area,
+            app.locale,
+            app.transcript_viewport.tail_visible(),
+            app.transcript_viewport.unseen_activity(),
+        );
+    }
+    if app.bottom_pane.is_active()
+        || !app.transcript_footer.render_status(
+            frame,
+            chunks.footer,
+            app.locale,
+            &app.transcript_search,
+            app.transcript_selection.is_active(),
+        )
+    {
+        bottom_pane::render_footer(frame, chunks.footer, app);
+    }
     if !app.bottom_pane.is_active() {
         if let Some(popup) = app.composer.command_popup() {
             command_popup::render(frame, chunks.input, popup, app.locale);
@@ -143,6 +184,13 @@ fn screen_chunks(
                 .max(1),
         )
     };
+    let footer_height = if app.bottom_pane.is_active() {
+        app.bottom_pane
+            .footer_required_height(app.locale, usize::from(area.width.saturating_sub(1)))
+    } else {
+        1
+    }
+    .min(area.height.saturating_sub(1).max(1));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -150,7 +198,7 @@ fn screen_chunks(
             Constraint::Length(status_height),
             Constraint::Length(preview_height),
             Constraint::Length(input_height),
-            Constraint::Length(1),
+            Constraint::Length(footer_height),
         ])
         .split(area);
     ScreenChunks {
@@ -213,12 +261,109 @@ pub(crate) fn transcript_page_size(width: u16, height: u16, app: &App) -> usize 
 }
 
 fn render_transcript(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let lines = crate::app::history_ui::render_transcript_content_lines(app, area.width, false);
-    let paragraph = HyperlinkParagraph::new(&lines);
-    let scroll = app
-        .transcript_viewport
-        .resolve(&lines, area, app.transcript_scroll);
-    frame.render_widget(paragraph.scroll(scroll), area);
+    let current = crate::app::history_ui::render_main_transcript_content(app, area.width, false);
+    let current_lines = &current.lines;
+    let snapshot = app.transcript_selection.snapshot_lines();
+    app.transcript_search.prepare(
+        current_lines,
+        area.width,
+        &std::collections::HashSet::new(),
+        snapshot.is_some(),
+    );
+    let search_lines = (app.transcript_search.is_active() && snapshot.is_none())
+        .then(|| app.transcript_search.highlighted_lines(current_lines));
+    let lines = snapshot
+        .as_ref()
+        .map(|lines| lines.as_slice())
+        .or(search_lines.as_deref())
+        .unwrap_or(current_lines);
+    let prompt_source = app
+        .transcript_prompt_header
+        .source(&current.prompt_header, snapshot.is_some());
+    let initial_scroll = snapshot.as_ref().map_or_else(
+        || {
+            if app.transcript_search.is_active() {
+                return app.transcript_search.resolve_main_scroll(
+                    current_lines,
+                    area.width,
+                    area.height,
+                );
+            }
+            usize::from(
+                app.transcript_viewport
+                    .preview(current_lines, area, app.transcript_scroll),
+            )
+        },
+        |_| app.transcript_selection.frozen_scroll(area, 0),
+    );
+    let reserved_body = Rect::new(
+        area.x,
+        area.y.saturating_add(1),
+        area.width,
+        area.height.saturating_sub(1),
+    );
+    let reserved_scroll = snapshot.as_ref().map_or_else(
+        || {
+            if app.transcript_search.is_active() {
+                return app.transcript_search.resolve_main_scroll(
+                    current_lines,
+                    reserved_body.width,
+                    reserved_body.height,
+                );
+            }
+            usize::from(app.transcript_viewport.preview(
+                current_lines,
+                reserved_body,
+                app.transcript_scroll,
+            ))
+        },
+        |_| {
+            app.transcript_selection
+                .frozen_scroll(reserved_body, initial_scroll)
+        },
+    );
+    let header = app.transcript_prompt_header.layout(
+        &prompt_source,
+        lines,
+        area,
+        initial_scroll,
+        reserved_scroll,
+    );
+    if let Some(line) = header.line {
+        frame.render_widget(
+            Paragraph::new(line),
+            Rect::new(area.x, area.y, area.width, /*height*/ 1),
+        );
+    }
+    let body = header.body;
+    let frozen_scroll = header.scroll;
+    let current_height = HyperlinkParagraph::new(current_lines).line_count(area.width);
+    let current_max_scroll = current_height.saturating_sub(usize::from(body.height));
+    let scroll = if snapshot.is_some() {
+        let canonical_scroll =
+            app.transcript_viewport
+                .resolve_frozen_anchor(current_lines, body, frozen_scroll);
+        app.transcript_selection.note_resume_distance_from_bottom(
+            current_max_scroll.saturating_sub(usize::from(canonical_scroll)),
+        );
+        frozen_scroll
+    } else if app.transcript_search.is_active() {
+        app.transcript_search
+            .resolve_main_scroll(current_lines, body.width, body.height)
+    } else {
+        usize::from(
+            app.transcript_viewport
+                .resolve(current_lines, body, app.transcript_scroll),
+        )
+    };
+    let paragraph = HyperlinkParagraph::new(lines);
+    frame.render_widget(
+        paragraph.scroll(u16::try_from(scroll).unwrap_or(u16::MAX)),
+        body,
+    );
+    app.transcript_selection.update_layout(body, scroll, lines);
+    app.transcript_selection
+        .render_highlight(frame.buffer_mut());
 }
 
 #[cfg(test)]
@@ -233,7 +378,11 @@ fn transcript_scroll_offset(
 }
 
 fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let inner = area;
+    let inner = Rect {
+        y: area.y.saturating_add(1),
+        height: area.height.saturating_sub(1),
+        ..area
+    };
 
     let remote_count = app.composer.remote_image_urls().len();
     let mut image_lines = app.composer.remote_image_lines();
@@ -273,6 +422,7 @@ fn render_composer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
     let cursor = {
         let mut state = app.composer.textarea_state_mut();
+        app.composer.textarea().remember_rendered_area(text_area);
         let highlights = app
             .composer
             .history_search_highlight_ranges()
@@ -344,12 +494,12 @@ mod tests {
         let event = match event {
             Event::Key(key) => crate::tui::TuiEvent::Key(key),
             Event::Paste(text) => crate::tui::TuiEvent::Paste(text),
+            Event::Mouse(mouse) => crate::tui::TuiEvent::Mouse(mouse),
             Event::Resize(width, height) => {
                 crate::tui::TuiEvent::Resize(ratatui::layout::Size { width, height })
             }
             Event::FocusGained => crate::tui::TuiEvent::FocusGained,
             Event::FocusLost => crate::tui::TuiEvent::FocusLost,
-            _ => crate::tui::TuiEvent::Draw,
         };
         app.handle_tui_event(event, true)
     }
@@ -381,6 +531,609 @@ mod tests {
         app.attach_image(std::path::PathBuf::from("/tmp/one.png"));
         app.attach_image(std::path::PathBuf::from("/tmp/two.png"));
         assert_eq!(transcript_page_size(80, 10, &app), 4);
+    }
+
+    #[test]
+    fn transcript_follow_control_reports_activity_and_returns_to_latest() {
+        let mut app = App::default();
+        app.set_locale(Locale::EnUs);
+        app.projection.apply(ServerNotification::AgentMessageDelta(
+            AgentMessageDeltaNotification {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "assistant-1".to_string(),
+                delta: (0..14)
+                    .map(|index| format!("canonical row {index:02}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            },
+        ));
+        let mut terminal = Terminal::new(TestBackend::new(60, 10)).expect("terminal");
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        assert!(app.transcript_viewport.tail_visible());
+        assert!(!buffer_text(&terminal).contains("Back to bottom"));
+
+        app.scroll_up(4);
+        terminal.draw(|frame| render(frame, &app)).expect("pause");
+        assert!(!app.transcript_viewport.tail_visible());
+        assert!(buffer_text(&terminal).contains("Back to bottom"));
+        assert!(!buffer_text(&terminal).contains("New activity"));
+
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::ALT)),
+        );
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("raw repaint");
+        assert!(buffer_text(&terminal).contains("Back to bottom"));
+        assert!(!buffer_text(&terminal).contains("New activity"));
+
+        app.projection.apply(ServerNotification::AgentMessageDelta(
+            AgentMessageDeltaNotification {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "assistant-1".to_string(),
+                delta: "\nLATEST_CANONICAL_ROW".to_string(),
+            },
+        ));
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("activity repaint");
+        let paused = buffer_text(&terminal);
+        assert!(paused.contains("New activity"), "{paused}");
+        assert!(app.transcript_viewport.unseen_activity());
+
+        let area = app
+            .transcript_follow_control
+            .area()
+            .expect("follow control area");
+        for kind in [
+            crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+        ] {
+            dispatch_connected_input(
+                &mut app,
+                Event::Mouse(crossterm::event::MouseEvent {
+                    kind,
+                    column: area.x,
+                    row: area.y,
+                    modifiers: KeyModifiers::NONE,
+                }),
+            );
+        }
+        assert_eq!(app.transcript_scroll, 0);
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("latest repaint");
+        let latest = buffer_text(&terminal);
+        assert!(latest.contains("LATEST_CANONICAL_ROW"), "{latest}");
+        assert!(!latest.contains("Back to bottom"), "{latest}");
+        assert!(!app.transcript_viewport.unseen_activity());
+
+        app.scroll_up(4);
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("pause again");
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            ),
+            crate::app::AppAction::None
+        );
+        assert_eq!(app.transcript_scroll, 0);
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("escape repaint");
+        assert!(!buffer_text(&terminal).contains("Back to bottom"));
+    }
+
+    #[test]
+    fn transcript_follow_control_adapts_to_width_and_yields_to_composer_popup() {
+        let mut app = App::default();
+        app.set_locale(Locale::EnUs);
+        app.projection.apply(ServerNotification::AgentMessageDelta(
+            AgentMessageDeltaNotification {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "assistant-1".to_string(),
+                delta: (0..10)
+                    .map(|index| format!("row {index:02}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            },
+        ));
+        app.scroll_up(2);
+        let mut terminal = Terminal::new(TestBackend::new(12, 8)).expect("terminal");
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let narrow = buffer_text(&terminal);
+        assert!(narrow.contains("↓ Bottom"), "{narrow}");
+        assert!(app.transcript_follow_control.area().is_some());
+
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)),
+        );
+        assert!(app.composer.command_popup_active());
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("popup draw");
+        assert!(app.transcript_follow_control.area().is_none());
+    }
+
+    #[test]
+    fn transcript_copy_feedback_temporarily_owns_the_composer_gap() {
+        let mut app = App::default();
+        app.set_locale(Locale::EnUs);
+        app.projection.apply(ServerNotification::AgentMessageDelta(
+            AgentMessageDeltaNotification {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "assistant-1".to_string(),
+                delta: (0..12)
+                    .map(|index| format!("row {index:02}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            },
+        ));
+        app.scroll_up(3);
+        app.transcript_composer_gap
+            .show_copy_feedback(&Ok(crate::clipboard_copy::CopyStatus::Confirmed), 7);
+        let mut terminal = Terminal::new(TestBackend::new(60, 10)).expect("terminal");
+
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("feedback draw");
+        let feedback = buffer_text(&terminal);
+        assert!(feedback.contains("Copied 7 chars"), "{feedback}");
+        assert!(!feedback.contains("Back to bottom"), "{feedback}");
+        assert!(app.transcript_follow_control.area().is_none());
+
+        app.transcript_composer_gap.expire_for_test();
+        assert_eq!(
+            app.pre_draw_tick(Instant::now()),
+            crate::app::AppAction::None
+        );
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("follow draw");
+        assert!(buffer_text(&terminal).contains("Back to bottom"));
+        assert!(app.transcript_follow_control.area().is_some());
+    }
+
+    #[test]
+    fn main_transcript_selection_freezes_source_and_owns_copy_before_composer() {
+        let mut app = App::default();
+        app.set_locale(Locale::EnUs);
+        app.projection.apply(ServerNotification::AgentMessageDelta(
+            AgentMessageDeltaNotification {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "assistant-1".to_string(),
+                delta: (0..12)
+                    .map(|index| format!("canonical row {index:02}"))
+                    .chain(std::iter::once("SELECT_ME tail".to_string()))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            },
+        ));
+        let mut terminal = Terminal::new(TestBackend::new(60, 10)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let (column, row) = (0..buffer.area.height)
+            .find_map(|row| {
+                let text = (0..buffer.area.width)
+                    .map(|column| buffer[(column, row)].symbol())
+                    .collect::<String>();
+                text.find("SELECT_ME")
+                    .map(|column| (u16::try_from(column).expect("column"), row))
+            })
+            .expect("visible selection marker");
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Mouse(crossterm::event::MouseEvent {
+                    kind: crossterm::event::MouseEventKind::ScrollUp,
+                    column,
+                    row,
+                    modifiers: KeyModifiers::NONE,
+                }),
+            ),
+            crate::app::AppAction::ScrollRows(-3)
+        );
+        let mouse = |kind| {
+            Event::Mouse(crossterm::event::MouseEvent {
+                kind,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            })
+        };
+        for _ in 0..2 {
+            dispatch_connected_input(
+                &mut app,
+                mouse(crossterm::event::MouseEventKind::Down(
+                    crossterm::event::MouseButton::Left,
+                )),
+            );
+            dispatch_connected_input(
+                &mut app,
+                mouse(crossterm::event::MouseEventKind::Up(
+                    crossterm::event::MouseButton::Left,
+                )),
+            );
+        }
+        assert!(app.transcript_selection.is_active());
+
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("selected draw");
+        let selected_cells = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .filter(|cell| cell.modifier.contains(Modifier::REVERSED))
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>();
+        assert_eq!(selected_cells, "SELECT_ME");
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            ),
+            crate::app::AppAction::CopyTranscriptSelection {
+                text: "SELECT_ME".to_string(),
+                follow: false,
+                target: crate::app::TranscriptSelectionTarget::MainTranscript,
+            }
+        );
+        assert!(app.composer.is_empty());
+
+        app.projection.apply(ServerNotification::AgentMessageDelta(
+            AgentMessageDeltaNotification {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "assistant-1".to_string(),
+                delta: "\nNEW_TAIL_ACTIVITY".to_string(),
+            },
+        ));
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("frozen draw");
+        let frozen = buffer_text(&terminal);
+        assert!(frozen.contains("SELECT_ME tail"), "{frozen}");
+        assert!(!frozen.contains("NEW_TAIL_ACTIVITY"), "{frozen}");
+        assert!(app.transcript_viewport.unseen_activity());
+
+        app.finish_main_transcript_selection(false);
+        assert!(app.transcript_scroll > 0);
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("resumed reading draw");
+        assert!(!buffer_text(&terminal).contains("NEW_TAIL_ACTIVITY"));
+    }
+
+    #[test]
+    fn sticky_prompt_header_keeps_selection_rows_and_copy_position_stable() {
+        let mut app = App::default();
+        app.set_locale(Locale::EnUs);
+        apply_completed_message(
+            &mut app,
+            "turn-1",
+            ThreadItem::UserMessage {
+                id: "user-1".to_string(),
+                metadata: None,
+                client_id: None,
+                content: vec![UserInput::Text {
+                    text: "Explain the canonical transcript".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            },
+        );
+        apply_completed_message(
+            &mut app,
+            "turn-1",
+            ThreadItem::AgentMessage {
+                id: "assistant-1".to_string(),
+                metadata: None,
+                text: (0..10)
+                    .map(|index| format!("answer row {index:02}"))
+                    .chain(std::iter::once("SELECT_HEADER_ROW tail".to_string()))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                phase: None,
+                memory_citation: None,
+                delivery: None,
+            },
+        );
+        let mut terminal = Terminal::new(TestBackend::new(60, 10)).expect("terminal");
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let before = buffer_text(&terminal);
+        assert!(
+            before
+                .lines()
+                .next()
+                .is_some_and(|line| line.contains("Explain the canonical transcript")),
+            "{before}"
+        );
+        let buffer = terminal.backend().buffer();
+        let (column, row) = (0..buffer.area.height)
+            .find_map(|row| {
+                let text = (0..buffer.area.width)
+                    .map(|column| buffer[(column, row)].symbol())
+                    .collect::<String>();
+                text.find("SELECT_HEADER_ROW")
+                    .map(|column| (u16::try_from(column).expect("column"), row))
+            })
+            .expect("visible selection marker");
+        assert!(row > 0, "header row must stay outside transcript selection");
+        let mouse = |kind| {
+            Event::Mouse(crossterm::event::MouseEvent {
+                kind,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            })
+        };
+        for _ in 0..2 {
+            dispatch_connected_input(
+                &mut app,
+                mouse(crossterm::event::MouseEventKind::Down(
+                    crossterm::event::MouseButton::Left,
+                )),
+            );
+            dispatch_connected_input(
+                &mut app,
+                mouse(crossterm::event::MouseEventKind::Up(
+                    crossterm::event::MouseButton::Left,
+                )),
+            );
+        }
+        assert!(app.transcript_selection.is_active());
+
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("selected draw");
+        let selected = buffer_text(&terminal);
+        assert!(
+            selected
+                .lines()
+                .next()
+                .is_some_and(|line| line.contains("Explain the canonical transcript")),
+            "{selected}"
+        );
+        let selected_cells = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .filter(|cell| cell.modifier.contains(Modifier::REVERSED))
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>();
+        assert_eq!(selected_cells, "SELECT_HEADER_ROW");
+        assert_eq!(
+            dispatch_connected_input(
+                &mut app,
+                Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            ),
+            crate::app::AppAction::CopyTranscriptSelection {
+                text: "SELECT_HEADER_ROW".to_string(),
+                follow: false,
+                target: crate::app::TranscriptSelectionTarget::MainTranscript,
+            }
+        );
+        app.finish_main_transcript_selection(false);
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("copy position draw");
+        let after = buffer_text(&terminal);
+        assert!(
+            after
+                .lines()
+                .next()
+                .is_some_and(|line| line.contains("Explain the canonical transcript")),
+            "{after}"
+        );
+        assert!(after.contains("SELECT_HEADER_ROW tail"), "{after}");
+    }
+
+    #[test]
+    fn sticky_prompt_header_yields_at_turn_boundary_until_the_viewport_moves() {
+        let mut app = App::default();
+        app.set_locale(Locale::EnUs);
+        for (turn_id, item) in [
+            (
+                "turn-1",
+                ThreadItem::UserMessage {
+                    id: "user-1".to_string(),
+                    metadata: None,
+                    client_id: None,
+                    content: vec![UserInput::Text {
+                        text: "First question".to_string(),
+                        text_elements: Vec::new(),
+                    }],
+                },
+            ),
+            (
+                "turn-1",
+                ThreadItem::AgentMessage {
+                    id: "assistant-1".to_string(),
+                    metadata: None,
+                    text: "first answer".to_string(),
+                    phase: None,
+                    memory_citation: None,
+                    delivery: None,
+                },
+            ),
+            (
+                "turn-2",
+                ThreadItem::UserMessage {
+                    id: "user-2".to_string(),
+                    metadata: None,
+                    client_id: None,
+                    content: vec![UserInput::Text {
+                        text: "Second question".to_string(),
+                        text_elements: Vec::new(),
+                    }],
+                },
+            ),
+            (
+                "turn-2",
+                ThreadItem::AgentMessage {
+                    id: "assistant-2".to_string(),
+                    metadata: None,
+                    text: "answer two\nanswer three\nanswer four\nanswer five\nanswer six"
+                        .to_string(),
+                    phase: None,
+                    memory_citation: None,
+                    delivery: None,
+                },
+            ),
+        ] {
+            apply_completed_message(&mut app, turn_id, item);
+        }
+        let mut terminal = Terminal::new(TestBackend::new(40, 10)).expect("terminal");
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let first = buffer_text(&terminal);
+        assert!(
+            first
+                .lines()
+                .next()
+                .is_some_and(|line| line.contains("first answer")),
+            "{first}"
+        );
+        assert!(app.transcript_prompt_header.has_suppression());
+
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("stable draw");
+        assert_eq!(buffer_text(&terminal), first);
+        assert!(app.transcript_prompt_header.has_suppression());
+
+        app.scroll_up(1);
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("moved draw");
+        assert!(!app.transcript_prompt_header.has_suppression());
+        app.scroll_bottom();
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("returned draw");
+        assert_eq!(buffer_text(&terminal), first);
+        assert!(app.transcript_prompt_header.has_suppression());
+    }
+
+    #[test]
+    fn sticky_prompt_header_and_reading_anchor_survive_prepend_and_reflow() {
+        let mut app = App::default();
+        app.set_locale(Locale::EnUs);
+        apply_completed_message(
+            &mut app,
+            "turn-current",
+            ThreadItem::UserMessage {
+                id: "user-current".to_string(),
+                metadata: None,
+                client_id: None,
+                content: vec![UserInput::Text {
+                    text: "Current question with enough context to truncate safely".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            },
+        );
+        apply_completed_message(
+            &mut app,
+            "turn-current",
+            ThreadItem::AgentMessage {
+                id: "assistant-current".to_string(),
+                metadata: None,
+                text: (0..16)
+                    .map(|index| format!("current row {index:02} stable anchor text"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                phase: None,
+                memory_citation: None,
+                delivery: None,
+            },
+        );
+        app.scroll_up(4);
+        let mut wide = Terminal::new(TestBackend::new(60, 10)).expect("wide terminal");
+
+        wide.draw(|frame| render(frame, &app)).expect("wide draw");
+        let before = buffer_text(&wide);
+        let anchor = before
+            .lines()
+            .skip(1)
+            .find_map(|line| {
+                line.find("current row ").map(|start| {
+                    line[start..]
+                        .split_whitespace()
+                        .take(3)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+            })
+            .expect("visible canonical anchor");
+        assert!(
+            before
+                .lines()
+                .next()
+                .is_some_and(|line| line.contains("Current question")),
+            "{before}"
+        );
+
+        app.projection.prepend_items([
+            ThreadItem::UserMessage {
+                id: "user-older".to_string(),
+                metadata: None,
+                client_id: None,
+                content: vec![UserInput::Text {
+                    text: "Older question".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            },
+            ThreadItem::AgentMessage {
+                id: "assistant-older".to_string(),
+                metadata: None,
+                text: "older answer".to_string(),
+                phase: None,
+                memory_citation: None,
+                delivery: None,
+            },
+        ]);
+        wide.draw(|frame| render(frame, &app))
+            .expect("prepend draw");
+        assert_eq!(buffer_text(&wide), before);
+
+        let mut narrow = Terminal::new(TestBackend::new(30, 10)).expect("narrow terminal");
+        narrow
+            .draw(|frame| render(frame, &app))
+            .expect("reflow draw");
+        let reflowed = buffer_text(&narrow);
+        assert!(
+            reflowed
+                .lines()
+                .next()
+                .is_some_and(|line| line.starts_with("Current question")),
+            "{reflowed}"
+        );
+        assert!(reflowed.contains(&anchor), "missing {anchor}: {reflowed}");
+    }
+
+    fn apply_completed_message(app: &mut App, turn_id: &str, item: ThreadItem) {
+        app.projection.apply(ServerNotification::ItemCompleted(
+            ItemCompletedNotification {
+                item,
+                thread_id: "thread-1".to_string(),
+                turn_id: turn_id.to_string(),
+                completed_at_ms: 1,
+            },
+        ));
     }
 
     fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
@@ -1427,6 +2180,13 @@ mod tests {
         assert!(text.contains("Enter submit"), "{text}");
         assert!(text.contains("Esc cancel"), "{text}");
         assert!(text.lines().all(|line| line.chars().count() <= 40));
+        let chunks = screen_chunks(
+            Rect::new(0, 0, 40, 20),
+            &app,
+            app.active_turn_elapsed(Instant::now()),
+        );
+        assert!(chunks.footer.height > 1, "{chunks:?}");
+        assert!(chunks.input.bottom() <= chunks.footer.top(), "{chunks:?}");
     }
 
     #[test]
@@ -1481,6 +2241,16 @@ mod tests {
                 assert!(
                     approval_compact.contains(
                         &locale
+                            .action_required_label()
+                            .chars()
+                            .filter(|character| !character.is_whitespace())
+                            .collect::<String>(),
+                    ),
+                    "action-required label for {locale:?} at {width}: {approval_text}"
+                );
+                assert!(
+                    approval_compact.contains(
+                        &locale
                             .approval_controls()
                             .chars()
                             .filter(|character| !character.is_whitespace())
@@ -1517,10 +2287,15 @@ mod tests {
                         },
                     })
                     .expect("queue user input");
-                terminal
+                // Use a fresh backend for the second overlay. TestBackend retains the cells under
+                // a previous wide-glyph row when the footer grows, while a real terminal replaces
+                // both display cells. Each matrix case should assert the target frame itself.
+                let mut question_terminal =
+                    Terminal::new(TestBackend::new(width, 20)).expect("question terminal");
+                question_terminal
                     .draw(|frame| render(frame, &question))
                     .expect("draw user input");
-                let question_text = buffer_text(&terminal);
+                let question_text = buffer_text(&question_terminal);
                 let question_compact = question_text
                     .chars()
                     .filter(|character| !character.is_whitespace())

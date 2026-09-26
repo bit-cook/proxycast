@@ -51,6 +51,24 @@ pub(crate) struct HyperlinkLine {
     pub(crate) hyperlinks: Vec<TerminalHyperlink>,
 }
 
+/// Return the first wrapped row occupied by each source line.
+///
+/// Layout consumers must use the same paragraph geometry as hyperlink rendering so that
+/// scroll anchors remain aligned with visible text and OSC 8 annotations.
+pub(crate) fn wrapped_line_starts(lines: &[HyperlinkLine], width: u16) -> Vec<usize> {
+    let mut starts = Vec::with_capacity(lines.len());
+    let mut offset = 0usize;
+    for line in lines {
+        starts.push(offset);
+        offset = offset.saturating_add(
+            HyperlinkParagraph::new(std::slice::from_ref(line))
+                .line_count(width)
+                .max(1),
+        );
+    }
+    starts
+}
+
 impl HyperlinkLine {
     pub(crate) fn new(line: Line<'static>) -> Self {
         Self {
@@ -93,6 +111,14 @@ impl HyperlinkLine {
                 link.columns = link.columns.start + shift..link.columns.end + shift;
                 link
             }));
+    }
+
+    /// Resolve one visible display column through the same HTTP(S)-only boundary used by OSC 8.
+    pub(crate) fn destination_at_column(&self, column: usize) -> Option<String> {
+        self.hyperlinks
+            .iter()
+            .find(|link| link.columns.contains(&column))
+            .and_then(|link| web_destination(&link.destination))
     }
 }
 
@@ -583,6 +609,26 @@ mod tests {
     }
 
     #[test]
+    fn display_column_lookup_uses_the_same_safe_destination_boundary() {
+        let mut line = HyperlinkLine::new(Line::from("safe bad"));
+        line.hyperlinks.push(TerminalHyperlink::web(
+            0..4,
+            "https://example.com".to_string(),
+        ));
+        line.hyperlinks.push(TerminalHyperlink::web(
+            5..8,
+            "javascript:alert(1)".to_string(),
+        ));
+
+        assert_eq!(
+            line.destination_at_column(2).as_deref(),
+            Some("https://example.com")
+        );
+        assert_eq!(line.destination_at_column(4), None);
+        assert_eq!(line.destination_at_column(6), None);
+    }
+
+    #[test]
     fn discovers_punctuated_and_balanced_web_urls() {
         let destination = "https://en.wikipedia.org/wiki/Function_(mathematics)";
         assert_eq!(
@@ -634,6 +680,83 @@ mod tests {
     }
 
     #[test]
+    fn buffer_hyperlinks_follow_word_wrapping() {
+        let destination = "https://example.com/path";
+        let mut line = HyperlinkLine::new(Line::from(format!("See {destination} now")));
+        line.hyperlinks.push(TerminalHyperlink::web(
+            /*columns*/ 4..4 + display_width(destination),
+            destination.to_string(),
+        ));
+        let area = Rect::new(0, 0, 18, 4);
+        let mut buffer = Buffer::empty(area);
+
+        HyperlinkParagraph::new(&[line]).render(area, &mut buffer);
+
+        let linked_text = area
+            .positions()
+            .filter_map(|position| {
+                let symbol = buffer[position].symbol();
+                symbol
+                    .contains(&format!("\x1b]8;;{destination}\x07"))
+                    .then(|| strip_osc8(symbol))
+            })
+            .collect::<String>();
+        assert_eq!(linked_text, destination);
+    }
+
+    #[test]
+    fn buffer_hyperlinks_follow_wrapped_wide_glyphs() {
+        let destination = "https://example.com/wide";
+        let mut line = HyperlinkLine::new(Line::from("前文 "));
+        line.push_span("漢字漢字".into(), Some(destination));
+        line.push_span(" 後文".into(), None);
+        let area = Rect::new(0, 0, 6, 4);
+        let mut buffer = Buffer::empty(area);
+
+        Paragraph::new(Text::from(line.line.clone()))
+            .wrap(Wrap { trim: false })
+            .render(area, &mut buffer);
+        mark_buffer_hyperlinks(&mut buffer, area, &[line], /*scroll_rows*/ 0);
+
+        let linked_text = area
+            .positions()
+            .filter_map(|position| {
+                let symbol = buffer[position].symbol();
+                symbol
+                    .contains(&format!("\x1b]8;;{destination}\x07"))
+                    .then(|| strip_osc8(symbol))
+            })
+            .collect::<String>();
+        assert_eq!(linked_text, "漢字漢字");
+    }
+
+    #[test]
+    fn buffer_hyperlinks_follow_wrapped_halfwidth_dakuten() {
+        let destination = "https://example.com/dakuten";
+        let mut line = HyperlinkLine::new(Line::from("ｶﾞ "));
+        line.push_span("ﾊﾟlink".into(), Some(destination));
+        line.push_span(" tail".into(), None);
+        let area = Rect::new(0, 0, 5, 4);
+        let mut buffer = Buffer::empty(area);
+
+        Paragraph::new(Text::from(line.line.clone()))
+            .wrap(Wrap { trim: false })
+            .render(area, &mut buffer);
+        mark_buffer_hyperlinks(&mut buffer, area, &[line], /*scroll_rows*/ 0);
+
+        let linked_text = area
+            .positions()
+            .filter_map(|position| {
+                let symbol = buffer[position].symbol();
+                symbol
+                    .contains(&format!("\x1b]8;;{destination}\x07"))
+                    .then(|| strip_osc8(symbol))
+            })
+            .collect::<String>();
+        assert_eq!(linked_text, "ﾊﾟlink");
+    }
+
+    #[test]
     fn forced_width_hyperlinks_render_wide_and_halfwidth_cells_snapshot() {
         let destination = "https://example.com/rendered";
         let mut line = HyperlinkLine::new(Line::from("prefix "));
@@ -675,6 +798,41 @@ mod tests {
         assert!(linked.iter().all(|(_, width, option)| {
             matches!(option, CellDiffOption::ForcedWidth(forced) if forced.get() == *width)
         }));
+    }
+
+    #[test]
+    fn buffer_hyperlinks_preserve_visible_cell_width_for_ratatui_diff() {
+        let destination = "https://example.com/dakuten";
+        let mut line = HyperlinkLine::new(Line::from("ｶﾞ tail"));
+        line.hyperlinks.push(TerminalHyperlink::web(
+            /*columns*/ 0..2,
+            destination.to_string(),
+        ));
+        let area = Rect::new(0, 0, 7, 1);
+        let previous = Buffer::with_lines(["       "]);
+        let mut next = Buffer::empty(area);
+
+        Paragraph::new(Text::from(line.line.clone())).render(area, &mut next);
+        mark_buffer_hyperlinks(&mut next, area, &[line], /*scroll_rows*/ 0);
+
+        assert_eq!(next[(0, 0)].cell_width(), 2);
+        assert!(matches!(
+            next[(0, 0)].diff_option,
+            CellDiffOption::ForcedWidth(width) if width.get() == 2
+        ));
+        assert_eq!(
+            previous
+                .diff_iter(&next)
+                .map(|(x, _, cell)| (x, strip_osc8(cell.symbol())))
+                .collect::<Vec<_>>(),
+            vec![
+                (0, "ｶﾞ".to_string()),
+                (3, "t".to_string()),
+                (4, "a".to_string()),
+                (5, "i".to_string()),
+                (6, "l".to_string()),
+            ]
+        );
     }
 
     #[test]

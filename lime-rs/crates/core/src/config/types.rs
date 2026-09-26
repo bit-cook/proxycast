@@ -390,6 +390,9 @@ pub struct Config {
     /// Codex-compatible named permission profiles loaded from YAML.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub permissions: BTreeMap<String, PermissionProfileConfig>,
+    /// TUI 客户端偏好；由 App Server `config/read` 暴露给终端 surface。
+    #[serde(default, skip_serializing_if = "super::TuiConfig::is_default")]
+    pub tui: super::TuiConfig,
     /// 路由辅助配置
     #[serde(default)]
     pub routing: RoutingConfig,
@@ -2199,6 +2202,7 @@ impl Default for Config {
             default_provider: default_provider(),
             default_permissions: None,
             permissions: BTreeMap::new(),
+            tui: super::TuiConfig::default(),
             routing: RoutingConfig::default(),
             retry: RetrySettings::default(),
             logging: LoggingConfig::default(),
