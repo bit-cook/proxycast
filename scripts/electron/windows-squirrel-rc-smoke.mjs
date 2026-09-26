@@ -18,6 +18,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
   buildNMinusOneLaunchEnv,
+  buildStopInstalledAppScript,
   buildWaitForWindowsProcessExitScript,
   classifySquirrelUninstallResult,
   compareVersions,
@@ -39,6 +40,7 @@ import {
 
 export {
   buildNMinusOneLaunchEnv,
+  buildStopInstalledAppScript,
   buildWaitForWindowsProcessExitScript,
   classifySquirrelUninstallResult,
   compareVersions,
@@ -48,6 +50,7 @@ export {
   resolveInstalledSquirrelPaths,
   resolveSquirrelFeed,
   selectNMinusOneVersion,
+  stopInstalledApp,
   uninstallInstalledSquirrel,
   waitForWindowsProcessExit,
 };

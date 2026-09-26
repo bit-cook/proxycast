@@ -7,6 +7,7 @@ import YAML from "yaml";
 
 import {
   buildNMinusOneLaunchEnv,
+  buildStopInstalledAppScript,
   buildWaitForWindowsProcessExitScript,
   buildWindowsRcSummary,
   cleanupFromSummary,
@@ -19,6 +20,7 @@ import {
   resolveSquirrelFeed,
   selectNMinusOneVersion,
   selectSquirrelInstaller,
+  stopInstalledApp,
   uninstallInstalledSquirrel,
   waitForWindowsProcessExit,
 } from "./windows-squirrel-rc-smoke.mjs";
@@ -157,6 +159,49 @@ describe("Windows Squirrel RC smoke", () => {
       }),
     ).rejects.toThrow(
       "timed out waiting for process exit at C:\\runner\\Update.exe: exit 1",
+    );
+  });
+
+  it("停止已退出的应用时忽略 PID 竞态，但保留其他 Stop-Process 错误", async () => {
+    const script = buildStopInstalledAppScript();
+    expect(script).toContain("NoProcessFoundForGivenId");
+    expect(script).toContain("FullyQualifiedErrorId");
+    expect(script).toContain("throw");
+
+    const runProcessImpl = vi.fn().mockResolvedValue({ exitCode: 0 });
+    const waitForProcessExitImpl = vi.fn().mockResolvedValue({
+      executable: "C:\\runner\\Lime.exe",
+      exitCode: 0,
+      timeoutMs: 30_000,
+    });
+
+    await expect(
+      stopInstalledApp("C:\\runner\\Lime.exe", {
+        runProcessImpl,
+        waitForProcessExitImpl,
+      }),
+    ).resolves.toEqual({
+      executable: "C:\\runner\\Lime.exe",
+      exitCode: 0,
+    });
+    expect(runProcessImpl).toHaveBeenCalledWith(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        script,
+      ],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          LIME_TARGET_EXECUTABLE: "C:\\runner\\Lime.exe",
+        }),
+        timeoutMs: 30_000,
+      }),
+    );
+    expect(waitForProcessExitImpl).toHaveBeenCalledWith(
+      "C:\\runner\\Lime.exe",
+      { runProcessImpl, timeoutMs: 30_000 },
     );
   });
 

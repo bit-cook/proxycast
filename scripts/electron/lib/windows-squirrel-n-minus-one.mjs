@@ -195,19 +195,40 @@ export async function findReadyElectronUpdaterPage(pages) {
   return null;
 }
 
-export async function stopInstalledApp(executable) {
-  const script = [
+export function buildStopInstalledAppScript() {
+  const matchingProcesses =
+    "@(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and [String]::Equals([System.IO.Path]::GetFullPath($_.ExecutablePath), $target, [StringComparison]::OrdinalIgnoreCase) })";
+  return [
+    "$ErrorActionPreference = 'Stop'",
     "$target = [System.IO.Path]::GetFullPath($env:LIME_TARGET_EXECUTABLE)",
-    "$processes = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and [String]::Equals([System.IO.Path]::GetFullPath($_.ExecutablePath), $target, [StringComparison]::OrdinalIgnoreCase) })",
-    "$processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop }",
+    `$processes = ${matchingProcesses}`,
+    "$processes | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch { if ($_.FullyQualifiedErrorId -notmatch '^NoProcessFoundForGivenId(?:,|$)') { throw } } }",
     'Write-Output "stopped=$($processes.Count)"',
   ].join("; ");
-  const result = await runProcess(
+}
+
+export async function stopInstalledApp(
+  executable,
+  {
+    runProcessImpl = runProcess,
+    waitForProcessExitImpl = waitForWindowsProcessExit,
+    timeoutMs = 30_000,
+  } = {},
+) {
+  const result = await runProcessImpl(
     "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-Command", script],
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      buildStopInstalledAppScript(),
+    ],
     {
-      env: { ...process.env, LIME_TARGET_EXECUTABLE: executable },
-      timeoutMs: 30_000,
+      env: {
+        ...process.env,
+        LIME_TARGET_EXECUTABLE: executable,
+      },
+      timeoutMs,
     },
   );
   if (result.exitCode !== 0) {
@@ -215,6 +236,10 @@ export async function stopInstalledApp(executable) {
       `failed to stop installed app at ${executable}: exit ${result.exitCode}`,
     );
   }
+  await waitForProcessExitImpl(executable, {
+    runProcessImpl,
+    timeoutMs,
+  });
   return { executable, exitCode: result.exitCode };
 }
 
