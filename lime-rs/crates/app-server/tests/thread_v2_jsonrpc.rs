@@ -1406,11 +1406,11 @@ async fn paginated_history_jsonrpc_preserves_canonical_thread_turn_item_identity
             vec![
                 RuntimeEvent::new(
                     "message.delta",
-                    json!({"itemId": "answer-item", "text": "persisted answer"}),
+                    json!({"itemId": "item_answer", "text": "persisted answer"}),
                 ),
                 RuntimeEvent::new(
                     "message.completed",
-                    json!({"itemId": "answer-item", "status": "completed"}),
+                    json!({"itemId": "item_answer", "status": "completed"}),
                 ),
                 RuntimeEvent::new("turn.completed", json!({})),
             ],
@@ -1444,9 +1444,12 @@ async fn paginated_history_jsonrpc_preserves_canonical_thread_turn_item_identity
     )
     .await;
     assert_eq!(turns["result"]["data"][0]["id"], json!(turn_id));
-    assert!(turns["result"]["data"][0]["items"]
-        .as_array()
-        .is_some_and(|items| items.iter().any(|item| item["id"] == "answer-item")));
+    assert!(
+        turns["result"]["data"][0]["items"]
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item["id"] == "item_answer")),
+        "canonical answer item missing from paginated turns: {turns:#?}"
+    );
 
     let items = request(
         &server,
@@ -1463,11 +1466,11 @@ async fn paginated_history_jsonrpc_preserves_canonical_thread_turn_item_identity
         .as_array()
         .and_then(|data| {
             data.iter()
-                .find(|entry| entry["item"]["id"] == "answer-item")
+                .find(|entry| entry["item"]["id"] == "item_answer")
         })
         .expect("answer item in paginated item list");
     assert_eq!(answer["turnId"], json!(turn_id));
-    assert_eq!(answer["item"]["id"], json!("answer-item"));
+    assert_eq!(answer["item"]["id"], json!("item_answer"));
     assert_eq!(answer["item"]["text"], json!("persisted answer"));
 }
 

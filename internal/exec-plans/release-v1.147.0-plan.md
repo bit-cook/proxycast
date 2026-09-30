@@ -58,6 +58,12 @@ Rust 构建使用仓库 rusty-v8 artifact resolver 的已校验缓存，未修�
 
 本轮补 `src/lib/governance/appServerRuntimeBoundary.testSupport.ts` 的精确允许路径，保留全目录扫描与生产 Runtime 默认断言；失败守卫定向 `2/2` 和 `npm run typecheck` 通过。作为 main 的独立测试修复提交，保持发布 tag 原提交，不宣称旧 tag 的 Quality run 已通过。推送后并发会话开始的下一项 request-user-input 改造属于发布后工作，保留其工作树，不覆盖、不并入本次标签。
 
+第一项测试守卫修复提交 `faa8be408f3d78a23bcb35b91f30afb8e737c26e` 已推送 main，Quality run `36737461083`。该 run 的 Frontend Full 又在 batch `49/119` 发现既有 Coding roadmap 文案守卫漂移：README 已将下一刀改为 current-SHA Windows large-output evidence，旧断言仍要求先前的 unelevated runner 原文。本轮让 README 和 implementation 的断言分别守住当前证据缺口与既有 unelevated runner，不改路线图事实。
+
+Rust Full 失败是既有 `paginated_history_jsonrpc_preserves_canonical_thread_turn_item_identity` 仍给出非规范 item ID `answer-item` 并要求原样返回；实际返回 `item_answer-item`，正文与 turn identity 均正确。迁移 fixture 输入和断言到规范 `item_answer`，保持公共 JSON-RPC 的 identity/text 检查，并补实际响应诊断；整个 `thread_v2_jsonrpc` target `19/19` 通过，没有 production/runtime 修改。
+
+扩大治理目录验证：`47` files 通过、`440` tests 通过；唯一失败是本机外部 Codex checkout 的可选 `codexModelResponsesPolicyOrigin` 源码形状已经变化，不属于本次 Lime/tag 改动，保留失败记录、不修改外部仓库或跳过断言。两个 CI 失败守卫已通过。最后 `npm run typecheck`、owned Rust fmt 与 diff check 通过。
+
 ## 架构与分类
 
 主链保持 `Desktop Host / CLI-TUI Host -> App Server JSON-RPC -> RuntimeCore -> canonical Thread/Turn/Item -> GUI/terminal projection`。MCP OAuth 扩展仍归既有 protocol/App Server/MCP credential owner；新增 TUI helper 是 presentation 内部分工，没有平行 runtime/history store 或新的 public boundary。本次无重大架构变更。

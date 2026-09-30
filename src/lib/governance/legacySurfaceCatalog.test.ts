@@ -4766,7 +4766,10 @@ describe("legacySurfaceCatalog", () => {
       "P8 骨架阶段已经收口，不再重复做旧字符串 inventory",
     );
     expect(readmeSource).toContain(
-      "unelevated current-user restricted-token runner",
+      "Windows current-SHA restricted-token large-output evidence",
+    );
+    expect(implementationSource).toContain(
+      "unelevated current-user runner",
     );
     expect(implementationSource).toContain(
       "P8 residual 盘点结论：生产 `src / packages / electron` 主路径未发现 `agent_runtime_*` 直接命令调用",
