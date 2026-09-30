@@ -13,9 +13,8 @@ use serde::Serialize;
 use crate::app::event_dispatch::{EventContext, EventDispatch};
 use crate::app::reconnect::{reconnect_session, ReconnectedSession};
 use crate::app::{App, AppAction, ExternalEditorState};
-use crate::app_server_session::AppServerSession;
+use crate::app_server_session::{AppServerSession, ThreadSettingsPatch};
 use crate::bottom_pane::{AppServerResponse, FileSearchRequest};
-use crate::clipboard_copy::copy_to_clipboard;
 use crate::clipboard_paste::paste_image_to_temp_png;
 use crate::external_editor::edit_draft;
 use crate::locale::Locale;
@@ -38,6 +37,9 @@ pub struct TuiOptions {
     pub model_provider: Option<String>,
     pub reasoning_effort: Option<String>,
     pub permissions: Option<String>,
+    pub approval_policy: Option<String>,
+    pub approvals_reviewer: Option<String>,
+    pub sandbox_policy: Option<String>,
     pub locale: Option<String>,
     pub resume_thread: Option<String>,
 }
@@ -62,6 +64,27 @@ struct FileSearchEvent {
     query: String,
     files: Vec<app_server_protocol::protocol::v2::FuzzyFileSearchResult>,
 }
+
+enum PendingCopyContext {
+    LastResponse,
+    ComposerSelection {
+        clear_selection: bool,
+    },
+    TranscriptSelection {
+        text: String,
+        follow: bool,
+        target: crate::app::TranscriptSelectionTarget,
+    },
+    ExportClipboard,
+}
+
+struct PendingCopy {
+    id: u64,
+    thread_id: Option<String>,
+    context: PendingCopyContext,
+}
+
+const ACTIVE_TURN_FRAME_INTERVAL: Duration = Duration::from_millis(100);
 
 fn validate_model_route(options: &TuiOptions) -> Result<()> {
     match (&options.model, &options.model_provider) {
@@ -124,6 +147,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
         }
     };
     let mut app = App::default();
+    app.set_right_click_paste(local_settings.right_click_paste);
     app.set_runtime_keymap(local_settings.keymap);
     app.set_cwd(options.cwd.clone());
     app.set_locale(Locale::resolve(options.locale.as_deref()));
@@ -136,12 +160,23 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
         &mut app,
     )
     .await;
-    let (mut model, mut model_provider, mut effort, mut permissions) = match setup_result {
+    let (
+        mut model,
+        mut model_provider,
+        mut effort,
+        mut permissions,
+        approval_policy,
+        mut approvals_reviewer,
+        mut sandbox_policy,
+    ) = match setup_result {
         Ok(state) => (
             state.model,
             state.model_provider,
             state.effort,
             state.permissions,
+            state.approval_policy,
+            state.approvals_reviewer,
+            state.sandbox_policy,
         ),
         Err(error) => {
             let _ = session
@@ -191,16 +226,26 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
         let mut history_top_up_requested = false;
         let (file_search_tx, mut file_search_rx) =
             tokio::sync::mpsc::unbounded_channel::<FileSearchEvent>();
+        let (mcp_login_tx, mut mcp_login_rx) =
+            tokio::sync::mpsc::unbounded_channel::<crate::app::mcp_login::McpLoginStarted>();
+        let mut pending_copy: Option<PendingCopy> = None;
         loop {
             if session.is_none() && reconnect.is_none() && !reconnect_failed {
                 if let Some(thread_id) = reconnect_thread_id.as_deref() {
                     reconnect = Some(Box::pin(reconnect_session(
                         options.clone(),
                         thread_id.to_string(),
-                        model.clone(),
-                        model_provider.clone(),
-                        effort.clone(),
-                        permissions.clone(),
+                        ThreadSettingsPatch::new(
+                            model.clone(),
+                            model_provider.clone(),
+                            effort.clone(),
+                            permissions.clone(),
+                        )
+                        .with_policy(
+                            approval_policy.clone(),
+                            approvals_reviewer.clone(),
+                            sandbox_policy.clone(),
+                        ),
                     )));
                 } else {
                     reconnect_failed = true;
@@ -366,7 +411,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                     let event = match event {
                         TuiEvent::Draw => {
                             if app.projection.active_turn_id().is_some() {
-                                frame_requester.schedule_frame_in(Duration::from_secs(1));
+                                frame_requester.schedule_frame_in(ACTIVE_TURN_FRAME_INTERVAL);
                             }
                             TuiEvent::Draw
                         }
@@ -378,7 +423,31 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                         event => event,
                     };
                     let connected = session.is_some();
-                    let action = app.handle_tui_event(event, connected);
+                    let is_draw = matches!(&event, TuiEvent::Draw);
+                    let event_for_clipboard = event.clone();
+                    if let Some(id) = app.invalidate_clipboard_paste(&event_for_clipboard) {
+                        terminal.clipboard.cancel(Some(id));
+                    }
+                    let action = app.handle_tui_event_runtime(event, connected);
+                    if is_draw {
+                        if let Some((id, result)) = terminal.clipboard.poll() {
+                            app.finish_clipboard_paste(id, result);
+                        }
+                        if let Some((id, result)) = terminal.clipboard_copy.poll() {
+                            if pending_copy.as_ref().is_some_and(|pending| pending.id == id) {
+                                let pending = pending_copy
+                                    .take()
+                                    .expect("pending copy exists after matching completion");
+                                let same_thread = pending.thread_id == app.thread_id;
+                                apply_copy_completion(
+                                    &mut app,
+                                    pending.context,
+                                    result,
+                                    same_thread,
+                                );
+                            }
+                        }
+                    }
                     if connected {
                         if let Some(request) = app.composer.take_file_search_request() {
                             spawn_file_search(
@@ -405,6 +474,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 session: session
                                     .as_mut()
                                     .expect("session available during TUI action dispatch"),
+                                mcp_login_tx: &mcp_login_tx,
                                 model: &mut model,
                                 model_provider: &mut model_provider,
                                 effort: &mut effort,
@@ -524,6 +594,8 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                         {
                                             Ok(()) => {
                                                 permissions = Some(value);
+                                                sandbox_policy = None;
+                                                approvals_reviewer = None;
                                                 app.set_settings(
                                                     model.clone(),
                                                     model_provider.clone(),
@@ -580,8 +652,11 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                             .await;
                                         }
                                         Err(queue_error) => {
-                                            app.restore_pending_images(images);
-                                            app.set_remote_image_urls(remote_images);
+                                            app.restore_submission_draft(
+                                                prompt.clone(),
+                                                images,
+                                                remote_images,
+                                            );
                                             app.projection.set_status(format!(
                                                 "{steer_error}; queue failed: {queue_error}"
                                             ));
@@ -605,8 +680,11 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                         .await;
                                     }
                                     Err(error) => {
-                                        app.restore_pending_images(images);
-                                        app.set_remote_image_urls(remote_images);
+                                        app.restore_submission_draft(
+                                            prompt.clone(),
+                                            images,
+                                            remote_images,
+                                        );
                                         app.projection.set_status(error.to_string());
                                     }
                                 }
@@ -641,8 +719,11 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                     .await;
                                 }
                                 Err(error) => {
-                                    app.restore_pending_images(images);
-                                    app.set_remote_image_urls(remote_images);
+                                    app.restore_submission_draft(
+                                        prompt.clone(),
+                                        images,
+                                        remote_images,
+                                    );
                                     app.projection.set_status(error.to_string());
                                 }
                             }
@@ -677,31 +758,58 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                             }
                         }
                         AppAction::CopyLastResponse => {
-                            copy_last_response_with(&mut app, copy_to_clipboard);
+                            if let Some((id, context)) = queue_last_response_copy(
+                                &mut terminal,
+                                &mut app,
+                                frame_requester.clone(),
+                            ) {
+                                pending_copy = Some(PendingCopy {
+                                    id,
+                                    thread_id: app.thread_id.clone(),
+                                    context,
+                                });
+                            }
                         }
                         AppAction::CopyComposerSelection {
                             text,
                             clear_selection,
                         } => {
-                            copy_composer_selection_with(
+                            if let Some((id, context)) = queue_copy(
+                                &mut terminal,
                                 &mut app,
-                                &text,
-                                clear_selection,
-                                copy_to_clipboard,
-                            );
+                                text,
+                                PendingCopyContext::ComposerSelection { clear_selection },
+                                frame_requester.clone(),
+                            ) {
+                                pending_copy = Some(PendingCopy {
+                                    id,
+                                    thread_id: app.thread_id.clone(),
+                                    context,
+                                });
+                            }
                         }
                         AppAction::CopyTranscriptSelection {
                             text,
                             follow,
                             target,
                         } => {
-                            copy_transcript_selection_with(
+                            if let Some((id, context)) = queue_copy(
+                                &mut terminal,
                                 &mut app,
-                                &text,
-                                follow,
-                                target,
-                                copy_to_clipboard,
-                            );
+                                text.clone(),
+                                PendingCopyContext::TranscriptSelection {
+                                    text,
+                                    follow,
+                                    target,
+                                },
+                                frame_requester.clone(),
+                            ) {
+                                pending_copy = Some(PendingCopy {
+                                    id,
+                                    thread_id: app.thread_id.clone(),
+                                    context,
+                                });
+                            }
                         }
                         AppAction::OpenLink(destination) => match open_link(&destination) {
                             Ok(()) => app
@@ -715,13 +823,27 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                             frame_requester.schedule_frame_in(delay);
                         }
                         AppAction::ExportTranscript { path } => {
-                            export_transcript_with(
+                            let exported = prepare_export_transcript(
                                 &mut app,
                                 session.as_ref().expect("session available during TUI export"),
                                 path,
-                                copy_to_clipboard,
                             )
                             .await;
+                            if let Some(markdown) = exported {
+                                if let Some((id, context)) = queue_copy(
+                                    &mut terminal,
+                                    &mut app,
+                                    markdown,
+                                    PendingCopyContext::ExportClipboard,
+                                    frame_requester.clone(),
+                                ) {
+                                    pending_copy = Some(PendingCopy {
+                                        id,
+                                        thread_id: app.thread_id.clone(),
+                                        context,
+                                    });
+                                }
+                            }
                         }
                         AppAction::PasteImage => match paste_image_to_temp_png() {
                             Ok((path, info)) => {
@@ -735,6 +857,26 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                 .projection
                                 .set_status(format!("image paste failed: {error}")),
                         },
+                        AppAction::PasteClipboardText(source) => {
+                            match terminal
+                                .clipboard
+                                .request_read(source, frame_requester.clone())
+                            {
+                                Ok(Some(id)) => {
+                                    if !app.begin_clipboard_paste(id, source) {
+                                        terminal.clipboard.cancel(Some(id));
+                                    }
+                                }
+                                Ok(None) => app
+                                    .projection
+                                    .set_status(app.locale.status("clipboard is busy")),
+                                Err(error) => app
+                                    .projection
+                                    .set_status(app.locale.status(&format!(
+                                        "clipboard paste failed: {error}"
+                                    ))),
+                            }
+                        }
                         AppAction::Interrupt => {
                             if let Some(turn_id) = app.projection.active_turn_id() {
                                 let turn_id = turn_id.to_string();
@@ -838,6 +980,7 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                                     Some(app.cwd.clone()),
                                     false,
                                 );
+                                picker.set_model_provider_filter(model_provider.clone());
                                 picker.set_transcript_keymap(
                                     app.runtime_keymap.transcript().clone(),
                                 );
@@ -1006,15 +1149,21 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                         | AppAction::SelectModel(_)
                         | AppAction::ChangeCollaborationMode(_)
                         | AppAction::RefreshAgentsOverview
+                        | AppAction::LoadMoreAgentsOverview
                         | AppAction::DispatchAgentsOverviewTask { .. }
                         | AppAction::RenameAgentsOverviewThread { .. }
                         | AppAction::StopAgentsOverviewThread { .. }
-                        | AppAction::FetchMcpInventory { .. } => {
+                        | AppAction::FetchMcpInventory { .. }
+                        | AppAction::StartMcpLogin { .. } => {
                             unreachable!("App Server actions are handled by app::event_dispatch")
                         }
                         AppAction::Quit => break,
                         AppAction::None => {}
                     }
+                }
+                Some(event) = mcp_login_rx.recv() => {
+                    app.finish_mcp_login_start(event, open_link);
+                    frame_requester.schedule_frame();
                 }
                 event = async {
                     match session.as_mut() {
@@ -1103,7 +1252,8 @@ pub async fn run_tui(options: TuiOptions) -> Result<()> {
                         }
                         Err(error) => {
                             reconnect_failed = true;
-                            app.projection.set_status(format!("reconnect failed: {error}"));
+                            tracing::debug!(%error, "app-server reconnect failed");
+                            app.projection.set_status("reconnect failed");
                         }
                     }
                 }
@@ -1219,16 +1369,173 @@ fn submission_input_with_skills(
     input
 }
 
+fn queue_last_response_copy(
+    terminal: &mut Tui,
+    app: &mut App,
+    frames: crate::tui::FrameRequester,
+) -> Option<(u64, PendingCopyContext)> {
+    let response = app.projection.final_answer();
+    let response = crate::markdown_render::followup_labels(&response);
+    if response.is_empty() {
+        app.projection.set_status("no agent response to copy");
+        return None;
+    }
+    queue_copy(
+        terminal,
+        app,
+        response.into_owned(),
+        PendingCopyContext::LastResponse,
+        frames,
+    )
+}
+
+fn queue_copy(
+    terminal: &mut Tui,
+    app: &mut App,
+    text: String,
+    context: PendingCopyContext,
+    frames: crate::tui::FrameRequester,
+) -> Option<(u64, PendingCopyContext)> {
+    let publish_primary = matches!(
+        &context,
+        PendingCopyContext::TranscriptSelection {
+            target: crate::app::TranscriptSelectionTarget::MainTranscript
+                | crate::app::TranscriptSelectionTarget::MainPager,
+            follow: false,
+            ..
+        }
+    );
+    match terminal
+        .clipboard_copy
+        .request_copy_with_primary(text, frames, publish_primary)
+    {
+        Ok(Some(id)) => {
+            app.projection.set_status("copying…");
+            Some((id, context))
+        }
+        Ok(None) => {
+            app.projection.set_status("copy already in progress");
+            None
+        }
+        Err(error) => {
+            app.projection.set_status(format!("copy failed: {error}"));
+            None
+        }
+    }
+}
+
+fn apply_copy_completion(
+    app: &mut App,
+    context: PendingCopyContext,
+    completion: crate::clipboard_copy::worker::CopyCompletion,
+    apply_feedback: bool,
+) {
+    let status = completion
+        .clipboard
+        .map(|outcome| outcome.store(&mut app.clipboard_lease));
+    let surface_active = match &context {
+        PendingCopyContext::TranscriptSelection { target, .. } => match target {
+            crate::app::TranscriptSelectionTarget::MainTranscript => {
+                app.transcript_selection.is_active()
+            }
+            crate::app::TranscriptSelectionTarget::MainPager => app
+                .pager_overlay
+                .as_ref()
+                .is_some_and(crate::pager_overlay::PagerOverlay::has_transcript_selection),
+            crate::app::TranscriptSelectionTarget::ResumePicker => app.resume_picker.is_some(),
+        },
+        _ => true,
+    };
+    if apply_feedback && surface_active {
+        if let Some(primary) = completion.primary {
+            let _ = primary.map(|outcome| outcome.store(&mut app.primary_clipboard_lease));
+        }
+    }
+    if !apply_feedback || !surface_active {
+        return;
+    }
+    match context {
+        PendingCopyContext::LastResponse => match status {
+            Ok(crate::clipboard_copy::CopyStatus::Confirmed) => {
+                app.projection.set_status("copied last response");
+            }
+            Ok(crate::clipboard_copy::CopyStatus::Unconfirmed) => {
+                app.projection.set_status("copy unconfirmed");
+            }
+            Err(error) => app.projection.set_status(format!("copy failed: {error}")),
+        },
+        PendingCopyContext::ComposerSelection { clear_selection } => match status {
+            Ok(crate::clipboard_copy::CopyStatus::Confirmed) => {
+                if clear_selection {
+                    app.composer.clear_mouse_selection();
+                }
+                app.projection.set_status("copy confirmed");
+            }
+            Ok(crate::clipboard_copy::CopyStatus::Unconfirmed) => {
+                app.projection.set_status("copy unconfirmed");
+            }
+            Err(error) => app.projection.set_status(format!("copy failed: {error}")),
+        },
+        PendingCopyContext::TranscriptSelection {
+            text,
+            follow,
+            target,
+        } => {
+            let characters = text.chars().count();
+            match target {
+                crate::app::TranscriptSelectionTarget::MainTranscript => {
+                    app.transcript_composer_gap
+                        .show_copy_feedback(&status, characters);
+                    if matches!(status, Ok(crate::clipboard_copy::CopyStatus::Confirmed)) {
+                        app.finish_main_transcript_selection(follow);
+                    }
+                }
+                crate::app::TranscriptSelectionTarget::MainPager => {
+                    if let Some(pager) = app.pager_overlay.as_mut() {
+                        pager.apply_transcript_copy_result(follow, characters, &status);
+                    }
+                }
+                crate::app::TranscriptSelectionTarget::ResumePicker => {
+                    if let Some(picker) = app.resume_picker.as_mut() {
+                        picker.apply_transcript_copy_result(follow, characters, &status);
+                    }
+                }
+            }
+            match status {
+                Ok(crate::clipboard_copy::CopyStatus::Confirmed) => {
+                    app.projection
+                        .set_status(format!("copy confirmed: {characters}"));
+                }
+                Ok(crate::clipboard_copy::CopyStatus::Unconfirmed) => {
+                    app.projection.set_status("copy unconfirmed");
+                }
+                Err(error) => app.projection.set_status(format!("copy failed: {error}")),
+            }
+        }
+        PendingCopyContext::ExportClipboard => match status {
+            Ok(crate::clipboard_copy::CopyStatus::Confirmed) => app
+                .projection
+                .set_status("exported conversation to clipboard"),
+            Ok(crate::clipboard_copy::CopyStatus::Unconfirmed) => {
+                app.projection.set_status("copy unconfirmed");
+            }
+            Err(error) => app.projection.set_status(format!("export failed: {error}")),
+        },
+    }
+}
+
+#[cfg(test)]
 fn copy_last_response_with(
     app: &mut App,
     copy: impl FnOnce(&str) -> Result<crate::clipboard_copy::CopyOutcome, String>,
 ) {
     let response = app.projection.final_answer();
+    let response = crate::markdown_render::followup_labels(&response);
     if response.is_empty() {
         app.projection.set_status("no agent response to copy");
         return;
     }
-    match copy(&response) {
+    match copy(response.as_ref()) {
         Ok(outcome) => match outcome.store(&mut app.clipboard_lease) {
             crate::clipboard_copy::CopyStatus::Confirmed => {
                 app.projection.set_status("copied last response");
@@ -1241,6 +1548,7 @@ fn copy_last_response_with(
     }
 }
 
+#[cfg(test)]
 fn copy_composer_selection_with(
     app: &mut App,
     text: &str,
@@ -1279,6 +1587,7 @@ fn open_link_with(
     open(&destination)
 }
 
+#[cfg(test)]
 fn copy_transcript_selection_with(
     app: &mut App,
     text: &str,
@@ -1288,6 +1597,21 @@ fn copy_transcript_selection_with(
 ) {
     let characters = text.chars().count();
     let result = copy(text).map(|outcome| outcome.store(&mut app.clipboard_lease));
+    // Codex keeps the X11 PRIMARY selection available while the user keeps a transcript
+    // selection active. It is independent from CLIPBOARD, so retain a second lease instead of
+    // replacing the normal copy lease. Unsupported/remote terminals fail closed and keep the
+    // regular copy result authoritative.
+    if !follow
+        && matches!(
+            target,
+            crate::app::TranscriptSelectionTarget::MainTranscript
+                | crate::app::TranscriptSelectionTarget::MainPager
+        )
+    {
+        if let Ok(outcome) = crate::clipboard_copy::copy_to_primary(text) {
+            let _ = outcome.store(&mut app.primary_clipboard_lease);
+        }
+    }
     match target {
         crate::app::TranscriptSelectionTarget::MainTranscript => {
             app.transcript_composer_gap
@@ -1319,12 +1643,11 @@ fn copy_transcript_selection_with(
     }
 }
 
-async fn export_transcript_with(
+async fn prepare_export_transcript(
     app: &mut App,
     session: &AppServerSession,
     path: Option<std::path::PathBuf>,
-    copy: impl FnOnce(&str) -> Result<crate::clipboard_copy::CopyOutcome, String>,
-) {
+) -> Option<String> {
     let live_entries = app.projection.entries();
     let entries = match session.thread_id() {
         Ok(thread_id) => match crate::thread_transcript::load_session_transcript_with_handle(
@@ -1342,7 +1665,7 @@ async fn export_transcript_with(
         Ok(markdown) => markdown,
         Err(error) => {
             app.projection.set_status(format!("export failed: {error}"));
-            return;
+            return None;
         }
     };
     match path {
@@ -1353,18 +1676,9 @@ async fn export_transcript_with(
                     .set_status(format!("exported conversation to {}", path.display())),
                 Err(error) => app.projection.set_status(format!("export failed: {error}")),
             }
+            None
         }
-        None => match copy(&markdown) {
-            Ok(outcome) => match outcome.store(&mut app.clipboard_lease) {
-                crate::clipboard_copy::CopyStatus::Confirmed => app
-                    .projection
-                    .set_status("exported conversation to clipboard"),
-                crate::clipboard_copy::CopyStatus::Unconfirmed => {
-                    app.projection.set_status("copy unconfirmed");
-                }
-            },
-            Err(error) => app.projection.set_status(format!("export failed: {error}")),
-        },
+        None => Some(markdown),
     }
 }
 
@@ -1447,11 +1761,18 @@ async fn run_exec_with_session(
             )
         };
         session
-            .update_settings(
-                options.tui.model.clone(),
-                options.tui.model_provider.clone(),
-                options.tui.reasoning_effort.clone(),
-                options.tui.permissions.clone(),
+            .update_settings_with_policy(
+                ThreadSettingsPatch::new(
+                    options.tui.model.clone(),
+                    options.tui.model_provider.clone(),
+                    options.tui.reasoning_effort.clone(),
+                    options.tui.permissions.clone(),
+                )
+                .with_policy(
+                    options.tui.approval_policy.clone(),
+                    options.tui.approvals_reviewer.clone(),
+                    options.tui.sandbox_policy.clone(),
+                ),
             )
             .await?;
         let (thread_id, mut projection) = thread_id;
@@ -1717,6 +2038,9 @@ mod tests {
             model_provider: None,
             reasoning_effort: None,
             permissions: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
             locale: None,
             resume_thread: None,
         };
@@ -1760,6 +2084,9 @@ mod tests {
             model_provider: None,
             reasoning_effort: None,
             permissions: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
             locale: None,
             resume_thread: None,
         };
@@ -1798,6 +2125,9 @@ mod tests {
             model_provider: Some("fixture-provider".to_string()),
             reasoning_effort: None,
             permissions: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
             locale: None,
             resume_thread: None,
         };
@@ -1823,7 +2153,8 @@ mod tests {
                 thread_id: "thread-1".to_string(),
                 turn_id: "turn-1".to_string(),
                 item_id: "message-1".to_string(),
-                delta: "**answer** with `code`".to_string(),
+                delta: "**answer** with `code` :codex-followup[continue]{prompt=\"private\"}"
+                    .to_string(),
             },
         ));
         let copied = RefCell::new(String::new());
@@ -1835,7 +2166,7 @@ mod tests {
             )))
         });
 
-        assert_eq!(copied.into_inner(), "**answer** with `code`");
+        assert_eq!(copied.into_inner(), "**answer** with `code` continue");
         assert_eq!(app.projection.status(), "copied last response");
         assert!(app.clipboard_lease.is_some());
 

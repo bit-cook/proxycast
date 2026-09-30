@@ -213,6 +213,34 @@ describe("Electron release workflow guard", () => {
     );
   });
 
+  it("rejects npm token auth in the trusted publishing job", () => {
+    const current = fs.readFileSync(".github/workflows/release.yml", "utf8");
+    const workflowPath = tempWorkflowPath(
+      current.replace(
+        /(  publish_cli_npm:[\s\S]*?    runs-on: ubuntu-22\.04\n)/u,
+        "$1    env:\n      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}\n",
+      ),
+    );
+
+    expect(() => validateReleaseWorkflow({ workflowPath })).toThrow(
+      /CLI npm trusted publishing must not inject token auth: NODE_AUTH_TOKEN/,
+    );
+  });
+
+  it("rejects a CLI npm publish job without OIDC permission", () => {
+    const current = fs.readFileSync(".github/workflows/release.yml", "utf8");
+    const workflowPath = tempWorkflowPath(
+      current.replace(
+        /(  publish_cli_npm:[\s\S]*?    permissions:[\s\S]*?      )id-token: write/u,
+        "$1id-token: read",
+      ),
+    );
+
+    expect(() => validateReleaseWorkflow({ workflowPath })).toThrow(
+      /CLI npm publish job must grant id-token: write/,
+    );
+  });
+
   it("rejects release workflow without installed Windows CodeMode Gate B", () => {
     const current = fs.readFileSync(".github/workflows/release.yml", "utf8");
     const workflowPath = tempWorkflowPath(

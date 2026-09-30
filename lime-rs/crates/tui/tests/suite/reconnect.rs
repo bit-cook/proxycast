@@ -54,18 +54,18 @@ async fn automatic_reconnect_restores_draft_and_routes_new_notifications() -> Re
 
     let mut terminal = PtyReconnect::start(&cli_bin, &format!("ws://{address}/rpc"), &cwd)?;
     terminal.wait_for_startup()?;
-    terminal.wait_for_screen("fixture-model", STARTUP_TIMEOUT)?;
-    terminal.write_input(b"/pwd\r")?;
+    terminal.wait_for_screen(">_ Lime", STARTUP_TIMEOUT)?;
+    terminal.write_typed_input(b"/pwd\r")?;
     terminal.wait_for_screen(INITIAL_CWD, RECONNECT_TIMEOUT)?;
 
-    terminal.write_input(b"preserved-draft")?;
+    terminal.write_typed_input(b"preserved-draft")?;
     terminal.wait_for_screen("preserved-draft", RECONNECT_TIMEOUT)?;
     disconnect_tx
         .send(())
         .map_err(|_| anyhow::anyhow!("fixture disconnected before TUI input"))?;
     terminal.wait_for_screen("reconnecting", RECONNECT_TIMEOUT)?;
 
-    terminal.write_input(b"!")?;
+    terminal.write_typed_input(b"!")?;
     terminal.wait_for_screen("preserved-draft!", RECONNECT_TIMEOUT)?;
     restore_ready_rx
         .await
@@ -80,7 +80,7 @@ async fn automatic_reconnect_restores_draft_and_routes_new_notifications() -> Re
         terminal.screen_contents()
     );
     terminal.write_input(&[21])?;
-    terminal.write_input(b"/pwd\r")?;
+    terminal.write_typed_input(b"/pwd\r")?;
     terminal.wait_for_screen(RESTORED_CWD, RECONNECT_TIMEOUT)?;
 
     terminal.write_input(&[4])?;
@@ -102,6 +102,14 @@ async fn automatic_reconnect_restores_draft_and_routes_new_notifications() -> Re
             .count()
             == 2,
         "reconnect did not issue exactly two thread/resume requests: {methods:?}"
+    );
+    ensure!(
+        methods
+            .iter()
+            .filter(|method| method.as_str() == "config/read")
+            .count()
+            == 1,
+        "TUI settings must be read exactly once into the startup snapshot: {methods:?}"
     );
     ensure!(
         !methods.iter().any(|method| method == "turn/start"),
@@ -247,6 +255,7 @@ fn fixture_response(method: &str, connection_index: u8) -> Value {
             }
         }),
         "thread/start" | "thread/resume" => thread_response(connection_index),
+        "config/read" => json!({"config": {}, "origins": {}}),
         "permissionProfile/list" => json!({
             "data": [{"id": ":workspace", "description": "fixture", "allowed": true}],
             "nextCursor": null
@@ -441,6 +450,15 @@ impl PtyReconnect {
         Ok(())
     }
 
+    fn write_typed_input(&mut self, bytes: &[u8]) -> Result<()> {
+        for byte in bytes {
+            self.writer.write_all(std::slice::from_ref(byte))?;
+            self.writer.flush()?;
+            std::thread::sleep(Duration::from_millis(24));
+        }
+        Ok(())
+    }
+
     fn wait_for_exit(&mut self) -> Result<()> {
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
@@ -449,7 +467,10 @@ impl PtyReconnect {
             }
             self.read_output(Duration::from_millis(20))?;
         }
-        bail!("Lime did not exit after reconnect test")
+        bail!(
+            "Lime did not exit after reconnect test; screen:\n{}",
+            self.screen_contents()
+        )
     }
 
     fn screen_contains(&self, text: &str) -> bool {

@@ -3,63 +3,67 @@
 //! This mirrors Codex's owner boundary: transient footer state lives beside composer input, while
 //! the app view only renders the selected mode and text.
 
-use std::time::Instant;
-
-use ratatui::text::Line;
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) enum FooterMode {
     #[default]
     ComposerEmpty,
     ComposerHasDraft,
     HistorySearch,
+    ShortcutOverlay,
 }
 
-#[derive(Clone, Debug)]
-pub(super) struct FooterFlash {
-    pub(super) line: Line<'static>,
-    pub(super) expires_at: Instant,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(super) struct FooterState {
     pub(super) mode: FooterMode,
-    pub(super) flash: Option<FooterFlash>,
 }
 
-impl Default for FooterState {
-    fn default() -> Self {
-        Self {
-            mode: FooterMode::ComposerEmpty,
-            flash: None,
-        }
+impl super::ChatComposer {
+    pub(crate) fn shortcut_overlay_visible(&self) -> bool {
+        self.footer.mode == FooterMode::ShortcutOverlay
+            && !self.popups.active()
+            && self.history_search.is_none()
+            && !self.vim_search_active()
     }
-}
 
-impl FooterState {
-    pub(super) fn flash_line(&self) -> Option<&Line<'static>> {
-        self.flash
-            .as_ref()
-            .filter(|flash| Instant::now() < flash.expires_at)
-            .map(|flash| &flash.line)
+    pub(crate) fn dismiss_shortcut_overlay(&mut self) -> bool {
+        if !self.shortcut_overlay_visible() {
+            return false;
+        }
+        self.footer.mode = FooterMode::ComposerEmpty;
+        true
+    }
+
+    pub(super) fn handle_empty_prompt_shortcut(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        use crossterm::event::{KeyCode, KeyEventKind};
+        if key.kind != KeyEventKind::Press {
+            return false;
+        }
+        if self.shortcut_overlay_visible() && key.code == KeyCode::Esc && key.modifiers.is_empty() {
+            return self.dismiss_shortcut_overlay();
+        }
+        if key.code == KeyCode::Char('?')
+            && crate::key_hint::is_plain_text_key_event(key)
+            && self.is_empty()
+            && !self.has_pending_images()
+            && !self.popups.active()
+            && !self.history_search_active()
+            && !self.vim_search_active()
+            && !self.is_vim_normal_mode()
+            && !self.draft.paste_burst.is_active()
+        {
+            self.footer.mode = if self.shortcut_overlay_visible() {
+                FooterMode::ComposerEmpty
+            } else {
+                FooterMode::ShortcutOverlay
+            };
+            return true;
+        }
+        // Any editor activity resumes the base footer; paste insertion uses the same reset path.
+        self.dismiss_shortcut_overlay();
+        false
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ratatui::text::Line;
-
-    #[test]
-    fn flash_state_expires_without_mutating_mode() {
-        let state = FooterState {
-            flash: Some(FooterFlash {
-                line: Line::raw("saved"),
-                expires_at: Instant::now() + std::time::Duration::from_secs(1),
-            }),
-            ..FooterState::default()
-        };
-        assert!(state.flash_line().is_some());
-        assert_eq!(state.mode, FooterMode::ComposerEmpty);
-    }
-}
+#[path = "footer_state_tests.rs"]
+mod interaction_tests;

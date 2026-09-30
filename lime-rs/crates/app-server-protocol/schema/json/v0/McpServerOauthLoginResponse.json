@@ -4,6 +4,12 @@
     "authorizationUrl": {
       "type": "string"
     },
+    "loginId": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
     "state": {
       "type": "string"
     }

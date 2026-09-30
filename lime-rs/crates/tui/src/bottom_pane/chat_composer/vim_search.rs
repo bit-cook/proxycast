@@ -24,18 +24,6 @@ impl ChatComposer {
         self.draft.textarea.input(key);
         true
     }
-
-    pub(crate) fn handle_paste(&mut self, text: &str) {
-        if self.draft.textarea.insert_vim_search_text(text) {
-            self.clear_command_popup();
-            return;
-        }
-        let started = self.begin_direct_vim_edit();
-        self.insert(text);
-        if started {
-            self.finish_vim_edit();
-        }
-    }
 }
 
 #[cfg(test)]

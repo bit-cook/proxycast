@@ -14,26 +14,24 @@ use app_server_client::{
 };
 use app_server_protocol::protocol::v2::{
     CollaborationModeListParams, CollaborationModeListResponse, CollaborationModeMask,
-    ConfigReadParams, ConfigReadResponse,
-    CurrentTimeReadResponse, FuzzyFileSearchParams, FuzzyFileSearchResponse,
-    ListMcpServerStatusParams, ListMcpServerStatusResponse, McpServerElicitationRequestResponse,
-    McpServerStatus, McpServerStatusDetail, ModelListParams, ModelListResponse,
-    PermissionProfileListParams, PermissionProfileListResponse, PromptHistoryAppendParams,
-    PromptHistoryAppendResponse, PromptHistoryReadParams, PromptHistoryReadResponse,
-    QueuedSubmission, ServerRequest, SkillsListParams, SkillsListResponse, ThreadForkParams,
-    ThreadForkResponse, ThreadListParams, ThreadListResponse, ThreadQueueAddParams,
-    ThreadQueueAddResponse, ThreadQueueDeleteParams, ThreadQueueDeleteResponse,
-    ThreadQueueListParams, ThreadQueueListResponse, ThreadReadParams, ThreadReadResponse,
-    ThreadResumeParams, ThreadResumeResponse, ThreadSetNameParams, ThreadSetNameResponse,
-    ThreadSettingsUpdateParams, ThreadSettingsUpdateResponse, ThreadStartParams,
-    ThreadStartResponse, ThreadStartSource, ThreadUnarchiveParams, ThreadUnarchiveResponse,
-    TurnInterruptParams, TurnInterruptResponse, TurnStartParams, TurnStartResponse,
-    TurnSteerParams, TurnSteerResponse, UserInput, METHOD_COLLABORATION_MODE_LIST,
-    METHOD_CONFIG_READ, METHOD_FUZZY_FILE_SEARCH, METHOD_MCP_SERVER_STATUS_LIST,
-    METHOD_PERMISSION_PROFILE_LIST,
-    METHOD_PROMPT_HISTORY_APPEND, METHOD_PROMPT_HISTORY_READ, METHOD_SKILLS_LIST,
-    METHOD_THREAD_ARCHIVE, METHOD_THREAD_QUEUE_ADD, METHOD_THREAD_QUEUE_DELETE,
-    METHOD_THREAD_QUEUE_LIST, METHOD_THREAD_READ, METHOD_THREAD_RESUME,
+    ConfigReadParams, ConfigReadResponse, CurrentTimeReadResponse, FuzzyFileSearchParams,
+    FuzzyFileSearchResponse, ListMcpServerStatusParams, ListMcpServerStatusResponse,
+    McpServerElicitationRequestResponse, McpServerStatus, McpServerStatusDetail, ModelListParams,
+    ModelListResponse, PermissionProfileListParams, PermissionProfileListResponse,
+    PromptHistoryAppendParams, PromptHistoryAppendResponse, PromptHistoryReadParams,
+    PromptHistoryReadResponse, QueuedSubmission, ServerRequest, SkillsListParams,
+    SkillsListResponse, ThreadForkParams, ThreadForkResponse, ThreadListParams, ThreadListResponse,
+    ThreadQueueAddParams, ThreadQueueAddResponse, ThreadQueueDeleteParams,
+    ThreadQueueDeleteResponse, ThreadQueueListParams, ThreadQueueListResponse, ThreadReadParams,
+    ThreadReadResponse, ThreadResumeParams, ThreadResumeResponse, ThreadSetNameParams,
+    ThreadSetNameResponse, ThreadSettingsUpdateParams, ThreadSettingsUpdateResponse,
+    ThreadStartParams, ThreadStartResponse, ThreadStartSource, ThreadUnarchiveParams,
+    ThreadUnarchiveResponse, TurnInterruptParams, TurnInterruptResponse, TurnStartParams,
+    TurnStartResponse, TurnSteerParams, TurnSteerResponse, UserInput,
+    METHOD_COLLABORATION_MODE_LIST, METHOD_CONFIG_READ, METHOD_FUZZY_FILE_SEARCH,
+    METHOD_MCP_SERVER_STATUS_LIST, METHOD_PERMISSION_PROFILE_LIST, METHOD_PROMPT_HISTORY_APPEND,
+    METHOD_PROMPT_HISTORY_READ, METHOD_SKILLS_LIST, METHOD_THREAD_ARCHIVE, METHOD_THREAD_QUEUE_ADD,
+    METHOD_THREAD_QUEUE_DELETE, METHOD_THREAD_QUEUE_LIST, METHOD_THREAD_READ, METHOD_THREAD_RESUME,
     METHOD_THREAD_SETTINGS_UPDATE, METHOD_THREAD_START, METHOD_TURN_INTERRUPT, METHOD_TURN_START,
     METHOD_TURN_STEER,
 };
@@ -51,6 +49,46 @@ fn permission_profile_id(value: &Value) -> Option<String> {
         .and_then(Value::as_str)
         .map(str::to_string)
         .filter(|id| !id.trim().is_empty())
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ThreadSettingsPatch {
+    pub(crate) model: Option<String>,
+    pub(crate) model_provider: Option<String>,
+    pub(crate) effort: Option<String>,
+    pub(crate) permissions: Option<String>,
+    pub(crate) approval_policy: Option<String>,
+    pub(crate) approvals_reviewer: Option<String>,
+    pub(crate) sandbox_policy: Option<String>,
+}
+
+impl ThreadSettingsPatch {
+    pub(crate) fn new(
+        model: Option<String>,
+        model_provider: Option<String>,
+        effort: Option<String>,
+        permissions: Option<String>,
+    ) -> Self {
+        Self {
+            model,
+            model_provider,
+            effort,
+            permissions,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn with_policy(
+        mut self,
+        approval_policy: Option<String>,
+        approvals_reviewer: Option<String>,
+        sandbox_policy: Option<String>,
+    ) -> Self {
+        self.approval_policy = approval_policy;
+        self.approvals_reviewer = approvals_reviewer;
+        self.sandbox_policy = sandbox_policy;
+        self
+    }
 }
 
 pub(crate) struct AppServerSession {
@@ -531,7 +569,26 @@ impl AppServerSession {
         effort: Option<String>,
         permissions: Option<String>,
     ) -> Result<()> {
-        if model.is_none() && model_provider.is_none() && effort.is_none() && permissions.is_none()
+        self.update_settings_with_policy(ThreadSettingsPatch::new(
+            model,
+            model_provider,
+            effort,
+            permissions,
+        ))
+        .await
+    }
+
+    pub(crate) async fn update_settings_with_policy(
+        &self,
+        settings: ThreadSettingsPatch,
+    ) -> Result<()> {
+        if settings.model.is_none()
+            && settings.model_provider.is_none()
+            && settings.effort.is_none()
+            && settings.permissions.is_none()
+            && settings.approval_policy.is_none()
+            && settings.approvals_reviewer.is_none()
+            && settings.sandbox_policy.is_none()
         {
             return Ok(());
         }
@@ -542,10 +599,13 @@ impl AppServerSession {
                 METHOD_THREAD_SETTINGS_UPDATE,
                 ThreadSettingsUpdateParams {
                     thread_id,
-                    model,
-                    model_provider,
-                    effort,
-                    permissions,
+                    model: settings.model,
+                    model_provider: settings.model_provider,
+                    effort: settings.effort,
+                    permissions: settings.permissions,
+                    approval_policy: settings.approval_policy.map(Value::String),
+                    approvals_reviewer: settings.approvals_reviewer.map(Value::String),
+                    sandbox_policy: settings.sandbox_policy.map(Value::String),
                     ..ThreadSettingsUpdateParams::default()
                 },
             )

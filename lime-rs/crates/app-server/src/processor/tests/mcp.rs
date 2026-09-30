@@ -18,6 +18,7 @@ use serde_json::json;
 #[derive(Default)]
 struct McpNotificationTestDataSource {
     login: std::sync::Mutex<Option<lime_mcp::McpOAuthLoginHandle>>,
+    logout: std::sync::Mutex<Option<Result<bool, String>>>,
     start_result: std::sync::Mutex<Option<Result<(), String>>>,
 }
 
@@ -64,6 +65,19 @@ impl crate::McpAppDataSource for McpNotificationTestDataSource {
             .take()
             .ok_or_else(|| RuntimeCoreError::Backend("OAuth test login missing".to_string()))
     }
+
+    async fn logout_mcp_server_oauth(
+        &self,
+        _params: app_server_protocol::McpServerOauthLogoutParams,
+    ) -> Result<app_server_protocol::McpServerOauthLogoutResponse, RuntimeCoreError> {
+        self.logout
+            .lock()
+            .expect("OAuth test logout mutex poisoned")
+            .take()
+            .ok_or_else(|| RuntimeCoreError::Backend("OAuth test logout missing".to_string()))?
+            .map(|removed| app_server_protocol::McpServerOauthLogoutResponse { removed })
+            .map_err(RuntimeCoreError::Backend)
+    }
 }
 
 fn oauth_test_data_source() -> (
@@ -84,6 +98,7 @@ fn oauth_test_data_source() -> (
     (
         Arc::new(McpNotificationTestDataSource {
             login: std::sync::Mutex::new(Some(handle)),
+            logout: std::sync::Mutex::new(None),
             start_result: std::sync::Mutex::new(None),
         }),
         completion_tx,
@@ -98,6 +113,7 @@ async fn start_mcp_notification_test(
 ) {
     let data_source = Arc::new(McpNotificationTestDataSource {
         login: std::sync::Mutex::new(None),
+        logout: std::sync::Mutex::new(None),
         start_result: std::sync::Mutex::new(Some(start_result)),
     });
     let runtime = RuntimeCore::default().with_app_data_source(data_source);
@@ -130,6 +146,17 @@ async fn start_oauth_test() -> (
     let processor = RequestProcessor::new(runtime).with_server_notification_hook(hook);
     initialize_processor(&processor).await;
     (processor, completion_tx, notification_rx)
+}
+
+async fn start_oauth_logout_test(result: Result<bool, String>) -> RequestProcessor {
+    let data_source = Arc::new(McpNotificationTestDataSource {
+        login: std::sync::Mutex::new(None),
+        logout: std::sync::Mutex::new(Some(result)),
+        start_result: std::sync::Mutex::new(None),
+    });
+    let processor = RequestProcessor::new(RuntimeCore::default().with_app_data_source(data_source));
+    initialize_processor(&processor).await;
+    processor
 }
 
 #[tokio::test]
@@ -439,6 +466,11 @@ async fn mcp_oauth_login_returns_before_typed_success_notification() {
         "https://auth.example/authorize"
     );
     assert_eq!(response.result["state"], "pending");
+    let response_login_id = response.result["loginId"]
+        .as_str()
+        .filter(|login_id| !login_id.is_empty())
+        .expect("OAuth login response must include loginId")
+        .to_string();
 
     completion_tx.send(Ok(())).expect("complete OAuth login");
     let notification =
@@ -446,17 +478,20 @@ async fn mcp_oauth_login_returns_before_typed_success_notification() {
             .await
             .expect("OAuth success notification timeout")
             .expect("OAuth success notification channel closed");
-    assert_eq!(
+    let app_server_protocol::protocol::v2::ServerNotification::McpServerOauthLoginCompleted(
         notification,
-        app_server_protocol::protocol::v2::ServerNotification::McpServerOauthLoginCompleted(
-            app_server_protocol::protocol::v2::McpServerOauthLoginCompletedNotification {
-                name: "remote-docs".to_string(),
-                thread_id: None,
-                success: true,
-                error: None,
-            }
-        )
+    ) = notification
+    else {
+        panic!("expected OAuth completion notification");
+    };
+    assert_eq!(notification.name, "remote-docs");
+    assert!(notification.thread_id.is_none());
+    assert_eq!(
+        notification.login_id.as_deref(),
+        Some(response_login_id.as_str())
     );
+    assert!(notification.success);
+    assert!(notification.error.is_none());
 }
 
 #[tokio::test]
@@ -493,4 +528,22 @@ async fn mcp_oauth_login_publishes_typed_failure_notification() {
         .error
         .as_deref()
         .is_some_and(|error| error.contains("scope rejected")));
+}
+
+#[tokio::test]
+async fn mcp_oauth_logout_returns_removal_state() {
+    let processor = start_oauth_logout_test(Ok(true)).await;
+    let messages = processor
+        .handle_request(JsonRpcRequest::new(
+            RequestId::Integer(32),
+            app_server_protocol::METHOD_MCP_SERVER_OAUTH_LOGOUT,
+            Some(json!({ "name": "remote-docs" })),
+        ))
+        .await
+        .expect("OAuth logout response");
+
+    let [JsonRpcMessage::Response(response)] = messages.as_slice() else {
+        panic!("expected OAuth logout response, got {messages:?}");
+    };
+    assert_eq!(response.result["removed"], json!(true));
 }

@@ -3,7 +3,257 @@
 状态：in-progress（本轮验证完成；总体对齐仍有明确 defer/partial）
 日期：2026-09-08
 参考实现：`/Users/coso/Documents/dev/rust/codex`
-当前基线：Rust commit `5c07856e25b565c86c6266ff51edff58299fd4e6`（参考目录当前 checkout）
+当前基线：Rust commit `c248f6d48b`（参考目录当前 checkout）
+
+## 本轮 UI/UX 完全对标约束（2026-09-30，继续）
+
+用户已明确：CLI/TUI UI/UX 完全对标 Codex；Lime 不合理的实现直接重构、清理，不保留双轨。
+验收基线是当前 checkout 的源文件及行为测试，不套用 Lime GUI 视觉语言，不以“近似布局”算完成。
+全局退出条件需逐项覆盖启动/会话切换、composer/快捷提示、transcript/活动收纳、picker/审批/
+提问、Agent Center、完成/断线反馈与真实 PTY；当前仍为 in-progress，不宣称整体 100%。
+
+本切片：Agent Center 标签页、任务列、项目/状态分组、分页、独立 metadata 输入、帮助与
+当前默认键位。写集为 `tui/src/app/agents_overview_{view,render}.rs`、
+`tui/src/app/agent_center/**`、`tui/src/app/agents_overview_grouping.rs`、
+`tui/src/app/agent_center_tests.rs`、`tui/src/locale{.rs,/agents.rs}`、
+`tui/src/bottom_pane/{mod,selection_tabs}.rs`、`tui/src/keymap{.rs,/tests.rs}`、
+`tui/src/style{.rs,/selection.rs}`、`tui/src/{terminal_palette,shortcut_help,lib,view}.rs`、
+相关 interaction/PTY 测试、配置文档和结构 inventory。
+已脏的目标文件是前轮本任务延续，保留其已有能力；避让 MCP、App Server protocol、Electron、
+发布与未确认产物。测试先定向，再 crate、Clippy、结构守卫与真实 stdio/PTY Gate B。
+
+来源分类（迁移前登记，均来自 `c248f6d48b`）：
+
+| upstream path（`codex-rs/tui/src/`） | SHA-256 | Lime owner / 分类 |
+| --- | --- | --- |
+| `app/agent_center/mod.rs` | `a74d135dde5d46f6c3d310f8b0f69e0e7c72ccc96e9f5028439aa7e5e63e1c1f` | 同名 module / merge |
+| `app/agent_center/input.rs` | `1dac8d682dd52853fc509184a1948c6a5e76549b072fccf56ef603b14006d799` | 同名 module / merge |
+| `app/agent_center/navigation.rs` | `d8010d701e4ad94de361cd8f2efc4e3f4ef2376bd2978ec044110143effc39c3` | 同名 module / direct |
+| `app/agent_center/render.rs` | `11e7a550e1b45f918fefc9eb1d8937c6a2820f37025ff03bc3dca72b1e62d3bc` | 同名 module / merge（五语言） |
+| `app/agent_center/rows.rs` | `f7fb88ad2283f56bbb683bb64a938e6f5745ba8973d4fdb4b57ebcb1659a819e` | 同名 module / merge（canonical Thread） |
+| `app/agent_center/hints.rs` | `e3dccc50fb82f7435d52ff61faf5b211e4a67ee0287e3cd61e85e2505f99830b` | 同名 module / merge（真实已接线 action） |
+| `app/agents_overview_view.rs` | `028d06577818ce9eff54bb53d4ceedbc5a5e82d539456cb79575e518a37d9453` | 同名 view / merge（metadata target、详情层级） |
+| `app/agents_overview_grouping.rs` | `09aa241f2113c35595b8153ea58d85bc81d6f25e3413916b5db8b8c044356150` | 同名 module / merge；model 字段缺失则 defer |
+| `bottom_pane/selection_tabs.rs` | `d86fe96a64991911918cd80a0894e001970a41d2fc1928ade3e044444681ac6c` | 同名 module / direct（filled tab bar） |
+| `style/contrast.rs` | `ab52727328eb91923eb6970218d49b24e9b71450950f13875317d4aae3daf589` | `style/selection.rs` / merge（已知 palette fill 与保守 fallback；全局 contrast 仍 partial） |
+| `bottom_pane/picker_style.rs` | `cfb19e947a9b4ec51d5f7b59d7d37f8c1bbe95f6aa3770fe10034cb90c3b9704` | `style/selection.rs` / merge（active tab） |
+| `keymap.rs` | `af8edcd1afa0510da8ac596d4adfe082dabb9ac3d2dd2e9a5b97bed17dd3acd1` | TUI `keymap.rs` / merge（已接线 task 默认键位） |
+
+补充来源：`shortcut_help.rs`（SHA-256
+`c8b2e88684a6e4bbe7b9cad262bb4cf5dada56c8136dc297f920618b1784c86b`）为本切片读取的
+三/二/单列帮助算法，迁入同名 current owner；
+surface 提供真实 bindings 和五语言 labels，不新增未接线动作。
+
+- [x] 替换旧 summary/wrapped List renderer；同一分组行模型用于绘制和翻页。
+- [x] 标签页、输入 suffix/cursor、rename target 和 refresh 保留状态稳定回归。
+- [x] 默认键位及实际配置提示对齐，无旧键位作为 task action 的隐式 fallback。
+- [x] 五语言、窄屏/宽屏、TestBackend 与真实 PTY 证据完成后登记结果。
+
+本切片结果：上述 4 个退出条件完成 `4/4（100%）`，仅代表该核心交互切片；
+Agent Center 全量及整体 CLI/TUI UI/UX 仍为 `partial / in-progress`，不可宣称完全对齐。
+
+- **current**：同名 `agent_center/{input,navigation,render,rows,hints,mod}.rs`、
+  `agents_overview_grouping.rs`、filled tabs 和 `shortcut_help.rs`；view 仅保留 canonical metadata
+  的交互状态，生产视图主体从 806 行降至约 290 行，原测试迁至 `agent_center_tests.rs`。
+- **deleted（原位替换）**：旧四项 summary、wrapped List/SelectionRow 渲染、冗余 current badge、
+  长串硬编码 footer、未使用的手动 Refresh action 和旧 Ctrl task defaults；无新增 compat/deprecated
+  双轨。原 render 文件只承接唯一 read-only details owner。
+- **稳定回归**：状态 tabs 与宽屏 columns、分组/翻页、narrow active-tab retention、100K CJK
+  metadata suffix/cursor、emoji grapheme 删除、刷新后 rename target 固定、无搜索结果不下溢、
+  自定义/解绑 task hints、BackTab normalization、help footer 护栏、三/二/单列帮助、五语言。
+- **Rust**：`cargo test --locked --manifest-path lime-rs/Cargo.toml -p tui --tests --quiet`
+  通过（1138 library + 18 integration + 1 dependency regression）；
+  `cargo clippy --locked --manifest-path lime-rs/Cargo.toml -p tui --lib --no-deps -- -D warnings`
+  通过；workspace fmt check、`git diff --check` 通过。
+- **结构/fixture guard**：重生成 `inventory:tui-structure`；TUI structure 与 Gate B script guard
+  共 `20/20` 通过。更新 guard 的旧 Ctrl 键位与旧行文案断言，不把 source guard 当交互证据。
+- **TUI Gate B**：最新 `npm run smoke:tui-gate-b` 通过；thread
+  `01a0f200-0dfd-7ab1-8b46-b058902d060f`，turn `turn_7788234182bd48af9f4cb99f3551bacd`。
+  Agent Center 经真实 PTY 的 `n -> Working filter -> r -> x -> f -> resume`；queue-edit、
+  sticky-prompt、main-find、focus-palette、resize-reflow、reconnect 与 terminal restore 同时通过。
+  链路为真实 `lime -> stdio -> App Server JSON-RPC -> RuntimeCore -> canonical projection`；
+  provider 为 test-only external fixture，非 live provider 或 Desktop/Windows/X11 证据。
+- **未运行**：本切片没有修改协议、Electron 或 GUI bridge，因此未扩跑 `test:contracts`、
+  `verify:gui-smoke`；Windows 与真实 X11 PRIMARY 仍 platform-defer。App Server 的
+  `lower_turn_start_params`/`lower_runtime_options` 既有 warning 未夹写。
+- **架构确认**：本轮仅拆分终端 interaction/render owner，不新增 runtime、Thread model、
+  history store 或 transport。责任开发者 root，2026-09-30。
+
+下一刀：按当前 Codex `bottom_pane/{footer,shortcut_overlay,composer_gap}.rs` 与
+`chatwidget/*` 重构输入区/快捷提示和状态层级；再推进 startup/session handoff、completion footer、
+activity disclosure、picker/审批/提问的逐场景 UI/UX 验收，不能用目录覆盖数替代行为完成度。
+
+### 继续：composer footer / shortcut overlay（2026-09-30）
+
+状态：本切片 completed；整体仍 in-progress / partial。唯一 current owner 为 TUI composer presentation，不改变 canonical runtime。
+来源仍为 `c248f6d48b97eb4a2aa56147a0b11b7d763278b9`：
+
+| upstream path（`codex-rs/tui/src/`） | SHA-256 | 分类 |
+| --- | --- | --- |
+| `bottom_pane/footer.rs` | `101110f738896098133ea1d7c951356a2c3d21584ace96f6e796cad7fa88da62` | merge（五语言、已接线 context） |
+| `bottom_pane/shortcut_overlay.rs` | `699e792f440308f758bfff89c455bd23fdfa65ae5e32e388358c8b59b4abdb40` | merge（只显示真实 action） |
+| `bottom_pane/chat_composer/footer_state.rs` | `c9874a5fee151511451af6a0cfb558a889260b7beacf96519169224cde0e2c76` | merge（唯一 composer state） |
+| `bottom_pane/composer_gap.rs` | `b8ac95d8d23554d5e4b5d6faf62e86d3d94b02fceb15df1f91ed799854b987c7` | read-only 对照，后续逐场景迁移 |
+| `chatwidget/settings.rs` | `e60f468c3f5d266bd0f9885a11174bf30be80f0ad04b0b1fa450d122b779d22f` | read-only mode indicator 生效条件 |
+
+窄写集：`bottom_pane/{footer,shortcut_overlay,shortcut_overlay_tests,mod}.rs`、
+`bottom_pane/chat_composer{.rs,/footer_state.rs,/footer_state_tests.rs}`、
+`locale{.rs,/shortcuts.rs}`、`keymap.rs`（仅真实 bindings hint）、`view.rs`（仅 layout 接线）、
+专用 render/interaction 回归、现有 PTY fixture 与结构 inventory/guard、本计划。
+避让 MCP、App Server protocol/runtime、Electron、发布及未确认产物；已有 TUI 改动为本任务延续。
+
+- [x] 删除 idle draft-ready、运行中 turn ID footer；保留 canonical status owner。
+- [x] Plan mode 左侧层级与 responsive collapse 对齐；passive agent label、queue hint 接线回归。
+- [x] 空输入 `?`/`Shift+?` 打开真实快捷键参考；Esc 关闭不触发 interrupt；输入/paste 恢复编辑。
+- [x] 快捷键参考三/二/单列，测量/绘制共用，clipped area 保留 close hint；五语言与真实 keymap。
+- [x] 定向测试、TUI crate、Clippy/fmt/结构 guard 和真实 PTY Gate B；登记证据后继续下一刀。
+
+尚无 current contract 的 statusline、account/usage、voice、edit-last-message 不伪造入口或提示；
+本轮没有协议/GUI bridge 改动，不扩大为 contracts/GUI smoke。
+
+第一轮证据（仍继续实现，不代表整体完成）：TUI `1151` library + `18` integration +
+`1` dependency regression、TUI Clippy `-D warnings`、fmt/diff、结构/PTY guard `20/20` 通过。
+真实 `smoke:tui-gate-b` 通过，thread `01a0f28a-9149-73e2-814b-f1b13a380245`、turn
+`turn_edd8d5f4460f419a8a213ec4d4ea6ffb`；新增 `? -> Keyboard shortcuts -> Esc -> composer`
+经过真实 PTY；原 queue-edit、Agent Center、sticky-prompt、main-find、focus-palette、resize、
+reconnect 和 terminal restore 均通过。Provider 为显式 external fixture，非 live/Windows/X11。
+
+后续收口写集追加 `keymap/hints.rs`、`view/tests{.rs,/**}`，只搬迁已有测试和提示投影。
+`view.rs` 从 2363 行收敛为约 484 行，各专用测试模块低于 800 行；keymap 主体退回 800 行以下。
+未改变 render public boundary、状态机、持久化或 runtime 架构。`runtime_pty_tests.rs` 为 test-only
+旧大文件，本轮只加 help 场景证据；退出条件为后续把 scenario drivers 拆出，而不堆产品逻辑。
+无生产写入者的 `FooterFlash`/读取分支为 dead / 原位删除；已有真实 clipboard feedback
+继续由 `TranscriptComposerGap` 与 frame scheduler 承接，不创建并行 toast owner。
+
+### 下一切片：model picker 无边框底部列表（2026-09-30）
+
+状态：本切片 completed；整体仍 in-progress / partial；来源 `c248f6d48b`。
+`bottom_pane/list_selection_view.rs` SHA-256
+`73496ffec9df5fed4ee75749e96bf27d29abdb6420f3cd9a25a8e51dd95d8880`、
+`bottom_pane/picker_style.rs` SHA-256
+`cfb19e947a9b4ec51d5f7b59d7d37f8c1bbe95f6aa3770fe10034cb90c3b9704`、
+`chatwidget/tests/model_picker_tests.rs` SHA-256
+`84008a9d5169cddb523dda0a4ca695b9e1c1defa2105c67e4c55bd00f2cd9c6b`。
+行列宽算法另读取 `bottom_pane/selection_popup_common.rs` SHA-256
+`dbd20b229188017b0a19f62748d26631d77498045f8940c4aecafc2765d647bc`，采用全行 name width、
+两列间距与 description 最少 30% 的上游规则，不沿用旧固定 40% label 列。
+分类 merge：current model catalog、provider identity、settings contract 不变；只迁移终端 presentation。
+
+写集：`tui/src/model_picker{.rs,/render.rs,/render_tests.rs}`、`app/thread_settings.rs`（仅 current
+model/provider 默认定位）、`locale{.rs,/pickers.rs}`、`view.rs`（picker 替换输入区，不再居中盖层）、
+相关 view/render tests、现有结构/PTY guard 和本计划。model picker/thread_settings 当前无他人脏改动。
+
+- [x] 无边框底部列表、标题/独立搜索行、编号/描述/当前与默认标识；footer 不溢出。
+- [x] 以真实 model + provider 定位当前项；重名但未获 provider 事实时不猜测。
+- [x] 渲染与测量共享 visual rows，长描述/窄宽/空筛选仍保留 selected row 与输入光标。
+- [x] Unicode 查询删除、normalized paste、翻页/边界、五语言与稳定回归。
+- [x] crate/Clippy/fmt/结构 guard + 真实 `/model` PTY open/cancel。
+
+Codex model-family、account 产品文案、durable-default/session-only 和 advanced reasoning 二级选择
+需要另行对齐 current contract；本轮不把仅模型选择伪称为“Model and Effort”全量完成。
+
+验证中：footer 收口后 library `1150` + integration `18` + dependency `1` 通过，删除了仅测试
+写入的 flash 占位回归；结构/PTY guard `21/21` 通过，Clippy/fmt/diff 通过。
+真实 PTY 二次门禁因并行 Cargo build lock 而在测试进程启动阶段超时，未形成新增 active-help
+证据；版本从 1.146.0 到 1.147.0 的无关发布改动与 MCP/App Server 并行校验均避让，等待共享
+artifact lock 释放后串行重跑，不修改外部进程或发布写集。
+
+最新收口证据（2026-09-30）：TUI library `1158`、integration `18`、dependency regression `1`
+通过；model picker 定向 `14/14`、TUI Clippy `--lib --no-deps -D warnings`、fmt/diff 通过。
+`visible_models` 收回 test-only helper，不加 dead-code 豁免。结构/PTY guard `21/21` 通过。
+串行 `smoke:tui-gate-b` 已通过：thread `01a0f2a9-c3e1-75c0-b113-2011dbf1de8f`、turn
+`turn_83472ea739ac4e5cbcd3fe49b379858e`，新增 `/model -> 无匹配 -> Esc` 与 active-help
+关闭无 `turnCancel` 的 ledger 断言生效。Provider 为 external fixture，非 live / Desktop / Windows。
+Footer 与 model picker 两个切片退出条件均完成 `5/5（100%）`，整体仍 partial，继续下一刀。
+旧居中 model popup、draft-ready / turn-ID / dead flash 为 deleted；current catalog/settings/
+clipboard-gap owner 不变，无新增 compat/deprecated。无协议或 GUI 变更，不扩大运行对应门禁。
+
+### 继续：slash / file / skill suggestion rows（2026-09-30）
+
+状态：in-progress。事实源仍为 current composer + App Server catalog/search，无业务后端变更。
+来源 commit `c248f6d48b97eb4a2aa56147a0b11b7d763278b9`：
+
+| upstream path（`codex-rs/tui/src/`） | SHA-256 | 分类 |
+| --- | --- | --- |
+| `bottom_pane/command_popup.rs` | `74ee51f219a9b9a8ef2c92ed2018e97d6cf801193522537faa449e40292ae1d0` | merge（真实 command catalog / 五语言） |
+| `bottom_pane/file_search_popup.rs` | `8d6bf186cc89fd36a6ea718dce39c930db1c55c6a4973d16fd98d29346c0d950` | merge（canonical search result identity） |
+| `bottom_pane/skill_popup.rs` | `1aaea0b777667241dee222faa75ef49517e73d96554b12d8ebb0185685ba7d7f` | merge（skills/list；未接线 App/Plugin mention 不伪造） |
+| `bottom_pane/picker_rows.rs` | `893e4a141b91f53c17d35d41c1b5cc4c9c73127e6a80a5506452d95731246e13` | merge（共享 single-line 行、上下溢出提示） |
+| `bottom_pane/scroll_state.rs` | `284500ee9149e2269a091b142b9c552f61ef84abf29273fcf7cd2bba4a184461` | merge（只迁有消费者的 navigation） |
+
+另复用已登记 `selection_popup_common.rs`、`picker_style.rs` 的全行列宽/selection fill/visual rows
+算法；Unicode match indices 参考 `codex-rs/utils/fuzzy-match/src/lib.rs`。
+窄写集：`bottom_pane/{command_popup,selection_row_layout,scroll_state,selection_popup_common,picker_rows,mod}.rs`、
+`bottom_pane/chat_composer/{file_search_popup,skill_popup}.rs`、私有 fuzzy helper、`locale/pickers.rs`、
+独立 render 回归、既有 PTY fixture/guard、结构 inventory 和本计划；view 接线保持 overlay 语义。
+避让 protocol/runtime/MCP、Electron、发布；只替换原 presentation，不保留旧绘制分支。
+
+- [x] Slash description 统一列宽和 wrapped rows，filter 改变重置 selection/scroll。
+- [x] 文件长路径保留可区分 filename，display query / pending query 分离，插入保留原 path。
+- [x] 技能完整匹配列表与选中项滚动窗口、窄屏 tag、真实 insert/close hint。
+- [x] 共享 filled selection / overflow hints / Unicode match indices，五语言与 TestBackend 回归。
+- [x] 定向/crate/Clippy/fmt、结构守卫和真实 PTY suggestion open/navigate/complete/cancel。
+
+本切片完成 `5/5（100%）`，整体仍 partial。current 为共享 `scroll_state`、`picker_rows`、
+`selection_popup_common` 和既有 composer popup owner；旧单行 slash 截断、技能无窗口绘制、
+ASCII-only fuzzy_score 与三个重复选中样式分支原位删除，无新增 compat/deprecated。
+Unicode helper 为终端私有 projection，不新增依赖；来源 fuzzy-match SHA-256
+`dc8adaf8bb46166721d98315a1bd986419050faf44d4427ca6e8cf3e4996808b`。
+定向 bottom pane `262/262`；完整 TUI library `1177` + integration `18` + dependency `1`、
+Clippy `--lib --no-deps -D warnings`、fmt/diff 通过；结构/PTY guard `22/22` 通过。
+真实 Gate B thread `01a0f2cd-e400-7331-b152-cf33fca23f3e`、turn
+`turn_a95b425877a74acf8ddf2248ed5a2a3c`：slash wrap/cancel、真实 fuzzyFileSearch 的长目录两文件
+选择与原路径插入、skills/list 的 10 项目录技能滚动/Tab 插入均通过；补全期间无 `turnStart`。
+首次 PTY driver 误把 `@p` 中间画面当最终结果，已改为等待完整 query 和选中 filename 的业务
+predicate，保留 production 的 pending/display-query 语义，不用 sleep 等待稳定。
+测试-only driver 拆到 `runtime_pty_tests/suggestions.rs`，不继续向旧大文件堆场景逻辑。
+Provider 为显式 external fixture；非 live/GUI/Desktop/Windows/X11 证据。
+
+### 继续：approval presentation / fullscreen details（2026-09-30）
+
+状态：in-progress。唯一 current owner 为 BottomPane 中现有 ApprovalOverlay；不改响应决策、
+权限范围或协议。当前缺陷是长 command/reason 的 header 会在固定 18 行 pane 中挤掉选中动作。
+source commit 仍为 `c248f6d48b`；`bottom_pane/approval_overlay.rs` SHA-256
+`feedfa0d4fa8df15355bd36e32e28f3d7086bdc7eb81cc357ae03ad19a4622f5`、
+`bottom_pane/selection_picker_layout.rs` SHA-256
+`69ccd3130c36bf5a64e75f5ececd9db0c07576b8cf0a9998690e542c07649a2c`，另复用已登记
+`list_selection_view.rs` 的 borderless/header elision 和选中行优先布局。
+upstream `Approval.open_fullscreen` 默认 Ctrl+A / Ctrl+Shift+A，App event dispatch 打开静态
+详情 pager，不做审批；Lime 复用 current PagerOverlay，不复制 runtime 或决策状态。
+窄写集：`bottom_pane/{render,mod}.rs`、`bottom_pane/approval_render{.rs,_tests.rs}`、
+`app/interaction.rs`（protected key 路由）、`locale/pickers.rs`、专用 view / PTY 回归与本计划。
+这些 approval render 目标文件无他人脏改动；避让 protocol/runtime/MCP/发布/Electron。
+
+- [ ] 审批无边框、共享 selection fill；长 header 不遮挡当前可操作选项。
+- [ ] header elision + 真实 Ctrl+A 全文查看；关闭详情不审批、不丢 request/selection/draft。
+- [ ] 五语言、长命令、窄/短终端、decision identity 和保护输入回归。
+- [ ] 定向/crate/Clippy/fmt、结构守卫、真实 PTY approval details open/close/approve。
+
+没有 current file-change diff 的字段不伪造 patch diff；当前只展示已有 grant-root/reason，
+完整 patch-review 和 request-user-input surface 仍待后续逐合同收敛。
+
+事实缺口：模型分组/usage/live activity、worktree/new-task chooser 与 archive/hide/delete
+需继续按 current owner 核对接线，不以 provider 名称冒充模型，不提前渲染无 consumer 的动作。
+
+本轮继续同步（2026-09-30）：
+
+- [x] 对齐 Codex `abc8f0c9a1` 的终端调色板语义：Markdown 有序列表标记由默认/主题强调色
+  改为 `Color::LightBlue`，保留无序标记、块引用和代码块的既有样式；新增跨行 marker
+  样式回归。
+- [x] 对齐 Codex `136391a23e` 的未发送输入保留边界：提交/排队请求在 transport 失败时
+  通过 `App::restore_submission_draft` 一次性恢复文本、本地图片和远程图片，不自动重试
+  不确定请求；新增完整草稿恢复回归。真实重连 Gate B 仍需覆盖“请求已被服务端接受但客户端
+  未收到响应”的 uncertain receipt 矩阵，当前保持 partial。
+- [x] 对齐 Codex `136391a23e`/`1cc7e23612` 的连接态文案边界：断线不再把 transport 错误
+  正文显示在 TUI，统一使用五语言 `reconnecting`、`reconnected`、`reconnect failed` 状态；
+  详细错误仅保留 debug 日志。
+
+本轮验证：TUI library `1098/1098`；`cargo fmt --all -- --check`；`git diff --check`；真实
+`npm run smoke:tui-gate-b` 通过（`queue-edit`、`agents-overview`、`sticky-prompt`、
+`main-find`、`focus-palette`、`resize-reflow`、`reconnect`、alternate-screen 恢复）。首次
+PTY 运行出现既有时序抖动，复跑通过；`cargo clippy -p tui --all-targets -- -D warnings`
+仍被既有 `agent-protocol` 的 `large_enum_variant`/`derivable_impls` 阻塞，非本轮触达文件；按
+包边界执行的 `cargo clippy -p tui --lib --no-deps -- -D warnings` 已通过。
 
 本计划承接 [全量差异报告](./codex-lime-tui-cli-difference-report.md)，目标是继续按
 Codex 的真实目录、文件、公开类型、函数名和测试名同步 Lime 的 TUI/CLI。禁止根据截图
@@ -16,8 +266,8 @@ current owner。
 
 | 维度 | Codex | Lime | 当前结论 |
 | --- | ---: | ---: | --- |
-| TUI Rust 文件 | 997 | 194 | 目录体系仍未同构 |
-| TUI 类型/函数符号 | 14,991 | 3,497 | 结构差异大，须按 owner 分批收敛 |
+| TUI Rust 文件 | 1048 | 227 | 目录体系仍未同构（本轮 inventory） |
+| TUI 类型/函数符号 | 15,341 | 3,961 | 结构差异大，须按 owner 分批收敛（本轮 inventory） |
 | TUI snapshot | 1,269 | 0 | 已建立逐项分类账本，未迁入快照文件 |
 | CLI Rust 文件 | 96 | 10 | current CLI 较薄，产品专属文件不机械复制 |
 | execpolicy 文件 | 17 | 17 | 已同构 |
@@ -408,13 +658,22 @@ PTY Gate B 同时通过；账本无未分类条目，且测试失败不会回退
 
 ### C1 CLI current contract
 
-- [ ] `permission options`：按 Codex `approve-for-me`、`not-so-yolo` 和 root/exec/resume
-  precedence 测试逐项决定是否能映射 Lime `permissionProfile/list` + `turn/start`；不能
+- [x] `permission options`：按 Codex `approve-for-me`、`not-so-yolo` 和 root/exec/resume
+  precedence 测试逐项决定是否能映射 Lime `permissionProfile/list` + `thread/settings/update` +
+  `turn/start`；不能
   映射的别名不添加假兼容。
 - [ ] `plugin`：补 marketplace cache、repo-local marketplace、catalog refresh、JSON
   output 和 enable/disable 边界；所有 mutation 继续走 `plugin/*` App Server owner。
-- [ ] `mcp`：先补 `mcpServer/oauth/*` protocol、schema、client、handler 和 fixture，再
-  实现 login/logout；协议未完成前继续 fail closed，禁止 CLI 直接读 credential store。
+  - [x] 本地 repo marketplace discovery、`--available`/JSON 投影和真实 CLI Gate B 已完成。
+  - [ ] 远程 marketplace cache/refresh 与 mutation 继续按产品范围 deferred/excluded，不伪造
+    第二套 catalog 或 credential owner。
+- [x] `mcp`：补齐 `mcpServer/oauth/*` 的 logout current contract：协议/schema、Rust/TS
+  client、RuntimeCore、LocalAppDataSource、MCP OAuth store、CLI 和 OAuth fixture 均沿同一
+  App Server JSON-RPC 主链；CLI 不直接读 credential store。`logout` 仅接受
+  `streamable_http`，未知 server、stdio 和未注入 credential root 均 fail closed；重复 logout
+  返回 `removed=false`。
+- [ ] `mcp`：继续补 login/logout 的真实 stdio CLI Gate B、provider error/uncertain receipt
+  矩阵和 Codex client-registration/keyring 差异；没有当前 Lime owner 的能力继续 defer。
 - [ ] `queue`：补本地 queue 的完整命令/错误矩阵；远程 queue 只在 Cloud transport evidence
   完成后启用，不添加本地 fallback。
 - [ ] `app-server entrypoint`：复制 Codex 参数和错误测试到 Lime sibling App Server owner；
@@ -2980,3 +3239,605 @@ queue-edit、agents-overview、真实 F3 `main-find=ok`、focus-palette、resize
 仍为 `in-progress`，顶层 checklist 保持 `21/50（42%）`。下一刀优先完整接入 Codex-shaped
 `tui.keymap` runtime snapshot/local-settings 边界，或选择 retained-cell bookmark；不得把默认键纠偏
 提升为“完整对齐 TUI”完成。
+
+本轮 A2/A3 Codex-shaped `tui.keymap` 持久化切片（2026-09-27）：
+
+- `lime_core config.yaml` 成为唯一配置 owner，新增 `tui.keymap` 的 strict schema，只公开已有真实
+  consumer 的 `global`、`pager` 与 `agents` context。每个 action 支持单键、最多两段 chord、有序
+  alternatives 和空数组 explicit unbind；未知字段、非法键名和超过两段 chord 在 core 解析时
+  fail closed。同 context 重复键、single/chord prefix 冲突以及会截获普通文本的 printable chord
+  prefix 在 TUI runtime snapshot 构建时 fail closed。
+- TUI 主入口与独立 resume picker 均在进入 alternate screen 前经现有 App Server `config/read` 读取
+  `LocalSettings`，再生成一次不可变 `RuntimeKeymap`；没有 TUI 私有配置文件、环境变量配置面、第二套
+  transport 或 production mock fallback。dispatch 与 detailed pager footer hint 消费同一 snapshot；
+  Agents refresh 保留启动期自定义 keymap，不回退默认绑定。
+- global、pager 与 Agents 各自持有独立 chord matcher。Paste、Mouse、FocusLost、Resize、Draw 等
+  非键盘边界会清除 pending chord，避免前缀跨焦点或粘贴泄漏到下一键；对应回归覆盖三个 surface。
+  尚未接线的 composer/editor/Vim keymap 不提前暴露，继续为 `partial/defer`。
+- 真实 PTY Gate B 的测试 YAML 配置 `global.find_transcript: ctrl-x f`，complete 场景实际发送
+  `Ctrl+X`、`f` 打开 main Find，证明
+  `config.yaml -> config/read -> LocalSettings -> chord matcher -> main Find`。remote reconnect fixture
+  同步实现 public `config/read`，并锁定启动只读取一次、重连复用原不可变 snapshot；缺失 response
+  时 TUI 保持 fail closed，不增加默认 fallback。
+- `internal/aiprompts/commands.md`、`docs/ops.md` 与 `packages/cli/README.md` 已同步唯一 owner、支持的
+  context/action、单键/chord/alternatives/unbind 和启动期 snapshot 合同。结构 inventory 加入
+  `keymap/tests.rs`、`local_settings.rs` 并刷新到 Codex commit
+  `5c07856e25b565c86c6266ff51edff58299fd4e6`：总计 `1199` files，Lime TUI 为
+  `202 files / 3665 symbols`，missing 为 `830 files / 11661 symbols`。
+
+验证：core keymap schema `3/3`、RuntimeKeymap `6/6`、LocalSettings `2/2`、新增非键盘 chord
+边界 `3/3`、最终 TUI library `1060/1060`、App Server public `config_jsonrpc` `1/1`、TUI
+`--all-targets --no-deps` Clippy `-D warnings`、Gate B 源码守卫 `3/3`、结构 inventory 守卫
+`17/17`、`npm run test:contracts`（含 scripts governance）与 `git diff --check` 通过。
+complete-only Gate B 通过：thread `01a0e15a-5e03-77c1-b315-10c902969f6b`、turn
+`turn_417dc5daa2504539b3799c8b8809c73a`，证据目录 `tui-gate-b-DI4tod`；完整矩阵通过：thread
+`01a0e15a-ef7e-7b23-8014-fef97b214f24`、turn `turn_fb2d349cd8014e0db874d7d40dc2db7d`，
+覆盖 complete、approval、user-input、interrupt、failure、queue-edit、agents-overview、
+`sticky-prompt=ok`、自定义 chord `main-find=ok`、focus-palette、resize-reflow、reconnect 与
+`terminal=restored`，证据目录 `tui-gate-b-3DKDE0`。App Server 仅出现既有
+`lower_turn_start_params` / `lower_runtime_options` dead-code warning。相关 Vitest smart runner 首次
+命中既有 `EISDIR .../electron` 与退出超时，直接 target 已通过，不记为源码失败。
+
+取得明确确认后已执行 `cargo fmt --manifest-path "lime-rs/Cargo.toml" --all`；workspace fmt check、
+TUI `--all-targets --no-deps` Clippy `-D warnings`、结构/snapshot inventory `19/19` 与
+`git diff --check` 均通过，格式变化后的 structure inventory 已重新生成且总量仍为 `1199` files。
+`npm run verify:local` 的 smart changed-scope 连续两次在同一既有 MCP 并发用例
+`bridge_client::tests::concurrent_callers_receive_only_their_request_progress` 停滞超过 60 秒，均人工中止；
+该用例通过仓库 `resolveRustyV8CargoEnv` 入口隔离复跑为 `1/1`、`0.05s`，说明当前 remaining blocker
+是宽范围同进程并发门禁挂起，而不是稳定的 TUI/keymap 逻辑失败。裸 Cargo 隔离复跑还会命中已知
+`rusty_v8 v150.4.0` GitHub archive 404，因此只采用仓库统一 Rust 测试入口作为有效证据。
+
+分类：上述配置 schema、App Server 读取、TUI snapshot/dispatch/hint、chord boundary、文档和 PTY
+evidence 均为 `current`；未新增 `compat`、`deprecated` 或 `dead-candidate`。完整
+composer/editor/Vim keymap、retained-cell bookmark、A2/A3 其余 owner、CLI partial 与 Cloud transport
+继续为 `partial/defer`。总体计划仍为 `in-progress`，顶层 checklist 保持 `21/50（42%）`，不得提升为
+“完整对齐 TUI”完成。
+
+本轮 A2 Codex-shaped stable transcript bookmark 切片（2026-09-27）：
+
+- 对照 Codex `transcript_view/bookmark.rs` 的 retained reading position 语义，新增
+  `transcript_view/{bookmark,bookmark_tests}.rs` 短领域 owner。`TranscriptBookmark` 记录 canonical
+  source key、source 内逻辑行偏移和 wrapped-row 偏移；`TranscriptFrame` 保存本次 materialized
+  transcript 的行、稳定 anchor ranges 与宽度。它只属于 App session-local presentation，不进入 App
+  Server、ThreadStore、canonical Thread/Turn/Item、export 或持久化。
+- `app/history_ui.rs` 为 session header、group separator、canonical entry、activity group 和 completion
+  separator 生成稳定 key；`TranscriptContent` / `MaterializedTranscript` 只把这些 identity 投影为
+  `TranscriptAnchorRange`，没有建立第二套 transcript store。`PagerOverlay` 先按 stable source 恢复，只有
+  source 不存在时才回退既有 prefix/suffix logical-line remap；因此 older-history prepend、canonical
+  group/entry replacement、内容收缩 clamp 与终端宽度 reflow 后仍保留相同阅读位置。
+- `TranscriptPresentation` 仍是 detailed pager 唯一 session-local owner：关闭时显式捕获 bookmark，重开
+  后在下一次真实 materialization 恢复；following bookmark 继续定位最新输出。search、selection 与
+  disclosure 沿用既有 owner：关闭仍清 search/selection/focus，disclosure expansion 仍按 canonical
+  identity 保留，bookmark 不复制这些状态。thread identity 变化继续清理 retained presentation，禁止
+  bookmark 跨 thread 泄漏。
+- 真实 PTY complete 场景在长 canonical transcript 中到达稳定 source 顶部，关闭 detailed transcript
+  后用 `Ctrl+T` 重开并再次等待 `TUI_EDGE_ROW_00`；该条件是测试内硬断言，同时覆盖真实 `lime`、PTY、
+  alternate screen、键盘输入、stdio App Server JSON-RPC、RuntimeCore/read model 与终端模式恢复。
+- 分类：stable source anchor、pagination/replacement/reflow remap、close/reopen restore、following-to-tail
+  和 canonical key projection 均为 `current`；未新增 `compat` 或 `deprecated`。仅供测试调用且已无生产
+  consumer 的 `TranscriptContent::push_line` 为 `dead / deleted`，测试统一使用现有 `push_lines`，不以
+  lint allow 保留冗余 API。Codex 私有 retained-cell store、Lime canonical 无法证明的 specialized cell
+  identity、A2 的其余 history/transcript contract 场景与 A3 其他 owner 继续为 `partial/contract-defer`。
+  本切片没有改变 public boundary 或依赖方向，因此不更新架构图。
+
+验证：bookmark 定向回归 `6/6`；最终完整 TUI library `1065/1065`；TUI
+`--all-targets --no-deps` Clippy `-D warnings`、workspace fmt check、结构/snapshot inventory `19/19`
+与 `git diff --check` 均通过。结构 inventory 按 Codex
+`5c07856e25b565c86c6266ff51edff58299fd4e6` 刷新为 `1201` 个 TUI src 文件：Codex TUI src
+`997 files / 14991 symbols`，Lime TUI src `204 files / 3688 symbols`，missing 为
+`828 files / 11656 symbols`；结构守卫锁定 `transcript_view/bookmark.rs`、
+`transcript_view/bookmark_tests.rs`、`TranscriptAnchorRange`、`TranscriptBookmark` 与
+`TranscriptFrame`。
+
+真实 `npm run smoke:tui-gate-b` 最终保留证据的完整矩阵通过：thread
+`01a0e1cf-f63a-7201-b5fa-e75ff4780370`、turn `turn_e5ec8401798b45b298d8f9baf3f0f02b`，事件链为
+`turn.started,message.delta,item.started,item.completed,item.started,item.completed,turn.completed`，
+并覆盖 detailed bookmark 重开、complete、approval、user-input、interrupt、failure、queue-edit、
+agents-overview、`sticky-prompt=ok`、自定义 chord `main-find=ok`、focus-palette、resize-reflow、
+reconnect 与 `terminal=restored`；证据目录 `tui-gate-b-6b8Jkt`。编译仅出现 App Server 既有
+`lower_turn_start_params` / `lower_runtime_options` dead-code warning，非本切片引入。本轮未改变
+App Server protocol、配置 schema、Electron 或 GUI bridge，因此不重复运行 `test:contracts` 或
+`verify:gui-smoke`；上一 `tui.keymap` 切片的 contracts 证据继续有效。该切片达到 Rust TUI
+reducer/render 与真实 TUI Gate B 风险门槛，但总体计划仍为 `in-progress`，顶层 checklist 保持
+`21/50（42%）`；下一刀回到 A2 history/transcript contract 场景或 A3 composer/bottom-pane current
+owner，不把 stable bookmark 收口提升为“完整对齐 TUI”完成。
+
+本轮 A3 Codex-shaped composer layout 切片（2026-09-29）：
+
+- 对照 Codex 当前 checkout 的 `codex-rs/tui/src/bottom_pane/chat_composer/composer_layout.rs`，在
+  `bottom_pane/chat_composer/layout.rs` 建立 Lime 唯一 `ComposerLayout` owner。它统一计算 composer
+  内部区域、附件行、prompt gutter、textarea 区域和总高度，并对窄终端做宽高钳制；`ChatComposer::layout`
+  与 `desired_height_for_width` 共享同一几何源。
+- `view.rs` 的 screen split 与 composer render 均消费 `ComposerLayout`，不再分别推导附件行、gutter
+  和 textarea 宽度，避免测量与渲染在附件存在、textarea 宽度为零或终端极窄时发生漂移。该 owner 只保存
+  session-local presentation geometry，不进入 App Server、ThreadStore 或 canonical Thread/Turn/Item。
+- 测试覆盖无附件/有附件布局、prompt gutter、极窄终端和零 textarea 宽度；结构 inventory 锁定
+  `bottom_pane/chat_composer/layout.rs` 与 `ComposerLayout`。分类为 `current`，未新增 `compat`、
+  `deprecated` 或 `dead`。Codex composer 的 attachment/draft/history/popup/slash/vim/footer 其余
+  子 owner、CLI partial 与 Cloud transport 仍为 `partial/contract-defer`。
+
+验证：composer layout 定向测试 `3/3`、附件渲染回归、窄终端回归和当前 TUI library `1068/1068` 均已通过；
+结构 inventory 已刷新为 `1202` 个 TUI src 文件，结构 Vitest 守卫 `17/17`、完整 contracts 门禁、TUI
+`--all-targets --no-deps` Clippy `-D warnings`、workspace fmt check 与 `git diff --check` 均通过。真实
+`npm run smoke:tui-gate-b` 通过，thread
+`01a0ec50-a759-7533-8194-bbf41c32b8d8`、turn
+`turn_3f6897b7220347a2b5cb60e76e5dc331`，覆盖 `queue-edit=ok`、`agents-overview=ok`、`sticky-prompt=ok`、
+`main-find=ok`、`focus-palette=ok`、`resize-reflow=ok`、`reconnect=ok` 与 `terminal=restored`。本切片未改变
+App Server protocol、Electron 或 GUI bridge；总体 Codex CLI/TUI 对齐仍为 `in-progress`，不得宣称完整同步。
+
+本轮 A3 Codex-shaped non-bracketed PasteBurst 切片（2026-09-29）：
+
+- 对照 Codex 当前 checkout commit `c248f6d48b97eb4a2aa56147a0b11b7d763278b9` 的
+  `codex-rs/tui/src/bottom_pane/paste_burst.rs` 与
+  `codex-rs/tui/src/bottom_pane/chat_composer/paste_input.rs`，在 Lime 建立
+  `bottom_pane/paste_burst.rs` 与 `bottom_pane/chat_composer/paste_input.rs` 两个唯一
+  `current` owner。状态机保持 presentation-local，不进入 App Server、ThreadStore 或
+  canonical Thread/Turn/Item。
+- 快速键盘流按 Codex 语义识别为 paste burst：首字符短暂保留以抑制 flicker，连续字符
+  聚合成 paste，Tab/Enter 在 burst 窗口内作为草稿文本而不是 queue/submit；显式 bracketed
+  paste 会先接回仍未确认的 typed prefix，避免首字符丢失。`ChatComposer::handle_key_event`
+  作为确定性测试入口临时禁用 timing；实时 `app/input_flow.rs`、`app/interaction.rs` 与
+  `runtime.rs` 统一使用带 `Instant` 的 `handle_key_event_at` /
+  `handle_tui_event_runtime`，并由 `pre_draw_tick`/`FrameRequester` 驱动 due flush。
+- `map_composer_action` 在 PasteBurst 仍 active 时请求下一帧，确保首字符和缓冲内容在无新输入
+  时仍会 flush；这保持 Codex `handle_input_basic -> should_request_frame` 的时序合同。真实
+  PTY fixture 的键盘文本改为逐字符、跨越 burst interval 发送，避免测试写入本身被正确识别为
+  非 bracketed paste；paste 行为仍由专门单测覆盖。
+- 结构 inventory 与守卫同步锁定 `PasteBurst`、`CharDecision`、`FlushResult`、
+  `handle_paste_burst_flush` 及两个 current owner。运行时新增入口没有改变 App Server
+  JSON-RPC、ThreadStore、canonical projection 或 Electron bridge。
+- 分类：PasteBurst 状态机、composer paste integration、实时 runtime frame scheduling、
+  PTY 时序适配与回归均为 `current`；未新增 `compat`、`deprecated` 或 `dead`。Codex 私有
+  auth/account/rollout DB/Cloud-only surface 继续按治理规则 excluded/defer。
+
+验证：PasteBurst/Tab/Enter/explicit-prefix 定向测试通过；完整 TUI library `1075/1075`；
+TUI `--all-targets --no-deps` Clippy `-D warnings`、workspace fmt check、`git diff --check`
+均通过；`tui-structure-inventory.test.mjs` `17/17` 通过。真实
+`npm run smoke:tui-gate-b` 完整矩阵通过，thread
+`01a0ecf7-9df3-7782-8742-e00dd7cffbc6`、turn
+`turn_ea2b64838ed740c4ba23cc7a8a7ec157`，覆盖 complete、approval、user-input、interrupt、
+failure、queue-edit、agents-overview、sticky prompt、main Find、focus-palette、resize-reflow、
+reconnect 与 `terminal=restored`；编译仅出现既有 App Server
+`lower_turn_start_params` / `lower_runtime_options` dead-code warning。本轮未改 App Server
+protocol、配置 schema、Electron 或 GUI bridge，因此不运行 `npm run test:contracts` 或
+`npm run verify:gui-smoke`。本切片达到 Rust TUI composer/interaction 与真实 TUI Gate B
+  风险门槛；总体 Codex CLI/TUI 对齐仍为 `in-progress`，下一刀回到 A2 history/transcript
+  contract 或 A3 其余 composer/bottom-pane owner，不得宣称完整同步。
+
+本轮 C1 Codex-shaped permission options 切片（2026-09-29）：
+
+- 对照 Codex `SharedCliOptions`、TUI approval flags 与 `exec` precedence，Lime `ConnectionArgs`
+  新增 `--sandbox`、`--ask-for-approval`、`--approve-for-me`（隐藏 alias `--not-so-yolo`）和
+  `--dangerously-bypass-approvals-and-sandbox`（alias `--yolo`）。root 参数会继承到 `tui`、
+  `exec` 和 `resume`；子命令显式权限组覆盖 root，保持 Codex 的 late override 语义。
+- CLI lowering 只进入既有 current App Server settings contract：`approve-for-me` 映射为
+  `approvalPolicy=on-request`、`approvalsReviewer=auto_review`、`sandboxPolicy=workspace-write`；
+  dangerous bypass 映射为 `approvalPolicy=never`、`sandboxPolicy=danger-full-access`；普通
+  `--sandbox` / `--ask-for-approval` 分别映射对应 canonical string。没有新增第二套权限 runtime，
+  也没有把 `approve-for-me` 粗暴伪装成 `:workspace` profile。
+- `AppServerSession::update_settings_with_policy` 复用 `thread/settings/update`，startup、`exec`
+  和 bounded reconnect 都写入相同 canonical 字段。TUI 运行中切换 `/permissions` profile 后会
+  清除 session-local explicit sandbox/reviewer，避免断线重连把初始 CLI policy 与新 profile 双传；
+  App Server 继续负责 profile/sandbox 互斥、权限 lowering 和持久化/read model。
+- 文档事实源同步到 `internal/aiprompts/commands.md` 与 `packages/cli/README.md`；没有改 protocol
+  schema、Electron bridge 或 renderer gateway，因为本切片完全复用已有 v2 settings fields。
+
+验证：CLI `command_tests` `30/30` 通过，覆盖 alias/lowering、dangerous bypass、互斥 fail-closed、
+root→exec 继承和子命令 override；TUI library `1075/1075`、`cargo clippy --locked --manifest-path
+"lime-rs/Cargo.toml" -p cli -p tui --all-targets --no-deps -- -D warnings`、workspace fmt、
+`git diff --check` 均通过。真实 `npm run smoke:cli-gate-b` 通过，thread
+`01a0ed5f-1add-7ad0-923d-0ce5ecbb8a04`、turn `turn_76c013f7ee9a4f7f91fb93ecc4fa35d5`，外部
+backend ledger 捕获 `approvalPolicy=on-request`、`approvalsReviewer=auto_review`、
+`sandboxPolicy=workspace-write`，并覆盖 JSON、JSONL、stdin、错误退出码和 zsh completion；CLI
+Gate B 事件链为 `turn.started,message.delta,item.started,item.completed,item.started,item.completed,turn.completed`。
+真实 `npm run smoke:tui-gate-b` 也通过，thread `01a0ed49-a5e5-76f0-b197-36fbb4601eba`、turn
+`turn_c8e5c2617a0140ec80abf80ef606c2b6`，覆盖 queue-edit、agents-overview、sticky-prompt、main-find、
+focus-palette、resize-reflow、reconnect 与 `terminal=restored`。`npm run test:contracts`（299 个
+App Server client checks、CLI boundary、scripts/docs governance）与 CLI Gate B Vitest `2/2` 通过。
+编译仅出现既有 App Server `lower_turn_start_params` / `lower_runtime_options` dead-code warning。
+本切片分类为 `current`，未新增 `compat`、`deprecated` 或 `dead-candidate`；总体计划仍为
+`in-progress`，不能宣称完整 Codex CLI/TUI 同步。
+
+本轮 C1 Plugin local discovery / available flag 切片（2026-09-29）：
+
+- 对照 Codex `plugin list --available` 与 repo-local marketplace discovery，Lime CLI `plugin list`
+  新增 `--available`（强制 `--json`）和 `--plugin-cwd <DIR>`。后者只把指定目录下真实存在的
+  `.agents/plugins/marketplace.json` 作为显式 `plugin/list.marketplacePaths`，路径去重后仍由
+  App Server Plugin v3 catalog 校验、解析和投影；CLI 不直接读取 manifest，也不创建本地缓存。
+- 当前 App Server list contract 已同时返回 installed/available 状态，因此 `--available` 只表达
+  Codex 形状的调用意图，不新增第二种 JSON schema 或伪造远程刷新；默认 raw `plugins` 响应保持
+  既有 CLI surface 和 Desktop Plugin catalog 兼容。Codex 远程 marketplace/cache refresh 与
+  `marketplace add/remove/upgrade` 仍按产品范围 `excluded / forbidden-to-restore`。
+- 真实 `cli-surface-gate-b` 增加 repo-local `plugin list --available --json --plugin-cwd` 断言，
+  并在安装前确认未安装候选不会出现在默认 JSON installed 投影，证明 CLI -> stdio App Server ->
+  RuntimeCore -> PluginDataSource -> local plugin_catalog 的同一 current 主链；没有新增 protocol、
+  Electron bridge、runtime 或生产 mock。
+
+验证：CLI plugin parser 定向测试 `3/3`、`npx vitest run scripts/app-server/cli-surface-gate-b.test.mjs`
+`2/2`、真实 `node scripts/app-server/cli-surface-gate-b.mjs`、`npm run test:contracts`、CLI
+Clippy `-D warnings`、`cargo fmt --check` 与 `git diff --check` 均通过。分类为 `current`，未新增 `compat`、`deprecated` 或 `dead`；
+下一刀回到 A2 history/transcript contract 或 A3 composer/bottom-pane current owner，CLI 继续处理
+MCP OAuth、queue error matrix 和 sandbox/profile contract partial。
+
+本轮 A2 Codex-shaped transcript activity output disclosure current 切片（2026-09-29）：
+
+- 对照 Codex `history_cell::ActivityDisclosure`、`exec_cell::command_disclosure` 与 transcript
+  layout 语义，Lime 新增 `ActivityDisclosure::{Generic,OutputLines(usize)}` current owner。
+  `TranscriptHistoryCell` 对 Command activity 复用 `exec_cell::CommandOutput::line_counts()`，只
+  统计仍保留、可通过展开看到的 output 行；head/tail storage limit 丢弃的行不计入提示，避免把
+  不可恢复数据误报为可展开内容。没有新增 transcript/history store 或第二套输出缓存。
+- `TranscriptContent` / `PagerOverlay` 的 disclosure 控件继续是 synthetic presentation row，
+  不进入 canonical source、selection copy 或 search；收起态显示 `+ N line(s)`，展开态保留
+  `− Show less`。文案覆盖 `zh-CN`、`zh-TW`、`en-US`、`ja-JP`、`ko-KR`，并在宽度不足时隐藏
+  `open_transcript` runtime keymap hint；显式 unbind 时不显示快捷键，默认/自定义 chord 仍从
+  同一 `TranscriptKeymap` snapshot 读取。
+- direct activity 由 `app/history_ui.rs` 把 disclosure metadata 送入既有 `TranscriptContent`；
+  grouped exploration/computer activity 保持既有 generic disclosure，避免把 grouped compact
+  preview 的已显示行重复计入。分类为 `current`，未新增 `compat`、`deprecated` 或 `dead`。
+
+验证：新增 output-line retained/storage-truncation、summary generic、五语言、窄宽度 shortcut
+隐藏和 keymap default/unbind 回归；TUI library `1078/1078`、integration `18/18`、manager
+regression `1/1`；`cargo clippy --locked --manifest-path "lime-rs/Cargo.toml" -p tui
+--all-targets --no-deps -- -D warnings`、`cargo fmt --check` 与 `git diff --check` 通过。
+`npm run inventory:tui-structure` 通过并刷新结构 inventory；真实 `npm run smoke:tui-gate-b`
+通过，thread `01a0eda8-3ec2-75c1-ba02-51199b4d0060`、turn
+`turn_d7cd8b1d0f2b49a4960950c422a7ba22`，覆盖 complete、approval、user-input、interrupt、failure、
+queue-edit、agents-overview、sticky-prompt、main Find、focus-palette、resize-reflow、reconnect
+与 `terminal=restored`。编译仅出现既有 App Server `lower_turn_start_params` /
+`lower_runtime_options` dead-code warning；本切片未改 App Server protocol、配置 schema、Electron
+或 GUI bridge，因此不运行 `npm run test:contracts` 或 `npm run verify:gui-smoke`。总体计划保持
+`in-progress`，下一刀继续 A2 history/transcript contract 或 A3 composer/bottom-pane current
+owner，不把 output disclosure 收口提升为完整 Codex CLI/TUI 同步。
+
+本轮 A2 Codex `d9487a2930` modal transcript wheel current 切片（2026-09-29）：
+
+- 对照 Codex “Allow transcript wheel scrolling while a modal is open” 的交互边界，在
+  `app/interaction.rs` 增加 modal transcript wheel 路由。`BottomPane` active 时，仅把命中既有
+  `TranscriptSelection.layout.area` 的 `ScrollUp/ScrollDown` 转为 canonical `AppAction::ScrollRows`；
+  wheel 在 approval/user-input footer、popup 或 transcript 区域外仍归 `BottomPane`，不向主 transcript
+  穿透。键盘、点击、拖拽和 modal submit/dismiss 继续由 BottomPane 拥有，没有新增 overlay 或第二套
+  scroll state。
+- 交互仍沿用 `TranscriptSelection::handle_event` 的 selection snapshot / edge-scroll 语义；有活动
+  selection 时只更新 selection layout，未改变 canonical Thread/Turn/Item、App Server JSON-RPC 或
+  composer ownership。该切片只修改 TUI interaction current owner，没有新增 `compat`、`deprecated`
+  或 `dead` 入口。
+- 回归覆盖 approval 与 request_user_input 两类 modal：transcript 内上/下滚轮可滚动、modal 外滚轮
+  不滚动、键盘字符不进入 composer；结构 inventory 同步记录当前 TUI source graph。
+
+验证：TUI library/all-targets `1080/1080`、integration `18/18`、manager regression `1/1`；
+`cargo clippy --locked --manifest-path "lime-rs/Cargo.toml" -p tui --all-targets --no-deps -- -D warnings`、
+workspace `cargo fmt --check`、`git diff --check` 均通过；`npm run inventory:tui-structure` 写入
+`1256` 个 TUI src 文件；真实 `npm run smoke:tui-gate-b` 通过，thread
+`01a0edce-3742-7a32-9d21-cf150f788f62`、turn `turn_a355a096569b4e92857ab9da7972d73b`，覆盖
+complete、approval、user-input、interrupt、failure、queue-edit、agents-overview、sticky-prompt、
+main-find、focus-palette、resize-reflow、reconnect 与 `terminal=restored`。编译仅出现既有 App Server
+`lower_turn_start_params` / `lower_runtime_options` dead-code warning；本切片未改 App Server protocol、
+配置 schema、Electron 或 GUI bridge，因此不运行 `npm run test:contracts` 或 `npm run verify:gui-smoke`。
+总体计划保持 `in-progress`，不能将单一 TUI 交互切片宣称为完整 Codex CLI/TUI 同步。
+
+本轮 A2 Codex `99f7758a57` short turn duration current 切片（2026-09-29）：
+
+- 对照 Codex completion footer 从“仅长回合显示”改为“只要有已知 duration 就显示”，移除 Lime
+  `FinalMessageSeparator` 对 `elapsed_seconds > 60` 的过滤。1–59 秒回合现在和长回合一样保留
+  既有多语言 `Worked for` / 本地化耗时标签；无 duration 仍不制造空的 transcript 行。
+- 同步 Codex 对小于 1 秒回合的表达：`0` 秒现在显示为本地化的 `<1s` 语义，而不是误导性的
+  `0s`；其余既有秒数格式保持不变，避免扩大到未审计的日期/运行时指标改造。
+- 改动仅位于 TUI history-cell presentation owner，沿用现有 completion boundary 与 canonical
+  projection，不新增 protocol、runtime、兼容入口或第二套耗时状态。
+
+验证：completion separator 定向测试 `5/5`、TUI all-targets `1080/1080`、integration `18/18`、manager
+regression `1/1`、TUI Clippy `-D warnings`、`cargo fmt --check` 与 `git diff --check` 均通过；真实
+`npm run smoke:tui-gate-b` 复跑通过，thread `01a0edd7-7e01-7ef1-b2e3-505decba1c80`、turn
+`turn_0274d886f1274a088d5af2598d2ef62f`，并保持 `terminal=restored`。该切片仍属 `current`，总体
+Codex CLI/TUI 对齐保持 `in-progress`。
+
+本轮 A2 Codex `c6c7c8d270` quoted selection copy current 切片（2026-09-30）：
+
+- 对照 Codex “Omit blockquote markers when copying quoted selections” 的 selection contract，
+  `TranscriptSelection::selected_text` 现在识别 Markdown renderer 生成的绿色 synthetic quote
+  prefix；当选区全部由 quoted lines（可含 nested quote 与空行）组成时，移除渲染用 `> ` marker，
+  保留真实内容、换行、task-list marker 和 literal `>`。只要选区混合 quoted/unquoted，继续保留
+  原始渲染结构，避免误删用户文本。普通未着色 `> literal` 行 fail-closed，不被当成 blockquote。
+- 改动仅位于既有 transcript selection presentation owner，不新增 LogicalLine/Markdown copy
+  store、协议字段或第二套 selection 状态；selection snapshot、synthetic disclosure 排除和
+  copy action contract 保持不变。
+- 新增回归覆盖 nested quote、mixed quoted/unquoted、literal marker 与整行跨行选择。Codex
+  quoted table 的语义元数据在 Lime 当前 renderer 不可证明，继续按现有 table contract
+  `partial/contract-defer`，没有用启发式重建表格。
+
+验证：selection 定向测试 `11/11`、TUI library/all-targets `1082/1082`、integration `18/18`、
+manager regression `1/1`、TUI Clippy `-D warnings`、workspace fmt check、
+`npm run inventory:tui-structure`（`1256` 个文件）与 `git diff --check` 通过；真实
+`npm run smoke:tui-gate-b` 通过，thread `01a0edea-1cec-7d61-ace3-b749715a1612`、turn
+`turn_217cc76a8d544722a3ae28bf5c0ab5f5`，覆盖 complete、approval、user-input、interrupt、failure、
+queue-edit、agents-overview、sticky-prompt、main-find、focus-palette、resize-reflow、reconnect 与
+`terminal=restored`。未改变 App Server protocol、Electron bridge 或 CLI contract。总体计划仍为
+`in-progress`，不能将 quote copy 单项提升为完整 Codex CLI/TUI 同步。
+
+本轮 A2 Codex `596f8c5c3c` pinned prompt header style current 切片（2026-09-30）：
+
+- 对照 Codex sticky transcript header 与原始 user prompt 的视觉合同，`TranscriptPromptHeader`
+  现在复用 user prompt 的 `› ` marker（bold + dim）并保留既有 history prompt background；宽度
+  截断为 marker 与正文预留空间，避免 pinned header 比原始 prompt 多显示一列或溢出。
+- 附件 fallback（如 `[attachments]`）也走同一 marker；控制字符、sticky suppression、selection
+  excluded row、canonical prompt source 均不改变。Lime 当前没有 Codex voice/spoken prompt
+  canonical field，因此不伪造红色 spoken 分支。
+- 改动仅位于 transcript prompt-header presentation owner；没有新增协议字段、Thread/Turn/Item
+  状态或第二套 UI state。
+
+验证：prompt-header 定向测试 `5/5`、TUI all-targets `1082/1082`、integration `18/18`、manager
+regression `1/1`、Clippy `-D warnings`、workspace fmt、inventory `1256` files 与 diff check 均通过；
+真实 `npm run smoke:tui-gate-b` 在一次既有 PTY 时序抖动后复跑通过，thread
+`01a0edf6-1239-7d01-ac85-6adac7e4ff78`、turn `turn_de6fa9c2a03f41a59b501fb6dcd823f7`，覆盖
+complete、approval、user-input、interrupt、failure、queue-edit、agents-overview、sticky-prompt、
+main-find、focus-palette、resize-reflow、reconnect 与 `terminal=restored`。总体计划保持
+`in-progress`，不能把 pinned header 单项视为完整 TUI 同步。
+
+本轮 A2 Codex `8f6517772b` Agents Overview 分页 current 切片（2026-09-30）：
+
+- 首次 Agents Overview refresh 改为只请求一页 `thread/list` 并保留 `nextCursor`；列表末尾新增
+  可上下键选中的虚拟 `Show more` 行。搜索过滤、状态分组和详情面板只消费真实 Thread 行，
+  虚拟行不会进入 `selected_thread_id` 或详情渲染。
+- 新增独立 `LoadMoreAgentsOverview` action 与 current App Server `thread/list` 请求链。加载中
+  禁止重复 Enter，网络失败保留既有 rows 并显示五语言 retry 文案；成功后按 thread id 去重追加、
+  更新 cursor，通知在加载窗口内缓冲并在合并后重放。刷新与加载更多串行化，刷新请求在加载期间
+  合并为 pending，避免旧页面响应覆盖新 refresh。
+- cursor 历史集合拒绝重复或跨页回环 cursor，fail-closed 后保留当前 cursor 供用户重试；未新增
+  App Server protocol、第二套 thread store、compat/deprecated/dead surface 或生产 mock。
+  `AgentsOverviewState`、view、renderer、interaction、event dispatch 和 runtime 继续属于同一
+  TUI current owner。
+- 文案覆盖 `zh-CN`、`zh-TW`、`en-US`、`ja-JP`、`ko-KR`：显示更多、加载中、失败重试；虚拟行
+  使用稳定 selection marker，窄终端沿用既有 SelectionRow 折叠布局。
+
+验证：Agents Overview 定向测试 `24/24`，TUI library `1086/1086`、integration `18/18`、
+manager regression `1/1`；`cargo clippy --locked --manifest-path "lime-rs/Cargo.toml" -p tui
+--all-targets --no-deps -- -D warnings`、workspace `cargo fmt --check`、`git diff --check` 均通过。
+真实 `npm run smoke:tui-gate-b` 首次受既有 PTY 时序抖动影响失败，单测重跑与第二次 Gate B 均通过，
+最新线程 `01a0ef85-6ea4-78f1-a107-305a504edbe6`、回合 `turn_b4d7eb12f5c34196860189dac2a649c0`，
+事件为 `turn.started,message.delta,item.started,item.completed,item.started,item.completed,turn.completed`，
+并证明 queue-edit、agents-overview、sticky-prompt、main-find、focus-palette、resize-reflow、
+reconnect 与 `terminal=restored`。完整 workspace Clippy 仍受既有 `agent-protocol` 两项 lint
+阻塞，本切片未触及 App Server protocol、Electron bridge 或 GUI，因此不运行 contracts/GUI smoke。
+分类为 `current`，总体计划保持 `in-progress`；下一刀回到 A2 history/transcript contract 或
+A3 composer/bottom-pane current owner。
+
+本轮 A3 Codex `4773a132c3` MCP OAuth login current 切片（2026-09-30）：
+
+- TUI `/mcp login <name>` 现在沿用 App Server JSON-RPC 主链：命令解析只生成
+  `StartMcpLogin`，OAuth 请求在后台 task 中发出，浏览器打开不阻塞 PTY 事件循环；登录尝试由
+  `loginId + threadId` 绑定，completion 在传输、线程缓冲和 replay 三个阶段都 fail-closed
+  过滤 stale attempt。completion 只有真正投影到所属 active thread 时才清理 active owner，避免
+  切换线程或重放时丢失归属判断。
+- App Server v0 OAuth params/response 与 v2 completion notification 增加可选 `threadId`、
+  `loginId`；processor 为每次尝试生成同一 UUID，响应与 completion 使用同一 `loginId`，runtime
+  对显式 thread 做非空和 canonical thread 存在性校验。CLI 继续显式发送 `threadId: None`，不
+  复制第二套登录后端。
+- `app-server-client` protocol types、schema fixtures、strict notification validator 与
+  direct-notifications fixture 已同步；五语言状态文案覆盖 session-required、in-progress、
+  browser-open、success、failure。登录结果使用 canonical projection status，不新增 transcript
+  伪条目。
+- 现有 `app/tests.rs` 补齐 typed active-login owner；pending completion、stale loginId、线程
+  切换/replay、线程归属和成功状态回归保持在同一 `app` owner。未恢复旧 CLI/TUI runtime、未
+  新增 mock production path。
+
+验证：TUI MCP 定向测试 `35/35`；`cargo clippy --locked --manifest-path "lime-rs/Cargo.toml"
+-p tui --all-targets --no-deps -- -D warnings` 通过；CLI 定向编译/测试通过；app-server-protocol
+`133` 单元测试与 schema fixture 测试通过；`npm test --workspace @limecloud/app-server-client`
+`139/139` 通过；`npm run test:contracts` 通过（299 项 contract checks）；`cargo fmt --check`
+和 `git diff --check` 通过。真实 `npm run smoke:tui-gate-b` 首轮发生既有 PTY overlay 时序抖动，
+exact PTY 重跑及第二次完整 Gate B 均通过，证据覆盖 queue-edit、agents-overview、sticky-prompt、
+main-find、focus-palette、resize-reflow、reconnect、`terminal=restored`。
+`npm run inventory:tui-structure` 已更新到 1257 files，配套 inventory Vitest `17/17` 通过。
+
+App Server processor 的独立测试 profile 仍受本机 `rusty-v8 v150.4.0` 缺少
+`librusty_v8_ptrcomp_sandbox_release_aarch64-apple-darwin.a.gz`（HTTP 404）阻塞；这不是本轮
+协议或 TUI 编译错误，production `app-server` 构建已由 Gate B 完成。分类为 `current`，但整体
+Codex CLI/TUI/UI 重构计划仍为 `in-progress`；下一刀继续 A2 history/transcript contract 或
+A3 composer/bottom-pane owner。
+
+本轮后续 A3/A2 UI 对齐（2026-09-30）：
+
+- 对照 Codex `222e24b737` follow-up directive 语义，`markdown_render::followup_labels` 仅在非
+  literal Markdown 区域把 `:codex-followup[标签]{prompt=...}` 降为标签；标签内 Markdown、嵌套
+  方括号和 inline code 保留，代码块、链接/图片、转义和 malformed directive 原样保留。`runtime`
+  的最后响应复制复用同一 lowering，因此内部 prompt 不进入 clipboard；没有改 App Server
+  protocol、canonical Thread/Turn/Item 或新增渲染副本。
+- 对照 Codex `64bf4e7e62` fullscreen Plan footer 交互，空闲且无 popup/overlay/活动回合时，Plan
+  模式 footer 在宽屏显示 `Plan mode (shift+tab to cycle)`，窄屏自动降级为仅显示 Plan mode，
+  以免遮挡快捷入口；活动回合、approval/user-input、slash/file/skill popup 和历史搜索时隐藏
+  提示。五语言文案在 `Locale` 唯一 owner 中提供，Plan 模式仍来自 App Server 广播的
+  `CollaborationMode`，没有在 TUI 本地创建第二套模式状态。
+- `markdown_render`、runtime copy 和 footer 回归已加入现有 TUI owners；未新增 compat/deprecated
+  surface，也未引入协议字段或生产 mock。该批仍属于 `current`，总体计划保持 `in-progress`。
+
+验证：TUI library `1095/1095`、footer 定向测试 `13/13`、TUI Clippy
+`--all-targets --no-deps -- -D warnings`、workspace `cargo fmt` 和 `git diff --check` 通过。
+真实 `npm run smoke:tui-gate-b` 亦通过：thread `01a0f07b-17ed-7922-b099-736ef2810953`、turn
+`turn_bf9f36d5aede407a8073d3f85cd49941`，事件链完整，`queue-edit`、`agents-overview`、
+`sticky-prompt`、`main-find`、`focus-palette`、`resize-reflow`、`reconnect` 和
+`terminal=restored` 均为 `ok`。构建期间仅出现既有 App Server `lower_turn_start_params` /
+`lower_runtime_options` dead-code warning。
+
+follow-up parser 随后按 Codex `followups_tests` 补强：支持匹配/不匹配反引号、嵌套方括号、转义
+边界和带 `}` 的 quoted prompt；重复属性、未闭合属性、代码/链接/HTML literal 继续 fail-closed，
+并防止相邻 malformed directive 吞掉后续有效 follow-up。相关 `markdown_render` 定向测试为
+`6/6`，TUI library 计数更新为 `1096/1096`，Clippy 与 `git diff --check` 保持通过。
+follow-up parser hardening 后再次运行 `npm run smoke:tui-gate-b` 通过：thread
+`01a0f084-eb7c-7113-924b-dd4706c07d18`、turn `turn_cd9328a2665443bc98e36c9ec05ba938`，完整
+事件链、queue-edit、agents-overview、sticky-prompt、main-find、focus-palette、resize-reflow、
+reconnect 与 `terminal=restored` 均为 `ok`；仍只有既有 App Server dead-code warning。
+随后针对重叠 nested follow-up 的 fail-closed 修正再次通过真实 Gate B：thread
+`01a0f089-695a-7e53-926e-3b15c1661261`、turn `turn_3d6f56a86ae74cafb97992750a98c784`，
+同一完整场景矩阵全部为 `ok`。
+
+本轮 C1 Codex MCP OAuth logout current 切片（2026-09-30）：
+
+- 对照 Codex `mcp_cmd.rs::run_logout` 与 `delete_oauth_tokens` 语义，Lime 沿唯一
+  `PersistentCredentialStore` owner 增加 `McpOAuthRegistry::logout`/manager API，并通过
+  `mcpServer/oauth/logout` 暴露 `name -> { removed }` contract。LocalAppDataSource 先从当前
+  MCP catalog 解析配置，再由 MCP manager 清理匹配 server name + URL 的凭据；没有 token 时
+  保持幂等 `removed=false`，未注入 root、stdio transport、损坏凭据和未知 server 均 fail closed。
+- v0 method catalog、serialization scope、schema fixtures、Rust registry、TS generated types、
+  App Server client wrapper、CLI `mcp logout` 和 current OAuth fixture 已同步。CLI 先走
+  `mcpServer/list` 验证 server 与 `streamable_http` transport，再请求 App Server logout，禁止
+  直接访问本地凭据文件；`mcp list` 同步识别 `type`/`transport` 两种 current config 字段。
+- 该批没有新增 compat/deprecated/dead surface，分类为 `current`；Codex keyring、多种
+  client-registration、远程 Cloud OAuth 和 uncertain receipt 仍保持 `partial/contract-defer`，
+  不伪造到 Lime。
+
+验证：`cargo test -p app-server-protocol --lib` 133/133；`cargo test -p cli --lib` 8/8；
+`npm run test:contracts` 通过（299 项）；`npm --prefix packages/app-server-client test`
+139/139；MCP current smoke guard 7/7；workspace `cargo fmt` 与 `git diff --check` 通过。
+`lime-mcp`/App Server 独立测试受本机 `rusty-v8 v150.4.0` 缺少
+`librusty_v8_ptrcomp_sandbox_release_aarch64-apple-darwin.a.gz`（HTTP 404）阻塞，未将其误报为
+通过；下一刀回到 TUI A2 history/transcript contract 或 A3 composer/bottom-pane 子 owner，
+并补真实 CLI OAuth Gate B。
+
+本轮 A3 Codex `0196495288` 右键/中键粘贴 current 最小切片（2026-09-30）：
+
+- Composer 在已有选区上保持右键复制优先；无选区右键产生 CLIPBOARD 粘贴 action，中键产生
+  X11 PRIMARY 粘贴 action。两条路径都经 `AppAction -> runtime -> ChatComposer::handle_paste`，
+  与 bracketed paste 共用 draft、Vim search 和 slash popup lowering，不创建第二套输入缓冲。
+- `clipboard_paste` 新增单一 `ClipboardTextSource`、换行归一化和 fail-closed session guard：
+  PRIMARY 仅在 Linux + DISPLAY + 非 Wayland/SSH/tmux/WSL 下启用；CLIPBOARD 在 SSH 下拒绝，
+  不把远程终端误判为本地系统剪贴板。中键在非 X11 平台保持不可用。
+- 该切片暂未迁入 Codex 的 session-lived clipboard worker、PRIMARY selection publication、
+  5 秒 deadline 和 stale-read cancellation；当前 native read 是同步 helper，若要继续收口，
+  下一刀应把读取迁到 worker 后再补 pending owner/Draw poll，而不是在 UI 线程增加更多阻塞读取。
+
+验证：TUI library `1104/1104`、`cargo clippy --manifest-path "lime-rs/Cargo.toml" -p tui
+--lib --no-deps -- -D warnings`、workspace `cargo fmt --all -- --check`、`git diff --check`、
+`npm run inventory:tui-structure`（1258 files）及 inventory Vitest `17/17` 通过；真实
+`npm run smoke:tui-gate-b` 通过，thread `01a0f0ef-f5e0-7fa0-9541-1e4e5df7de7f`、turn
+`turn_0924f6cac8c04a3cbf352a5ab24feb10`，事件链完整，queue-edit、agents-overview、
+sticky-prompt、main-find、focus-palette、resize-reflow、reconnect 与 `terminal=restored`
+均为 `ok`。本轮未触及 App Server protocol、Electron bridge 或 GUI，未运行 contracts/GUI
+smoke；整体 Codex CLI/TUI/UI 重构计划继续保持 `in-progress`，下一刀优先迁移 clipboard
+worker，或回到 A2 history/transcript contract。
+
+本轮继续 A2/Codex `3226512d47` provider-default history filter current 切片（2026-09-30）：
+
+- Resume picker 与 `/resume` overlay 现在保存显式 `--provider` 选择，并把它作为
+  `thread/list.modelProviders` 过滤传给 App Server；空值、空白值和未指定 provider 不发送过滤，
+  让服务端解析自身默认 provider，避免客户端隐式 provider 覆盖服务端配置。
+- Fork/Resume 的实际 thread start/fork 请求继续传递显式 provider；未指定时保持 `None`，不在
+  TUI 本地创建 provider catalog、history DB 或第二套 session owner。分页后续请求复用同一过滤器。
+- 分类为 `current`；Codex projectless workspace defaults、managed-provider config-layer
+  resolution 和私有 rollout/state-db lookup 在 Lime 没有等价 current contract，继续
+  `partial/contract-defer`，不通过猜测默认值补齐。
+
+验证：provider-filter 定向测试 `1/1`，Rust fmt check 通过；完整 TUI library、Clippy、inventory
+和真实 PTY Gate B 在本批代码收口后重跑。整体计划保持 `in-progress`，下一刀继续对齐可由
+App Server canonical contract 证明的 history/provider 或 composer/UI owner。
+
+本轮继续 A3/Codex `0196495288` clipboard worker current 切片（2026-09-30）：
+
+- 新增 `clipboard_paste/worker.rs` 作为会话级唯一文本读取 owner；native CLIPBOARD/PRIMARY
+  读取从 TUI 事件循环迁移到独立线程，UI 只在 Draw 边界消费结果。worker 只允许一个 in-flight
+  native read，避免慢 broker 形成请求队列；结果回到原始 request id 后才可写入同一
+  `ChatComposer` draft。
+- 每次读取共享五秒 deadline；超时先向 UI 返回失败，迟到的 native response 仍会被后台 drain
+  后丢弃。新键盘/鼠标输入会取消 pending owner，避免 stale clipboard text 抢占用户新草稿；worker
+  response 会主动请求下一帧，确保取消后仍能释放 busy 状态。
+- `Tui` 持有 session-lived `ClipboardWorker`，保留现有 `AppAction -> runtime ->
+  ChatComposer::handle_paste` 单一输入链。未新增 clipboard/history store 或生产 mock fallback。
+  Codex 的 PRIMARY selection publication、copy lease 与读取 worker 的统一 owner 仍需后续切片，
+  当前列为 `partial/contract-defer`。
+
+验证：clipboard worker/runtime 定向回归 `3/3`；完整 TUI library `1108/1108`、TUI Clippy
+`-D warnings`、workspace fmt check、`git diff --check`、结构 inventory Vitest `17/17` 均通过，
+inventory 刷新为 `1259` 个文件。真实 `npm run smoke:tui-gate-b` 通过，thread
+`01a0f120-2706-7501-a6c4-1cff906b5bdd`、turn `turn_c305b58ded0349ee819402dfdad44df`，事件链完整，
+queue-edit、agents-overview、sticky-prompt、main-find、focus-palette、resize-reflow、reconnect 与
+`terminal=restored` 均为 `ok`。编译仅出现 App Server 既有 `lower_turn_start_params` /
+`lower_runtime_options` dead-code warning。本轮未触及 App Server protocol、Electron bridge 或 GUI，
+因此未运行 contracts/GUI smoke。计划继续保持 `in-progress`，下一刀优先补 worker 的真实 PTY
+鼠标粘贴证据与 PRIMARY publication/copy lease，或回到 A2 history/transcript contract。
+
+本轮继续对齐 Codex `1983c48fd1`/`e8fdbf1f7c`/`819cdb726d` 的 TUI 视觉与编辑交互（2026-09-30）：
+
+- Composer 多行 Markdown 粘贴在当前行以 `> ` 开头时，跨空行和尾行继续引用前缀，并在粘贴后追加
+  两个未引用换行，让光标落到下一个 Markdown block；非 blockquote、Vim search 和现有粘贴突发
+  路径保持原语义。上下文检查以 selection 起点为准，避免替换选区时读取错误行。
+- Session header 按 Codex 最新 borderless banner 收口：Rich/compact transcript 只保留品牌标题、
+  版本和工作目录，移除模型/推理/`/model` 提示及外围边框；模型、推理和权限事实继续保留在
+  raw transcript/status owner，未创建第二份 session state。`/status` 静态页同步加入同一类轻量
+  品牌标题，保持字段事实与滚动行为不变。
+- 同步更新窄屏、多语言、TestBackend、reconnect PTY 和 Gate B 断言，动态 transcript 快捷键
+  统一使用 `ctrl+t·esc·q` 紧凑标签；未把静态多语言文案误替换为动态 keymap owner。
+
+验证：TUI library `1117/1117`、TUI reconnect integration 定向 `1/1`、TUI Clippy
+`--lib --no-deps -- -D warnings`、workspace fmt check、`git diff --check` 和真实
+`npm run smoke:tui-gate-b` 均通过；Gate B 覆盖真实 PTY、alternate screen、stdio App Server
+JSON-RPC、canonical Thread/Turn/Item、queue-edit、agents-overview、sticky-prompt、main-find、
+focus-palette、resize-reflow、reconnect 和 terminal restore。编译仍有 App Server 既有
+`lower_turn_start_params`/`lower_runtime_options` dead-code warning。本轮没有 Electron/GUI bridge
+改动，未运行 `verify:gui-smoke`/contracts；Codex CLI/TUI 全量重构仍保持 `in-progress`，下一步
+继续补 A2 history/transcript contract、PRIMARY publication/copy lease 或 status/reasoning
+settings 的真实 App Server owner 对齐。
+
+本轮继续对齐 Codex `819cdb726d` 的 `/status` presentation（2026-09-30）：
+
+- 新增 `tui/src/status/{mod,format}.rs` 作为唯一 status presentation owner；`PagerOverlay` 只
+  负责生命周期、滚动和输入，状态事实仍来自 App 当前 session/projection，不复制账户、usage
+  limit、server reasoning summary 或 verbosity 状态。
+- `/status` 现在使用无边框字段列，长 Thread ID、工作目录、权限描述与状态值按显示宽度安全
+  续行；宽度降到 7 列仍不会越界或丢失原始路径/ID。raw status lines 保留完整值，展示换行不
+  改变复制/检查事实。
+- 新增 CJK、半宽字符、超窄列宽与空状态 ready fallback 回归，并在结构 inventory 中锁定
+  `status/mod.rs`、`status/format.rs`。没有新增 protocol、RuntimeCore、provider 或持久化字段。
+
+分类：无边框 status presentation、字段续行和窄屏边界为 `current`；Codex account/usage
+provider、server reasoning summary/verbosity、完整 status snapshots 继续 `contract/defer`。
+异步 clipboard worker、copy-on-select 与真实 X11 中键 paste 仍为 `partial/platform-defer`。
+
+验证：TUI library `1121/1121`；TUI clippy `-D warnings`、workspace fmt、`git diff --check`、
+结构 inventory `17/17`、真实 `npm run smoke:tui-gate-b` 均通过。首轮 PTY 因输入时序抖动失败，
+复跑通过；Gate B 继续证明 `turn.started,message.delta,item.started,item.completed,turn.completed`、
+queue-edit、agents-overview、sticky-prompt、main-find、focus-palette、resize-reflow、reconnect
+和 terminal restore。App Server 仅保留既有 `lower_turn_start_params`/`lower_runtime_options`
+dead-code warning；计划仍为 `in-progress`。
+
+本轮继续收口 Codex `12fd929f72` clipboard responsiveness 与 `0196495288` PRIMARY owner（2026-09-30）：
+
+- 新增 `tui/src/clipboard_copy/worker.rs`，把 CLIPBOARD 写入迁移到 session-lived 单 in-flight
+  worker；worker 负责五秒 setup deadline、迟到 response drain、busy 防队列和 Draw 边界 completion，
+  不让慢的 X11/Wayland/桌面 clipboard broker 阻塞输入事件循环。
+- transcript 选区在同一 worker 中并行语义地处理普通 CLIPBOARD 与独立 X11 PRIMARY publication，
+  completion 分开携带两份 lease；PRIMARY 不可用时不破坏普通 copy，线程切换后的迟到 completion
+  只保留普通 clipboard lease，不回写旧 UI 的 PRIMARY/selection feedback。
+- 主 TUI 的最后回复、composer/transcript 选区、导出到 clipboard 和 resume picker transcript copy
+  全部切换到该 worker；同步 `copy_*_with` helper 仅保留给确定性单测，未新增第二套 clipboard
+  owner、history store 或 production mock fallback。
+
+分类：session-lived copy worker、CLIPBOARD/PRIMARY 双 lease 和 stale completion guard 为 `current`；
+真实 X11 中键粘贴仍为 `platform-defer`，Codex account/usage、server status snapshots 和
+完整 history contract 继续 `contract/defer`。
+
+验证：TUI library `1124/1124`、TUI Clippy `--lib --no-deps -- -D warnings`、Rust fmt check、
+`git diff --check` 均通过；真实 `npm run smoke:tui-gate-b` 通过，thread
+`01a0f1b5-b042-79a2-8b8a-d306ec366f6a`、turn `turn_26796a9f9a8b4406ac8ac6bf36dbc2eb`，事件链完整，
+queue-edit、agents-overview、sticky-prompt、main-find、focus-palette、resize-reflow、reconnect
+和 `terminal=restored` 均为 `ok`。App Server 仍仅有既有 `lower_turn_start_params`/
+`lower_runtime_options` dead-code warning；整体计划继续保持 `in-progress`。
+
+同轮补 Codex `89bf86d0bd` Agents Overview task-row current badge（2026-09-30）：
+
+- 移除任务行描述里的 `current` 徽标，让标题/项目元数据不再为旧 badge 预留空间；当前线程仍参与
+  默认选中与详情上下文，未改变 App Server thread 事实或导航语义。
+- 定向 `overview_render` 回归 `4/4` 通过，覆盖窄屏、show-more/retry 与 current 默认定位。
+
+继续对齐 Codex Agent Center 的 fullscreen UI 重构（同轮）：
+
+- Agents Overview 从居中带边框 popup 改为占满 TUI surface 的无边框清屏布局；标题、摘要、任务列表、
+  详情和 footer 仍复用原有 View/Action owner，不复制线程状态或引入新导航后端。
+- 极窄终端仍 fail-closed，宽/窄 TestBackend 与 Agents Overview 行为测试通过；任务行不再显示旧的
+  `current` badge，当前线程只保留默认选中与详情上下文语义。
+- 修正 fullscreen Agent Center 与外层 transient status 的 owner 边界：新建任务/搜索输入时由
+  Agent Center 自己持有 footer，完成 dispatch 后才恢复 app-scoped 状态反馈；真实 PTY Gate B
+  的 `Ctrl-N -> New task -> dispatch` 场景重新通过。
+
+最新验证：全量 Gate B 通过，thread `01a0f1c9-1859-7371-8ad2-f05beab3cf03`、turn
+`turn_2fe2ec79257144dc8f1f07fd65092f56`，queue-edit、agents-overview、sticky-prompt、main-find、
+focus-palette、resize-reflow、reconnect 和 `terminal=restored` 均为 `ok`；App Server 仍只有既有
+`lower_turn_start_params`/`lower_runtime_options` dead-code warning。

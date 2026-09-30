@@ -270,6 +270,10 @@ impl ConversationProjection {
         self.push_notice(EntryKind::Warning, message.into());
     }
 
+    pub(crate) fn add_info_message(&mut self, message: impl Into<String>) {
+        self.push_notice(EntryKind::System, message.into());
+    }
+
     pub(crate) fn add_error_message(&mut self, message: impl Into<String>) {
         self.push_notice(EntryKind::Error, message.into());
     }

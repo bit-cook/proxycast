@@ -167,6 +167,7 @@ fn app_server_method_catalog_keeps_all_method_kinds_together() {
             METHOD_MCP_SERVER_IMPORT_FROM_APP,
             METHOD_MCP_SERVER_SYNC_ALL_TO_LIVE,
             METHOD_MCP_SERVER_OAUTH_LOGIN,
+            METHOD_MCP_SERVER_OAUTH_LOGOUT,
             METHOD_MCP_SERVER_START,
             METHOD_MCP_SERVER_STOP,
             METHOD_MCP_TOOL_LIST,
@@ -421,6 +422,10 @@ fn app_server_request_serialization_scope_covers_high_risk_methods() {
     );
     assert_eq!(
         app_server_request_serialization_scope(METHOD_MCP_SERVER_OAUTH_LOGIN),
+        Some(AppServerRequestSerializationScope::McpOauth)
+    );
+    assert_eq!(
+        app_server_request_serialization_scope(METHOD_MCP_SERVER_OAUTH_LOGOUT),
         Some(AppServerRequestSerializationScope::McpOauth)
     );
     assert_eq!(

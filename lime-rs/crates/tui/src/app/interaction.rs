@@ -25,7 +25,59 @@ fn normalize_paste(text: String) -> String {
 }
 
 impl App {
+    /// Keep transcript scrolling available while a protected interaction owns keyboard input.
+    ///
+    /// Codex lets the approval/user-input surface retain keyboard ownership while allowing the
+    /// mouse wheel to operate on the visible transcript.  The transcript selection layout is the
+    /// canonical hit-test boundary, so events over the modal/footer continue to fall through to
+    /// `BottomPane` rather than leaking into the main transcript.
+    fn route_modal_transcript_wheel(&mut self, event: &Event) -> Option<AppAction> {
+        let Event::Mouse(mouse) = event else {
+            return None;
+        };
+        if !matches!(
+            mouse.kind,
+            crossterm::event::MouseEventKind::ScrollUp
+                | crossterm::event::MouseEventKind::ScrollDown
+        ) {
+            return None;
+        }
+
+        match self.transcript_selection.handle_event(event) {
+            Some(TranscriptSelectionAction::Scroll { rows }) => {
+                if self.transcript_selection.is_active() {
+                    self.transcript_selection.scroll_rows(rows);
+                    Some(AppAction::None)
+                } else {
+                    Some(AppAction::ScrollRows(rows))
+                }
+            }
+            Some(_) => Some(AppAction::None),
+            None => None,
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn handle_tui_event(&mut self, event: TuiEvent, connected: bool) -> AppAction {
+        let was_disabled = self.composer.paste_burst_is_disabled();
+        self.composer.set_paste_burst_disabled(true);
+        let action = self.handle_tui_event_impl(event, connected);
+        self.composer.set_paste_burst_disabled(was_disabled);
+        action
+    }
+
+    pub(crate) fn handle_tui_event_runtime(
+        &mut self,
+        event: TuiEvent,
+        connected: bool,
+    ) -> AppAction {
+        self.handle_tui_event_impl(event, connected)
+    }
+
+    fn handle_tui_event_impl(&mut self, event: TuiEvent, connected: bool) -> AppAction {
+        if !matches!(&event, TuiEvent::Key(_)) {
+            self.global_key_chord_matcher.reset();
+        }
         if matches!(&event, TuiEvent::FocusLost | TuiEvent::Resume) {
             self.transcript_selection.end_drag();
             if let Some(pager) = self.pager_overlay.as_ref() {
@@ -91,6 +143,12 @@ impl App {
                     clear_selection,
                 };
             }
+            if let Some(source) = self.composer.clipboard_paste_request(&event) {
+                if crate::clipboard_paste::right_click_paste_allowed(self.right_click_paste, source)
+                {
+                    return AppAction::PasteClipboardText(source);
+                }
+            }
         }
 
         let event = match event {
@@ -151,6 +209,21 @@ impl App {
         }
 
         if self.bottom_pane.is_active() {
+            if let Event::Key(key) = &event {
+                if let Some((title, lines)) =
+                    self.bottom_pane.approval_details_for_key(*key, self.locale)
+                {
+                    self.dismiss_pager_overlay();
+                    self.pager_overlay = Some(
+                        crate::pager_overlay::PagerOverlay::new(title, lines)
+                            .with_keymap(self.runtime_keymap.transcript().clone()),
+                    );
+                    return AppAction::None;
+                }
+            }
+            if let Some(action) = self.route_modal_transcript_wheel(&event) {
+                return action;
+            }
             let action = self
                 .bottom_pane
                 .handle_event(event)
@@ -225,7 +298,7 @@ impl App {
                     self.agent_picker = None;
                     AppAction::None
                 }
-                AgentsOverviewAction::Refresh => AppAction::RefreshAgentsOverview,
+                AgentsOverviewAction::LoadMore => AppAction::LoadMoreAgentsOverview,
                 AgentsOverviewAction::Dispatch { prompt, cwd } => {
                     AppAction::DispatchAgentsOverviewTask { prompt, cwd }
                 }
@@ -364,7 +437,7 @@ impl App {
         if vim_query_owns_event {
             match event {
                 Event::Key(key) => {
-                    let action = self.composer.handle_key_event(key);
+                    let action = self.composer.handle_key_event_at(key, Instant::now());
                     return self.map_composer_action(action);
                 }
                 Event::Paste(text) => {
@@ -372,6 +445,14 @@ impl App {
                     return AppAction::None;
                 }
                 _ => {}
+            }
+        }
+
+        if self.composer.command_popup_active() {
+            if let Event::Key(key) = &event {
+                if self.composer.prepare_popup_key_event(*key, Instant::now()) {
+                    return self.map_composer_action(crate::bottom_pane::InputResult::Changed);
+                }
             }
         }
 
@@ -430,7 +511,7 @@ impl App {
 
         if self.composer.history_search_active() {
             if let Event::Key(key) = event {
-                let action = self.composer.handle_key_event(key);
+                let action = self.composer.handle_key_event_at(key, Instant::now());
                 return self.map_composer_action(action);
             }
             return AppAction::None;
@@ -438,7 +519,7 @@ impl App {
 
         if let Event::Key(key) = event {
             if self.composer.should_handle_vim_insert_escape(key) {
-                let action = self.composer.handle_key_event(key);
+                let action = self.composer.handle_key_event_at(key, Instant::now());
                 return self.map_composer_action(action);
             }
         }
@@ -450,14 +531,17 @@ impl App {
                 .dispatch_global(&mut self.global_key_chord_matcher, key)
             {
                 KeymapMatch::Completed(GlobalKeymapAction::OpenAgents) => {
+                    self.composer.dismiss_shortcut_overlay();
                     self.open_agents_overview();
                     return AppAction::RefreshAgentsOverview;
                 }
                 KeymapMatch::Completed(GlobalKeymapAction::OpenTranscript) => {
+                    self.composer.dismiss_shortcut_overlay();
                     self.open_transcript_pager();
                     return AppAction::None;
                 }
                 KeymapMatch::Completed(GlobalKeymapAction::FindTranscript) => {
+                    self.composer.dismiss_shortcut_overlay();
                     self.transcript_search
                         .begin(self.transcript_scroll, /*restore_on_close*/ true);
                     self.transcript_follow_control.clear();

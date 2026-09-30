@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use ratatui::buffer::{Buffer, CellWidth};
 use ratatui::layout::{Alignment, Position, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::terminal_hyperlinks::HyperlinkLine;
@@ -485,6 +485,15 @@ impl TranscriptSelection {
         if start == end {
             return None;
         }
+        let quote_only = selection
+            .snapshot
+            .get(start.line..=end.line)
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .filter(|(offset, _)| !selection.excluded_lines.contains(&(start.line + offset)))
+            .filter(|(_, line)| !line_text(line).is_empty())
+            .all(|(_, line)| blockquote_prefix_len(line) > 0);
         let mut text = String::new();
         let mut included = false;
         for line_index in start.line..=end.line {
@@ -505,7 +514,17 @@ impl TranscriptSelection {
             } else {
                 line.len()
             };
-            text.push_str(line.get(begin..finish)?);
+            let prefix_len = if quote_only {
+                selection
+                    .snapshot
+                    .get(line_index)
+                    .map_or(0, blockquote_prefix_len)
+            } else {
+                0
+            };
+            if finish > prefix_len {
+                text.push_str(line.get(begin.max(prefix_len)..finish)?);
+            }
             included = true;
         }
         text.retain(|character| !character.is_control() || matches!(character, '\n' | '\t'));
@@ -532,6 +551,28 @@ fn line_text(line: &HyperlinkLine) -> String {
         .iter()
         .map(|span| span.content.as_ref())
         .collect()
+}
+
+/// Return the rendered Markdown blockquote prefix length, excluding literal `>` text.
+///
+/// Lime's Markdown renderer marks only its synthetic quote prefix green. Requiring that style
+/// keeps escaped or ordinary literal `>` content intact while still handling nested quotes.
+fn blockquote_prefix_len(line: &HyperlinkLine) -> usize {
+    let Some(first) = line.line.spans.first() else {
+        return 0;
+    };
+    if first.style.fg != Some(Color::Green) {
+        return 0;
+    }
+    let line = line_text(line);
+    let mut offset = 0;
+    while line
+        .get(offset..)
+        .is_some_and(|rest| rest.starts_with("> "))
+    {
+        offset += 2;
+    }
+    offset
 }
 
 fn wrap_visual_rows(

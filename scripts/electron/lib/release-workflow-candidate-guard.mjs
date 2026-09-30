@@ -116,10 +116,51 @@ function assertReleaseProvenance(workflow) {
   );
 }
 
+function assertCliNpmTrustedPublishing(workflow) {
+  const publishJob = workflow?.jobs?.publish_cli_npm;
+  if (publishJob?.permissions?.["id-token"] !== "write") {
+    throw new Error(
+      "CLI npm publish job must grant id-token: write for trusted publishing",
+    );
+  }
+
+  const serializedJob = JSON.stringify(publishJob || {});
+  for (const forbidden of ["NODE_AUTH_TOKEN", "secrets.NPM_TOKEN"]) {
+    if (serializedJob.includes(forbidden)) {
+      throw new Error(
+        `CLI npm trusted publishing must not inject token auth: ${forbidden}`,
+      );
+    }
+  }
+
+  const setupNodeStep = stepByName(
+    publishJob?.steps || [],
+    "Setup Node.js for npm trusted publishing",
+  );
+  if (setupNodeStep?.with?.["node-version"] !== "24") {
+    throw new Error(
+      "CLI npm trusted publishing must use Node.js 24 with a supported npm CLI",
+    );
+  }
+  if (setupNodeStep?.with?.["registry-url"] !== "https://registry.npmjs.org") {
+    throw new Error(
+      "CLI npm trusted publishing must target https://registry.npmjs.org",
+    );
+  }
+
+  const publishStep = stepByName(
+    publishJob?.steps || [],
+    "Publish CLI npm packages platform-first",
+  );
+  assertIncludes(publishStep?.run, "npm publish", "CLI npm publishing");
+  assertIncludes(publishStep?.run, "--provenance", "CLI npm publishing");
+}
+
 export function validateReleaseCandidateWorkflow(workflow) {
   assertCandidatePermissions(workflow);
   assertPrepareReleaseSteps(workflow);
   assertImmutableReleaseCheckouts(workflow);
   assertBuildCandidateIdentity(workflow);
   assertReleaseProvenance(workflow);
+  assertCliNpmTrustedPublishing(workflow);
 }

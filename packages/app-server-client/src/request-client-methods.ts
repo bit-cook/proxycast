@@ -756,6 +756,12 @@ export const APP_SERVER_REQUEST_CLIENT_METHODS: readonly AppServerRequestClientM
       params: "required",
     },
     {
+      name: "logoutMcpServerOauth",
+      method: protocol.METHOD_MCP_SERVER_OAUTH_LOGOUT,
+      kind: "request",
+      params: "required",
+    },
+    {
       name: "startMcpServer",
       method: protocol.METHOD_MCP_SERVER_START,
       kind: "request",

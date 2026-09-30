@@ -1,21 +1,22 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
-use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
+use crossterm::event::{Event, KeyEventKind, MouseButton, MouseEventKind};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
 use ratatui::widgets::{Clear, Paragraph};
 use ratatui::Frame;
 
 use crate::clipboard_copy::CopyStatus;
+use crate::keymap::{KeyChordMatcher, KeymapMatch, PagerKeymapAction, TranscriptKeymap};
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
-use crate::keymap::{KeyChordMatcher, KeymapMatch, PagerKeymapAction, TranscriptKeymap};
+use crate::status::{StatusFacts, StatusSnapshot};
 use crate::terminal_hyperlinks::{wrapped_line_starts, HyperlinkLine, HyperlinkParagraph};
 use crate::transcript_view::{
-    search_status, SearchAction, TranscriptContent, TranscriptDisclosure, TranscriptSearch,
-    TranscriptSelection, TranscriptSelectionAction,
+    search_status, SearchAction, TranscriptBookmark, TranscriptContent, TranscriptDisclosure,
+    TranscriptFrame, TranscriptSearch, TranscriptSelection, TranscriptSelectionAction,
 };
 
 #[cfg(test)]
@@ -45,31 +46,21 @@ struct TranscriptCopyFeedback {
     characters: usize,
 }
 
-pub(crate) struct StatusFacts<'a> {
-    pub(crate) thread_id: Option<&'a str>,
-    pub(crate) model: Option<&'a str>,
-    pub(crate) provider: Option<&'a str>,
-    pub(crate) effort: Option<&'a str>,
-    pub(crate) permissions: Option<&'a str>,
-    pub(crate) cwd: &'a str,
-    pub(crate) status: &'a str,
-}
-
 #[derive(Debug)]
 pub(crate) struct PagerOverlay {
     title: String,
     static_lines: Option<Vec<HyperlinkLine>>,
+    status_snapshot: Option<StatusSnapshot>,
     scroll: Cell<usize>,
     page_height: Cell<usize>,
     max_scroll: Cell<usize>,
     pinned_to_bottom: Cell<bool>,
     older_history_available: Cell<bool>,
     history_load_state: Cell<HistoryLoadState>,
-    /// Previous transcript input used to preserve the visible logical anchor when the
-    /// projection prepends history or the terminal width changes. Static pagers do not
-    /// populate this cache.
-    previous_transcript_lines: RefCell<Option<Vec<HyperlinkLine>>>,
-    previous_content_width: Cell<u16>,
+    /// Previous structured transcript frame used to retain canonical source identity while the
+    /// projection prepends history, replaces a group, or rewraps at another terminal width.
+    previous_transcript_frame: RefCell<Option<TranscriptFrame>>,
+    pending_transcript_bookmark: RefCell<Option<TranscriptBookmark>>,
     search: TranscriptSearch,
     transcript_copy_feedback: Option<TranscriptCopyFeedback>,
     disclosure: TranscriptDisclosure,
@@ -80,48 +71,26 @@ pub(crate) struct PagerOverlay {
 
 impl PagerOverlay {
     pub(crate) fn status(locale: Locale, facts: StatusFacts<'_>) -> Self {
-        let value = |value: Option<&str>| value.unwrap_or(locale.not_set_label()).to_string();
-        let status = if facts.status.is_empty() {
-            locale.ready_label().to_string()
-        } else {
-            locale.status(facts.status)
-        };
-        let fields = [
-            (locale.thread_label(), value(facts.thread_id)),
-            (locale.model_label(), value(facts.model)),
-            (locale.provider_label(), value(facts.provider)),
-            (locale.effort_label(), value(facts.effort)),
-            (locale.permissions_label(), value(facts.permissions)),
-            (locale.cwd_label(), facts.cwd.to_string()),
-            (locale.state_label(), status),
-        ];
-        let lines = fields
-            .into_iter()
-            .map(|(label, value)| {
-                Line::from(vec![
-                    Span::styled(
-                        format!("{label}: "),
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(value),
-                ])
-            })
-            .collect();
-        Self::new(locale.status_title().to_string(), lines)
+        let status_snapshot = StatusSnapshot::from_facts(facts);
+        let lines = status_snapshot.raw_lines(locale);
+        let mut overlay = Self::new(locale.status_title().to_string(), lines);
+        overlay.status_snapshot = Some(status_snapshot);
+        overlay
     }
 
     pub(crate) fn new(title: String, lines: Vec<Line<'static>>) -> Self {
         Self {
             title,
             static_lines: Some(lines.into_iter().map(HyperlinkLine::new).collect()),
+            status_snapshot: None,
             scroll: Cell::new(0),
             page_height: Cell::new(1),
             max_scroll: Cell::new(0),
             pinned_to_bottom: Cell::new(false),
             older_history_available: Cell::new(false),
             history_load_state: Cell::new(HistoryLoadState::Idle),
-            previous_transcript_lines: RefCell::new(None),
-            previous_content_width: Cell::new(0),
+            previous_transcript_frame: RefCell::new(None),
+            pending_transcript_bookmark: RefCell::new(None),
             search: TranscriptSearch::default(),
             transcript_copy_feedback: None,
             disclosure: TranscriptDisclosure::default(),
@@ -135,14 +104,15 @@ impl PagerOverlay {
         Self {
             title: locale.transcript_title().to_string(),
             static_lines: None,
+            status_snapshot: None,
             scroll: Cell::new(usize::MAX),
             page_height: Cell::new(1),
             max_scroll: Cell::new(0),
             pinned_to_bottom: Cell::new(true),
             older_history_available: Cell::new(false),
             history_load_state: Cell::new(HistoryLoadState::Idle),
-            previous_transcript_lines: RefCell::new(None),
-            previous_content_width: Cell::new(0),
+            previous_transcript_frame: RefCell::new(None),
+            pending_transcript_bookmark: RefCell::new(None),
             search: TranscriptSearch::default(),
             transcript_copy_feedback: None,
             disclosure: TranscriptDisclosure::default(),
@@ -209,8 +179,23 @@ impl PagerOverlay {
         }
         self.pinned_to_bottom.set(false);
         self.scroll.set(0);
-        *self.previous_transcript_lines.borrow_mut() = None;
-        self.previous_content_width.set(0);
+        *self.previous_transcript_frame.borrow_mut() = None;
+        *self.pending_transcript_bookmark.borrow_mut() = None;
+    }
+
+    pub(crate) fn bookmark(&self) -> TranscriptBookmark {
+        let following = self.pinned_to_bottom.get();
+        self.previous_transcript_frame
+            .borrow()
+            .as_ref()
+            .map(|frame| TranscriptBookmark::capture(frame, following, self.scroll.get()))
+            .unwrap_or_else(|| TranscriptBookmark::fallback(following, self.scroll.get()))
+    }
+
+    pub(crate) fn restore_bookmark(&self, bookmark: TranscriptBookmark) {
+        self.pinned_to_bottom.set(bookmark.following());
+        self.scroll.set(bookmark.fallback_scroll());
+        *self.pending_transcript_bookmark.borrow_mut() = Some(bookmark);
     }
 
     pub(crate) fn clear_transcript_selection(&self) {
@@ -276,7 +261,6 @@ impl PagerOverlay {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn has_transcript_selection(&self) -> bool {
         self.transcript_selection.snapshot_lines().is_some()
     }
@@ -296,6 +280,9 @@ impl PagerOverlay {
     }
 
     pub(crate) fn handle_event(&mut self, event: &Event) -> PagerAction {
+        if !matches!(event, Event::Key(_)) {
+            self.key_chord_matcher.reset();
+        }
         self.transcript_copy_feedback = None;
         if self.is_transcript() {
             if !self.search.is_active() && self.disclosure.handle_event(event) {
@@ -525,6 +512,7 @@ impl PagerOverlay {
         );
 
         let fallback_content;
+        let transcript_shortcut = self.keymap.open_transcript_hint();
         let materialized = if self.is_transcript() {
             let transcript = match transcript {
                 Some(transcript) => transcript,
@@ -533,16 +521,26 @@ impl PagerOverlay {
                     &fallback_content
                 }
             };
-            Some(
-                self.disclosure
-                    .materialize(transcript, locale, content.width),
-            )
+            Some(self.disclosure.materialize_with_shortcut(
+                transcript,
+                locale,
+                content.width,
+                transcript_shortcut.as_deref(),
+            ))
         } else {
             None
         };
         let selection_snapshot = self.transcript_selection.snapshot_lines();
         let selection_excluded = self.transcript_selection.snapshot_excluded_lines();
-        let lines = if let Some(lines) = self.static_lines.as_deref() {
+        let status_lines;
+        let lines = if let Some(snapshot) = self.status_snapshot.as_ref() {
+            status_lines = snapshot
+                .lines(locale, content.width)
+                .into_iter()
+                .map(HyperlinkLine::new)
+                .collect::<Vec<_>>();
+            status_lines.as_slice()
+        } else if let Some(lines) = self.static_lines.as_deref() {
             lines
         } else if let Some(snapshot) = selection_snapshot.as_ref() {
             snapshot.as_slice()
@@ -557,9 +555,6 @@ impl PagerOverlay {
                 .as_ref()
                 .map_or(&empty_excluded, |rendered| &rendered.excluded_lines)
         });
-        if self.is_transcript() {
-            self.remap_transcript_anchor(lines, content.width);
-        }
         self.search.prepare(
             lines,
             content.width,
@@ -580,6 +575,19 @@ impl PagerOverlay {
         let total_height = paragraph.line_count(content.width);
         let page_height = usize::from(content.height);
         let max_scroll = total_height.saturating_sub(page_height);
+        let transcript_frame = (self.is_transcript() && selection_snapshot.is_none()).then(|| {
+            TranscriptFrame::new(
+                lines.to_vec(),
+                materialized
+                    .as_ref()
+                    .map(|rendered| rendered.anchor_ranges.clone())
+                    .unwrap_or_default(),
+                content.width,
+            )
+        });
+        if let Some(frame) = transcript_frame.as_ref() {
+            self.remap_transcript_anchor(frame, max_scroll);
+        }
         let mut scroll = if self.pinned_to_bottom.get() {
             max_scroll
         } else {
@@ -684,20 +692,16 @@ impl PagerOverlay {
             } else if self.is_transcript() && self.disclosure.is_focused() {
                 locale.transcript_activity_focus_footer().to_string()
             } else if self.is_transcript() && self.disclosure.has_controls() {
-                locale.transcript_pager_activity_footer(
-                    &self.keymap.pager_close_hint(),
-                )
+                locale.transcript_pager_activity_footer(&self.keymap.pager_close_hint())
             } else if self.is_transcript() {
                 match self.history_load_state.get() {
                     HistoryLoadState::Loading => locale.transcript_pager_loading().to_string(),
                     HistoryLoadState::Failed => locale.transcript_pager_retry_footer().to_string(),
-                    HistoryLoadState::Idle => {
-                        locale.transcript_pager_footer(
-                            &self.keymap.pager_page_down_hint(),
-                            &self.keymap.pager_find_hint(),
-                            &self.keymap.pager_close_hint(),
-                        )
-                    }
+                    HistoryLoadState::Idle => locale.transcript_pager_footer(
+                        &self.keymap.pager_page_down_hint(),
+                        &self.keymap.pager_find_hint(),
+                        &self.keymap.pager_close_hint(),
+                    ),
                 }
             } else {
                 locale.pager_footer().to_string()
@@ -710,9 +714,8 @@ impl PagerOverlay {
                 footer,
             );
         }
-        if self.is_transcript() {
-            *self.previous_transcript_lines.borrow_mut() = Some(lines.to_vec());
-            self.previous_content_width.set(content.width);
+        if let Some(frame) = transcript_frame {
+            *self.previous_transcript_frame.borrow_mut() = Some(frame);
         }
     }
 
@@ -722,22 +725,38 @@ impl PagerOverlay {
     /// logical `HyperlinkLine`s. We first identify the old logical line and intra-line offset,
     /// then map that line through a pure prefix/suffix or unchanged-index relationship. If the
     /// user is pinned to the bottom, normal tail-following remains authoritative.
-    fn remap_transcript_anchor(&self, lines: &[HyperlinkLine], width: u16) {
+    fn remap_transcript_anchor(&self, frame: &TranscriptFrame, max_scroll: usize) {
+        if let Some(bookmark) = self.pending_transcript_bookmark.borrow_mut().take() {
+            self.pinned_to_bottom.set(bookmark.following());
+            if let Some(scroll) = bookmark.resolve(frame, max_scroll) {
+                self.scroll.set(scroll);
+                return;
+            }
+            self.scroll.set(bookmark.fallback_scroll().min(max_scroll));
+        }
         if self.pinned_to_bottom.get() {
             return;
         }
-        let Some(previous) = self.previous_transcript_lines.borrow().as_ref().cloned() else {
+        let Some(previous) = self.previous_transcript_frame.borrow().as_ref().cloned() else {
             return;
         };
-        if previous.is_empty() || lines.is_empty() {
+        let stable = TranscriptBookmark::capture(&previous, false, self.scroll.get());
+        if let Some(scroll) = stable.resolve(frame, max_scroll) {
+            self.scroll.set(scroll);
             return;
         }
-        let old_width = self.previous_content_width.get();
+        let lines = frame.lines();
+        let previous_lines = previous.lines();
+        if previous_lines.is_empty() || lines.is_empty() {
+            return;
+        }
+        let old_width = previous.width();
+        let width = frame.width();
         if old_width == 0 || width == 0 {
             return;
         }
 
-        let old_starts = wrapped_line_starts(&previous, old_width);
+        let old_starts = wrapped_line_starts(previous_lines, old_width);
         let old_scroll = self.scroll.get();
         let old_line = old_starts
             .iter()
@@ -747,30 +766,32 @@ impl PagerOverlay {
             .map(|(index, start)| (index, old_scroll.saturating_sub(*start)))
             .unwrap_or((0, old_scroll));
 
-        let common_prefix = previous
+        let common_prefix = previous_lines
             .iter()
             .zip(lines)
             .take_while(|(old, new)| old == new)
             .count();
-        let common_suffix = previous
+        let common_suffix = previous_lines
             .iter()
             .rev()
             .zip(lines.iter().rev())
             .take_while(|(old, new)| old == new)
             .count()
-            .min(previous.len().saturating_sub(common_prefix));
-        let mapped_line = if lines.len() == previous.len()
-            && (common_prefix > 0 || common_suffix > 0 || previous.len() == 1)
+            .min(previous_lines.len().saturating_sub(common_prefix));
+        let mapped_line = if lines.len() == previous_lines.len()
+            && (common_prefix > 0 || common_suffix > 0 || previous_lines.len() == 1)
         {
             // Streaming updates replace the active canonical line in place. The visible text (and
             // therefore `HyperlinkLine` equality) changes, but its logical transcript identity is
             // stable, so keep the same line index while recomputing its wrapped height below.
             old_line.0
-        } else if lines.len() >= previous.len()
-            && lines[lines.len() - previous.len()..] == previous[..]
+        } else if lines.len() >= previous_lines.len()
+            && lines[lines.len() - previous_lines.len()..] == previous_lines[..]
         {
-            old_line.0 + lines.len() - previous.len()
-        } else if lines.len() >= previous.len() && lines[..previous.len()] == previous[..] {
+            old_line.0 + lines.len() - previous_lines.len()
+        } else if lines.len() >= previous_lines.len()
+            && lines[..previous_lines.len()] == previous_lines[..]
+        {
             old_line.0
         } else {
             return;
@@ -792,10 +813,14 @@ impl PagerOverlay {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::status::StatusFacts;
     use crate::terminal_hyperlinks::TerminalHyperlink;
     use crate::transcript_view::find_literal_ranges;
-    use crossterm::event::{KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
     use ratatui::backend::TestBackend;
+    use ratatui::text::Span;
     use ratatui::Terminal;
 
     fn key(code: KeyCode) -> Event {
@@ -1487,6 +1512,85 @@ mod tests {
     }
 
     #[test]
+    fn transcript_bookmark_restores_stable_source_after_replacement_and_reflow() {
+        let overlay = PagerOverlay::transcript(Locale::EnUs);
+        let mut initial = TranscriptContent::default();
+        initial.push_keyed_lines(
+            "entry:older",
+            vec![
+                HyperlinkLine::from("older one"),
+                HyperlinkLine::from("older two"),
+                HyperlinkLine::from("older three"),
+            ],
+        );
+        initial.push_keyed_lines(
+            "entry:target",
+            vec![
+                HyperlinkLine::from("target first"),
+                HyperlinkLine::from("target second"),
+                HyperlinkLine::from("target third"),
+            ],
+        );
+        initial.push_keyed_lines(
+            "entry:tail",
+            (0..6)
+                .map(|index| HyperlinkLine::from(format!("tail {index}")))
+                .collect(),
+        );
+        let mut wide = Terminal::new(TestBackend::new(24, 6)).expect("wide terminal");
+        wide.draw(|frame| overlay.render_transcript(frame, frame.area(), Locale::EnUs, &initial))
+            .expect("initial draw");
+        overlay.pinned_to_bottom.set(false);
+        overlay.scroll.set(3);
+        let bookmark = overlay.bookmark();
+
+        let mut updated = TranscriptContent::default();
+        updated.push_keyed_lines(
+            "entry:page",
+            vec![
+                HyperlinkLine::from("page one"),
+                HyperlinkLine::from("page two"),
+            ],
+        );
+        updated.push_keyed_lines(
+            "entry:older",
+            vec![
+                HyperlinkLine::from("replacement older one"),
+                HyperlinkLine::from("replacement older two"),
+                HyperlinkLine::from("replacement older three"),
+                HyperlinkLine::from("replacement older four"),
+            ],
+        );
+        updated.push_keyed_lines(
+            "entry:target",
+            vec![
+                HyperlinkLine::from("replacement target first"),
+                HyperlinkLine::from("replacement target second"),
+            ],
+        );
+        updated.push_keyed_lines(
+            "entry:tail",
+            (0..6)
+                .map(|index| HyperlinkLine::from(format!("new tail {index}")))
+                .collect(),
+        );
+        let materialized = overlay.disclosure.materialize(&updated, Locale::EnUs, 12);
+        let expected = wrapped_line_starts(&materialized.lines, 12)[6];
+        overlay.restore_bookmark(bookmark);
+
+        let mut narrow = Terminal::new(TestBackend::new(12, 6)).expect("narrow terminal");
+        narrow
+            .draw(|frame| overlay.render_transcript(frame, frame.area(), Locale::EnUs, &updated))
+            .expect("restored draw");
+
+        assert_eq!(overlay.scroll.get(), expected);
+        assert!(!overlay.pinned_to_bottom.get());
+        let screen = buffer_text(&narrow);
+        assert!(screen.contains("replacement"), "{screen}");
+        assert!(screen.contains("target first"), "{screen}");
+    }
+
+    #[test]
     fn transcript_search_edits_highlights_and_navigates_matches() {
         let mut overlay = PagerOverlay::transcript(Locale::EnUs);
         let lines = vec![
@@ -1603,9 +1707,41 @@ mod tests {
             .expect("draw");
 
         let text = buffer_text(&terminal);
-        assert!(text.contains("PgDn·Space·Ctrl+F"), "{text}");
-        assert!(text.contains("F3·/ find"), "{text}");
-        assert!(text.contains("Ctrl+T·Esc·Q close"), "{text}");
+        assert!(text.contains("pgdn·space·ctrl+f"), "{text}");
+        assert!(text.contains("f3·/ find"), "{text}");
+        assert!(text.contains("ctrl+t·esc·q close"), "{text}");
+    }
+
+    #[test]
+    fn transcript_pager_chord_does_not_cross_paste_boundary() {
+        let mut config = lime_core::config::TuiKeymap::default();
+        config.pager.find = Some(lime_core::config::KeybindingsSpec::One(
+            lime_core::config::KeybindingSpec("ctrl-x f".to_string()),
+        ));
+        let keymap = crate::keymap::RuntimeKeymap::from_config(&config)
+            .expect("custom pager chord must be valid");
+        let mut overlay =
+            PagerOverlay::transcript(Locale::EnUs).with_keymap(keymap.transcript().clone());
+
+        assert_eq!(
+            overlay.handle_event(&Event::Key(KeyEvent::new(
+                KeyCode::Char('x'),
+                KeyModifiers::CONTROL,
+            ))),
+            PagerAction::Consumed
+        );
+        assert_eq!(
+            overlay.handle_event(&Event::Paste("paste".to_string())),
+            PagerAction::Consumed
+        );
+        assert_eq!(
+            overlay.handle_event(&Event::Key(KeyEvent::new(
+                KeyCode::Char('f'),
+                KeyModifiers::NONE,
+            ))),
+            PagerAction::Consumed
+        );
+        assert!(!overlay.search.is_active());
     }
 
     #[test]

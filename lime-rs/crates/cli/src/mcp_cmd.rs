@@ -10,9 +10,10 @@ use std::process::ExitCode;
 use anyhow::{bail, Result};
 use app_server_protocol::{
     McpServerCreateParams, McpServerDeleteParams, McpServerListResponse, McpServerOauthLoginParams,
-    McpServerOauthLoginResponse, McpServerStartParams, McpServerStopParams,
-    METHOD_MCP_SERVER_CREATE, METHOD_MCP_SERVER_DELETE, METHOD_MCP_SERVER_LIST,
-    METHOD_MCP_SERVER_OAUTH_LOGIN, METHOD_MCP_SERVER_START, METHOD_MCP_SERVER_STOP,
+    McpServerOauthLoginResponse, McpServerOauthLogoutParams, McpServerOauthLogoutResponse,
+    McpServerStartParams, McpServerStopParams, METHOD_MCP_SERVER_CREATE, METHOD_MCP_SERVER_DELETE,
+    METHOD_MCP_SERVER_LIST, METHOD_MCP_SERVER_OAUTH_LOGIN, METHOD_MCP_SERVER_OAUTH_LOGOUT,
+    METHOD_MCP_SERVER_START, METHOD_MCP_SERVER_STOP,
 };
 use clap::Args;
 use serde_json::{json, Value};
@@ -173,7 +174,7 @@ async fn run_list(args: ListArgs) -> Result<String> {
             .unwrap_or(false);
         let transport = server
             .get("server_config")
-            .and_then(|config| config.get("type"))
+            .and_then(|config| config.get("type").or_else(|| config.get("transport")))
             .and_then(Value::as_str)
             .unwrap_or("stdio");
         format!(
@@ -295,6 +296,7 @@ async fn run_login(args: LoginArgs) -> Result<String> {
         METHOD_MCP_SERVER_OAUTH_LOGIN,
         serde_json::to_value(McpServerOauthLoginParams {
             name: args.name.clone(),
+            thread_id: None,
             scopes: (!args.scopes.is_empty()).then_some(args.scopes),
             timeout_secs: None,
         })?,
@@ -307,8 +309,37 @@ async fn run_login(args: LoginArgs) -> Result<String> {
     ))
 }
 
-async fn run_logout(_args: LogoutArgs) -> Result<String> {
-    bail!("MCP OAuth logout is not exposed by the current App Server protocol; refusing to delete credentials from the CLI")
+async fn run_logout(args: LogoutArgs) -> Result<String> {
+    let listed = request(&args.connection, METHOD_MCP_SERVER_LIST, json!({})).await?;
+    let listed: McpServerListResponse = serde_json::from_value(listed)?;
+    let server = listed
+        .servers
+        .into_iter()
+        .find(|server| server_name(server) == args.name)
+        .ok_or_else(|| anyhow::anyhow!("No MCP server named '{}' found.", args.name))?;
+    let transport = server
+        .get("server_config")
+        .and_then(|config| config.get("type").or_else(|| config.get("transport")))
+        .and_then(Value::as_str)
+        .unwrap_or("stdio");
+    if transport != "streamable_http" {
+        bail!("OAuth logout is only supported for streamable_http transports.")
+    }
+
+    let response = request(
+        &args.connection,
+        METHOD_MCP_SERVER_OAUTH_LOGOUT,
+        serde_json::to_value(McpServerOauthLogoutParams {
+            name: args.name.clone(),
+        })?,
+    )
+    .await?;
+    let response: McpServerOauthLogoutResponse = serde_json::from_value(response)?;
+    if response.removed {
+        Ok(format!("Removed OAuth credentials for `{}`.", args.name))
+    } else {
+        Ok(format!("No OAuth credentials stored for `{}`.", args.name))
+    }
 }
 
 async fn request(connection: &ConnectionArgs, method: &str, params: Value) -> Result<Value> {

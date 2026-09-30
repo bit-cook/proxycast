@@ -1,7 +1,16 @@
 //! Resolved keymap snapshot for Codex-shaped TUI interaction surfaces.
 
+mod hints;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use lime_core::config::{KeybindingsSpec, TuiKeymap, MAX_FUNCTION_KEY};
+
+#[cfg(test)]
+const ALT_LABEL: &str = "⌥";
+#[cfg(all(not(test), target_os = "macos"))]
+const ALT_LABEL: &str = "⌥";
+#[cfg(all(not(test), not(target_os = "macos")))]
+const ALT_LABEL: &str = "alt";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct KeyBinding {
@@ -42,34 +51,29 @@ impl KeyBinding {
 
     fn display_label(self) -> String {
         let mut label = String::new();
-        if self.modifiers.contains(KeyModifiers::CONTROL) {
-            label.push_str("Ctrl+");
+        for (modifier, name) in [
+            (KeyModifiers::CONTROL, "ctrl"),
+            (KeyModifiers::SHIFT, "shift"),
+            (KeyModifiers::ALT, ALT_LABEL),
+        ] {
+            if self.modifiers.contains(modifier) {
+                label.push_str(name);
+                if !matches!(name, "⌥" | "⌘" | "^") {
+                    label.push('+');
+                }
+            }
         }
-        if self.modifiers.contains(KeyModifiers::ALT) {
-            label.push_str("Alt+");
-        }
-        if self.modifiers.contains(KeyModifiers::SHIFT) {
-            label.push_str("Shift+");
-        }
-        label.push_str(&match self.code {
-            KeyCode::Char(' ') => "Space".to_string(),
-            KeyCode::Char(character) => character.to_ascii_uppercase().to_string(),
-            KeyCode::Esc => "Esc".to_string(),
-            KeyCode::Enter => "Enter".to_string(),
-            KeyCode::Tab => "Tab".to_string(),
-            KeyCode::Backspace => "Backspace".to_string(),
-            KeyCode::Delete => "Delete".to_string(),
-            KeyCode::Up => "Up".to_string(),
-            KeyCode::Down => "Down".to_string(),
-            KeyCode::Left => "Left".to_string(),
-            KeyCode::Right => "Right".to_string(),
-            KeyCode::Home => "Home".to_string(),
-            KeyCode::End => "End".to_string(),
-            KeyCode::PageUp => "PgUp".to_string(),
-            KeyCode::PageDown => "PgDn".to_string(),
-            KeyCode::F(number) => format!("F{number}"),
-            other => other.to_string(),
-        });
+        let key = match self.code {
+            KeyCode::Char(' ') => "space".to_string(),
+            KeyCode::Up => "↑".to_string(),
+            KeyCode::Down => "↓".to_string(),
+            KeyCode::Left => "←".to_string(),
+            KeyCode::Right => "→".to_string(),
+            KeyCode::PageUp => "pgup".to_string(),
+            KeyCode::PageDown => "pgdn".to_string(),
+            other => other.to_string().to_ascii_lowercase(),
+        };
+        label.push_str(&key);
         label
     }
 }
@@ -126,9 +130,9 @@ impl BindingSet {
     }
 
     fn is_pressed(&self, key: KeyEvent) -> bool {
-        self.shortcuts.iter().any(|shortcut| {
-            matches!(shortcut, Shortcut::Single(binding) if binding.is_pressed(key))
-        })
+        self.shortcuts.iter().any(
+            |shortcut| matches!(shortcut, Shortcut::Single(binding) if binding.is_pressed(key)),
+        )
     }
 
     fn labels(&self) -> impl Iterator<Item = String> + '_ {
@@ -150,11 +154,7 @@ pub(crate) struct KeyChordMatcher {
 }
 
 impl KeyChordMatcher {
-    fn advance<A: Copy>(
-        &mut self,
-        key: KeyEvent,
-        actions: &[(A, &BindingSet)],
-    ) -> KeymapMatch<A> {
+    fn advance<A: Copy>(&mut self, key: KeyEvent, actions: &[(A, &BindingSet)]) -> KeymapMatch<A> {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return KeymapMatch::PassThrough;
         }
@@ -162,31 +162,38 @@ impl KeyChordMatcher {
             return actions
                 .iter()
                 .find_map(|(action, bindings)| {
-                    bindings.shortcuts.iter().find_map(|shortcut| match shortcut {
-                        Shortcut::Chord {
-                            prefix: expected,
-                            completion,
-                        } if prefix.normalized_parts() == expected.normalized_parts()
-                            && completion.is_pressed(key) =>
-                        {
-                            Some(*action)
-                        }
-                        _ => None,
-                    })
+                    bindings
+                        .shortcuts
+                        .iter()
+                        .find_map(|shortcut| match shortcut {
+                            Shortcut::Chord {
+                                prefix: expected,
+                                completion,
+                            } if prefix.normalized_parts() == expected.normalized_parts()
+                                && completion.is_pressed(key) =>
+                            {
+                                Some(*action)
+                            }
+                            _ => None,
+                        })
                 })
                 .map(KeymapMatch::Completed)
                 .unwrap_or(KeymapMatch::Cancelled);
         }
-        if let Some(action) = actions.iter().find_map(|(action, bindings)| {
-            bindings.is_pressed(key).then_some(*action)
-        }) {
+        if let Some(action) = actions
+            .iter()
+            .find_map(|(action, bindings)| bindings.is_pressed(key).then_some(*action))
+        {
             return KeymapMatch::Completed(action);
         }
         let prefix = actions.iter().find_map(|(_, bindings)| {
-            bindings.shortcuts.iter().find_map(|shortcut| match shortcut {
-                Shortcut::Chord { prefix, .. } if prefix.is_pressed(key) => Some(*prefix),
-                _ => None,
-            })
+            bindings
+                .shortcuts
+                .iter()
+                .find_map(|shortcut| match shortcut {
+                    Shortcut::Chord { prefix, .. } if prefix.is_pressed(key) => Some(*prefix),
+                    _ => None,
+                })
         });
         if let Some(prefix) = prefix {
             self.pending = Some(prefix);
@@ -285,33 +292,20 @@ impl TranscriptKeymap {
                 (PagerKeymapAction::JumpTop, &self.jump_top),
                 (PagerKeymapAction::JumpBottom, &self.jump_bottom),
                 (PagerKeymapAction::Close, &self.close),
-                (
-                    PagerKeymapAction::CloseTranscript,
-                    &self.close_transcript,
-                ),
+                (PagerKeymapAction::CloseTranscript, &self.close_transcript),
                 (PagerKeymapAction::Find, &self.find),
             ],
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn open_transcript(&self, key: KeyEvent) -> bool {
         self.open_transcript.is_pressed(key)
     }
 
+    #[cfg(test)]
     pub(crate) fn find_transcript(&self, key: KeyEvent) -> bool {
         self.find_transcript.is_pressed(key)
-    }
-
-    pub(crate) fn pager_find_hint(&self) -> String {
-        binding_labels([&self.find])
-    }
-
-    pub(crate) fn pager_page_down_hint(&self) -> String {
-        binding_labels([&self.page_down])
-    }
-
-    pub(crate) fn pager_close_hint(&self) -> String {
-        binding_labels([&self.close_transcript, &self.close])
     }
 }
 
@@ -326,6 +320,36 @@ pub(crate) struct AgentsKeymap {
 }
 
 impl AgentsKeymap {
+    pub(crate) fn reserves_key(&self, key: KeyEvent) -> bool {
+        [
+            &self.resume,
+            &self.search,
+            &self.new_task,
+            &self.rename,
+            &self.stop,
+            &self.toggle_grouping,
+        ]
+        .into_iter()
+        .any(|bindings| {
+            bindings.shortcuts.iter().any(|shortcut| match shortcut {
+                Shortcut::Single(binding) => binding.is_pressed(key),
+                Shortcut::Chord { prefix, .. } => prefix.is_pressed(key),
+            })
+        })
+    }
+
+    pub(crate) fn primary_hint(&self, action: AgentsKeymapAction) -> Option<String> {
+        let bindings = match action {
+            AgentsKeymapAction::Resume => &self.resume,
+            AgentsKeymapAction::Search => &self.search,
+            AgentsKeymapAction::NewTask => &self.new_task,
+            AgentsKeymapAction::Rename => &self.rename,
+            AgentsKeymapAction::Stop => &self.stop,
+            AgentsKeymapAction::ToggleGrouping => &self.toggle_grouping,
+        };
+        bindings.labels().next()
+    }
+
     pub(crate) fn dispatch(
         &self,
         matcher: &mut KeyChordMatcher,
@@ -339,34 +363,37 @@ impl AgentsKeymap {
                 (AgentsKeymapAction::NewTask, &self.new_task),
                 (AgentsKeymapAction::Rename, &self.rename),
                 (AgentsKeymapAction::Stop, &self.stop),
-                (
-                    AgentsKeymapAction::ToggleGrouping,
-                    &self.toggle_grouping,
-                ),
+                (AgentsKeymapAction::ToggleGrouping, &self.toggle_grouping),
             ],
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn resume(&self, key: KeyEvent) -> bool {
         self.resume.is_pressed(key)
     }
 
+    #[cfg(test)]
     pub(crate) fn search(&self, key: KeyEvent) -> bool {
         self.search.is_pressed(key)
     }
 
+    #[cfg(test)]
     pub(crate) fn new_task(&self, key: KeyEvent) -> bool {
         self.new_task.is_pressed(key)
     }
 
+    #[cfg(test)]
     pub(crate) fn rename(&self, key: KeyEvent) -> bool {
         self.rename.is_pressed(key)
     }
 
+    #[cfg(test)]
     pub(crate) fn stop(&self, key: KeyEvent) -> bool {
         self.stop.is_pressed(key)
     }
 
+    #[cfg(test)]
     pub(crate) fn toggle_grouping(&self, key: KeyEvent) -> bool {
         self.toggle_grouping.is_pressed(key)
     }
@@ -459,32 +486,32 @@ impl RuntimeKeymap {
         let agents = AgentsKeymap {
             resume: BindingSet::resolve(
                 agents_config.resume.as_ref(),
-                singles(&[ctrl('o')]),
+                singles(&[plain_char('o')]),
                 "tui.keymap.agents.resume",
             )?,
             search: BindingSet::resolve(
                 agents_config.search.as_ref(),
-                singles(&[ctrl('f')]),
+                singles(&[plain_char('f')]),
                 "tui.keymap.agents.search",
             )?,
             new_task: BindingSet::resolve(
                 agents_config.new_task.as_ref(),
-                singles(&[ctrl('n')]),
+                singles(&[plain_char('n')]),
                 "tui.keymap.agents.new_task",
             )?,
             rename: BindingSet::resolve(
                 agents_config.rename.as_ref(),
-                singles(&[ctrl('r')]),
+                singles(&[plain_char('r')]),
                 "tui.keymap.agents.rename",
             )?,
             stop: BindingSet::resolve(
                 agents_config.stop.as_ref(),
-                singles(&[ctrl('x')]),
+                singles(&[plain_char('x')]),
                 "tui.keymap.agents.stop",
             )?,
             toggle_grouping: BindingSet::resolve(
                 agents_config.toggle_grouping.as_ref(),
-                singles(&[ctrl('s')]),
+                singles(&[plain_char('g')]),
                 "tui.keymap.agents.toggle_grouping",
             )?,
         };
@@ -606,9 +633,7 @@ fn parse_shortcut(spec: &str, path: &str) -> Result<Shortcut, String> {
 }
 
 fn invalid_binding(path: &str, spec: &str) -> String {
-    format!(
-        "Invalid `{path}` = `{spec}`. Use values like `ctrl-a`, `shift-enter`, or `ctrl-x f`."
-    )
+    format!("Invalid `{path}` = `{spec}`. Use values like `ctrl-a`, `shift-enter`, or `ctrl-x f`.")
 }
 
 fn parse_keybinding(spec: &str) -> Option<KeyBinding> {
@@ -661,6 +686,9 @@ fn parse_keybinding(spec: &str) -> Option<KeyBinding> {
 }
 
 fn normalize_key_parts(code: KeyCode, mut modifiers: KeyModifiers) -> (KeyCode, KeyModifiers) {
+    if code == KeyCode::BackTab {
+        return (KeyCode::Tab, modifiers | KeyModifiers::SHIFT);
+    }
     let KeyCode::Char(character) = code else {
         return (code, modifiers);
     };

@@ -171,6 +171,7 @@ pub const METHOD_MCP_SERVER_ENABLED_SET: &str = "mcpServer/enabled/set";
 pub const METHOD_MCP_SERVER_IMPORT_FROM_APP: &str = "mcpServer/importFromApp";
 pub const METHOD_MCP_SERVER_SYNC_ALL_TO_LIVE: &str = "mcpServer/syncAllToLive";
 pub const METHOD_MCP_SERVER_OAUTH_LOGIN: &str = "mcpServer/oauth/login";
+pub const METHOD_MCP_SERVER_OAUTH_LOGOUT: &str = "mcpServer/oauth/logout";
 pub const METHOD_MCP_SERVER_START: &str = "mcpServer/start";
 pub const METHOD_MCP_SERVER_STOP: &str = "mcpServer/stop";
 pub const METHOD_MCP_TOOL_LIST: &str = "mcpTool/list";

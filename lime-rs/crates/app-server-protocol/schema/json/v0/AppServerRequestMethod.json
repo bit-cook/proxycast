@@ -75,6 +75,7 @@
     "mcpServer/importFromApp",
     "mcpServer/list",
     "mcpServer/oauth/login",
+    "mcpServer/oauth/logout",
     "mcpServer/start",
     "mcpServer/stop",
     "mcpServer/syncAllToLive",

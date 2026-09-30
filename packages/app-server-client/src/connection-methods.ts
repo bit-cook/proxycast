@@ -533,6 +533,10 @@ declare module "./connection.js" {
       params: protocol.McpServerOauthLoginParams,
       options?: AppServerRequestOptions,
     ): Promise<AppServerRequestResult<protocol.McpServerOauthLoginResponse>>;
+    logoutMcpServerOauth(
+      params: protocol.McpServerOauthLogoutParams,
+      options?: AppServerRequestOptions,
+    ): Promise<AppServerRequestResult<protocol.McpServerOauthLogoutResponse>>;
     startMcpServer(
       params: protocol.McpServerStartParams,
       options?: AppServerRequestOptions,

@@ -10,7 +10,7 @@ use std::time::Duration;
 use anyhow::{bail, Result};
 use app_server_protocol::protocol::v2::{Thread, ThreadHistoryMode};
 
-use crate::app_server_session::{AppServerSession, InitialHistoryPage};
+use crate::app_server_session::{AppServerSession, InitialHistoryPage, ThreadSettingsPatch};
 use crate::runtime::{connect_session, TuiOptions};
 
 const RECONNECT_DELAYS: [Duration; 4] = [
@@ -33,10 +33,7 @@ pub(crate) struct ReconnectedSession {
 pub(crate) async fn reconnect_session(
     options: TuiOptions,
     thread_id: String,
-    model: Option<String>,
-    model_provider: Option<String>,
-    effort: Option<String>,
-    permissions: Option<String>,
+    settings: ThreadSettingsPatch,
 ) -> Result<ReconnectedSession> {
     let mut last_error = None;
     for delay in RECONNECT_DELAYS {
@@ -88,12 +85,7 @@ pub(crate) async fn reconnect_session(
                     }
                 };
                 if let Err(error) = candidate
-                    .update_settings(
-                        model.clone(),
-                        model_provider.clone(),
-                        effort.clone(),
-                        permissions.clone(),
-                    )
+                    .update_settings_with_policy(settings.clone())
                     .await
                 {
                     let _ = candidate.shutdown().await;
@@ -120,8 +112,6 @@ pub(crate) async fn reconnect_session(
             }
         }
     }
-    let error = last_error
-        .map(|error| format!("{error:#}"))
-        .unwrap_or_else(|| "unknown reconnect failure".to_string());
-    bail!("failed to reconnect App Server and resume thread {thread_id}: {error}")
+    let _ = last_error;
+    bail!("server connection could not be restored")
 }

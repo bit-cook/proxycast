@@ -15,7 +15,7 @@ impl ChatComposer {
     ///
     /// 普通文本、附件、popup、历史搜索和 Vim operator pending 都留在各自
     /// 的 composer owner 内处理；默认关闭保证 remote session fail-closed。
-    pub(super) fn agents_navigation_available(&self) -> bool {
+    pub(crate) fn agents_navigation_available(&self) -> bool {
         self.agents_navigation_enabled
             && self.is_empty()
             && !self.has_pending_images()

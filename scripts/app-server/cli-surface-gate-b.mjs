@@ -153,6 +153,20 @@ async function main() {
     }
     await runCli(["mcp", "start", mcpName, ...connection], tempDir);
     await runCli(["mcp", "stop", mcpName, ...connection], tempDir);
+    const stdioLogout = await runCliResult(
+      ["mcp", "logout", mcpName, ...connection],
+      tempDir,
+    );
+    if (
+      stdioLogout.code !== 1 ||
+      !stdioLogout.stderr.includes(
+        "OAuth logout is only supported for streamable_http transports.",
+      )
+    ) {
+      throw new Error(
+        `mcp logout stdio must fail closed: ${JSON.stringify(stdioLogout)}`,
+      );
+    }
     const mcpRemove = await runCli(
       ["mcp", "remove", mcpName, ...connection],
       tempDir,
@@ -202,6 +216,28 @@ async function main() {
       }),
       "utf8",
     );
+    const availableBeforeInstall = await runCli(
+      [
+        "plugin",
+        "list",
+        "--available",
+        "--json",
+        "--plugin-cwd",
+        tempDir,
+        ...connection,
+      ],
+      tempDir,
+    );
+    const availablePayload = JSON.parse(availableBeforeInstall.stdout);
+    assertArray(availablePayload.plugins, "available plugin list plugins");
+    const availablePlugin = availablePayload.plugins.find(
+      (candidate) => candidate?.id === "cli-surface-plugin",
+    );
+    if (!availablePlugin || availablePlugin.installed !== false) {
+      throw new Error(
+        `plugin list --available did not expose an uninstalled candidate: ${availableBeforeInstall.stdout}`,
+      );
+    }
     await runCli(
       ["plugin", "add", pluginRoot, "--source", "repo", ...connection],
       tempDir,
@@ -218,6 +254,29 @@ async function main() {
     );
     if (!plugin)
       throw new Error("plugin add did not expose the installed plugin");
+    const repoPlugins = await runCli(
+      [
+        "plugin",
+        "list",
+        "--available",
+        "--json",
+        "--plugin-cwd",
+        tempDir,
+        ...connection,
+      ],
+      tempDir,
+    );
+    const repoPluginPayload = JSON.parse(repoPlugins.stdout);
+    assertArray(repoPluginPayload.plugins, "repo-local plugin list plugins");
+    if (
+      !repoPluginPayload.plugins.some(
+        (candidate) => candidate?.id === "cli-surface-plugin",
+      )
+    ) {
+      throw new Error(
+        `repo-local plugin list did not return the fixture: ${repoPlugins.stdout}`,
+      );
+    }
     const pluginRead = await runCli(
       ["plugin", "read", "cli-surface-plugin", "--json", ...connection],
       tempDir,
@@ -313,13 +372,41 @@ async function main() {
       tempDir,
     );
     if (
-      invalidLogout.code === 0 ||
-      !invalidLogout.stderr.includes("not exposed")
+      invalidLogout.code !== 1 ||
+      !invalidLogout.stderr.includes("No MCP server named 'docs' found.")
     ) {
       throw new Error(
-        "mcp logout must fail closed until the protocol exposes credential deletion",
+        `mcp logout unknown server must fail closed: ${JSON.stringify(invalidLogout)}`,
       );
     }
+
+    const oauthServerName = "cli-oauth-logout-fixture";
+    await runCli(
+      [
+        "mcp",
+        "add",
+        oauthServerName,
+        "--url",
+        "http://127.0.0.1:1/mcp",
+        ...connection,
+      ],
+      tempDir,
+    );
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const logout = await runCli(
+        ["mcp", "logout", oauthServerName, ...connection],
+        tempDir,
+      );
+      if (
+        logout.stdout.trim() !==
+        `No OAuth credentials stored for \`${oauthServerName}\`.`
+      ) {
+        throw new Error(
+          `mcp logout without credentials must be idempotent attempt=${attempt}: ${JSON.stringify(logout)}`,
+        );
+      }
+    }
+    await runCli(["mcp", "remove", oauthServerName, ...connection], tempDir);
 
     const backendPath = path.join(tempDir, "queue-backend.mjs");
     const ledgerPath = path.join(tempDir, "queue-backend.jsonl");
@@ -401,7 +488,7 @@ async function main() {
         "execpolicy=check|prefix-rule|justification",
         "queue=add|list|unavailable-fail-closed",
         "sandbox=stdout|stderr|cwd|exit-code|read-only-fail-closed",
-        "oauth-logout=fail-closed",
+        "oauth-logout=unknown-server|stdio-fail-closed|idempotent",
       ].join(" "),
     );
   } finally {

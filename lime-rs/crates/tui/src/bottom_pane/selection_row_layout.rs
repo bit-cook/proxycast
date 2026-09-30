@@ -59,9 +59,17 @@ pub(crate) enum SelectionDescriptionLayout {
     StackBelowWhenNarrow {
         min_description_width: u16,
     },
+    HideWhenNarrow {
+        min_description_width: u16,
+    },
 }
 
 impl SelectionDescriptionLayout {
+    pub(crate) fn should_hide(self, width: u16, desc_col: usize) -> bool {
+        matches!(self, Self::HideWhenNarrow { min_description_width }
+            if width.saturating_sub(desc_col.min(usize::from(width)) as u16) < min_description_width)
+    }
+
     pub(crate) fn should_stack(self, width: u16, desc_col: usize) -> bool {
         let Self::StackBelowWhenNarrow {
             min_description_width,
@@ -80,6 +88,8 @@ pub(crate) struct SelectionRow {
     pub(crate) name_prefix_spans: Vec<Span<'static>>,
     pub(crate) description: Option<String>,
     pub(crate) disabled_reason: Option<String>,
+    pub(crate) match_indices: Option<Vec<usize>>,
+    pub(crate) category_tag: Option<String>,
 }
 
 impl SelectionRow {
@@ -93,6 +103,8 @@ impl SelectionRow {
             name_prefix_spans,
             description,
             disabled_reason: None,
+            match_indices: None,
+            category_tag: None,
         }
     }
 }
@@ -145,6 +157,7 @@ fn build_name_spans(row: &SelectionRow, name_limit: usize) -> Vec<Span<'static>>
     let mut spans = Vec::with_capacity(row.name.len());
     let mut used_width = 0usize;
     let mut truncated = false;
+    let mut char_index = 0;
     for grapheme in row.name.graphemes(true) {
         let next_width = used_width.saturating_add(display_width(grapheme));
         if next_width > name_limit {
@@ -152,7 +165,15 @@ fn build_name_spans(row: &SelectionRow, name_limit: usize) -> Vec<Span<'static>>
             break;
         }
         used_width = next_width;
-        spans.push(Span::raw(grapheme.to_string()));
+        let end_index = char_index + grapheme.chars().count();
+        let matched = row.match_indices.as_ref().is_some_and(|indices| {
+            indices
+                .iter()
+                .any(|index| (char_index..end_index).contains(index))
+        });
+        let span = Span::raw(grapheme.to_string());
+        spans.push(if matched { span.bold() } else { span });
+        char_index = end_index;
     }
     if truncated {
         spans.push(Span::raw("…"));
@@ -167,24 +188,56 @@ fn build_name_spans(row: &SelectionRow, name_limit: usize) -> Vec<Span<'static>>
 pub(crate) fn build_full_line(
     row: &SelectionRow,
     desc_col: usize,
+    width: u16,
     description_layout: SelectionDescriptionLayout,
 ) -> Line<'static> {
-    let description = combined_description(row, description_layout);
+    let description = (desc_col > 0 && !description_layout.should_hide(width, desc_col))
+        .then(|| combined_description(row, description_layout))
+        .flatten();
     let prefix_width = line_width(&Line::from(row.name_prefix_spans.clone()));
-    let name_limit = description
-        .as_ref()
-        .map(|_| desc_col.saturating_sub(2).saturating_sub(prefix_width))
+    let metadata_col = row
+        .category_tag
+        .as_deref()
+        .map(|tag| {
+            let column = if description.is_some() {
+                desc_col
+            } else {
+                prefix_width + display_width(&row.name) + 2
+            };
+            column.min(usize::from(width).saturating_sub(display_width(tag)))
+        })
+        .or_else(|| description.as_ref().map(|_| desc_col));
+    let name_limit = metadata_col
+        .map(|column| column.saturating_sub(2).saturating_sub(prefix_width))
         .unwrap_or(usize::MAX);
-    let name_spans = build_name_spans(row, name_limit);
+    let name_limit = if row.category_tag.is_some() && display_width(&row.name) > name_limit {
+        name_limit.saturating_sub(1)
+    } else {
+        name_limit
+    };
+    let name_spans =
+        if row.category_tag.is_some() && metadata_col.is_some_and(|col| col <= prefix_width) {
+            Vec::new()
+        } else {
+            build_name_spans(row, name_limit)
+        };
     let name_width = prefix_width + line_width(&Line::from(name_spans.clone()));
 
     let mut spans = row.name_prefix_spans.clone();
     spans.extend(name_spans);
-    if let Some(description) = description {
-        let gap = desc_col.saturating_sub(name_width);
+    if let Some(metadata_col) = metadata_col {
+        let gap = metadata_col.saturating_sub(name_width);
         if gap > 0 {
             spans.push(Span::raw(" ".repeat(gap)));
         }
+    }
+    if let Some(tag) = &row.category_tag {
+        spans.push(Span::raw(tag.clone()).dim());
+        if description.is_some() {
+            spans.push(" ".dim());
+        }
+    }
+    if let Some(description) = description {
         spans.push(Span::raw(description).dim());
     }
     Line::from(spans)
@@ -231,7 +284,7 @@ pub(crate) fn wrap_row(
     if description_layout.should_stack(width, desc_col) {
         return wrap_stacked_row(row, width);
     }
-    let full_line = build_full_line(row, desc_col, description_layout);
+    let full_line = build_full_line(row, desc_col, width, description_layout);
     let options = RtOptions::new(width.max(1) as usize)
         .initial_indent(Line::default())
         .subsequent_indent(Line::default());
@@ -264,7 +317,7 @@ mod tests {
     #[test]
     fn wide_rows_align_description_with_display_width() {
         let row = SelectionRow::new("模型🙂", Some("provider".to_string()), Vec::new());
-        let line = build_full_line(&row, 12, SelectionDescriptionLayout::Columns);
+        let line = build_full_line(&row, 12, 80, SelectionDescriptionLayout::Columns);
         assert!(line.to_string().contains("provider"));
         assert!(line_width(&line) >= 20);
     }
@@ -293,7 +346,7 @@ mod tests {
             disabled_reason: Some("later".to_string()),
             ..SelectionRow::default()
         };
-        let line = build_full_line(&row, 8, SelectionDescriptionLayout::Columns);
+        let line = build_full_line(&row, 8, 80, SelectionDescriptionLayout::Columns);
         assert!(line.to_string().contains("disabled: later"));
     }
 }

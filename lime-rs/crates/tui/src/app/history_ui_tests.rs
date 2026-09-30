@@ -216,7 +216,7 @@ fn empty_thread_starts_with_exactly_one_session_header() {
         .join("\n");
 
     assert_eq!(text.matches(">_ Lime").count(), 1, "{text}");
-    assert!(text.contains("fixture-model"), "{text}");
+    assert!(!text.contains("fixture-model"), "{text}");
     assert!(text.contains("/workspace"), "{text}");
 }
 
@@ -365,6 +365,43 @@ fn transcript_entry_lines_share_cell_rendering_and_fit_viewport() {
         .iter()
         .flat_map(|line| line.line.spans.iter())
         .any(|span| span.content.contains("assistant")));
+}
+
+#[test]
+fn transcript_content_retains_canonical_entry_keys_for_reading_bookmarks() {
+    let entries = [
+        TranscriptEntry {
+            id: "user-1".to_string(),
+            kind: EntryKind::User,
+            text: "first prompt".to_string(),
+            streaming: false,
+            status: None,
+            summary: Vec::new(),
+            activity_group: None,
+            activity_detail: None,
+        },
+        TranscriptEntry {
+            id: "assistant-1".to_string(),
+            kind: EntryKind::Assistant,
+            text: "first answer".to_string(),
+            streaming: false,
+            status: None,
+            summary: Vec::new(),
+            activity_group: None,
+            activity_detail: None,
+        },
+    ];
+    let content =
+        render_transcript_entries_content(&entries, 80, Locale::EnUs, Path::new("/workspace"));
+    let materialized = TranscriptDisclosure::default().materialize(&content, Locale::EnUs, 80);
+    let keys = materialized
+        .anchor_ranges
+        .iter()
+        .flat_map(|range| range.keys.iter().map(String::as_str))
+        .collect::<Vec<_>>();
+
+    assert!(keys.contains(&"entry:user-1"), "{keys:?}");
+    assert!(keys.contains(&"entry:assistant-1"), "{keys:?}");
 }
 
 #[test]

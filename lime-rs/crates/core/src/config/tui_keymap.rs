@@ -143,10 +143,13 @@ impl TuiKeymap {
     }
 }
 
-/// TUI 客户端拥有的用户偏好；当前只包含已接线的 keymap。
+/// TUI 客户端拥有的用户偏好；仅包含已接线的输入策略和 keymap。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct TuiConfig {
+    /// Mouse right-click paste policy. `auto` follows terminal safety guards.
+    #[serde(skip_serializing_if = "RightClickPaste::is_default")]
+    pub right_click_paste: RightClickPaste,
     #[serde(skip_serializing_if = "TuiKeymap::is_default")]
     pub keymap: TuiKeymap,
 }
@@ -154,6 +157,21 @@ pub struct TuiConfig {
 impl TuiConfig {
     pub fn is_default(&self) -> bool {
         self == &Self::default()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RightClickPaste {
+    #[default]
+    Auto,
+    On,
+    Off,
+}
+
+impl RightClickPaste {
+    pub fn is_default(&self) -> bool {
+        *self == Self::Auto
     }
 }
 
@@ -180,8 +198,7 @@ fn normalize_keybinding_stroke(raw: &str) -> Result<String, String> {
     let lower = raw.trim().to_ascii_lowercase();
     if lower.is_empty() {
         return Err(
-            "keybinding cannot be empty; use a value such as `ctrl-a` or `shift-enter`"
-                .to_string(),
+            "keybinding cannot be empty; use a value such as `ctrl-a` or `shift-enter`".to_string(),
         );
     }
 
@@ -323,10 +340,9 @@ mod tests {
 
     #[test]
     fn keymap_rejects_unknown_actions_and_long_chords() {
-        let unknown = serde_yaml::from_str::<TuiConfig>(
-            "keymap:\n  global:\n    find_transcrip: f3\n",
-        )
-        .expect_err("unknown action must fail closed");
+        let unknown =
+            serde_yaml::from_str::<TuiConfig>("keymap:\n  global:\n    find_transcrip: f3\n")
+                .expect_err("unknown action must fail closed");
         assert!(unknown.to_string().contains("find_transcrip"));
 
         serde_yaml::from_str::<TuiConfig>(

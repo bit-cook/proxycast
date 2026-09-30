@@ -93,6 +93,13 @@ pub trait McpAppDataSource: Send + Sync {
         Err(requires_current("mcpServer/oauth/login"))
     }
 
+    async fn logout_mcp_server_oauth(
+        &self,
+        _params: McpServerOauthLogoutParams,
+    ) -> Result<McpServerOauthLogoutResponse, RuntimeCoreError> {
+        Err(requires_current("mcpServer/oauth/logout"))
+    }
+
     async fn list_mcp_tools(&self) -> Result<McpToolListResponse, RuntimeCoreError> {
         Ok(McpToolListResponse::default())
     }

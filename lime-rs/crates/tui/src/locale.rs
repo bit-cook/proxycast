@@ -1,3 +1,8 @@
+mod agents;
+mod pickers;
+mod shortcuts;
+pub(crate) use shortcuts::ShortcutLabel;
+
 use std::borrow::Cow;
 
 use crate::slash_command::SlashCommand;
@@ -81,13 +86,23 @@ impl Locale {
         }
     }
 
-    pub(crate) fn change_model_hint(self) -> &'static str {
+    pub(crate) fn plan_mode_cycle_hint(self) -> &'static str {
         match self {
-            Self::ZhCn => " 切换模型",
-            Self::ZhTw => " 切換模型",
-            Self::EnUs => " to change",
-            Self::JaJp => " で変更",
-            Self::KoKr => "로 변경",
+            Self::ZhCn => "计划模式（Shift+Tab 切换）",
+            Self::ZhTw => "計畫模式（Shift+Tab 切換）",
+            Self::EnUs => "Plan mode (shift+tab to cycle)",
+            Self::JaJp => "計画モード（Shift+Tab で切り替え）",
+            Self::KoKr => "계획 모드 (Shift+Tab으로 전환)",
+        }
+    }
+
+    pub(crate) fn plan_mode_label(self) -> &'static str {
+        match self {
+            Self::ZhCn => "计划模式",
+            Self::ZhTw => "計畫模式",
+            Self::EnUs => "Plan mode",
+            Self::JaJp => "計画モード",
+            Self::KoKr => "계획 모드",
         }
     }
 
@@ -150,15 +165,6 @@ impl Locale {
         }
     }
 
-    pub(crate) fn turn_label(self) -> &'static str {
-        match self {
-            Self::ZhCn | Self::ZhTw => "回合",
-            Self::EnUs => "turn",
-            Self::JaJp => "ターン",
-            Self::KoKr => "턴",
-        }
-    }
-
     pub(crate) fn queue_message_hint(self) -> &'static str {
         match self {
             Self::ZhCn => "Tab 排队消息",
@@ -176,16 +182,6 @@ impl Locale {
             Self::EnUs => "Tab to queue",
             Self::JaJp => "Tab でキューに追加",
             Self::KoKr => "Tab으로 대기열 추가",
-        }
-    }
-
-    pub(crate) fn draft_ready_hint(self) -> &'static str {
-        match self {
-            Self::ZhCn => "草稿就绪",
-            Self::ZhTw => "草稿就緒",
-            Self::EnUs => "draft ready",
-            Self::JaJp => "下書き準備完了",
-            Self::KoKr => "초안 준비됨",
         }
     }
 
@@ -816,11 +812,74 @@ impl Locale {
 
     pub(crate) fn mcp_usage(self) -> &'static str {
         match self {
-            Self::ZhCn => "用法：/mcp [verbose]",
-            Self::ZhTw => "用法：/mcp [verbose]",
-            Self::EnUs => "Usage: /mcp [verbose]",
-            Self::JaJp => "使い方：/mcp [verbose]",
-            Self::KoKr => "사용법: /mcp [verbose]",
+            Self::ZhCn => "用法：/mcp [verbose | login <名称>]",
+            Self::ZhTw => "用法：/mcp [verbose | login <名稱>]",
+            Self::EnUs => "Usage: /mcp [verbose | login <name>]",
+            Self::JaJp => "使い方：/mcp [verbose | login <名前>]",
+            Self::KoKr => "사용법: /mcp [verbose | login <이름>]",
+        }
+    }
+
+    pub(crate) fn mcp_login_requires_session(self) -> &'static str {
+        match self {
+            Self::ZhCn => "MCP 登录需要先启动会话。",
+            Self::ZhTw => "MCP 登入需要先啟動工作階段。",
+            Self::EnUs => "MCP sign-in requires an active session.",
+            Self::JaJp => "MCP ログインにはアクティブなセッションが必要です。",
+            Self::KoKr => "MCP 로그인에는 활성 세션이 필요합니다.",
+        }
+    }
+
+    pub(crate) fn mcp_login_in_progress(self, name: &str) -> String {
+        match self {
+            Self::ZhCn => format!("MCP 服务器“{name}”正在登录，请稍候。"),
+            Self::ZhTw => format!("MCP 伺服器「{name}」正在登入，請稍候。"),
+            Self::EnUs => format!("MCP server '{name}' sign-in is already in progress."),
+            Self::JaJp => format!("MCP サーバー「{name}」はログイン処理中です。"),
+            Self::KoKr => format!("MCP 서버 '{name}' 로그인 진행 중입니다."),
+        }
+    }
+
+    pub(crate) fn mcp_login_opened(self, name: &str) -> String {
+        match self {
+            Self::ZhCn => format!("已为 MCP 服务器“{name}”打开登录页面。"),
+            Self::ZhTw => format!("已為 MCP 伺服器「{name}」開啟登入頁面。"),
+            Self::EnUs => format!("Opened the MCP sign-in page for '{name}'."),
+            Self::JaJp => format!("MCP サーバー「{name}」のログインページを開きました。"),
+            Self::KoKr => format!("MCP 서버 '{name}' 로그인 페이지를 열었습니다."),
+        }
+    }
+
+    pub(crate) fn mcp_login_open_failed(self, name: &str, error: &str) -> String {
+        match self {
+            Self::ZhCn => format!("无法打开 MCP 服务器“{name}”的登录页面：{error}"),
+            Self::ZhTw => format!("無法開啟 MCP 伺服器「{name}」的登入頁面：{error}"),
+            Self::EnUs => format!("Could not open MCP sign-in for '{name}': {error}"),
+            Self::JaJp => {
+                format!("MCP サーバー「{name}」のログインページを開けませんでした: {error}")
+            }
+            Self::KoKr => format!("MCP 서버 '{name}' 로그인 페이지를 열 수 없습니다: {error}"),
+        }
+    }
+
+    pub(crate) fn mcp_login_succeeded(self, name: &str) -> String {
+        match self {
+            Self::ZhCn => format!("已登录 MCP 服务器“{name}”。"),
+            Self::ZhTw => format!("已登入 MCP 伺服器「{name}」。"),
+            Self::EnUs => format!("Signed in to MCP server '{name}'."),
+            Self::JaJp => format!("MCP サーバー「{name}」にログインしました。"),
+            Self::KoKr => format!("MCP 서버 '{name}'에 로그인했습니다."),
+        }
+    }
+
+    pub(crate) fn mcp_login_failed_completion(self, name: &str, error: Option<&str>) -> String {
+        let detail = error.unwrap_or("unknown error");
+        match self {
+            Self::ZhCn => format!("MCP 服务器“{name}”登录失败：{detail}"),
+            Self::ZhTw => format!("MCP 伺服器「{name}」登入失敗：{detail}"),
+            Self::EnUs => format!("MCP server '{name}' sign-in failed: {detail}"),
+            Self::JaJp => format!("MCP サーバー「{name}」のログインに失敗しました: {detail}"),
+            Self::KoKr => format!("MCP 서버 '{name}' 로그인 실패: {detail}"),
         }
     }
 
@@ -1132,6 +1191,27 @@ impl Locale {
             Self::JaJp => "− 詳細を閉じる",
             Self::KoKr => "− 간략히 보기",
         }
+    }
+
+    pub(crate) fn transcript_output_lines(self, count: usize, shortcut: Option<&str>) -> String {
+        let label = match self {
+            Self::ZhCn => format!("+ {count} 行"),
+            Self::ZhTw => format!("+ {count} 行"),
+            Self::EnUs => format!("+ {count} {}", if count == 1 { "line" } else { "lines" }),
+            Self::JaJp => format!("+ {count} 行"),
+            Self::KoKr => format!("+ {count}줄"),
+        };
+        let Some(shortcut) = shortcut.filter(|shortcut| !shortcut.is_empty()) else {
+            return label;
+        };
+        let hint = match self {
+            Self::ZhCn => format!(" ({shortcut} 展开)"),
+            Self::ZhTw => format!(" ({shortcut} 展開)"),
+            Self::EnUs => format!(" ({shortcut} to expand)"),
+            Self::JaJp => format!(" ({shortcut} で展開)"),
+            Self::KoKr => format!(" ({shortcut}로 펼치기)"),
+        };
+        format!("{label}{hint}")
     }
 
     pub(crate) fn transcript_pager_loading(self) -> &'static str {
@@ -1568,12 +1648,40 @@ impl Locale {
                 Self::JaJp => "画像の貼り付けに失敗しました",
                 Self::KoKr => "이미지 붙여넣기 실패",
             },
+            "clipboard paste failed" => match self {
+                Self::ZhCn => "粘贴剪贴板内容失败",
+                Self::ZhTw => "貼上剪貼簿內容失敗",
+                Self::EnUs => "clipboard paste failed",
+                Self::JaJp => "クリップボードの貼り付けに失敗しました",
+                Self::KoKr => "클립보드 붙여넣기 실패",
+            },
+            "clipboard is busy" => match self {
+                Self::ZhCn => "剪贴板正忙",
+                Self::ZhTw => "剪貼簿忙碌中",
+                Self::EnUs => "clipboard is busy",
+                Self::JaJp => "クリップボードは使用中です",
+                Self::KoKr => "클립보드가 사용 중임",
+            },
             "reconnecting" => match self {
                 Self::ZhCn => "正在重连",
                 Self::ZhTw => "正在重新連線",
                 Self::EnUs => "reconnecting",
                 Self::JaJp => "再接続中",
                 Self::KoKr => "재연결 중",
+            },
+            "reconnected" => match self {
+                Self::ZhCn => "已重新连接",
+                Self::ZhTw => "已重新連線",
+                Self::EnUs => "reconnected",
+                Self::JaJp => "再接続しました",
+                Self::KoKr => "재연결됨",
+            },
+            "reconnect failed" => match self {
+                Self::ZhCn => "重连失败",
+                Self::ZhTw => "重新連線失敗",
+                Self::EnUs => "reconnect failed",
+                Self::JaJp => "再接続に失敗しました",
+                Self::KoKr => "재연결 실패",
             },
             "effort" => self.effort_label(),
             "permissions" => self.permissions_label(),
@@ -2194,16 +2302,6 @@ impl Locale {
         }
     }
 
-    pub(crate) fn picker_title(self) -> &'static str {
-        match self {
-            Self::ZhCn => "选择模型",
-            Self::ZhTw => "選擇模型",
-            Self::EnUs => "Choose a model",
-            Self::JaJp => "モデルを選択",
-            Self::KoKr => "모델 선택",
-        }
-    }
-
     pub(crate) fn picker_empty(self) -> &'static str {
         match self {
             Self::ZhCn => "没有匹配的模型。按 Esc 取消",
@@ -2211,16 +2309,6 @@ impl Locale {
             Self::EnUs => "No matching models. Esc cancel",
             Self::JaJp => "一致するモデルがありません。Esc でキャンセル",
             Self::KoKr => "일치하는 모델이 없습니다. Esc로 취소",
-        }
-    }
-
-    pub(crate) fn picker_footer(self) -> &'static str {
-        match self {
-            Self::ZhCn => "上下移动  Enter 选择  Esc 取消",
-            Self::ZhTw => "上下移動  Enter 選擇  Esc 取消",
-            Self::EnUs => "Up/Down move  Enter select  Esc cancel",
-            Self::JaJp => "上下移動  Enter 選択  Esc キャンセル",
-            Self::KoKr => "위/아래 이동  Enter 선택  Esc 취소",
         }
     }
 
@@ -2251,83 +2339,6 @@ impl Locale {
             Self::EnUs => "Up/Down move  Enter view  Esc cancel",
             Self::JaJp => "上下移動  Enter 表示  Esc キャンセル",
             Self::KoKr => "위/아래 이동  Enter 보기  Esc 취소",
-        }
-    }
-
-    pub(crate) fn agents_overview_title(self) -> &'static str {
-        match self {
-            Self::ZhCn => "Agent 控制中心",
-            Self::ZhTw => "Agent 控制中心",
-            Self::EnUs => "Agent command center",
-            Self::JaJp => "Agent コマンドセンター",
-            Self::KoKr => "에이전트 명령 센터",
-        }
-    }
-
-    pub(crate) fn agents_overview_footer(self) -> &'static str {
-        match self {
-            Self::ZhCn => {
-                "上下移动 · Enter 打开 · / 或 Ctrl+F 搜索 · Ctrl+N 新建 · Ctrl+R 改名 · Ctrl+X 停止 · Ctrl+S 分组 · r 刷新 · Esc 返回"
-            }
-            Self::ZhTw => {
-                "上下移動 · Enter 開啟 · / 或 Ctrl+F 搜尋 · Ctrl+N 新建 · Ctrl+R 改名 · Ctrl+X 停止 · Ctrl+S 分組 · r 重新整理 · Esc 返回"
-            }
-            Self::EnUs => {
-                "Up/Down navigate · Enter open · / or Ctrl+F search · Ctrl+N new · Ctrl+R rename · Ctrl+X stop · Ctrl+S group · r refresh · Esc back"
-            }
-            Self::JaJp => {
-                "上下移動 · Enter 開く · / または Ctrl+F 検索 · Ctrl+N 新規 · Ctrl+R 名前変更 · Ctrl+X 停止 · Ctrl+S グループ · r 更新 · Esc 戻る"
-            }
-            Self::KoKr => {
-                "위/아래 이동 · Enter 열기 · / 또는 Ctrl+F 검색 · Ctrl+N 새 작업 · Ctrl+R 이름 변경 · Ctrl+X 중지 · Ctrl+S 그룹 · r 새로 고침 · Esc 뒤로"
-            }
-        }
-    }
-
-    pub(crate) fn agents_overview_input_prefix(self, rename: bool) -> &'static str {
-        match (self, rename) {
-            (Self::ZhCn, true) => "改名",
-            (Self::ZhCn, false) => "新建任务",
-            (Self::ZhTw, true) => "改名",
-            (Self::ZhTw, false) => "新建工作",
-            (Self::EnUs, true) => "Rename",
-            (Self::EnUs, false) => "New task",
-            (Self::JaJp, true) => "名前変更",
-            (Self::JaJp, false) => "新しいタスク",
-            (Self::KoKr, true) => "이름 변경",
-            (Self::KoKr, false) => "새 작업",
-        }
-    }
-
-    pub(crate) fn agents_overview_search_prefix(self) -> &'static str {
-        match self {
-            Self::ZhCn => "搜索",
-            Self::ZhTw => "搜尋",
-            Self::EnUs => "Search",
-            Self::JaJp => "検索",
-            Self::KoKr => "검색",
-        }
-    }
-
-    pub(crate) fn agents_overview_group_label(self, group: &'static str) -> &'static str {
-        match (self, group) {
-            (Self::ZhCn, "need input") => "需要输入",
-            (Self::ZhTw, "need input") => "需要輸入",
-            (Self::JaJp, "need input") => "入力待ち",
-            (Self::KoKr, "need input") => "입력 필요",
-            (Self::ZhCn, "working") => "运行中",
-            (Self::ZhTw, "working") => "執行中",
-            (Self::JaJp, "working") => "実行中",
-            (Self::KoKr, "working") => "작업 중",
-            (Self::ZhCn, "ready") => "就绪",
-            (Self::ZhTw, "ready") => "就緒",
-            (Self::JaJp, "ready") => "準備完了",
-            (Self::KoKr, "ready") => "준비됨",
-            (Self::ZhCn, "finished") => "已完成",
-            (Self::ZhTw, "finished") => "已完成",
-            (Self::JaJp, "finished") => "完了",
-            (Self::KoKr, "finished") => "완료",
-            (_, value) => value,
         }
     }
 
@@ -2659,6 +2670,11 @@ mod tests {
     #[test]
     fn translates_statuses_and_dynamic_detail_labels_without_changing_unknown_text() {
         assert_eq!(Locale::ZhCn.status("ready"), "就绪");
+        assert_eq!(Locale::ZhCn.status("reconnecting"), "正在重连");
+        assert_eq!(Locale::ZhTw.status("reconnected"), "已重新連線");
+        assert_eq!(Locale::EnUs.status("reconnect failed"), "reconnect failed");
+        assert_eq!(Locale::JaJp.status("reconnecting"), "再接続中");
+        assert_eq!(Locale::KoKr.status("reconnected"), "재연결됨");
         assert_eq!(Locale::JaJp.status("effort: high"), "推論: high");
         assert_eq!(
             Locale::ZhTw.status("image attached: 20x10"),
@@ -2799,6 +2815,20 @@ mod tests {
     }
 
     #[test]
+    fn plan_mode_footer_hints_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            assert!(!locale.plan_mode_label().is_empty());
+            assert!(!locale.plan_mode_cycle_hint().is_empty());
+        }
+    }
+
+    #[test]
     fn multi_agent_titles_cover_all_product_locales() {
         let cases = [
             (
@@ -2874,10 +2904,16 @@ mod tests {
             Locale::JaJp,
             Locale::KoKr,
         ] {
-            assert!(!locale.agents_overview_title().is_empty());
-            assert!(!locale.agents_overview_footer().is_empty());
-            assert!(!locale.agents_overview_search_prefix().is_empty());
-            assert!(!locale.agents_overview_group_label("need input").is_empty());
+            for label in [
+                "Agent command center",
+                "Search",
+                "Needs input",
+                "Show more",
+                "Loading more…",
+                "Show more (retry)",
+            ] {
+                assert!(!locale.agent_center_label(label).is_empty());
+            }
         }
     }
 
@@ -2890,8 +2926,8 @@ mod tests {
             Locale::JaJp,
             Locale::KoKr,
         ] {
-            assert!(!locale.agents_overview_input_prefix(false).is_empty());
-            assert!(!locale.agents_overview_input_prefix(true).is_empty());
+            assert!(!locale.agent_center_label("New task").is_empty());
+            assert!(!locale.agent_center_label("Rename").is_empty());
             assert!(!locale
                 .status("background task started: thread-1")
                 .is_empty());
@@ -2936,6 +2972,22 @@ mod tests {
         for (locale, attached, failed) in cases {
             assert_eq!(locale.status("image attached: 20x10"), attached);
             assert_eq!(locale.status("image paste failed: unavailable"), failed);
+        }
+    }
+
+    #[test]
+    fn text_clipboard_statuses_cover_all_product_locales() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            assert!(!locale.status("clipboard is busy").is_empty());
+            assert!(!locale
+                .status("clipboard paste failed: unavailable")
+                .is_empty());
         }
     }
 
@@ -3392,8 +3444,19 @@ mod tests {
             assert!(!locale.mcp_inventory_title().is_empty());
             assert!(!locale.mcp_no_servers().is_empty());
             assert!(!locale.mcp_usage().is_empty());
+            assert!(!locale.mcp_login_requires_session().is_empty());
+            assert!(!locale.mcp_login_in_progress("docs").is_empty());
+            assert!(!locale.mcp_login_opened("docs").is_empty());
+            assert!(!locale.mcp_login_open_failed("docs", "offline").is_empty());
+            assert!(!locale.mcp_login_succeeded("docs").is_empty());
+            assert!(!locale
+                .mcp_login_failed_completion("docs", Some("offline"))
+                .is_empty());
         }
-        assert_eq!(Locale::EnUs.mcp_usage(), "Usage: /mcp [verbose]");
+        assert_eq!(
+            Locale::EnUs.mcp_usage(),
+            "Usage: /mcp [verbose | login <name>]"
+        );
     }
 
     #[test]

@@ -23,12 +23,33 @@ impl FinalMessageSeparator {
     }
 
     fn worked_label(&self, seconds: u64) -> String {
+        let elapsed = if seconds == 0 {
+            match self.locale {
+                Locale::ZhCn => "小于 1 秒",
+                Locale::ZhTw => "少於 1 秒",
+                Locale::EnUs => "<1s",
+                Locale::JaJp => "1秒未満",
+                Locale::KoKr => "1초 미만",
+            }
+            .to_string()
+        } else {
+            format!(
+                "{seconds}{}",
+                match self.locale {
+                    Locale::ZhCn => " 秒",
+                    Locale::ZhTw => " 秒",
+                    Locale::EnUs => "s",
+                    Locale::JaJp => "秒",
+                    Locale::KoKr => "초",
+                }
+            )
+        };
         match self.locale {
-            Locale::ZhCn => format!("已用时 {seconds} 秒"),
-            Locale::ZhTw => format!("已用時 {seconds} 秒"),
-            Locale::EnUs => format!("Worked for {seconds}s"),
-            Locale::JaJp => format!("所要時間 {seconds}秒"),
-            Locale::KoKr => format!("소요 시간 {seconds}초"),
+            Locale::ZhCn => format!("已用时 {elapsed}"),
+            Locale::ZhTw => format!("已用時 {elapsed}"),
+            Locale::EnUs => format!("Worked for {elapsed}"),
+            Locale::JaJp => format!("所要時間 {elapsed}"),
+            Locale::KoKr => format!("소요 시간 {elapsed}"),
         }
     }
 }
@@ -37,7 +58,6 @@ impl HistoryCell for FinalMessageSeparator {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let label = self
             .elapsed_seconds
-            .filter(|seconds| *seconds > 60)
             .map(|seconds| format!(" {} ", self.worked_label(seconds)));
         let label_width = label
             .as_deref()
@@ -84,5 +104,35 @@ mod tests {
                 .display_lines(20);
             assert!(display_lines.iter().all(|line| line.width() <= 20));
         }
+    }
+
+    #[test]
+    fn completion_separator_keeps_short_elapsed_labels_visible() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            let lines = FinalMessageSeparator::new(Some(12))
+                .with_locale(locale)
+                .raw_lines();
+            assert_eq!(lines.len(), 1);
+            assert!(lines[0].to_string().contains("12"));
+        }
+
+        let hidden = FinalMessageSeparator::new(None)
+            .with_locale(Locale::EnUs)
+            .raw_lines();
+        assert!(hidden.is_empty());
+
+        assert_eq!(
+            FinalMessageSeparator::new(Some(0))
+                .with_locale(Locale::EnUs)
+                .raw_lines()[0]
+                .to_string(),
+            "Worked for <1s"
+        );
     }
 }

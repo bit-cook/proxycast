@@ -621,6 +621,9 @@ impl RequestProcessor {
             METHOD_MCP_SERVER_OAUTH_LOGIN => {
                 self.handle_mcp_server_oauth_login_impl(params).boxed()
             }
+            METHOD_MCP_SERVER_OAUTH_LOGOUT => {
+                self.handle_mcp_server_oauth_logout_impl(params).boxed()
+            }
             METHOD_MCP_SERVER_START => self.handle_mcp_server_start_impl(params).boxed(),
             METHOD_MCP_SERVER_STOP => self.handle_mcp_server_stop_impl(params).boxed(),
             METHOD_MCP_TOOL_LIST => self.handle_mcp_tool_list_impl().boxed(),

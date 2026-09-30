@@ -15,8 +15,8 @@ use app_server_protocol::{
     JsonRpcError, McpPromptGetParams, McpResourceSubscribeParams, McpResourceUnsubscribeParams,
     McpServerCreateParams, McpServerDeleteParams, McpServerEnabledSetParams,
     McpServerImportFromAppParams, McpServerOauthLoginParams, McpServerOauthLoginResponse,
-    McpServerStartParams, McpServerStopParams, McpServerUpdateParams, McpToolListForContextParams,
-    McpToolSearchParams,
+    McpServerOauthLogoutParams, McpServerStartParams, McpServerStopParams, McpServerUpdateParams,
+    McpToolListForContextParams, McpToolSearchParams,
 };
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -275,6 +275,7 @@ impl RequestProcessor {
         self.ensure_initialized()?;
         let params: McpServerOauthLoginParams = parse_params(params)?;
         let server_name = params.name.clone();
+        let thread_id = params.thread_id.clone();
         let handle = self
             .runtime
             .login_mcp_server_oauth(params)
@@ -283,8 +284,10 @@ impl RequestProcessor {
         let response = McpServerOauthLoginResponse {
             authorization_url: handle.authorization_url.clone(),
             state: handle.state.clone(),
+            login_id: Some(uuid::Uuid::new_v4().to_string()),
         };
         let processor = self.clone();
+        let login_id = response.login_id.clone();
         tokio::spawn(async move {
             let (success, error) = match handle.wait().await {
                 Ok(()) => (true, None),
@@ -294,13 +297,28 @@ impl RequestProcessor {
                 .publish_server_notification(ServerNotification::McpServerOauthLoginCompleted(
                     McpServerOauthLoginCompletedNotification {
                         name: server_name,
-                        thread_id: None,
+                        thread_id,
+                        login_id,
                         success,
                         error,
                     },
                 ))
                 .await;
         });
+        dispatch_result(response)
+    }
+
+    pub(super) async fn handle_mcp_server_oauth_logout_impl(
+        &self,
+        params: Option<serde_json::Value>,
+    ) -> Result<RpcDispatch, JsonRpcError> {
+        self.ensure_initialized()?;
+        let params: McpServerOauthLogoutParams = parse_params(params)?;
+        let response = self
+            .runtime
+            .logout_mcp_server_oauth(params)
+            .await
+            .map_err(to_jsonrpc_error)?;
         dispatch_result(response)
     }
 

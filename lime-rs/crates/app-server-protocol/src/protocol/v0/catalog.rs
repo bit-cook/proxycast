@@ -360,6 +360,8 @@ pub enum AppServerRequestMethod {
     McpServerSyncAllToLive,
     #[serde(rename = "mcpServer/oauth/login")]
     McpServerOauthLogin,
+    #[serde(rename = "mcpServer/oauth/logout")]
+    McpServerOauthLogout,
     #[serde(rename = "mcpServer/start")]
     McpServerStart,
     #[serde(rename = "mcpServer/stop")]
@@ -666,6 +668,7 @@ impl AppServerRequestMethod {
             Self::McpServerImportFromApp => METHOD_MCP_SERVER_IMPORT_FROM_APP,
             Self::McpServerSyncAllToLive => METHOD_MCP_SERVER_SYNC_ALL_TO_LIVE,
             Self::McpServerOauthLogin => METHOD_MCP_SERVER_OAUTH_LOGIN,
+            Self::McpServerOauthLogout => METHOD_MCP_SERVER_OAUTH_LOGOUT,
             Self::McpServerStart => METHOD_MCP_SERVER_START,
             Self::McpServerStop => METHOD_MCP_SERVER_STOP,
             Self::McpToolList => METHOD_MCP_TOOL_LIST,
@@ -916,6 +919,7 @@ impl AppServerRequestMethod {
             METHOD_MCP_SERVER_IMPORT_FROM_APP => Some(Self::McpServerImportFromApp),
             METHOD_MCP_SERVER_SYNC_ALL_TO_LIVE => Some(Self::McpServerSyncAllToLive),
             METHOD_MCP_SERVER_OAUTH_LOGIN => Some(Self::McpServerOauthLogin),
+            METHOD_MCP_SERVER_OAUTH_LOGOUT => Some(Self::McpServerOauthLogout),
             METHOD_MCP_SERVER_START => Some(Self::McpServerStart),
             METHOD_MCP_SERVER_STOP => Some(Self::McpServerStop),
             METHOD_MCP_TOOL_LIST => Some(Self::McpToolList),
@@ -1646,6 +1650,10 @@ pub const APP_SERVER_METHODS: &[AppServerMethodSpec] = &[
         kind: AppServerMethodKind::Request,
     },
     AppServerMethodSpec {
+        method: METHOD_MCP_SERVER_OAUTH_LOGOUT,
+        kind: AppServerMethodKind::Request,
+    },
+    AppServerMethodSpec {
         method: METHOD_MCP_SERVER_START,
         kind: AppServerMethodKind::Request,
     },
@@ -2034,6 +2042,10 @@ pub const APP_SERVER_REQUEST_SERIALIZATION_SCOPES: &[AppServerRequestSerializati
     },
     AppServerRequestSerializationScopeSpec {
         method: METHOD_MCP_SERVER_OAUTH_LOGIN,
+        scope: AppServerRequestSerializationScope::McpOauth,
+    },
+    AppServerRequestSerializationScopeSpec {
+        method: METHOD_MCP_SERVER_OAUTH_LOGOUT,
         scope: AppServerRequestSerializationScope::McpOauth,
     },
     AppServerRequestSerializationScopeSpec {

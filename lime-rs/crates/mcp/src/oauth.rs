@@ -233,7 +233,7 @@ impl McpOAuthRegistry {
         server_name: &str,
         config: &McpServerConfig,
     ) -> Result<bool, McpError> {
-        if !config.has_oauth_settings() || config.has_unsupported_oauth_runtime_settings() {
+        if config.has_unsupported_oauth_runtime_settings() {
             return Ok(false);
         }
         let url = match &config.transport {
@@ -244,6 +244,28 @@ impl McpOAuthRegistry {
             .has_credentials()
             .await
             .map_err(oauth_error)
+    }
+
+    pub async fn logout(
+        &self,
+        server_name: &str,
+        config: &McpServerConfig,
+    ) -> Result<bool, McpError> {
+        let url = match &config.transport {
+            McpServerTransport::StreamableHttp { url, .. } => url,
+            McpServerTransport::Stdio { .. } => {
+                return Err(McpError::ConfigError(
+                    "MCP OAuth logout only supports streamable_http transport".to_string(),
+                ));
+            }
+        };
+        if !config.has_oauth_settings() || config.has_unsupported_oauth_runtime_settings() {
+            return Ok(false);
+        }
+        let store = self.store_for(server_name, url.as_str())?;
+        let had_credentials = store.has_credentials().await.map_err(oauth_error)?;
+        store.clear().await.map_err(oauth_error)?;
+        Ok(had_credentials)
     }
 
     fn store_for(

@@ -1,20 +1,20 @@
 use super::*;
 
-use crossterm::event::{KeyEvent, KeyModifiers, MouseEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
 fn activity_content(prefix: bool) -> TranscriptContent {
     let mut content = TranscriptContent::default();
     if prefix {
-        content.push_line(HyperlinkLine::from("older"));
+        content.push_lines(vec![HyperlinkLine::from("older")]);
     }
     content.push_activity(
         vec!["entry:tool-1".to_string()],
         vec![HyperlinkLine::from("tool")],
         vec![HyperlinkLine::from("tool"), HyperlinkLine::from("detail")],
     );
-    content.push_line(HyperlinkLine::from("after"));
+    content.push_lines(vec![HyperlinkLine::from("after")]);
     content
 }
 

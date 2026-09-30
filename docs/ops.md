@@ -22,6 +22,43 @@
 - 两者都不存在时使用默认配置。
   - 首次启动会自动生成强随机 API Key 并写入配置。
 
+### TUI 按键配置
+
+TUI 只从上述 Lime 用户配置读取 `tui.keymap` 与 `tui.right_click_paste`。启动时会经 App Server
+`config/read` 生成不可变 runtime snapshot；修改配置后需重启当前 TUI 进程。不要创建 TUI 专用
+配置文件或按键环境变量。`right_click_paste` 支持 `auto`（默认，遵循 SSH/WSL/VS Code 安全护栏）、
+`on` 和 `off`；中键 PRIMARY 仅在本地 X11 可用时启用。
+
+```yaml
+tui:
+  right_click_paste: auto
+  keymap:
+    global:
+      find_transcript: ctrl-x f
+    pager:
+      page_down: [page-down, space, ctrl-f]
+      find: [f3, /]
+    agents:
+      resume: []
+```
+
+每个 action 可使用单个按键、按优先级排列的数组、最多两段且以空格分隔的 chord，或用空数组
+显式解除绑定。当前 context/action 为：
+
+- `global`：`open_agents`、`open_transcript`、`find_transcript`
+- `pager`：`scroll_up`、`scroll_down`、`page_up`、`page_down`、`half_page_up`、
+  `half_page_down`、`jump_top`、`jump_bottom`、`close`、`close_transcript`、`find`
+- `agents`：`resume`、`search`、`new_task`、`rename`、`stop`、`toggle_grouping`
+
+Agent Center 当前默认键位与 Codex 一致：`o` 恢复、`f` 搜索、`n` 新建、`r` 改名、`x` 停止、
+`g` 切换分组；`Tab/Shift+Tab` 切换状态标签，`PageDown/Ctrl+F`、`PageUp/Ctrl+B` 按可见行
+翻页，`?` 查看已接线快捷键。metadata 输入时可打印字符只用于编辑，不触发任务动作；
+自定义 bindings 优先，显式空数组不会回退默认键位，footer/help 使用同一配置 snapshot。
+
+修饰键使用 `ctrl-`、`alt-`、`shift-`；支持 ASCII 字符、`f1` 至 `f24` 及常见命名键。
+未知字段、非法键名、过长 chord、同 context 重复绑定、single/chord prefix 冲突和普通可打印字符
+chord prefix 都会被拒绝。composer/editor/Vim 尚未接入该配置面。
+
 ## 数据与日志位置
 
 - SQLite 数据库：`~/.lime/lime.db`

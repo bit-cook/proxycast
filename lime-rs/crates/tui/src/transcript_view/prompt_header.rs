@@ -8,7 +8,8 @@ use std::cell::RefCell;
 use std::ops::Range;
 
 use ratatui::layout::Rect;
-use ratatui::text::Line;
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
 
 use crate::history_cell::sanitize_user_text;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
@@ -109,8 +110,15 @@ impl PromptHeaderSource {
             .find_map(|cell| cell.prompt.as_deref())?;
         Some(PromptHeaderCandidate {
             line: truncate_line_with_ellipsis_if_overflow(
-                Line::styled(prompt.to_string(), history_prompt_style()),
-                usize::from(viewport.width),
+                Line::from(vec![
+                    Span::styled(
+                        "› ",
+                        Style::default().add_modifier(Modifier::BOLD | Modifier::DIM),
+                    ),
+                    Span::raw(prompt.to_string()),
+                ])
+                .style(history_prompt_style()),
+                usize::from(viewport.width.saturating_sub(1)),
             ),
             position: SuppressedHeader {
                 viewport,

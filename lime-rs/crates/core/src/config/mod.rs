@@ -29,8 +29,8 @@ pub use tool_execution::{
     ToolExecutionWarningPolicyConfig,
 };
 pub use tui_keymap::{
-    KeybindingSpec, KeybindingsSpec, TuiAgentsKeymap, TuiConfig, TuiGlobalKeymap, TuiKeymap,
-    TuiPagerKeymap, MAX_FUNCTION_KEY,
+    KeybindingSpec, KeybindingsSpec, RightClickPaste, TuiAgentsKeymap, TuiConfig, TuiGlobalKeymap,
+    TuiKeymap, TuiPagerKeymap, MAX_FUNCTION_KEY,
 };
 pub use types::{
     generate_secure_api_key, AmpConfig, AmpModelMapping, ApiKeyEntry, AsrCredentialEntry,

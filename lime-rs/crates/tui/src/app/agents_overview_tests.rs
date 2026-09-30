@@ -101,6 +101,56 @@ fn agents_overview_refresh_coalesces_requests_and_exposes_codex_state_fields() {
 }
 
 #[test]
+fn agents_overview_pagination_keeps_cursor_and_appends_without_dropping_rows() {
+    let mut state = AgentsOverviewState::new(None);
+    let generation = state.begin_refresh();
+    assert!(state.apply_refresh_page(
+        generation,
+        vec![thread("first", None, ThreadStatus::Idle)],
+        Some("cursor-1".to_string()),
+        None,
+    ));
+    assert_eq!(state.next_cursor.as_deref(), Some("cursor-1"));
+    assert!(state.view.has_more());
+
+    assert_eq!(state.begin_load_more().as_deref(), Some("cursor-1"));
+    assert!(state.next_cursor_is_repeated(Some("cursor-1")));
+    assert!(!state.next_cursor_is_repeated(Some("cursor-2")));
+    assert!(state.loading_more);
+    assert!(state.view.loading_more());
+    state.apply_load_more(vec![thread("second", None, ThreadStatus::Idle)], None, None);
+
+    let ids = state
+        .threads
+        .iter()
+        .map(|thread| thread.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(ids.contains(&"first"));
+    assert!(ids.contains(&"second"));
+    assert!(!state.view.has_more());
+    assert!(!state.view.loading_more());
+}
+
+#[test]
+fn agents_overview_pagination_failure_preserves_rows_and_exposes_retry() {
+    let mut state = AgentsOverviewState::new(None);
+    let generation = state.begin_refresh();
+    state.apply_refresh_page(
+        generation,
+        vec![thread("first", None, ThreadStatus::Idle)],
+        Some("cursor-1".to_string()),
+        None,
+    );
+    assert!(state.begin_load_more().is_some());
+    state.fail_load_more();
+
+    assert_eq!(state.threads.len(), 1);
+    assert!(state.view.has_more());
+    assert!(state.view.load_more_failed());
+    assert!(!state.view.loading_more());
+}
+
+#[test]
 fn agents_overview_buffers_latest_notification_during_refresh() {
     let mut app = super::super::App::default();
     let mut state = AgentsOverviewState::new(None);

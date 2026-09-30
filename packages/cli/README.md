@@ -30,6 +30,12 @@ lime exec "review this diff"
 lime exec --json "review this diff"
 lime exec --jsonl "review this diff"
 
+# Codex-shaped approval/sandbox controls (also accepted before exec/resume)
+lime exec --sandbox workspace-write "review this diff"
+lime exec --ask-for-approval on-request "run the checks"
+lime exec --approve-for-me "apply the safe fixes"
+lime exec --dangerously-bypass-approvals-and-sandbox "run in an externally sandboxed host"
+
 # 只读检查 execpolicy prefix rules
 lime execpolicy check --rules ./rules/policy.rules --pretty git push origin main
 
@@ -45,11 +51,61 @@ lime thread list
 lime thread show <thread-id> --include-turns
 lime mcp list
 lime skills list
+lime plugin list
+lime plugin list --available --json --plugin-cwd ./workspace
+lime plugin add ./path/to/plugin --marketplace workspace --source repo
+lime plugin read <plugin-id> --json
+lime plugin search <term> --scope workspace --plugin-cwd ./workspace
+lime plugin enable <plugin-id>
+lime plugin disable <plugin-id>
+lime plugin remove <plugin-id>
 ```
 
 `--json` 输出可读的稳定 JSON；`--jsonl` 输出单行 JSON envelope，二者互斥。`completion` 从同一命令树生成 bash、zsh、fish、PowerShell 和 elvish 脚本。
 
+Plugin 管理只通过 App Server JSON-RPC 的当前 Plugin v3 catalog。`plugin list` 默认发现用户目录、
+当前工作目录和已配置的本地 marketplace；`--plugin-cwd <DIR>` 显式发现指定目录下的
+`.agents/plugins/marketplace.json`。`--available` 仅允许和 `--json` 一起使用，用于表达需要同时
+查看未安装条目的意图；JSON 默认只保留已安装条目，`--available` 才保留 catalog 返回的全部
+installed/available 状态。
+Codex 的远程 marketplace、账号、缓存刷新和 marketplace add/remove/upgrade 不属于 Lime current，
+不会由 CLI 伪造或绕过 App Server。
+
+权限选项同样适用于默认 `lime`、`lime tui` 和 `lime resume`。`--approve-for-me` 的隐藏 alias
+是 `--not-so-yolo`；危险绕过的 alias 是 `--yolo`。root 级权限参数会继承到 `exec`/`resume`，
+子命令显式权限组覆盖 root。`--permissions <PROFILE>` 与显式 sandbox 互斥，冲突会在连接
+App Server 前直接失败。
+
 交互式 TUI 支持 `zh-CN`、`zh-TW`、`en-US`、`ja-JP`、`ko-KR`。可通过默认 `lime`、`lime tui` 或 `lime resume` 的 `--locale <LOCALE>` 指定；未指定时按 `LIME_LOCALE`、`LC_ALL`、`LANG` 解析，未知语言回退到 `en-US`。`exec` 与管理命令的 JSON 合同保持语言无关。
+
+### TUI 按键配置
+
+TUI 与 Desktop 共用 Lime 用户配置 owner。`lime`、`lime tui` 和独立 `lime resume` picker 会在
+进入 alternate screen 前通过 App Server `config/read` 读取 `tui.keymap`，并在当前进程内冻结为
+不可变 snapshot；修改后需重启 TUI。
+
+```yaml
+tui:
+  keymap:
+    global:
+      find_transcript: ctrl-x f
+    pager:
+      find: [f3, /]
+      page_down: [page-down, space, ctrl-f]
+    agents:
+      resume: []
+```
+
+当前支持的 context/action：
+
+- `global`：`open_agents`、`open_transcript`、`find_transcript`
+- `pager`：`scroll_up`、`scroll_down`、`page_up`、`page_down`、`half_page_up`、
+  `half_page_down`、`jump_top`、`jump_bottom`、`close`、`close_transcript`、`find`
+- `agents`：`resume`、`search`、`new_task`、`rename`、`stop`、`toggle_grouping`
+
+值可为单个按键字符串、有序 alternatives 数组、最多两段且以空格分隔的 chord，或空数组
+显式 unbind。未知字段、非法键名和同 context 冲突会 fail closed。composer/editor/Vim 尚未接入，
+也没有 TUI 私有配置文件或按键环境变量。
 
 本地连接默认启动同目录或 `PATH` 中的 `app-server`。可用 `LIME_APP_SERVER_BIN` 或 `--app-server <PATH>` 覆盖。需要连接远端 App Server 时使用 Codex 形状的参数：
 

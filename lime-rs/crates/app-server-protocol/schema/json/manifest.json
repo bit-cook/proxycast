@@ -555,6 +555,10 @@
       "method": "mcpServer/oauth/login"
     },
     {
+      "kind": "request",
+      "method": "mcpServer/oauth/logout"
+    },
+    {
       "kind": "notification",
       "method": "mcpServer/oauthLogin/completed"
     },
@@ -1626,6 +1630,10 @@
       "scope": "mcpOauth"
     },
     {
+      "method": "mcpServer/oauth/logout",
+      "scope": "mcpOauth"
+    },
+    {
       "method": "thread/approveGuardianDeniedAction",
       "scope": "thread"
     },
@@ -1936,6 +1944,8 @@
       "McpServerListResponse",
       "McpServerOauthLoginParams",
       "McpServerOauthLoginResponse",
+      "McpServerOauthLogoutParams",
+      "McpServerOauthLogoutResponse",
       "McpServerStartParams",
       "McpServerStatusListResponse",
       "McpServerStopParams",

@@ -1,13 +1,20 @@
 mod action_required_title;
 mod approval_overlay;
+mod approval_render;
 mod chat_composer;
 pub(crate) mod command_popup;
 mod footer;
 mod mcp_server_elicitation;
+pub(crate) mod paste_burst;
 pub(crate) mod pending_input_preview;
+mod picker_rows;
 mod render;
 mod request_user_input;
+mod scroll_state;
+mod selection_popup_common;
 pub(crate) mod selection_row_layout;
+mod selection_tabs;
+pub(crate) mod shortcut_overlay;
 mod textarea;
 
 use std::collections::VecDeque;
@@ -35,6 +42,7 @@ pub(crate) use textarea::{TextArea, TextAreaState};
 
 pub(crate) use footer::render_footer;
 pub(crate) use render::{desired_height_with_locale_for_width, render_with_locale};
+pub(crate) use selection_tabs::render_filled_tab_bar;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum AppServerResponse {
@@ -176,6 +184,24 @@ pub(crate) struct BottomPane {
 }
 
 impl BottomPane {
+    pub(crate) fn approval_details_for_key(
+        &self,
+        key: KeyEvent,
+        locale: crate::locale::Locale,
+    ) -> Option<(String, Vec<ratatui::text::Line<'static>>)> {
+        use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+        let modifiers = key.modifiers;
+        if key.kind == KeyEventKind::Press
+            && matches!(key.code, KeyCode::Char('a' | 'A'))
+            && (modifiers == KeyModifiers::CONTROL
+                || modifiers == KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+        {
+            approval_render::details(self, locale)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn enqueue(&mut self, request: ServerRequest) -> Result<(), Box<ServerRequest>> {
         self.queue
             .push_back(PendingInteraction::from_server_request(request)?);
@@ -227,7 +253,7 @@ impl BottomPane {
     ) -> Option<Vec<String>> {
         match self.queue.front() {
             Some(PendingInteraction::Approval(_)) => {
-                Some(vec![locale.approval_controls().to_string()])
+                Some(vec![approval_render::footer_hint(locale, width)])
             }
             Some(PendingInteraction::UserInput(request)) => {
                 Some(request.footer_hint_lines(locale, width))

@@ -206,14 +206,20 @@ pub(crate) fn render_transcript_pager_content(app: &App, viewport_width: u16) ->
         app.locale,
     );
     let mut content = TranscriptContent::default();
-    content.push_lines(header.display_hyperlink_lines(content_width));
+    content.push_keyed_lines(
+        "session-header",
+        header.display_hyperlink_lines(content_width),
+    );
     if !app.projection.entries().is_empty() {
-        content.push_line(HyperlinkLine::default());
+        content.push_keyed_lines("session-body-gap", vec![HyperlinkLine::default()]);
     }
     let entries = app.projection.entries();
     let mut index = 0;
     while index < entries.len() {
-        content.push_line(HyperlinkLine::default());
+        content.push_keyed_lines(
+            format!("group-separator:{}", entries[index].id),
+            vec![HyperlinkLine::default()],
+        );
         let mut end = activity_group_end(entries, index);
         if let Some(offset) = entries[index..end]
             .iter()
@@ -230,7 +236,8 @@ pub(crate) fn render_transcript_pager_content(app: &App, viewport_width: u16) ->
         );
         let last = &entries[end - 1];
         if let Some(boundary) = app.projection.completion_after(&last.id) {
-            content.push_lines(
+            content.push_keyed_lines(
+                format!("completion:{}", last.id),
                 FinalMessageSeparator::new(boundary.elapsed_seconds)
                     .with_locale(app.locale)
                     .display_hyperlink_lines(content_width),
@@ -251,7 +258,10 @@ pub(crate) fn render_transcript_entries_content(
     let mut index = 0;
     while index < entries.len() {
         if index > 0 {
-            content.push_line(HyperlinkLine::default());
+            content.push_keyed_lines(
+                format!("group-separator:{}", entries[index].id),
+                vec![HyperlinkLine::default()],
+            );
         }
         let end = activity_group_end(entries, index);
         push_transcript_group(
@@ -389,14 +399,15 @@ fn push_transcript_entry(
     let width = viewport_width.saturating_sub(2).max(1);
     let cell = TranscriptHistoryCell::new(entry.clone(), locale, cwd.to_path_buf());
     let expanded = cell.expanded_hyperlink_lines(width);
-    if cell.has_hidden_activity_details(width) {
-        content.push_activity(
+    if let Some(disclosure) = cell.activity_disclosure(width) {
+        content.push_activity_with_disclosure(
             cell.activity_ids(),
             cell.compact_hyperlink_lines(width),
             expanded,
+            Some(disclosure),
         );
     } else {
-        content.push_lines(expanded);
+        content.push_keyed_lines(format!("entry:{}", entry.id), expanded);
     }
 }
 

@@ -203,3 +203,13 @@ fn switching_threads_discards_the_detailed_bookmark() {
             > 0
     );
 }
+
+#[test]
+fn transcript_surface_drops_primary_lease_when_selection_surface_closes() {
+    let mut app = App::default();
+    app.primary_clipboard_lease = Some(crate::clipboard_copy::ClipboardLease::test());
+
+    app.dismiss_pager_overlay();
+
+    assert!(app.primary_clipboard_lease.is_none());
+}

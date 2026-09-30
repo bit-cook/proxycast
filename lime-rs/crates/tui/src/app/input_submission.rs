@@ -23,6 +23,22 @@ impl App {
         self.composer.restore_pending_images(images);
     }
 
+    /// Restore a submission that could not be acknowledged by App Server.
+    ///
+    /// The composer is cleared before transport execution. Keeping the complete local draft at
+    /// the boundary makes reconnect failures recoverable without retrying an uncertain request.
+    pub(crate) fn restore_submission_draft(
+        &mut self,
+        prompt: String,
+        images: Vec<PathBuf>,
+        remote_images: Vec<String>,
+    ) {
+        self.replace_composer(prompt);
+        self.restore_pending_images(images);
+        self.set_remote_image_urls(remote_images);
+        self.clear_command_popup();
+    }
+
     pub(crate) fn take_remote_image_urls(&mut self) -> Vec<String> {
         self.composer.take_remote_image_urls()
     }
@@ -89,7 +105,7 @@ impl App {
     }
 
     pub(super) fn map_composer_action(&mut self, action: InputResult) -> AppAction {
-        match action {
+        let mapped = match action {
             InputResult::Submitted(text) => {
                 self.clear_command_popup();
                 AppAction::Submit(text)
@@ -132,6 +148,11 @@ impl App {
                 AppAction::None
             }
             InputResult::None => AppAction::None,
+        };
+        if matches!(mapped, AppAction::None) && self.composer.paste_burst_needs_frame() {
+            AppAction::ScheduleFrameIn(crate::tui::TARGET_FRAME_INTERVAL)
+        } else {
+            mapped
         }
     }
 }

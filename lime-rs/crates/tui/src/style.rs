@@ -1,5 +1,8 @@
 //! Semantic styles shared by Lime TUI surfaces.
 
+mod selection;
+pub(crate) use selection::{active_tab_style, key_hint_style, selection_style};
+
 use ratatui::style::{Color, Style};
 
 use crate::terminal_palette::{
@@ -164,7 +167,11 @@ fn is_light((red, green, blue): (u8, u8, u8)) -> bool {
     luminance > 128.0
 }
 
-fn blend(foreground: (u8, u8, u8), background: (u8, u8, u8), alpha: f32) -> (u8, u8, u8) {
+pub(crate) fn blend(
+    foreground: (u8, u8, u8),
+    background: (u8, u8, u8),
+    alpha: f32,
+) -> (u8, u8, u8) {
     let channel = |foreground: u8, background: u8| {
         (f32::from(foreground) * alpha + f32::from(background) * (1.0 - alpha)) as u8
     };

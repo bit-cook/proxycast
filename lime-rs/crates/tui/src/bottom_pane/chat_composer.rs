@@ -3,6 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::text::Line;
 use std::cell::RefMut;
 use std::ops::Range;
+use std::time::Instant;
 use unicode_segmentation::UnicodeSegmentation;
 
 mod agents_navigation;
@@ -12,7 +13,9 @@ mod draft_state;
 mod file_search_popup;
 mod footer_state;
 mod history_search;
+mod layout;
 mod mouse;
+mod paste_input;
 mod popup_state;
 mod reconnect;
 mod skill_popup;
@@ -234,10 +237,6 @@ impl ChatComposer {
 
     pub(crate) fn history_search_active(&self) -> bool {
         self.history_search.is_some()
-    }
-
-    pub(crate) fn footer_flash(&self) -> Option<&ratatui::text::Line<'static>> {
-        self.footer.flash_line()
     }
 
     pub(crate) fn footer_has_draft(&self) -> bool {
@@ -700,19 +699,35 @@ impl ChatComposer {
     }
 
     pub(crate) fn handle_key_event(&mut self, key: KeyEvent) -> InputResult {
+        let was_disabled = self.draft.disable_paste_burst;
+        self.draft.disable_paste_burst = true;
+        let result = self.handle_key_event_at(key, Instant::now());
+        self.draft.disable_paste_burst = was_disabled;
+        result
+    }
+
+    pub(crate) fn handle_key_event_at(&mut self, key: KeyEvent, now: Instant) -> InputResult {
         if matches!(key.kind, KeyEventKind::Release) {
             return InputResult::None;
         }
+        if self.handle_empty_prompt_shortcut(key) {
+            return InputResult::Changed;
+        }
+        let flushed = self.flush_paste_burst_before_modified_input(key, now);
         if self.handle_vim_history_key(key) {
             return InputResult::Changed;
         }
         self.begin_vim_key(key);
-        let result = self.handle_key_event_inner(key);
+        let result = self.handle_key_event_inner_at(key, now);
         self.finish_vim_key();
-        result
+        if flushed && matches!(result, InputResult::None) {
+            InputResult::Changed
+        } else {
+            result
+        }
     }
 
-    fn handle_key_event_inner(&mut self, key: KeyEvent) -> InputResult {
+    fn handle_key_event_inner_at(&mut self, key: KeyEvent, now: Instant) -> InputResult {
         if matches!(key.kind, KeyEventKind::Release) {
             return InputResult::None;
         }
@@ -721,6 +736,22 @@ impl ChatComposer {
         }
 
         if self.handle_vim_search_key(key) {
+            return InputResult::Changed;
+        }
+
+        if let Some(result) = self.handle_paste_burst_text_key(key, now) {
+            return result;
+        }
+        if key.code == KeyCode::Tab
+            && key.modifiers.is_empty()
+            && self.handle_paste_burst_tab(key, now)
+        {
+            return InputResult::Changed;
+        }
+        if key.code == KeyCode::Enter
+            && key.modifiers.is_empty()
+            && self.handle_paste_burst_enter(now)
+        {
             return InputResult::Changed;
         }
 
@@ -1630,5 +1661,75 @@ mod tests {
         assert!(!composer.skill_popup_active());
         composer.replace("$1".to_string());
         assert!(!composer.skill_popup_active());
+    }
+
+    #[test]
+    fn paste_burst_treats_tab_and_enter_as_draft_text() {
+        let mut composer = ChatComposer::default();
+        let start = Instant::now();
+
+        assert_eq!(
+            composer.handle_key_event_at(key(KeyCode::Char('a')), start),
+            InputResult::None
+        );
+        assert_eq!(
+            composer.handle_key_event_at(
+                key(KeyCode::Char('b')),
+                start + std::time::Duration::from_millis(1),
+            ),
+            InputResult::Changed
+        );
+        assert_eq!(
+            composer.handle_key_event_at(
+                key(KeyCode::Tab),
+                start + std::time::Duration::from_millis(2),
+            ),
+            InputResult::Changed
+        );
+        assert_eq!(
+            composer.handle_key_event_at(
+                key(KeyCode::Enter),
+                start + std::time::Duration::from_millis(3),
+            ),
+            InputResult::Changed
+        );
+
+        composer.handle_paste_burst_flush(start + std::time::Duration::from_millis(20));
+        assert_eq!(composer.text(), "ab\t\n");
+    }
+
+    #[test]
+    fn explicit_paste_preserves_a_pending_typed_prefix() {
+        let mut composer = ChatComposer::default();
+        let start = Instant::now();
+        assert_eq!(
+            composer.handle_key_event_at(key(KeyCode::Char('x')), start),
+            InputResult::None
+        );
+
+        composer.handle_paste("pasted");
+
+        assert_eq!(composer.text(), "xpasted");
+        assert!(!composer.paste_burst_needs_frame());
+    }
+
+    #[test]
+    fn multiline_paste_continues_markdown_blockquote_and_leaves_next_block() {
+        let mut composer = ChatComposer::default();
+        composer.insert("> first\n> ");
+
+        composer.handle_paste("second\n\nthird\n");
+
+        assert_eq!(composer.text(), "> first\n> second\n> \n> third\n> \n\n");
+    }
+
+    #[test]
+    fn multiline_paste_is_literal_outside_a_markdown_blockquote() {
+        let mut composer = ChatComposer::default();
+        composer.insert("plain");
+
+        composer.handle_paste("one\n\ntwo");
+
+        assert_eq!(composer.text(), "plainone\n\ntwo");
     }
 }

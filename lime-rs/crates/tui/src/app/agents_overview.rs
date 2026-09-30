@@ -42,17 +42,19 @@ pub(crate) struct AgentsOverviewState {
     pub(crate) view: AgentsOverviewView,
     pub(crate) refreshing: bool,
     pub(crate) refresh_generation: u64,
+    pub(crate) next_cursor: Option<String>,
+    pub(crate) seen_cursors: HashSet<String>,
+    pub(crate) loading_more: bool,
+    pub(crate) load_more_failed: bool,
 }
 
 impl AgentsOverviewState {
+    #[cfg(test)]
     pub(crate) fn new(primary_thread_id: Option<&str>) -> Self {
         Self::new_with_keymap(primary_thread_id, AgentsKeymap::default())
     }
 
-    pub(crate) fn new_with_keymap(
-        primary_thread_id: Option<&str>,
-        keymap: AgentsKeymap,
-    ) -> Self {
+    pub(crate) fn new_with_keymap(primary_thread_id: Option<&str>, keymap: AgentsKeymap) -> Self {
         let view = AgentsOverviewView::new_with_keymap(Vec::new(), primary_thread_id, keymap);
         Self {
             threads: Vec::new(),
@@ -69,6 +71,10 @@ impl AgentsOverviewState {
             view,
             refreshing: false,
             refresh_generation: 0,
+            next_cursor: None,
+            seen_cursors: HashSet::new(),
+            loading_more: false,
+            load_more_failed: false,
         }
     }
 
@@ -80,13 +86,39 @@ impl AgentsOverviewState {
         self.refresh_generation = self.refresh_generation.wrapping_add(1);
         self.refreshing = true;
         self.request_id = Some(self.refresh_generation);
+        self.next_cursor = None;
+        self.seen_cursors.clear();
+        self.loading_more = false;
+        self.load_more_failed = false;
         self.refresh_generation
     }
 
+    pub(crate) fn begin_load_more(&mut self) -> Option<String> {
+        if self.refreshing || self.loading_more {
+            return None;
+        }
+        let cursor = self.next_cursor.clone()?;
+        self.seen_cursors.insert(cursor.clone());
+        self.loading_more = true;
+        self.load_more_failed = false;
+        self.sync_view_state();
+        Some(cursor)
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn replace_threads(
         &mut self,
         threads: Vec<Thread>,
         primary_thread_id: Option<&str>,
+    ) {
+        self.replace_threads_page(threads, primary_thread_id, None);
+    }
+
+    pub(crate) fn replace_threads_page(
+        &mut self,
+        threads: Vec<Thread>,
+        primary_thread_id: Option<&str>,
+        next_cursor: Option<String>,
     ) {
         // App Server's recent index is a seed, not an eviction list. Keep locally observed
         // sessions until an explicit archive/delete notification removes them.
@@ -107,11 +139,15 @@ impl AgentsOverviewState {
             .into_iter()
             .map(|row| row.thread.id.clone())
             .collect();
-        self.sync_view_state();
         self.refreshing = false;
         self.initialized = true;
         self.request_id = None;
         self.refresh_thread_ids.clear();
+        self.next_cursor = next_cursor;
+        self.seen_cursors.clear();
+        self.loading_more = false;
+        self.load_more_failed = false;
+        self.sync_view_state();
     }
 
     pub(crate) fn apply_refresh(
@@ -120,14 +156,68 @@ impl AgentsOverviewState {
         threads: Vec<Thread>,
         primary_thread_id: Option<&str>,
     ) -> bool {
+        self.apply_refresh_page(generation, threads, None, primary_thread_id)
+    }
+
+    pub(crate) fn apply_refresh_page(
+        &mut self,
+        generation: u64,
+        threads: Vec<Thread>,
+        next_cursor: Option<String>,
+        primary_thread_id: Option<&str>,
+    ) -> bool {
         if generation != self.refresh_generation {
             return false;
         }
-        self.replace_threads(threads, primary_thread_id);
+        self.replace_threads_page(threads, primary_thread_id, next_cursor);
         true
     }
 
-    pub(crate) fn sync_view_state(&self) {
+    pub(crate) fn apply_load_more(
+        &mut self,
+        threads: Vec<Thread>,
+        next_cursor: Option<String>,
+        primary_thread_id: Option<&str>,
+    ) {
+        let mut by_id = self
+            .threads
+            .drain(..)
+            .map(|thread| (thread.id.clone(), thread))
+            .collect::<HashMap<_, _>>();
+        for thread in threads {
+            by_id.insert(thread.id.clone(), thread);
+        }
+        self.threads = by_id.into_values().collect();
+        self.next_cursor = next_cursor;
+        self.loading_more = false;
+        self.load_more_failed = false;
+        self.view
+            .update_rows(build_rows(&self.threads, primary_thread_id));
+        self.visible_thread_ids = self
+            .view
+            .visible_rows()
+            .into_iter()
+            .map(|row| row.thread.id.clone())
+            .collect();
+        self.sync_view_state();
+    }
+
+    pub(crate) fn fail_load_more(&mut self) {
+        self.loading_more = false;
+        self.load_more_failed = true;
+        self.sync_view_state();
+    }
+
+    pub(crate) fn next_cursor_is_repeated(&self, cursor: Option<&str>) -> bool {
+        cursor.is_some_and(|cursor| self.seen_cursors.contains(cursor))
+    }
+
+    pub(crate) fn sync_view_state(&mut self) {
+        self.view.set_pagination(
+            self.next_cursor.is_some(),
+            self.loading_more,
+            self.load_more_failed,
+        );
         if let Ok(mut state) = self.view_state.lock() {
             *state = self.view.clone();
         }
@@ -201,10 +291,8 @@ pub(crate) fn agents_overview_group(
 impl super::App {
     pub(crate) fn open_agents_overview(&mut self) {
         let primary = self.primary_thread_id.as_deref();
-        let mut overview = AgentsOverviewState::new_with_keymap(
-            primary,
-            self.runtime_keymap.agents().clone(),
-        );
+        let mut overview =
+            AgentsOverviewState::new_with_keymap(primary, self.runtime_keymap.agents().clone());
         overview.rendered_full_screen = true;
         self.agents_overview = Some(overview);
         if !self.composer.text().trim_start().starts_with("/subagents") {

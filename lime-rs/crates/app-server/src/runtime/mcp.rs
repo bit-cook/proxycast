@@ -81,7 +81,26 @@ impl RuntimeCore {
         &self,
         params: McpServerOauthLoginParams,
     ) -> Result<lime_mcp::McpOAuthLoginHandle, RuntimeCoreError> {
+        if let Some(thread_id) = params.thread_id.as_deref() {
+            if thread_id.trim().is_empty() {
+                return Err(RuntimeCoreError::InvalidRequest(
+                    "MCP sign-in requires a non-empty threadId".to_string(),
+                ));
+            }
+            self.read_thread(agent_protocol::thread::ThreadReadParams {
+                thread_id: agent_protocol::ThreadId::from(thread_id.to_string()),
+                turns_view: agent_protocol::ThreadTurnsView::NotLoaded,
+            })
+            .await?;
+        }
         self.app_data_source.login_mcp_server_oauth(params).await
+    }
+
+    pub async fn logout_mcp_server_oauth(
+        &self,
+        params: McpServerOauthLogoutParams,
+    ) -> Result<McpServerOauthLogoutResponse, RuntimeCoreError> {
+        self.app_data_source.logout_mcp_server_oauth(params).await
     }
 
     pub async fn list_mcp_tools(&self) -> Result<McpToolListResponse, RuntimeCoreError> {

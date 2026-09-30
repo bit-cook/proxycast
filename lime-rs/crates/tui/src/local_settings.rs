@@ -4,7 +4,7 @@
 //! resolved runtime keymap remains immutable for the lifetime of one TUI process.
 
 use anyhow::{Context, Result};
-use lime_core::config::TuiConfig;
+use lime_core::config::{RightClickPaste, TuiConfig};
 use serde_json::Value;
 
 use crate::app_server_session::AppServerSession;
@@ -13,6 +13,7 @@ use crate::keymap::RuntimeKeymap;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct LocalSettings {
     pub(crate) keymap: RuntimeKeymap,
+    pub(crate) right_click_paste: RightClickPaste,
 }
 
 impl LocalSettings {
@@ -22,13 +23,19 @@ impl LocalSettings {
     }
 
     fn from_config_value(config: &Value) -> Result<Self> {
-        let tui = config.get("tui").cloned().unwrap_or_else(|| Value::Object(Default::default()));
+        let tui = config
+            .get("tui")
+            .cloned()
+            .unwrap_or_else(|| Value::Object(Default::default()));
         let tui: TuiConfig = serde_json::from_value(tui)
             .context("App Server config/read returned an invalid `tui` configuration")?;
         let keymap = RuntimeKeymap::from_config(&tui.keymap)
             .map_err(anyhow::Error::msg)
             .context("invalid TUI keymap")?;
-        Ok(Self { keymap })
+        Ok(Self {
+            keymap,
+            right_click_paste: tui.right_click_paste,
+        })
     }
 }
 
@@ -49,6 +56,7 @@ mod tests {
             }
         }))
         .expect("valid local settings");
+        assert_eq!(settings.right_click_paste, RightClickPaste::Auto);
         let mut matcher = KeyChordMatcher::default();
         assert_eq!(
             settings.keymap.transcript().dispatch_global(
@@ -80,5 +88,14 @@ mod tests {
         }))
         .expect_err("conflict must fail closed");
         assert!(error.to_string().contains("invalid TUI keymap"));
+    }
+
+    #[test]
+    fn config_read_value_resolves_right_click_paste_policy() {
+        let settings = LocalSettings::from_config_value(&json!({
+            "tui": {"right_click_paste": "off"}
+        }))
+        .expect("valid local settings");
+        assert_eq!(settings.right_click_paste, RightClickPaste::Off);
     }
 }

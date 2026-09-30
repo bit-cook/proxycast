@@ -25,6 +25,8 @@ use crate::wrapping::{word_wrap_lines, RtOptions};
 mod timer;
 #[allow(dead_code, unused_imports)]
 pub(crate) use timer::StatusTimer;
+#[path = "status_indicator_widget/summary_shimmer.rs"]
+mod summary_shimmer;
 
 pub(crate) const STATUS_DETAILS_DEFAULT_MAX_LINES: usize = 3;
 const DETAILS_PREFIX: &str = "  └ ";
@@ -135,15 +137,16 @@ impl StatusIndicatorWidget {
         }
 
         let elapsed = fmt_elapsed_compact(self.elapsed.as_secs());
-        let style = muted_style().add_modifier(Modifier::BOLD);
-        let mut spans = vec![Span::styled(format!("• {}", self.header), style)];
+        let header_style = muted_style().add_modifier(Modifier::BOLD);
+        let mut spans = vec![Span::styled("• ", header_style)];
+        spans.extend(summary_shimmer::summary_shimmer(&self.header, self.elapsed));
         if self.show_interrupt_hint {
             spans.push(Span::styled(
                 format!(" ({elapsed} • {})", self.interrupt_hint),
-                style,
+                header_style,
             ));
         } else {
-            spans.push(Span::styled(format!(" ({elapsed})"), style));
+            spans.push(Span::styled(format!(" ({elapsed})"), header_style));
         }
         if let Some(message) = &self.inline_message {
             spans.extend([

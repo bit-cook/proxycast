@@ -218,6 +218,7 @@ const {
   METHOD_MCP_SERVER_IMPORT_FROM_APP,
   METHOD_MCP_SERVER_LIST,
   METHOD_MCP_SERVER_OAUTH_LOGIN,
+  METHOD_MCP_SERVER_OAUTH_LOGOUT,
   METHOD_MCP_SERVER_ELICITATION_REQUEST,
   METHOD_MCP_SERVER_RESOURCE_READ,
   METHOD_MCP_SERVER_SYNC_ALL_TO_LIVE,
@@ -1511,6 +1512,9 @@ test("builds app data surface requests with current methods", () => {
     scopes: ["files.read"],
     timeoutSecs: 120,
   });
+  const mcpServerOAuthLogout = client.logoutMcpServerOauth({
+    name: "filesystem",
+  });
   const mcpServerStart = client.startMcpServer({
     name: "filesystem",
   });
@@ -1859,6 +1863,10 @@ test("builds app data surface requests with current methods", () => {
     name: "filesystem",
     scopes: ["files.read"],
     timeoutSecs: 120,
+  });
+  assert.equal(mcpServerOAuthLogout.method, METHOD_MCP_SERVER_OAUTH_LOGOUT);
+  assert.deepEqual(mcpServerOAuthLogout.params, {
+    name: "filesystem",
   });
   assert.equal(mcpServerStart.method, METHOD_MCP_SERVER_START);
   assert.deepEqual(mcpServerStart.params, {

@@ -3,13 +3,10 @@
 use super::*;
 use crate::line_truncation::{line_width, truncate_line_with_ellipsis_if_overflow};
 use crate::locale::Locale;
-use crate::style::{accent_style, attention_style, muted_style};
+use crate::style::{attention_style, muted_style};
 use crate::text_formatting::center_truncate_path;
-use crate::width::display_width;
 use ratatui::style::Style;
 use ratatui::text::Span;
-
-const SESSION_HEADER_MAX_INNER_WIDTH: usize = 56;
 
 #[derive(Debug)]
 pub struct SessionInfoCell(CompositeHistoryCell);
@@ -79,71 +76,33 @@ impl SessionHeaderHistoryCell {
 
 impl HistoryCell for SessionHeaderHistoryCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let Some(inner_width) = card_inner_width(width) else {
-            return Vec::new();
-        };
-        let model_label = self.locale.model_label();
-        let directory_label = self.locale.cwd_label();
-        let show_danger = self.permissions.as_deref() == Some(":danger-full-access");
-        let label_width = [
-            display_width(model_label),
-            display_width(directory_label),
-            if show_danger {
-                display_width(self.locale.permissions_label())
-            } else {
-                0
-            },
-        ]
-        .into_iter()
-        .max()
-        .unwrap_or_default();
-
-        let model_prefix = padded_label(model_label, label_width);
-        let directory_prefix = padded_label(directory_label, label_width);
-        let mut model_spans = vec![
-            Span::styled(format!("{model_prefix}: "), muted_style()),
-            Span::raw(self.model.clone()),
-        ];
-        if let Some(effort) = self
-            .reasoning_effort
-            .as_deref()
-            .filter(|value| !value.is_empty())
-        {
-            model_spans.push(Span::raw(format!(" {effort}")));
-        }
-        model_spans.extend([
-            Span::raw("   "),
-            Span::styled("/model", accent_style()),
-            Span::styled(self.locale.change_model_hint(), muted_style()),
-        ]);
-
-        let directory_prefix = format!("{directory_prefix}: ");
-        let directory_width = inner_width.saturating_sub(display_width(&directory_prefix));
+        let width = usize::from(width);
         let mut lines = vec![
+            Line::default(),
             Line::from(vec![
+                Span::raw("  "),
                 Span::styled(">_ ", muted_style()),
                 Span::styled("Lime", Style::default().bold()),
                 Span::styled(format!(" (v{})", self.version), muted_style()),
             ]),
-            Line::default(),
-            Line::from(model_spans),
             Line::from(vec![
-                Span::styled(directory_prefix, muted_style()),
-                Span::raw(self.format_directory(Some(directory_width))),
+                Span::raw("     "),
+                Span::raw(self.format_directory(Some(width.saturating_sub(5)))),
             ]),
         ];
-        if show_danger {
-            let permissions_label = padded_label(self.locale.permissions_label(), label_width);
+        if self.permissions.as_deref() == Some(":danger-full-access") {
             lines.push(Line::from(vec![
-                Span::styled(format!("{permissions_label}: "), muted_style()),
+                Span::styled(
+                    format!("  {}: ", self.locale.permissions_label()),
+                    muted_style(),
+                ),
                 Span::styled(":danger-full-access", attention_style()),
             ]));
         }
-        let lines = lines
+        lines
             .into_iter()
-            .map(|line| truncate_line_with_ellipsis_if_overflow(line, inner_width))
-            .collect();
-        with_border(lines)
+            .map(|line| truncate_line_with_ellipsis_if_overflow(line, width))
+            .collect()
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
@@ -175,40 +134,6 @@ impl HistoryCell for SessionHeaderHistoryCell {
     }
 }
 
-fn card_inner_width(width: u16) -> Option<usize> {
-    (width >= 4).then(|| usize::from(width.saturating_sub(4)).min(SESSION_HEADER_MAX_INNER_WIDTH))
-}
-
-fn padded_label(label: &str, width: usize) -> String {
-    format!(
-        "{label}{}",
-        " ".repeat(width.saturating_sub(display_width(label)))
-    )
-}
-
-fn with_border(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
-    let content_width = lines.iter().map(line_width).max().unwrap_or_default();
-    let border_width = content_width.saturating_add(2);
-    let mut output = Vec::with_capacity(lines.len().saturating_add(2));
-    output.push(Line::styled(
-        format!("╭{}╮", "─".repeat(border_width)),
-        muted_style(),
-    ));
-    for line in lines {
-        let used = line_width(&line);
-        let mut spans = vec![Span::styled("│ ", muted_style())];
-        spans.extend(line);
-        spans.push(Span::raw(" ".repeat(content_width.saturating_sub(used))));
-        spans.push(Span::styled(" │", muted_style()));
-        output.push(Line::from(spans));
-    }
-    output.push(Line::styled(
-        format!("╰{}╯", "─".repeat(border_width)),
-        muted_style(),
-    ));
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,20 +150,18 @@ mod tests {
     }
 
     #[test]
-    fn session_header_is_a_bounded_codex_shaped_box() {
+    fn session_header_is_borderless_and_width_bounded() {
         for width in [40, 80, 120] {
             let lines =
                 cell(Locale::EnUs, "/workspace/a/very/long/project/path").display_lines(width);
-            assert!(lines
-                .first()
-                .is_some_and(|line| line.to_string().starts_with('╭')));
             assert!(lines
                 .iter()
                 .all(|line| line_width(line) <= usize::from(width)));
             assert!(lines.iter().any(|line| line.to_string().contains("Lime")));
             assert!(lines
-                .last()
-                .is_some_and(|line| line.to_string().starts_with('╰')));
+                .iter()
+                .any(|line| line.to_string().contains("very/long")));
+            assert!(!lines.iter().any(|line| line.to_string().contains("╭")));
         }
     }
 
@@ -253,13 +176,10 @@ mod tests {
         ] {
             let rendered = cell(locale, "/workspace").display_lines(80);
             let text = rendered.iter().map(Line::to_string).collect::<String>();
-            assert!(text.contains(locale.model_label()), "{locale:?}: {text}");
-            assert!(text.contains(locale.cwd_label()), "{locale:?}: {text}");
-            assert!(text.contains("/model"), "{locale:?}: {text}");
-            assert!(
-                text.contains(locale.change_model_hint()),
-                "{locale:?}: {text}"
-            );
+            assert!(text.contains("Lime"), "{locale:?}: {text}");
+            assert!(text.contains("/workspace"), "{locale:?}: {text}");
+            assert!(!text.contains("fixture-model"), "{locale:?}: {text}");
+            assert!(!text.contains("/model"), "{locale:?}: {text}");
         }
     }
 

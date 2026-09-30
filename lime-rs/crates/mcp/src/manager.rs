@@ -486,6 +486,14 @@ impl McpClientManager {
             .await
     }
 
+    pub async fn logout_oauth(
+        &self,
+        name: &str,
+        config: &McpServerConfig,
+    ) -> Result<bool, McpError> {
+        self.oauth_registry.logout(name, config).await
+    }
+
     fn runtime_status_from_config(
         name: &str,
         config: &McpServerConfig,

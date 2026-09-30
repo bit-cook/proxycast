@@ -79,6 +79,10 @@ async function main() {
         "  named-fixture:",
         "    extends: ':workspace'",
         "    description: TUI Gate B named permission profile",
+        "tui:",
+        "  keymap:",
+        "    global:",
+        "      find_transcript: ctrl-x f",
         "",
       ].join("\n"),
     );
@@ -87,6 +91,25 @@ async function main() {
       const scenarioDir = path.join(tempDir, scenario);
       await mkdir(scenarioDir, { recursive: true });
       scenarioDirs.set(scenario, scenarioDir);
+      if (scenario === "complete") {
+        const suggestionDir = path.join(
+          scenarioDir,
+          "long_directory_for_filename_identity_".repeat(3),
+        );
+        await mkdir(suggestionDir, { recursive: true });
+        for (const name of ["parser_alpha.rs", "parser_beta.rs"]) {
+          await writeFile(path.join(suggestionDir, name), "// PTY search fixture\n");
+        }
+        for (let index = 0; index < 10; index += 1) {
+          const name = `gate-skill-${String(index).padStart(2, "0")}`;
+          const skillDir = path.join(scenarioDir, ".agents", "skills", name);
+          await mkdir(skillDir, { recursive: true });
+          await writeFile(
+            path.join(skillDir, "SKILL.md"),
+            `---\nname: ${name}\ndescription: PTY completion fixture\n---\nTest-only skill.\n`,
+          );
+        }
+      }
       await writeTerminalExternalBackend(backendPath, {
         completedText:
           scenario === "complete" ? scrollableCompletedText : completedText,

@@ -1,16 +1,13 @@
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Clear, Paragraph};
+use ratatui::widgets::Clear;
 use ratatui::Frame;
 
-use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+use super::scroll_state::ScrollState;
+use super::selection_popup_common::{measure_rows_height, render_rows};
+use super::selection_row_layout::SelectionRow;
 use crate::locale::Locale;
 use crate::slash_command::{command_filter, SlashCommand};
-use crate::style::{accent_style, muted_style};
-
-const MAX_VISIBLE_ROWS: usize = 8;
 
 /// Actions returned to the composer host after handling one popup event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,16 +28,17 @@ pub(crate) enum CommandPopupAction {
 #[derive(Debug, Clone)]
 pub(crate) struct CommandPopup {
     filter: String,
-    selected: usize,
+    state: ScrollState,
 }
 
 impl CommandPopup {
     pub(crate) fn for_composer(text: &str) -> Option<Self> {
         let filter = command_filter(text)?.to_ascii_lowercase();
-        let popup = Self {
+        let mut popup = Self {
             filter,
-            selected: 0,
+            state: ScrollState::default(),
         };
+        popup.state.clamp_selection(popup.matches().len());
         (!popup.matches().is_empty()).then_some(popup)
     }
 
@@ -48,21 +46,28 @@ impl CommandPopup {
         let Some(filter) = command_filter(text) else {
             return false;
         };
-        self.filter = filter.to_ascii_lowercase();
+        let filter = filter.to_ascii_lowercase();
+        if self.filter != filter {
+            self.state.reset();
+        }
+        self.filter = filter;
         let matches = self.matches();
         if matches.is_empty() {
             return false;
         }
-        self.selected = self.selected.min(matches.len() - 1);
+        self.state.clamp_selection(matches.len());
         true
     }
 
-    pub(crate) fn commands(&self) -> Vec<SlashCommand> {
+    #[cfg(test)]
+    fn commands(&self) -> Vec<SlashCommand> {
         self.matches()
     }
 
     pub(crate) fn selected(&self) -> Option<SlashCommand> {
-        self.matches().get(self.selected).copied()
+        self.state
+            .selected_idx
+            .and_then(|index| self.matches().get(index).copied())
     }
 
     pub(crate) fn handle_event(&mut self, event: &Event) -> CommandPopupAction {
@@ -77,18 +82,14 @@ impl CommandPopup {
                 if key.code == KeyCode::Up || key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
                 let len = self.matches().len();
-                if len > 0 {
-                    self.selected = self.selected.checked_sub(1).unwrap_or(len - 1);
-                }
+                self.state.move_up_wrap(len);
                 CommandPopupAction::Consumed
             }
             KeyCode::Down | KeyCode::Char('n') | KeyCode::Char('j')
                 if key.code == KeyCode::Down || key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
                 let len = self.matches().len();
-                if len > 0 {
-                    self.selected = (self.selected + 1) % len;
-                }
+                self.state.move_down_wrap(len);
                 CommandPopupAction::Consumed
             }
             KeyCode::Esc => CommandPopupAction::Cancel,
@@ -116,6 +117,28 @@ impl CommandPopup {
             .filter(|command| command.command().starts_with(&self.filter))
             .collect()
     }
+
+    fn rows(&self, locale: Locale) -> Vec<SelectionRow> {
+        self.matches()
+            .into_iter()
+            .enumerate()
+            .map(|(index, command)| {
+                let mut row = SelectionRow::new(
+                    format!("/{}", command.command()),
+                    Some(command.description(locale).to_string()),
+                    vec![if Some(index) == self.state.selected_idx {
+                        "› "
+                    } else {
+                        "  "
+                    }
+                    .into()],
+                );
+                row.match_indices = (!self.filter.is_empty())
+                    .then(|| (1..1 + self.filter.chars().count()).collect());
+                row
+            })
+            .collect()
+    }
 }
 
 pub(crate) fn render(
@@ -124,15 +147,11 @@ pub(crate) fn render(
     popup: &CommandPopup,
     locale: Locale,
 ) {
-    let commands = popup.commands();
-    if commands.is_empty() || composer_area.y == 0 || composer_area.width == 0 {
+    let rows = popup.rows(locale);
+    if rows.is_empty() || composer_area.y == 0 || composer_area.width == 0 {
         return;
     }
-    let visible_rows = commands
-        .len()
-        .min(MAX_VISIBLE_ROWS)
-        .min(usize::from(composer_area.y));
-    let height = u16::try_from(visible_rows).unwrap_or(u16::MAX);
+    let height = measure_rows_height(&rows, &popup.state, composer_area.width).min(composer_area.y);
     if height == 0 {
         return;
     }
@@ -142,40 +161,8 @@ pub(crate) fn render(
         composer_area.width,
         height,
     );
-    // Keep the selected command inside the visible window as the user navigates a long catalog.
-    // The popup remains anchored to the composer; only its slice moves.
-    let selected = popup
-        .selected()
-        .and_then(|selected| commands.iter().position(|command| *command == selected));
-    let start = selected
-        .map(|selected| selected.saturating_sub(visible_rows.saturating_sub(1)))
-        .unwrap_or_default();
-    let lines = commands
-        .into_iter()
-        .enumerate()
-        .skip(start)
-        .take(visible_rows)
-        .map(|(index, command)| {
-            let selected = index == popup.selected;
-            let marker = if selected { "› " } else { "  " };
-            let command_style = if selected {
-                accent_style()
-            } else {
-                Style::default().add_modifier(Modifier::BOLD)
-            };
-            truncate_line_with_ellipsis_if_overflow(
-                Line::from(vec![
-                    Span::styled(marker, command_style),
-                    Span::styled(format!("/{}", command.command()), command_style),
-                    Span::raw("  "),
-                    Span::styled(command.description(locale), muted_style()),
-                ]),
-                usize::from(area.width),
-            )
-        })
-        .collect::<Vec<_>>();
     frame.render_widget(Clear, area);
-    frame.render_widget(Paragraph::new(lines), area);
+    render_rows(frame, area, &rows, &popup.state);
 }
 
 #[cfg(test)]
@@ -325,6 +312,59 @@ mod tests {
             })
             .count();
         assert_eq!(rows_with_marker, 1);
-        assert!(popup.commands().len() > MAX_VISIBLE_ROWS);
+        assert!(popup.commands().len() > super::super::selection_row_layout::MAX_POPUP_ROWS);
+    }
+
+    #[test]
+    fn changing_filter_resets_selection_after_scrolling() {
+        let mut popup = CommandPopup::for_composer("/").unwrap();
+        for _ in 0..10 {
+            popup.handle_event(&Event::Key(KeyEvent::new(
+                KeyCode::Down,
+                KeyModifiers::NONE,
+            )));
+        }
+        assert!(popup.state.scroll_top > 0);
+        assert!(popup.update("/p"));
+        assert_eq!(popup.selected(), Some(SlashCommand::Plan));
+        assert_eq!(popup.state.scroll_top, 0);
+        popup.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Down,
+            KeyModifiers::NONE,
+        )));
+        let selected = popup.selected();
+        assert!(popup.update("/p"));
+        assert_eq!(popup.selected(), selected);
+    }
+
+    #[test]
+    fn localized_wrapped_rows_keep_later_choices_visible_on_short_terminals() {
+        for locale in [
+            Locale::ZhCn,
+            Locale::ZhTw,
+            Locale::EnUs,
+            Locale::JaJp,
+            Locale::KoKr,
+        ] {
+            for width in [20, 28, 40, 80] {
+                let mut popup = CommandPopup::for_composer("/p").unwrap();
+                popup.handle_event(&Event::Key(KeyEvent::new(
+                    KeyCode::Down,
+                    KeyModifiers::NONE,
+                )));
+                let mut terminal = Terminal::new(TestBackend::new(width, 6)).unwrap();
+                terminal
+                    .draw(|frame| render(frame, Rect::new(0, 5, width, 1), &popup, locale))
+                    .unwrap();
+                let text = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>();
+                assert!(text.contains("› /per"), "{locale:?} {width}: {text}");
+            }
+        }
     }
 }

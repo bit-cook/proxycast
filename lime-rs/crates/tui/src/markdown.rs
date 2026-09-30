@@ -89,6 +89,7 @@ struct Renderer {
     blockquote_depth: usize,
     lists: Vec<ListKind>,
     item_marker: Option<String>,
+    item_marker_style: Option<Style>,
     heading_marker: Option<String>,
     code_block: bool,
     code_block_lang: Option<String>,
@@ -111,6 +112,7 @@ impl Renderer {
             blockquote_depth: 0,
             lists: Vec::new(),
             item_marker: None,
+            item_marker_style: None,
             heading_marker: None,
             code_block: false,
             code_block_lang: None,
@@ -143,24 +145,39 @@ impl Renderer {
         }
 
         let mut prefix = "> ".repeat(self.blockquote_depth);
-        if let Some(marker) = self.heading_marker.take() {
-            prefix.push_str(&marker);
-        } else if let Some(marker) = self.item_marker.take() {
-            prefix.push_str(&LIST_INDENT.repeat(self.lists.len().saturating_sub(1)));
-            prefix.push_str(&marker);
-        } else if !self.lists.is_empty() {
+        let heading_marker = self.heading_marker.take();
+        let item_marker = self.item_marker.take();
+        if heading_marker.is_none() && item_marker.is_none() && !self.lists.is_empty() {
             prefix.push_str(&LIST_INDENT.repeat(self.lists.len()));
+        } else if item_marker.is_some() {
+            prefix.push_str(&LIST_INDENT.repeat(self.lists.len().saturating_sub(1)));
         }
-        if self.code_block {
-            prefix.push_str("    ");
+        let prefix_style = if self.blockquote_depth > 0 {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default()
+        };
+        if let Some(marker) = heading_marker {
+            prefix.push_str(&marker);
         }
         if !prefix.is_empty() {
-            let style = if self.blockquote_depth > 0 {
-                Style::default().fg(Color::Green)
+            self.current
+                .push_span(Span::styled(prefix, prefix_style), None);
+        }
+        if let Some(marker) = item_marker {
+            let marker_style = if self.blockquote_depth > 0 {
+                prefix_style
             } else {
-                Style::default()
+                self.item_marker_style.take().unwrap_or_default()
             };
-            self.current.push_span(Span::styled(prefix, style), None);
+            self.current
+                .push_span(Span::styled(marker, marker_style), None);
+        } else {
+            self.item_marker_style = None;
+        }
+        if self.code_block {
+            self.current
+                .push_span(Span::styled("    ", prefix_style), None);
         }
     }
 
@@ -358,10 +375,14 @@ impl Renderer {
             }
             Tag::Item => {
                 self.item_marker = self.lists.last_mut().map(|list| match list {
-                    ListKind::Unordered => "- ".to_string(),
+                    ListKind::Unordered => {
+                        self.item_marker_style = Some(Style::default());
+                        "- ".to_string()
+                    }
                     ListKind::Ordered(next) => {
                         let marker = format!("{next}. ");
                         *next += 1;
+                        self.item_marker_style = Some(Style::default().fg(Color::LightBlue));
                         marker
                     }
                 });
@@ -814,6 +835,18 @@ mod tests {
         let lines = render_unconstrained("- outer\n    - inner", Style::default());
 
         assert_eq!(plain(&lines), vec!["- outer", "    - inner"]);
+    }
+
+    #[test]
+    fn ordered_list_markers_use_terminal_palette() {
+        let lines = render_unconstrained("1. first\n2. second", Style::default());
+
+        assert_eq!(plain(&lines), vec!["1. first", "2. second"]);
+        for (line, expected_marker) in lines.iter().zip(["1. ", "2. "]) {
+            let marker = line.line.spans.first().expect("ordered marker span");
+            assert_eq!(marker.content, expected_marker);
+            assert_eq!(marker.style.fg, Some(Color::LightBlue));
+        }
     }
 
     #[test]

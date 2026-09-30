@@ -71,6 +71,7 @@ async function main() {
       "exec",
       prompt,
       "--json",
+      "--approve-for-me",
       "--cd",
       tempDir,
       "--model",
@@ -93,7 +94,8 @@ async function main() {
       `--app-server-arg=${appDataDir}`,
     ];
     if (process.env.LIME_CLI_GATE_B_USE_SIBLING_APP_SERVER !== "1") {
-      args.splice(9, 0, "--app-server", appServerBinaryPath);
+      const appServerArgIndex = args.indexOf("--app-server-arg=--backend");
+      args.splice(appServerArgIndex, 0, "--app-server", appServerBinaryPath);
     }
     const { stdout, stderr } = await runCli(cliBinaryPath, args, tempDir);
     if (stderr.trim()) {
@@ -123,9 +125,25 @@ async function main() {
       envelope.result.turn_id,
       "canonical turn identity",
     );
+    const runtimeRequest = turnStart.runtimeOptions?.runtimeRequest;
+    assertEqual(
+      runtimeRequest?.approvalPolicy,
+      "on-request",
+      "canonical approval policy",
+    );
+    assertEqual(
+      runtimeRequest?.metadata?.approvalsReviewer,
+      "auto_review",
+      "canonical approvals reviewer",
+    );
+    assertEqual(
+      runtimeRequest?.sandboxPolicy,
+      "workspace-write",
+      "canonical sandbox policy",
+    );
     assertEqual(
       turnStart.eventTypes.join(","),
-      "turn.started,message.delta,item.started,item.completed,turn.completed",
+      "turn.started,message.delta,item.started,item.completed,item.started,item.completed,turn.completed",
       "runtime event sequence",
     );
 

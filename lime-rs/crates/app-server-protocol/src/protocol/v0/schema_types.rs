@@ -308,6 +308,8 @@ pub const V0_SCHEMA_TYPE_NAMES: &[&str] = &[
     "McpServerStopParams",
     "McpServerOauthLoginParams",
     "McpServerOauthLoginResponse",
+    "McpServerOauthLogoutParams",
+    "McpServerOauthLogoutResponse",
     "McpServerLifecycleResponse",
     "McpToolListForContextParams",
     "McpToolSearchParams",

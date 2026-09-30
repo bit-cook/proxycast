@@ -13,9 +13,11 @@ mod input_flow;
 mod input_submission;
 mod interaction;
 mod interrupts;
+pub(crate) mod mcp_login;
 mod pending_interactive_replay;
 pub(crate) mod reconnect;
 mod replay_filter;
+mod right_click_paste;
 mod session_lifecycle;
 pub(crate) mod startup;
 #[allow(dead_code)]
@@ -32,6 +34,7 @@ pub(crate) mod working_directory;
 use app_server_protocol::protocol::v2::{
     McpServerStatus, McpServerStatusDetail, QueuedSubmission, Thread,
 };
+use lime_core::config::RightClickPaste;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -41,14 +44,16 @@ use self::agent_picker::AgentPicker;
 use self::agents_overview::AgentsOverviewState;
 use self::transcript_export::ExportPicker;
 use crate::bottom_pane::{AppServerResponse, BottomPane, ChatComposer};
+use crate::clipboard_paste::ClipboardTextSource;
 use crate::history_cell::HistoryRenderMode;
 use crate::locale::Locale;
 use crate::model_catalog::ModelCatalog;
 use crate::model_picker::{ModelPicker, ModelSelection};
-use crate::pager_overlay::{PagerOverlay, StatusFacts};
+use crate::pager_overlay::PagerOverlay;
 use crate::projection::ConversationProjection;
 use crate::resume_picker::{PickerAction, PickerState};
 use crate::slash_command::SlashCommand;
+use crate::status::StatusFacts;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TranscriptSelectionTarget {
@@ -83,6 +88,7 @@ pub(crate) enum AppAction {
         path: Option<PathBuf>,
     },
     PasteImage,
+    PasteClipboardText(ClipboardTextSource),
     EditQueuedSubmission(QueuedSubmission),
     ScrollUp,
     ScrollDown,
@@ -94,6 +100,7 @@ pub(crate) enum AppAction {
     ChangeCollaborationMode(agent_protocol::CollaborationMode),
     SwitchThread(String),
     RefreshAgentsOverview,
+    LoadMoreAgentsOverview,
     DispatchAgentsOverviewTask {
         prompt: String,
         cwd: Option<PathBuf>,
@@ -109,6 +116,10 @@ pub(crate) enum AppAction {
     ResumePicker(PickerAction),
     FetchMcpInventory {
         detail: McpServerStatusDetail,
+    },
+    StartMcpLogin {
+        name: String,
+        thread_id: String,
     },
     Respond(AppServerResponse),
     Quit,
@@ -134,6 +145,9 @@ pub(crate) struct App {
     pub(crate) model_catalog: ModelCatalog,
     pub(crate) skill_load_warnings: startup_prompts::SkillLoadWarningState,
     pub(crate) mcp_startup_warnings: startup_prompts::McpStartupWarningState,
+    pending_mcp_login_start: Option<mcp_login::PendingMcpLoginStart>,
+    active_mcp_login_ids: HashMap<String, mcp_login::ActiveMcpLogin>,
+    mcp_login_generation: u64,
     pub(crate) collaboration_mode: Option<agent_protocol::CollaborationMode>,
     pub(crate) pager_overlay: Option<PagerOverlay>,
     transcript_presentation: transcript_presentation::TranscriptPresentation,
@@ -162,6 +176,11 @@ pub(crate) struct App {
     pub(crate) locale: Locale,
     pub(crate) cwd: PathBuf,
     pub(crate) clipboard_lease: Option<crate::clipboard_copy::ClipboardLease>,
+    /// Independent X11 PRIMARY owner retained while a transcript selection remains active.
+    /// CLIPBOARD and PRIMARY are separate X11 selections and must not share a lease.
+    pub(crate) primary_clipboard_lease: Option<crate::clipboard_copy::ClipboardLease>,
+    pub(crate) right_click_paste: RightClickPaste,
+    pending_clipboard_paste: Option<right_click_paste::PendingPaste>,
     pub(crate) queued_submissions: Vec<QueuedSubmission>,
     pub(crate) thread_input_states: HashMap<String, String>,
     /// Keeps terminal input behind a startup request that may open a protected interaction.
@@ -179,6 +198,10 @@ impl App {
     pub(crate) fn set_runtime_keymap(&mut self, keymap: crate::keymap::RuntimeKeymap) {
         self.runtime_keymap = keymap;
         self.global_key_chord_matcher.reset();
+    }
+
+    pub(crate) fn set_right_click_paste(&mut self, mode: RightClickPaste) {
+        self.right_click_paste = mode;
     }
 
     pub(crate) fn history_render_mode(&self) -> HistoryRenderMode {
@@ -260,6 +283,7 @@ impl App {
     pub(crate) fn set_thread_id(&mut self, thread_id: String) {
         if self.thread_id.as_deref() != Some(thread_id.as_str()) {
             self.reset_transcript_presentation();
+            self.primary_clipboard_lease = None;
             self.queued_submissions.clear();
             self.transcript_scroll = 0;
             self.transcript_viewport.clear();
@@ -329,6 +353,7 @@ impl App {
     }
 
     pub(crate) fn hydrate_thread(&mut self, thread: Thread) {
+        self.primary_clipboard_lease = None;
         self.transcript_scroll = 0;
         self.transcript_viewport.clear();
         self.transcript_follow_control.clear();
@@ -409,6 +434,11 @@ impl App {
         if !matches!(action, AppAction::None) {
             return action;
         }
+        let paste_burst_flushed = self.composer.handle_paste_burst_flush(now);
+        if paste_burst_flushed {
+            self.sync_command_popup();
+        }
+        let paste_burst_needs_frame = self.composer.paste_burst_needs_frame();
         let selection_scrolled = if let Some(picker) = self.resume_picker.as_ref() {
             picker.tick_transcript_selection()
         } else if self.pager_overlay.is_some() {
@@ -418,7 +448,7 @@ impl App {
         } else {
             self.transcript_selection.tick_edge_scroll()
         };
-        if selection_scrolled {
+        if selection_scrolled || paste_burst_needs_frame {
             AppAction::ScheduleFrameIn(crate::tui::TARGET_FRAME_INTERVAL)
         } else if self
             .transcript_search
@@ -471,6 +501,7 @@ impl App {
             self.transcript_scroll = distance;
         }
         self.transcript_selection.clear();
+        self.primary_clipboard_lease = None;
     }
 
     fn complete_slash_command(&mut self, command: SlashCommand) {
@@ -530,19 +561,12 @@ impl App {
             }
             SlashCommand::Resume => AppAction::OpenResumePicker,
             SlashCommand::Mcp => {
-                let argument = text.strip_prefix("/mcp").map(str::trim).unwrap_or_default();
-                match argument {
-                    "" => AppAction::FetchMcpInventory {
-                        detail: McpServerStatusDetail::ToolsAndAuthOnly,
-                    },
-                    "verbose" => AppAction::FetchMcpInventory {
-                        detail: McpServerStatusDetail::Full,
-                    },
-                    _ => {
-                        self.projection.set_status(self.locale.mcp_usage());
-                        AppAction::None
-                    }
-                }
+                let argument = text
+                    .strip_prefix("/mcp")
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .to_string();
+                self.mcp_command(&argument)
             }
             SlashCommand::Pwd => {
                 if text.split_whitespace().count() != 1 {

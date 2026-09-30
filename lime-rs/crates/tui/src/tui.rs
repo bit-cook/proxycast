@@ -166,6 +166,8 @@ pub(crate) struct Tui {
     draw_tx: broadcast::Sender<()>,
     frame_requester: FrameRequester,
     terminal_focused: Arc<AtomicBool>,
+    pub(crate) clipboard: crate::clipboard_paste::worker::ClipboardWorker,
+    pub(crate) clipboard_copy: crate::clipboard_copy::worker::ClipboardWorker,
 }
 
 impl Tui {
@@ -257,6 +259,8 @@ impl Tui {
             draw_tx,
             frame_requester,
             terminal_focused,
+            clipboard: crate::clipboard_paste::worker::ClipboardWorker::default(),
+            clipboard_copy: crate::clipboard_copy::worker::ClipboardWorker::default(),
         })
     }
 

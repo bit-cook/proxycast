@@ -3,12 +3,14 @@ use crate::bottom_pane::command_popup::CommandPopup;
 use app_server_protocol::protocol::v2::{
     CommandExecutionApprovalDecision, CommandExecutionRequestApprovalParams, McpServerStartupState,
     McpServerStatusDetail, McpServerStatusUpdatedNotification, ServerNotification, ServerRequest,
+    ToolRequestUserInputOption, ToolRequestUserInputParams, ToolRequestUserInputQuestion,
     UserInput,
 };
 use app_server_protocol::RequestId;
 use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
+use lime_core::config::{KeybindingSpec, KeybindingsSpec, TuiKeymap};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::widgets::StatefulWidgetRef;
@@ -78,6 +80,126 @@ fn active_bottom_pane_receives_input_before_the_chat_composer() {
     ));
     assert!(!app.bottom_pane.is_active());
     assert_eq!(app.composer.text(), "draft");
+}
+
+#[test]
+fn modal_transcript_wheel_scrolls_only_inside_the_visible_transcript() {
+    let mut app = App::default();
+    app.transcript_selection.update_layout(
+        Rect::new(0, 0, 40, 5),
+        5,
+        &(0..20)
+            .map(|index| crate::terminal_hyperlinks::HyperlinkLine::from(format!("line {index}")))
+            .collect::<Vec<_>>(),
+    );
+    app.bottom_pane
+        .enqueue(ServerRequest::ItemCommandExecutionRequestApproval {
+            id: RequestId::Integer(11),
+            params: CommandExecutionRequestApprovalParams {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "command-1".to_string(),
+                started_at_ms: 1,
+                approval_id: None,
+                reason: None,
+                network_approval_context: None,
+                command: Some("cargo test".to_string()),
+                cwd: Some("/workspace".to_string()),
+                available_decisions: None,
+            },
+        })
+        .expect("queue approval");
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::ScrollUp,
+                column: 10,
+                row: 2,
+                modifiers: KeyModifiers::NONE,
+            }),
+        ),
+        AppAction::ScrollRows(-3)
+    );
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 10,
+                row: 7,
+                modifiers: KeyModifiers::NONE,
+            }),
+        ),
+        AppAction::None
+    );
+
+    // Keyboard ownership remains with the active approval surface.
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(app.composer.is_empty());
+}
+
+#[test]
+fn modal_transcript_wheel_remains_available_during_request_user_input() {
+    let mut app = App::default();
+    app.transcript_selection.update_layout(
+        Rect::new(0, 0, 40, 5),
+        5,
+        &(0..20)
+            .map(|index| crate::terminal_hyperlinks::HyperlinkLine::from(format!("line {index}")))
+            .collect::<Vec<_>>(),
+    );
+    app.bottom_pane
+        .enqueue(ServerRequest::ItemToolRequestUserInput {
+            id: RequestId::Integer(12),
+            params: ToolRequestUserInputParams {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "question-1".to_string(),
+                questions: vec![ToolRequestUserInputQuestion {
+                    id: "mode".to_string(),
+                    header: "Mode".to_string(),
+                    question: "Choose a mode".to_string(),
+                    is_other: false,
+                    is_secret: false,
+                    options: Some(vec![ToolRequestUserInputOption {
+                        label: "Fast".to_string(),
+                        description: "Continue immediately".to_string(),
+                    }]),
+                }],
+                is_blocking: true,
+                auto_resolution_ms: None,
+            },
+        })
+        .expect("queue user input");
+
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 10,
+                row: 3,
+                modifiers: KeyModifiers::NONE,
+            }),
+        ),
+        AppAction::ScrollRows(3)
+    );
+    assert_eq!(
+        dispatch_connected_input(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
+        ),
+        AppAction::None
+    );
+    assert!(app.composer.is_empty());
 }
 
 #[test]
@@ -206,6 +328,45 @@ fn first_safe_user_input_releases_boundary_before_reaching_composer() {
 }
 
 #[test]
+fn global_keymap_chord_does_not_cross_non_keyboard_boundaries() {
+    for boundary in [
+        TuiEvent::Paste("paste".to_string()),
+        TuiEvent::FocusLost,
+        TuiEvent::Mouse(MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        }),
+    ] {
+        let mut config = TuiKeymap::default();
+        config.global.find_transcript =
+            Some(KeybindingsSpec::One(KeybindingSpec("ctrl-x f".to_string())));
+        let keymap = crate::keymap::RuntimeKeymap::from_config(&config)
+            .expect("custom global chord must be valid");
+        let mut app = App::default();
+        app.set_runtime_keymap(keymap);
+
+        assert_eq!(
+            app.handle_tui_event(
+                TuiEvent::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL,)),
+                true,
+            ),
+            AppAction::None
+        );
+        assert_eq!(app.handle_tui_event(boundary, true), AppAction::None);
+        assert_eq!(
+            app.handle_tui_event(
+                TuiEvent::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE)),
+                true,
+            ),
+            AppAction::None
+        );
+        assert!(!app.transcript_search.is_active());
+    }
+}
+
+#[test]
 fn startup_boundary_waits_for_visible_request_before_releasing() {
     let mut app = App::default();
     app.begin_startup_input_boundary();
@@ -307,8 +468,179 @@ fn mcp_slash_command_rejects_unknown_arguments_with_localized_usage() {
         ),
         AppAction::None
     );
-    assert_eq!(app.projection.status(), "用法：/mcp [verbose]");
+    assert_eq!(
+        app.projection.status(),
+        "用法：/mcp [verbose | login <名称>]"
+    );
     assert!(app.composer.is_empty());
+}
+
+#[test]
+fn mcp_login_slash_command_requires_one_server_name_and_active_thread() {
+    let mut app = App::default();
+    app.set_locale(Locale::EnUs);
+
+    app.replace_composer("/mcp login".to_string());
+    assert_eq!(app.run_local_command(), Some(AppAction::None));
+    assert_eq!(
+        app.projection.status(),
+        "Usage: /mcp [verbose | login <name>]"
+    );
+
+    app.replace_composer("/mcp login docs extra".to_string());
+    assert_eq!(app.run_local_command(), Some(AppAction::None));
+    assert_eq!(
+        app.projection.status(),
+        "Usage: /mcp [verbose | login <name>]"
+    );
+
+    app.replace_composer("/mcp login docs".to_string());
+    assert_eq!(app.run_local_command(), Some(AppAction::None));
+    assert_eq!(
+        app.projection.status(),
+        "MCP sign-in requires an active session."
+    );
+
+    app.set_thread_id("thread-1".to_string());
+    app.replace_composer("/mcp login docs".to_string());
+    assert_eq!(
+        app.run_local_command(),
+        Some(AppAction::StartMcpLogin {
+            name: "docs".to_string(),
+            thread_id: "thread-1".to_string(),
+        })
+    );
+}
+
+#[test]
+fn mcp_login_completion_is_thread_scoped_and_rejects_stale_attempts() {
+    use app_server_protocol::protocol::v2::McpServerOauthLoginCompletedNotification;
+
+    let mut app = App::default();
+    app.set_locale(Locale::ZhCn);
+    app.set_thread_id("thread-1".to_string());
+    app.active_mcp_login_ids.insert(
+        "docs".to_string(),
+        crate::app::mcp_login::ActiveMcpLogin {
+            login_id: Some("new".to_string()),
+            thread_id: "thread-1".to_string(),
+        },
+    );
+
+    app.apply_notification(ServerNotification::McpServerOauthLoginCompleted(
+        McpServerOauthLoginCompletedNotification {
+            name: "docs".to_string(),
+            thread_id: Some("thread-1".to_string()),
+            login_id: Some("old".to_string()),
+            success: false,
+            error: Some("stale".to_string()),
+        },
+    ));
+    assert_eq!(app.projection.status(), "");
+    assert_eq!(
+        app.active_mcp_login_ids.get("docs"),
+        Some(&crate::app::mcp_login::ActiveMcpLogin {
+            login_id: Some("new".to_string()),
+            thread_id: "thread-1".to_string(),
+        })
+    );
+
+    app.apply_notification(ServerNotification::McpServerOauthLoginCompleted(
+        McpServerOauthLoginCompletedNotification {
+            name: "docs".to_string(),
+            thread_id: Some("thread-1".to_string()),
+            login_id: Some("new".to_string()),
+            success: true,
+            error: None,
+        },
+    ));
+    assert_eq!(app.projection.status(), "已登录 MCP 服务器“docs”。");
+    assert!(!app.active_mcp_login_ids.contains_key("docs"));
+}
+
+#[test]
+fn mcp_login_completion_survives_thread_switch_and_replay() {
+    use app_server_protocol::protocol::v2::{
+        McpServerOauthLoginCompletedNotification, ServerNotification,
+    };
+
+    let mut app = App::default();
+    app.set_locale(Locale::EnUs);
+    app.set_thread_id("thread-1".to_string());
+    app.active_mcp_login_ids.insert(
+        "docs".to_string(),
+        crate::app::mcp_login::ActiveMcpLogin {
+            login_id: Some("login-1".to_string()),
+            thread_id: "thread-1".to_string(),
+        },
+    );
+
+    app.set_thread_id("thread-2".to_string());
+    app.apply_notification(ServerNotification::McpServerOauthLoginCompleted(
+        McpServerOauthLoginCompletedNotification {
+            name: "docs".to_string(),
+            thread_id: Some("thread-1".to_string()),
+            login_id: Some("login-1".to_string()),
+            success: true,
+            error: None,
+        },
+    ));
+    assert_eq!(app.projection.status(), "");
+    assert!(app.active_mcp_login_ids.contains_key("docs"));
+
+    app.set_thread_id("thread-1".to_string());
+    let snapshot = app.take_thread_event_snapshot("thread-1", false);
+    app.replay_thread_snapshot(snapshot);
+    assert_eq!(app.projection.status(), "Signed in to MCP server 'docs'.");
+    assert!(!app.active_mcp_login_ids.contains_key("docs"));
+}
+
+#[test]
+fn mcp_login_pending_completion_replays_only_the_new_attempt() {
+    use app_server_protocol::protocol::v2::McpServerOauthLoginCompletedNotification;
+
+    let mut app = App::default();
+    app.set_locale(Locale::EnUs);
+    app.set_thread_id("thread-1".to_string());
+    let request_id = app
+        .begin_mcp_login_start("docs".to_string(), "thread-1".to_string())
+        .expect("start login");
+
+    assert!(app
+        .accept_mcp_login_completion(McpServerOauthLoginCompletedNotification {
+            name: "docs".to_string(),
+            thread_id: Some("thread-1".to_string()),
+            login_id: Some("login-1".to_string()),
+            success: true,
+            error: None,
+        })
+        .is_none());
+
+    app.finish_mcp_login_start(
+        crate::app::mcp_login::McpLoginStarted {
+            request_id,
+            result: Ok(app_server_protocol::McpServerOauthLoginResponse {
+                authorization_url: "https://auth.example/authorize".to_string(),
+                state: "pending".to_string(),
+                login_id: Some("login-1".to_string()),
+            }),
+        },
+        |_| Ok(()),
+    );
+    assert_eq!(app.projection.status(), "Signed in to MCP server 'docs'.");
+    assert!(!app.active_mcp_login_ids.contains_key("docs"));
+
+    // The completion was consumed by the replay path, not projected twice.
+    assert!(app
+        .accept_mcp_login_completion(McpServerOauthLoginCompletedNotification {
+            name: "docs".to_string(),
+            thread_id: Some("thread-1".to_string()),
+            login_id: Some("login-1".to_string()),
+            success: true,
+            error: None,
+        })
+        .is_none());
+    assert_eq!(app.projection.status(), "Signed in to MCP server 'docs'.");
 }
 
 #[test]
@@ -1292,6 +1624,26 @@ fn disconnected_paste_and_ctrl_c_are_handled_at_the_app_boundary() {
 }
 
 #[test]
+fn failed_submission_restores_the_complete_local_draft() {
+    let mut app = App::default();
+    app.restore_submission_draft(
+        "retry after reconnect".to_string(),
+        vec![std::path::PathBuf::from("/tmp/retry.png")],
+        vec!["https://example.test/retry.png".to_string()],
+    );
+
+    assert_eq!(app.composer.text(), "retry after reconnect");
+    assert_eq!(
+        app.composer.pending_images(),
+        &[std::path::PathBuf::from("/tmp/retry.png")]
+    );
+    assert_eq!(
+        app.composer.remote_image_urls(),
+        &["https://example.test/retry.png"]
+    );
+}
+
+#[test]
 fn composer_mouse_selection_precedes_shortcuts_and_requests_copy() {
     let mut app = App::default();
     app.composer.insert("hello world");
@@ -1350,6 +1702,45 @@ fn composer_mouse_selection_precedes_shortcuts_and_requests_copy() {
             clear_selection: false,
         }
     );
+}
+
+#[test]
+fn composer_mouse_paste_requests_clipboard_surface_without_selection() {
+    for (button, source) in [
+        (
+            MouseButton::Right,
+            crate::clipboard_paste::ClipboardTextSource::Clipboard,
+        ),
+        (
+            MouseButton::Middle,
+            crate::clipboard_paste::ClipboardTextSource::Primary,
+        ),
+    ] {
+        let mut app = App::default();
+        app.set_right_click_paste(lime_core::config::RightClickPaste::On);
+        app.composer.insert("draft");
+        let area = Rect::new(10, 5, 20, 2);
+        let mut buffer = Buffer::empty(area);
+        {
+            let mut state = app.composer.textarea_state_mut();
+            StatefulWidgetRef::render_ref(&app.composer.textarea(), area, &mut buffer, &mut *state);
+        }
+
+        let action = dispatch_connected_input(
+            &mut app,
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(button),
+                column: 12,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            }),
+        );
+        let expected =
+            crate::clipboard_paste::right_click_paste_allowed(app.right_click_paste, source)
+                .then_some(AppAction::PasteClipboardText(source))
+                .unwrap_or(AppAction::None);
+        assert_eq!(action, expected);
+    }
 }
 
 #[test]

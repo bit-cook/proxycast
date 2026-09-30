@@ -231,6 +231,7 @@ app_server_client_request_definitions! {
     McpServerImportFromApp => "mcpServer/importFromApp",
     McpServerSyncAllToLive => "mcpServer/syncAllToLive",
     McpServerOauthLogin => "mcpServer/oauth/login",
+    McpServerOauthLogout => "mcpServer/oauth/logout",
     McpServerStart => "mcpServer/start",
     McpServerStop => "mcpServer/stop",
     McpToolList => "mcpTool/list",

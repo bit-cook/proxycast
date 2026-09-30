@@ -18,21 +18,13 @@ fn many(specs: &[&str]) -> KeybindingsSpec {
 fn codex_transcript_defaults_and_hints_share_one_owner() {
     let keymap = RuntimeKeymap::default();
     let transcript = keymap.transcript();
-    assert!(transcript.open_transcript(KeyEvent::new(
-        KeyCode::Char('t'),
-        KeyModifiers::CONTROL,
-    )));
-    assert!(transcript.find_transcript(KeyEvent::new(
-        KeyCode::F(3),
-        KeyModifiers::NONE,
-    )));
-    assert!(!transcript.find_transcript(KeyEvent::new(
-        KeyCode::Char('f'),
-        KeyModifiers::CONTROL,
-    )));
-    assert_eq!(transcript.pager_find_hint(), "F3·/");
-    assert_eq!(transcript.pager_page_down_hint(), "PgDn·Space·Ctrl+F");
-    assert_eq!(transcript.pager_close_hint(), "Ctrl+T·Esc·Q");
+    assert!(transcript.open_transcript(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL,)));
+    assert!(transcript.find_transcript(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE,)));
+    assert!(!transcript.find_transcript(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL,)));
+    assert_eq!(transcript.pager_find_hint(), "f3·/");
+    assert_eq!(transcript.pager_page_down_hint(), "pgdn·space·ctrl+f");
+    assert_eq!(transcript.pager_close_hint(), "ctrl+t·esc·q");
+    assert_eq!(transcript.open_transcript_hint().as_deref(), Some("ctrl+t"));
 }
 
 #[test]
@@ -56,7 +48,7 @@ fn custom_chord_alternatives_dispatch_and_update_hints() {
         ),
         KeymapMatch::Completed(GlobalKeymapAction::FindTranscript)
     );
-    assert_eq!(runtime.transcript().pager_find_hint(), "F7·Ctrl+X F");
+    assert_eq!(runtime.transcript().pager_find_hint(), "f7·ctrl+x f");
 }
 
 #[test]
@@ -74,6 +66,7 @@ fn explicit_empty_bindings_do_not_fall_back_to_defaults() {
         KeymapMatch::PassThrough
     );
     assert_eq!(runtime.transcript().pager_page_down_hint(), "");
+    assert_eq!(runtime.transcript().open_transcript_hint(), None);
 }
 
 #[test]
@@ -95,30 +88,18 @@ fn conflicts_and_plain_chord_prefixes_fail_closed() {
 fn codex_agents_defaults_are_stable() {
     let keymap = RuntimeKeymap::default();
     let agents = keymap.agents();
-    assert!(agents.resume(KeyEvent::new(
-        KeyCode::Char('o'),
-        KeyModifiers::CONTROL,
-    )));
-    assert!(agents.search(KeyEvent::new(
-        KeyCode::Char('f'),
-        KeyModifiers::CONTROL,
-    )));
-    assert!(agents.new_task(KeyEvent::new(
-        KeyCode::Char('n'),
-        KeyModifiers::CONTROL,
-    )));
-    assert!(agents.rename(KeyEvent::new(
-        KeyCode::Char('r'),
-        KeyModifiers::CONTROL,
-    )));
-    assert!(agents.stop(KeyEvent::new(
-        KeyCode::Char('x'),
-        KeyModifiers::CONTROL,
-    )));
-    assert!(agents.toggle_grouping(KeyEvent::new(
-        KeyCode::Char('s'),
-        KeyModifiers::CONTROL,
-    )));
+    assert!(agents.resume(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE,)));
+    assert!(agents.search(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE,)));
+    assert!(agents.new_task(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE,)));
+    assert!(agents.rename(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE,)));
+    assert!(agents.stop(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE,)));
+    assert!(agents.toggle_grouping(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE,)));
+    assert_eq!(
+        agents.primary_hint(AgentsKeymapAction::NewTask).as_deref(),
+        Some("n")
+    );
+    assert!(!agents.new_task(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)));
+    assert!(!agents.search(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL)));
 }
 
 #[test]

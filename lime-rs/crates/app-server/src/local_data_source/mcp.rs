@@ -23,6 +23,8 @@ use app_server_protocol::McpServerImportFromAppResponse;
 use app_server_protocol::McpServerLifecycleResponse;
 use app_server_protocol::McpServerListResponse;
 use app_server_protocol::McpServerOauthLoginParams;
+use app_server_protocol::McpServerOauthLogoutParams;
+use app_server_protocol::McpServerOauthLogoutResponse;
 use app_server_protocol::McpServerStartParams;
 use app_server_protocol::McpServerStopParams;
 use app_server_protocol::McpServerUpdateParams;
@@ -285,6 +287,27 @@ pub(crate) async fn login_mcp_server_oauth(
         )
         .await
         .map_err(mcp_error)
+}
+
+pub(crate) async fn logout_mcp_server_oauth(
+    db: &DbConnection,
+    manager: &McpManagerState,
+    params: McpServerOauthLogoutParams,
+) -> Result<McpServerOauthLogoutResponse, RuntimeCoreError> {
+    let server = McpService::get_all(db)
+        .map_err(data_error)?
+        .into_iter()
+        .find(|server| server.name == params.name)
+        .ok_or_else(|| {
+            RuntimeCoreError::Backend(format!("MCP server not found: {}", params.name))
+        })?;
+    let config = parse_mcp_server_config(&server.server_config);
+    let manager = manager.lock().await;
+    let removed = manager
+        .logout_oauth(&params.name, &config)
+        .await
+        .map_err(mcp_error)?;
+    Ok(McpServerOauthLogoutResponse { removed })
 }
 
 pub(crate) async fn list_mcp_tools(

@@ -3,6 +3,7 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 use super::{ActivePopup, ChatComposer};
+use crate::clipboard_paste::ClipboardTextSource;
 use crate::tui::TuiEvent;
 
 impl ChatComposer {
@@ -32,6 +33,51 @@ impl ChatComposer {
         let text = self.draft.textarea.selected_text()?.to_string();
         self.end_mouse_drag();
         Some((text, mouse_copy))
+    }
+
+    /// Return the clipboard surface requested by a right-/middle-click in the textarea.
+    ///
+    /// Right-click copy is checked by the app before this method, so an existing selection keeps
+    /// its copy-first semantics.  Popup/search and Vim modes remain owner-exclusive, matching
+    /// Codex's rule that a mouse paste cannot steal an active editor surface.
+    pub(crate) fn clipboard_paste_request(&self, event: &TuiEvent) -> Option<ClipboardTextSource> {
+        if self.history_search.is_some()
+            || self.vim_search_active()
+            || self.command_popup_active()
+            || self.file_search_popup_active()
+            || self.skill_popup_active()
+        {
+            return None;
+        }
+        let TuiEvent::Mouse(mouse) = event else {
+            return None;
+        };
+        if !mouse.modifiers.is_empty() || !self.draft.textarea.contains_mouse(*mouse) {
+            return None;
+        }
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Right)
+                if self.draft.textarea.selected_text().is_none() =>
+            {
+                Some(ClipboardTextSource::Clipboard)
+            }
+            MouseEventKind::Down(MouseButton::Middle) => Some(ClipboardTextSource::Primary),
+            _ => None,
+        }
+    }
+
+    /// Return the exact draft target that an asynchronous mouse paste may still own.
+    pub(crate) fn clipboard_paste_target(&self) -> Option<(String, usize)> {
+        if self.history_search.is_some()
+            || self.vim_search_active()
+            || self.command_popup_active()
+            || self.file_search_popup_active()
+            || self.skill_popup_active()
+            || self.draft.textarea.selected_text().is_some()
+        {
+            return None;
+        }
+        Some((self.text().to_string(), self.cursor()))
     }
 
     pub(crate) fn handle_mouse(&mut self, event: MouseEvent) -> bool {

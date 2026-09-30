@@ -30,6 +30,10 @@ mod search;
 mod separators;
 mod session;
 
+mod activity_preview;
+
+pub(crate) use activity_preview::ActivityDisclosure;
+
 pub(crate) use approvals::*;
 pub(crate) use base::*;
 pub(crate) use computer_activity::{
@@ -144,8 +148,8 @@ pub(crate) trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
         self.transcript_hyperlink_lines(width)
     }
 
-    fn has_hidden_activity_details(&self, _width: u16) -> bool {
-        false
+    fn activity_disclosure(&self, _width: u16) -> Option<ActivityDisclosure> {
+        None
     }
 
     fn desired_transcript_height(&self, width: u16) -> u16 {
@@ -243,9 +247,24 @@ impl HistoryCell for TranscriptHistoryCell {
         self.display_hyperlink_lines(width)
     }
 
-    fn has_hidden_activity_details(&self, width: u16) -> bool {
-        !self.activity_ids().is_empty()
-            && self.compact_hyperlink_lines(width) != self.expanded_hyperlink_lines(width)
+    fn activity_disclosure(&self, width: u16) -> Option<ActivityDisclosure> {
+        if self.activity_ids().is_empty()
+            || self.compact_hyperlink_lines(width) == self.expanded_hyperlink_lines(width)
+        {
+            return None;
+        }
+
+        if self.entry.kind == EntryKind::Command {
+            let mut source = self.entry.text.lines();
+            source.next();
+            let output = crate::exec_cell::CommandOutput::from_lines(source, self.locale);
+            let (_, retained) = output.line_counts();
+            if retained > 0 {
+                return Some(ActivityDisclosure::OutputLines(retained));
+            }
+        }
+
+        Some(ActivityDisclosure::Generic)
     }
 
     fn is_stream_continuation(&self) -> bool {
@@ -336,9 +355,39 @@ mod tests {
         let cell = TranscriptHistoryCell::new(item, Locale::EnUs, PathBuf::from("/workspace"));
 
         assert_eq!(cell.activity_ids(), vec!["entry:command-1"]);
-        assert!(cell.has_hidden_activity_details(80));
+        assert!(cell.activity_disclosure(80).is_some());
         assert_eq!(cell.compact_hyperlink_lines(80).len(), 1);
         assert!(cell.expanded_hyperlink_lines(80).len() > 1);
+    }
+
+    #[test]
+    fn command_disclosure_counts_retained_output_lines_only() {
+        let output = (0..101)
+            .map(|index| format!("line-{index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cell = TranscriptHistoryCell::new(
+            entry(EntryKind::Command, &format!("cargo test\n{output}")),
+            Locale::EnUs,
+            PathBuf::from("/workspace"),
+        );
+
+        assert_eq!(
+            cell.activity_disclosure(80),
+            Some(ActivityDisclosure::OutputLines(100))
+        );
+    }
+
+    #[test]
+    fn command_without_output_keeps_generic_details() {
+        let mut item = entry(EntryKind::Command, "cargo test");
+        item.summary = vec!["duration: 12ms".to_string()];
+        let cell = TranscriptHistoryCell::new(item, Locale::EnUs, PathBuf::from("/workspace"));
+
+        assert_eq!(
+            cell.activity_disclosure(80),
+            Some(ActivityDisclosure::Generic)
+        );
     }
 
     #[test]

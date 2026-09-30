@@ -1,18 +1,15 @@
 use app_server_protocol::protocol::v2::Model;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use ratatui::layout::Rect;
 use ratatui::Frame;
+use std::cell::Cell;
+use unicode_segmentation::UnicodeSegmentation;
 
-use crate::bottom_pane::selection_row_layout::{
-    centered_popup, visible_item_window, wrap_row, SelectionDescriptionLayout, SelectionRow,
-    MAX_POPUP_ROWS,
-};
-use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+use crate::bottom_pane::selection_row_layout::MAX_POPUP_ROWS;
 use crate::locale::Locale;
-use crate::style::{accent_style, muted_style};
+
+mod render;
+pub(crate) use render::desired_height;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ModelSelection {
@@ -32,6 +29,8 @@ pub(crate) struct ModelPicker {
     models: Vec<Model>,
     selected: usize,
     query: String,
+    current: Option<usize>,
+    page_rows: Cell<usize>,
 }
 
 impl ModelPicker {
@@ -45,7 +44,28 @@ impl ModelPicker {
             models,
             selected: 0,
             query: String::new(),
+            current: None,
+            page_rows: Cell::new(MAX_POPUP_ROWS),
         }
+    }
+
+    pub(crate) fn with_current(mut self, model: Option<&str>, provider: Option<&str>) -> Self {
+        let mut matches = self
+            .models
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                Some(entry.model.as_str()) == model
+                    && provider.is_none_or(|provider| entry.provider_id == provider)
+            })
+            .map(|(index, _)| index);
+        let first = matches.next();
+        // Without provider identity a shared model name is ambiguous; never guess the first one.
+        self.current = first.filter(|_| matches.next().is_none());
+        if let Some(index) = self.current {
+            self.selected = index;
+        }
+        self
     }
 
     pub(crate) fn selected_model(&self, index: usize) -> Option<ModelSelection> {
@@ -62,7 +82,8 @@ impl ModelPicker {
         &self.query
     }
 
-    pub(crate) fn visible_models(&self) -> Vec<&Model> {
+    #[cfg(test)]
+    fn visible_models(&self) -> Vec<&Model> {
         self.visible_indices()
             .into_iter()
             .filter_map(|index| self.models.get(index))
@@ -106,15 +127,37 @@ impl ModelPicker {
                         .selected_model(self.selected)
                         .map(|_| ModelPickerAction::Select(self.selected))
                         .unwrap_or(ModelPickerAction::None),
+                    KeyCode::PageUp => {
+                        self.selected = self.selected.saturating_sub(self.page_rows.get().max(1));
+                        ModelPickerAction::None
+                    }
+                    KeyCode::PageDown => {
+                        self.selected = self
+                            .selected
+                            .saturating_add(self.page_rows.get().max(1))
+                            .min(self.visible_indices().len().saturating_sub(1));
+                        ModelPickerAction::None
+                    }
+                    KeyCode::Home if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.selected = 0;
+                        ModelPickerAction::None
+                    }
+                    KeyCode::End if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.selected = self.visible_indices().len().saturating_sub(1);
+                        ModelPickerAction::None
+                    }
                     KeyCode::Backspace => {
-                        self.query.pop();
+                        if let Some((offset, _)) = self.query.grapheme_indices(true).next_back() {
+                            self.query.truncate(offset);
+                        }
                         self.selected = 0;
                         ModelPickerAction::None
                     }
                     KeyCode::Char(ch)
-                        if !key
-                            .modifiers
-                            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                        if !ch.is_control()
+                            && !key
+                                .modifiers
+                                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
                     {
                         self.query.push(ch);
                         self.selected = 0;
@@ -124,8 +167,10 @@ impl ModelPicker {
                 }
             }
             Event::Paste(text) => {
-                self.query.push_str(&text);
-                self.selected = 0;
+                if let Some(text) = crate::clipboard_paste::normalize_pasted_search_query(&text) {
+                    self.query.push_str(&text);
+                    self.selected = 0;
+                }
                 ModelPickerAction::None
             }
             _ => ModelPickerAction::None,
@@ -159,93 +204,7 @@ pub(crate) fn render_with_locale(
     picker: &ModelPicker,
     locale: Locale,
 ) {
-    let width = area.width.saturating_mul(4).saturating_div(5).clamp(28, 72);
-    let height = area
-        .height
-        .saturating_mul(3)
-        .saturating_div(4)
-        .clamp(7, MAX_POPUP_ROWS as u16 + 4);
-    let popup = centered_popup(area, width, height);
-
-    frame.render_widget(Clear, popup);
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(2),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .split(popup);
-    let title = Line::from(vec![
-        Span::styled(
-            format!(" {} ", locale.model_label()),
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            if picker.query().is_empty() {
-                locale.picker_title().to_string()
-            } else {
-                picker.query().to_string()
-            },
-            muted_style(),
-        ),
-    ]);
-    frame.render_widget(
-        Paragraph::new(truncate_line_with_ellipsis_if_overflow(
-            title,
-            usize::from(chunks[0].width.saturating_sub(2)),
-        ))
-        .block(Block::default().borders(Borders::TOP)),
-        chunks[0],
-    );
-
-    let row_width = chunks[1].width.saturating_sub(2);
-    let desc_col = usize::from(row_width.saturating_mul(2).saturating_div(5).max(1));
-    let visible_models = picker.visible_models();
-    let max_visible = MAX_POPUP_ROWS.min(usize::from(chunks[1].height).max(1));
-    let (start, end) = visible_item_window(picker.selected, visible_models.len(), max_visible);
-    let items = visible_models
-        .into_iter()
-        .skip(start)
-        .take(end.saturating_sub(start))
-        .map(|model| {
-            let row = SelectionRow::new(
-                model.display_name.clone(),
-                Some(format!("[{}]", model.provider_id)),
-                Vec::new(),
-            );
-            ListItem::new(wrap_row(
-                &row,
-                desc_col,
-                row_width,
-                SelectionDescriptionLayout::StackBelowWhenNarrow {
-                    min_description_width: 10,
-                },
-            ))
-        })
-        .collect::<Vec<_>>();
-    let mut state = ListState::default();
-    if !items.is_empty() {
-        state.select(Some(picker.selected.saturating_sub(start)));
-    }
-    frame.render_stateful_widget(
-        List::new(items)
-            .block(Block::default().borders(Borders::LEFT | Borders::RIGHT))
-            .highlight_style(accent_style())
-            .highlight_symbol("› "),
-        chunks[1],
-        &mut state,
-    );
-    let footer = if end == start {
-        locale.picker_empty()
-    } else {
-        locale.picker_footer()
-    };
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(footer, muted_style())))
-            .block(Block::default().borders(Borders::BOTTOM)),
-        chunks[2],
-    );
+    render::render(frame, area, picker, locale);
 }
 
 #[cfg(test)]
@@ -257,7 +216,7 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
-    fn model(id: &str, provider: &str, hidden: bool, is_default: bool) -> Model {
+    pub(super) fn model(id: &str, provider: &str, hidden: bool, is_default: bool) -> Model {
         Model {
             id: id.to_string(),
             provider_id: provider.to_string(),
@@ -410,7 +369,7 @@ mod tests {
             "selected model was clipped: {text}"
         );
         assert!(
-            text.contains("› model-12"),
+            text.contains("› 13. model-12"),
             "selected model marker missing: {text}"
         );
         assert!(text.lines().all(|line| line.chars().count() <= 80));

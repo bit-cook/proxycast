@@ -28,7 +28,7 @@ use app_server_protocol::protocol::v2::{
     METHOD_THREAD_READ, METHOD_THREAD_UNARCHIVE,
 };
 use app_server_protocol::{ClientCapabilities, ClientInfo, InitializeParams};
-use clap::{Args, CommandFactory, Parser, Subcommand as ClapSubcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand as ClapSubcommand, ValueEnum};
 use clap_complete::{generate, Shell};
 use execpolicy::ExecPolicyCheckCommand;
 use serde_json::json;
@@ -59,6 +59,206 @@ pub(crate) struct ConnectionArgs {
     effort: Option<String>,
     #[arg(long, value_name = "PROFILE")]
     permissions: Option<String>,
+    /// Select the sandbox policy for model-generated commands.
+    #[arg(
+        long = "sandbox",
+        short = 's',
+        value_enum,
+        conflicts_with_all = ["approve_for_me", "permissions"]
+    )]
+    sandbox_mode: Option<SandboxModeCliArg>,
+    /// Route approval requests through automatic review using workspace-write.
+    #[arg(
+        long = "approve-for-me",
+        alias = "not-so-yolo",
+        conflicts_with_all = [
+            "sandbox_mode",
+            "dangerously_bypass_approvals_and_sandbox",
+            "approval_policy",
+            "permissions"
+        ]
+    )]
+    approve_for_me: bool,
+    /// Configure when the model must ask for approval before executing commands.
+    #[arg(
+        long = "ask-for-approval",
+        short = 'a',
+        value_enum,
+        conflicts_with_all = ["approve_for_me", "dangerously_bypass_approvals_and_sandbox"]
+    )]
+    approval_policy: Option<ApprovalPolicyCliArg>,
+    /// Skip confirmation prompts and sandboxing. Intended only for externally sandboxed hosts.
+    #[arg(
+        long = "dangerously-bypass-approvals-and-sandbox",
+        alias = "yolo",
+        conflicts_with_all = ["approve_for_me", "approval_policy", "permissions"]
+    )]
+    dangerously_bypass_approvals_and_sandbox: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[value(rename_all = "kebab-case")]
+enum SandboxModeCliArg {
+    ReadOnly,
+    WorkspaceWrite,
+    DangerFullAccess,
+}
+
+impl SandboxModeCliArg {
+    fn as_policy(self) -> &'static str {
+        match self {
+            Self::ReadOnly => "read-only",
+            Self::WorkspaceWrite => "workspace-write",
+            Self::DangerFullAccess => "danger-full-access",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[value(rename_all = "kebab-case")]
+enum ApprovalPolicyCliArg {
+    OnRequest,
+    Never,
+}
+
+impl ApprovalPolicyCliArg {
+    fn as_policy(self) -> &'static str {
+        match self {
+            Self::OnRequest => "on-request",
+            Self::Never => "never",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct PermissionSettings {
+    approval_policy: Option<String>,
+    approvals_reviewer: Option<String>,
+    sandbox_policy: Option<String>,
+}
+
+fn permission_settings(args: &ConnectionArgs) -> Result<PermissionSettings> {
+    if args.permissions.is_some()
+        && (args.sandbox_mode.is_some()
+            || args.approve_for_me
+            || args.dangerously_bypass_approvals_and_sandbox)
+    {
+        bail!("`--permissions` cannot be combined with an explicit sandbox mode");
+    }
+
+    if args.approve_for_me {
+        return Ok(PermissionSettings {
+            approval_policy: Some(
+                args.approval_policy
+                    .map(ApprovalPolicyCliArg::as_policy)
+                    .unwrap_or("on-request")
+                    .to_string(),
+            ),
+            approvals_reviewer: Some("auto_review".to_string()),
+            sandbox_policy: Some("workspace-write".to_string()),
+        });
+    }
+
+    if args.dangerously_bypass_approvals_and_sandbox {
+        return Ok(PermissionSettings {
+            approval_policy: Some(
+                args.approval_policy
+                    .map(ApprovalPolicyCliArg::as_policy)
+                    .unwrap_or("never")
+                    .to_string(),
+            ),
+            approvals_reviewer: None,
+            sandbox_policy: Some("danger-full-access".to_string()),
+        });
+    }
+
+    Ok(PermissionSettings {
+        approval_policy: args
+            .approval_policy
+            .map(ApprovalPolicyCliArg::as_policy)
+            .map(str::to_string),
+        approvals_reviewer: None,
+        sandbox_policy: args
+            .sandbox_mode
+            .map(SandboxModeCliArg::as_policy)
+            .map(str::to_string),
+    })
+}
+
+impl ConnectionArgs {
+    fn inherit_from(&mut self, root: &Self) {
+        let child_sandbox_group_selected = self.sandbox_mode.is_some()
+            || self.approve_for_me
+            || self.dangerously_bypass_approvals_and_sandbox
+            || self.permissions.is_some();
+        let child_approval_group_selected = self.approval_policy.is_some()
+            || self.approve_for_me
+            || self.dangerously_bypass_approvals_and_sandbox;
+
+        if self.app_server.is_none() {
+            self.app_server.clone_from(&root.app_server);
+        }
+        if self.app_server_args.is_empty() {
+            self.app_server_args.clone_from(&root.app_server_args);
+        }
+        if self.remote.remote.is_none() {
+            self.remote.remote.clone_from(&root.remote.remote);
+        }
+        if self.remote.remote_auth_token_env.is_none() {
+            self.remote
+                .remote_auth_token_env
+                .clone_from(&root.remote.remote_auth_token_env);
+        }
+        if self.cwd.is_none() {
+            self.cwd.clone_from(&root.cwd);
+        }
+        if self.model.is_none() {
+            self.model.clone_from(&root.model);
+        }
+        if self.provider.is_none() {
+            self.provider.clone_from(&root.provider);
+        }
+        if self.effort.is_none() {
+            self.effort.clone_from(&root.effort);
+        }
+        if self.permissions.is_none() && !child_sandbox_group_selected {
+            self.permissions.clone_from(&root.permissions);
+        }
+
+        if !child_sandbox_group_selected {
+            if self.permissions.is_none() {
+                if root.approve_for_me {
+                    // Keep the root approve-for-me sandbox while allowing a child approval
+                    // policy to override only the approval half of the group.
+                    self.approve_for_me = true;
+                } else if root.dangerously_bypass_approvals_and_sandbox {
+                    self.dangerously_bypass_approvals_and_sandbox = true;
+                } else {
+                    self.sandbox_mode = root.sandbox_mode;
+                }
+            }
+            if !child_approval_group_selected {
+                self.approval_policy = root.approval_policy;
+            }
+        } else if self.permissions.is_some()
+            && self.sandbox_mode.is_none()
+            && !self.approve_for_me
+            && !self.dangerously_bypass_approvals_and_sandbox
+        {
+            // A child permissions profile replaces a root sandbox group while preserving
+            // an independently selected approval policy.
+            if self.approval_policy.is_none() {
+                self.approval_policy = root.approval_policy;
+            }
+        } else if self.approval_policy.is_none()
+            && !self.approve_for_me
+            && !self.dangerously_bypass_approvals_and_sandbox
+        {
+            // A child sandbox mode replaces the root sandbox group but keeps an independent
+            // root approval policy when one was explicitly selected.
+            self.approval_policy = root.approval_policy;
+        }
+    }
 }
 
 #[derive(Debug, Default, Args, Clone)]
@@ -197,6 +397,10 @@ impl Default for TuiCli {
                 provider: None,
                 effort: None,
                 permissions: None,
+                sandbox_mode: None,
+                approve_for_me: false,
+                approval_policy: None,
+                dangerously_bypass_approvals_and_sandbox: false,
             },
             locale: None,
         }
@@ -563,6 +767,7 @@ fn tui_options(
     locale: Option<String>,
 ) -> Result<TuiOptions> {
     let remote = resolve_remote_endpoint(&args)?;
+    let permission_settings = permission_settings(&args)?;
     Ok(TuiOptions {
         app_server_bin: resolve_app_server_bin(args.app_server),
         app_server_args: args.app_server_args,
@@ -574,6 +779,9 @@ fn tui_options(
         model_provider: args.provider,
         reasoning_effort: args.effort,
         permissions: args.permissions,
+        approval_policy: permission_settings.approval_policy,
+        approvals_reviewer: permission_settings.approvals_reviewer,
+        sandbox_policy: permission_settings.sandbox_policy,
         locale,
         resume_thread,
     })
@@ -1030,11 +1238,28 @@ fn main() -> ExitCode {
 }
 
 async fn cli_main(cli: MultitoolCli) -> ExitCode {
+    let root_connection = cli.interactive.connection.clone();
+    let root_locale = cli.interactive.locale.clone();
     match cli.subcommand {
         None => run_interactive_tui(cli.interactive).await,
-        Some(Subcommand::Tui(args)) => run_interactive_tui(args).await,
-        Some(Subcommand::Exec(args)) => run_exec(args).await,
-        Some(Subcommand::Resume(args)) => run_resume(args).await,
+        Some(Subcommand::Tui(mut args)) => {
+            args.connection.inherit_from(&root_connection);
+            if args.locale.is_none() {
+                args.locale = root_locale;
+            }
+            run_interactive_tui(args).await
+        }
+        Some(Subcommand::Exec(mut args)) => {
+            args.connection.inherit_from(&root_connection);
+            run_exec(args).await
+        }
+        Some(Subcommand::Resume(mut args)) => {
+            args.connection.inherit_from(&root_connection);
+            if args.locale.is_none() {
+                args.locale = root_locale;
+            }
+            run_resume(args).await
+        }
         Some(Subcommand::Queue(args)) => queue_cmd::run_queue_command(args).await,
         Some(Subcommand::Archive(args)) => run_archive(args).await,
         Some(Subcommand::Delete(args)) => run_delete(args).await,
@@ -1202,6 +1427,212 @@ mod command_tests {
     }
 
     #[test]
+    fn approve_for_me_and_hidden_alias_lower_to_canonical_policy() {
+        for flag in ["--approve-for-me", "--not-so-yolo"] {
+            let cli = crate::MultitoolCli::try_parse_from(["lime", "exec", flag, "check"])
+                .expect("parse approve-for-me");
+            let Some(crate::Subcommand::Exec(args)) = cli.subcommand else {
+                panic!("expected exec command");
+            };
+            let options = tui_options(args.connection, None, None).expect("lower policy");
+            assert_eq!(options.approval_policy.as_deref(), Some("on-request"));
+            assert_eq!(options.approvals_reviewer.as_deref(), Some("auto_review"));
+            assert_eq!(options.sandbox_policy.as_deref(), Some("workspace-write"));
+        }
+    }
+
+    #[test]
+    fn not_so_yolo_alias_is_hidden_from_help() {
+        let help = crate::MultitoolCli::command().render_help().to_string();
+        assert!(!help.contains("--not-so-yolo"));
+    }
+
+    #[test]
+    fn dangerous_bypass_lowers_to_never_and_full_access() {
+        let cli = crate::MultitoolCli::try_parse_from([
+            "lime",
+            "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "check",
+        ])
+        .expect("parse dangerous bypass");
+        let Some(crate::Subcommand::Exec(args)) = cli.subcommand else {
+            panic!("expected exec command");
+        };
+        let options = tui_options(args.connection, None, None).expect("lower policy");
+        assert_eq!(options.approval_policy.as_deref(), Some("never"));
+        assert_eq!(options.approvals_reviewer, None);
+        assert_eq!(
+            options.sandbox_policy.as_deref(),
+            Some("danger-full-access")
+        );
+    }
+
+    #[test]
+    fn permission_flags_are_mutually_exclusive_and_fail_closed() {
+        for args in [
+            &[
+                "lime",
+                "exec",
+                "--approve-for-me",
+                "--sandbox",
+                "read-only",
+                "check",
+            ][..],
+            &[
+                "lime",
+                "exec",
+                "--approve-for-me",
+                "--ask-for-approval",
+                "never",
+                "check",
+            ][..],
+            &[
+                "lime",
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--ask-for-approval",
+                "on-request",
+                "check",
+            ][..],
+            &[
+                "lime",
+                "exec",
+                "--permissions",
+                ":workspace",
+                "--sandbox",
+                "read-only",
+                "check",
+            ][..],
+        ] {
+            let error = crate::MultitoolCli::try_parse_from(args)
+                .expect_err("conflicting permission flags must be rejected");
+            assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+        }
+    }
+
+    #[test]
+    fn root_permission_flags_inherit_and_later_exec_flags_override() {
+        let mut cli = crate::MultitoolCli::try_parse_from([
+            "lime",
+            "--approve-for-me",
+            "exec",
+            "--sandbox",
+            "read-only",
+            "check",
+        ])
+        .expect("parse root and exec permission flags");
+        let root = cli.interactive.connection.clone();
+        let Some(crate::Subcommand::Exec(args)) = cli.subcommand.as_mut() else {
+            panic!("expected exec command");
+        };
+        args.connection.inherit_from(&root);
+        assert_eq!(
+            args.connection.sandbox_mode,
+            Some(SandboxModeCliArg::ReadOnly)
+        );
+        assert!(!args.connection.approve_for_me);
+        assert_eq!(
+            permission_settings(&args.connection).expect("lower override"),
+            PermissionSettings {
+                approval_policy: None,
+                approvals_reviewer: None,
+                sandbox_policy: Some("read-only".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn root_permission_flags_apply_to_exec_when_subcommand_is_unspecified() {
+        let mut cli =
+            crate::MultitoolCli::try_parse_from(["lime", "--approve-for-me", "exec", "check"])
+                .expect("parse root permission flags");
+        let root = cli.interactive.connection.clone();
+        let Some(crate::Subcommand::Exec(args)) = cli.subcommand.as_mut() else {
+            panic!("expected exec command");
+        };
+        args.connection.inherit_from(&root);
+        assert!(args.connection.approve_for_me);
+        assert_eq!(
+            permission_settings(&args.connection)
+                .expect("lower inherited policy")
+                .sandbox_policy
+                .as_deref(),
+            Some("workspace-write")
+        );
+    }
+
+    #[test]
+    fn child_permissions_profile_replaces_root_sandbox_group() {
+        let mut cli = crate::MultitoolCli::try_parse_from([
+            "lime",
+            "--approve-for-me",
+            "exec",
+            "--permissions",
+            ":workspace",
+            "check",
+        ])
+        .expect("parse root approve and child profile");
+        let root = cli.interactive.connection.clone();
+        let Some(crate::Subcommand::Exec(args)) = cli.subcommand.as_mut() else {
+            panic!("expected exec command");
+        };
+        args.connection.inherit_from(&root);
+        assert_eq!(args.connection.permissions.as_deref(), Some(":workspace"));
+        assert!(!args.connection.approve_for_me);
+        assert!(args.connection.sandbox_mode.is_none());
+        assert_eq!(args.connection.approval_policy, None);
+        assert_eq!(
+            permission_settings(&args.connection).expect("profile policy"),
+            PermissionSettings::default()
+        );
+    }
+
+    #[test]
+    fn child_approval_policy_overrides_only_root_approve_for_me_approval() {
+        let mut cli = crate::MultitoolCli::try_parse_from([
+            "lime",
+            "--approve-for-me",
+            "exec",
+            "--ask-for-approval",
+            "never",
+            "check",
+        ])
+        .expect("parse root approve and child approval");
+        let root = cli.interactive.connection.clone();
+        let Some(crate::Subcommand::Exec(args)) = cli.subcommand.as_mut() else {
+            panic!("expected exec command");
+        };
+        args.connection.inherit_from(&root);
+        let options = tui_options(args.connection.clone(), None, None).expect("lower override");
+        assert_eq!(options.approval_policy.as_deref(), Some("never"));
+        assert_eq!(options.approvals_reviewer.as_deref(), Some("auto_review"));
+        assert_eq!(options.sandbox_policy.as_deref(), Some("workspace-write"));
+    }
+
+    #[test]
+    fn child_sandbox_keeps_independent_root_approval_policy() {
+        let mut cli = crate::MultitoolCli::try_parse_from([
+            "lime",
+            "--ask-for-approval",
+            "never",
+            "exec",
+            "--sandbox",
+            "read-only",
+            "check",
+        ])
+        .expect("parse root approval and child sandbox");
+        let root = cli.interactive.connection.clone();
+        let Some(crate::Subcommand::Exec(args)) = cli.subcommand.as_mut() else {
+            panic!("expected exec command");
+        };
+        args.connection.inherit_from(&root);
+        let options = tui_options(args.connection.clone(), None, None).expect("lower override");
+        assert_eq!(options.approval_policy.as_deref(), Some("never"));
+        assert_eq!(options.sandbox_policy.as_deref(), Some("read-only"));
+    }
+
+    #[test]
     fn working_directory_flag_matches_codex_cd_shape() {
         let long_form = crate::MultitoolCli::try_parse_from([
             "lime",
@@ -1278,6 +1709,10 @@ mod command_tests {
             provider: None,
             effort: None,
             permissions: None,
+            sandbox_mode: None,
+            approve_for_me: false,
+            approval_policy: None,
+            dangerously_bypass_approvals_and_sandbox: false,
         };
         let error = resolve_remote_endpoint(&connection)
             .expect_err("remote auth without endpoint must fail");
@@ -1298,6 +1733,10 @@ mod command_tests {
             provider: None,
             effort: None,
             permissions: None,
+            sandbox_mode: None,
+            approve_for_me: false,
+            approval_policy: None,
+            dangerously_bypass_approvals_and_sandbox: false,
         };
         let error = resolve_remote_endpoint(&connection)
             .expect_err("missing remote auth env must fail before transport startup");
@@ -1318,6 +1757,10 @@ mod command_tests {
             provider: None,
             effort: None,
             permissions: None,
+            sandbox_mode: None,
+            approve_for_me: false,
+            approval_policy: None,
+            dangerously_bypass_approvals_and_sandbox: false,
         };
         let options = tui_options(connection, None, None).expect("remote options");
         assert_eq!(
@@ -1344,6 +1787,10 @@ mod command_tests {
             provider: None,
             effort: None,
             permissions: None,
+            sandbox_mode: None,
+            approve_for_me: false,
+            approval_policy: None,
+            dangerously_bypass_approvals_and_sandbox: false,
         };
         let error = resolve_remote_endpoint(&connection)
             .expect_err("remote and local app-server overrides must be exclusive");

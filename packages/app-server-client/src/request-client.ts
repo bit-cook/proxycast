@@ -331,6 +331,9 @@ export interface AppServerClient {
   loginMcpServerOauth(
     params: protocol.McpServerOauthLoginParams,
   ): protocol.JsonRpcRequest;
+  logoutMcpServerOauth(
+    params: protocol.McpServerOauthLogoutParams,
+  ): protocol.JsonRpcRequest;
   startMcpServer(
     params: protocol.McpServerStartParams,
   ): protocol.JsonRpcRequest;

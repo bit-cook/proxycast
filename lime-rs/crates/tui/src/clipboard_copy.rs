@@ -2,6 +2,8 @@ use base64::Engine;
 use std::fmt;
 use std::io::Write;
 
+pub(crate) mod worker;
+
 const OSC52_MAX_RAW_BYTES: usize = 100_000;
 
 #[cfg(target_os = "macos")]
@@ -85,6 +87,44 @@ pub(crate) fn copy_to_clipboard(text: &str) -> Result<CopyOutcome, String> {
     )
 }
 
+/// Publish text to the X11 PRIMARY selection.
+///
+/// PRIMARY is intentionally separate from CLIPBOARD: X11 requires the process to keep the
+/// native owner alive until another application requests the selection.  Non-X11 terminals fail
+/// closed so a remote or Wayland session never reports a misleading successful middle-click
+/// paste.  The caller owns the returned lease independently from the regular clipboard lease.
+pub(crate) fn copy_to_primary(text: &str) -> Result<CopyOutcome, String> {
+    if text.is_empty() {
+        return Err("nothing to copy: the selected content is empty".to_string());
+    }
+    if !crate::clipboard_paste::mouse_paste_source_allowed(
+        crate::clipboard_paste::ClipboardTextSource::Primary,
+    ) {
+        return Err("X11 primary selection is unavailable in this terminal".to_string());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use arboard::SetExtLinux;
+
+        let _guard = SuppressStderr::new();
+        let mut clipboard = arboard::Clipboard::new()
+            .map_err(|error| format!("primary selection unavailable: {error}"))?;
+        clipboard
+            .set()
+            .clipboard(arboard::LinuxClipboardKind::Primary)
+            .text(text)
+            .map_err(|error| format!("failed to set X11 primary selection: {error}"))?;
+        return Ok(CopyOutcome::Copied(Some(ClipboardLease::native_linux(
+            clipboard,
+        ))));
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = text;
+        Err("X11 primary selection is unavailable on this platform".to_string())
+    }
+}
+
 fn copy_to_clipboard_with(
     text: &str,
     environment: CopyEnvironment,
@@ -137,23 +177,23 @@ fn terminal_copy(
     osc52_copy(text)
 }
 
-fn is_ssh_session() -> bool {
+pub(crate) fn is_ssh_session() -> bool {
     std::env::var_os("SSH_TTY").is_some() || std::env::var_os("SSH_CONNECTION").is_some()
 }
 
-fn is_tmux_session() -> bool {
+pub(crate) fn is_tmux_session() -> bool {
     std::env::var_os("TMUX").is_some() || std::env::var_os("TMUX_PANE").is_some()
 }
 
 #[cfg(target_os = "linux")]
-fn is_wsl_session() -> bool {
+pub(crate) fn is_wsl_session() -> bool {
     std::env::var_os("WSL_DISTRO_NAME").is_some()
         || std::fs::read_to_string("/proc/sys/kernel/osrelease")
             .is_ok_and(|release| release.to_ascii_lowercase().contains("microsoft"))
 }
 
 #[cfg(not(target_os = "linux"))]
-fn is_wsl_session() -> bool {
+pub(crate) fn is_wsl_session() -> bool {
     false
 }
 
@@ -409,6 +449,14 @@ mod tests {
     fn osc52_rejects_oversized_payloads() {
         let text = "x".repeat(OSC52_MAX_RAW_BYTES + 1);
         assert!(osc52_sequence(&text, false).is_err());
+    }
+
+    #[test]
+    fn primary_selection_rejects_empty_text_before_platform_probe() {
+        match copy_to_primary("") {
+            Err(error) => assert_eq!(error, "nothing to copy: the selected content is empty"),
+            Ok(_) => panic!("empty selection must fail"),
+        }
     }
 
     #[test]

@@ -12,6 +12,8 @@ use crate::settings::{cycle_setting, EFFORTS};
 
 pub(crate) struct EventContext<'a> {
     pub(crate) session: &'a mut AppServerSession,
+    pub(crate) mcp_login_tx:
+        &'a tokio::sync::mpsc::UnboundedSender<super::mcp_login::McpLoginStarted>,
     pub(crate) model: &'a mut Option<String>,
     pub(crate) model_provider: &'a mut Option<String>,
     pub(crate) effort: &'a mut Option<String>,
@@ -144,6 +146,15 @@ impl App {
                 }
                 Ok(EventDispatch::Handled)
             }
+            AppAction::LoadMoreAgentsOverview => {
+                if let Err(error) = self
+                    .load_more_agents_overview_threads(context.session)
+                    .await
+                {
+                    self.projection.set_status(error.to_string());
+                }
+                Ok(EventDispatch::Handled)
+            }
             AppAction::DispatchAgentsOverviewTask { prompt, cwd } => {
                 match self
                     .dispatch_agents_overview_task(context.session, prompt, cwd)
@@ -193,6 +204,20 @@ impl App {
                     Err(error) => self
                         .projection
                         .set_status(format!("MCP inventory failed: {error}")),
+                }
+                Ok(EventDispatch::Handled)
+            }
+            AppAction::StartMcpLogin { name, thread_id } => {
+                if let Some(request_id) =
+                    self.begin_mcp_login_start(name.clone(), thread_id.clone())
+                {
+                    super::mcp_login::start_mcp_login(
+                        context.session.request_handle(),
+                        request_id,
+                        name,
+                        thread_id,
+                        context.mcp_login_tx.clone(),
+                    );
                 }
                 Ok(EventDispatch::Handled)
             }

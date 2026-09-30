@@ -12,10 +12,13 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::Modifier;
 use ratatui::text::Line;
 
+use crate::history_cell::ActivityDisclosure;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
 use crate::style::{accent_style, muted_style};
 use crate::terminal_hyperlinks::{wrapped_line_starts, HyperlinkLine};
+
+use super::TranscriptAnchorRange;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TranscriptContent {
@@ -24,11 +27,15 @@ pub(crate) struct TranscriptContent {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum TranscriptBlock {
-    Source(Vec<HyperlinkLine>),
+    Source {
+        keys: Vec<String>,
+        lines: Vec<HyperlinkLine>,
+    },
     Activity {
         ids: Vec<String>,
         compact: Vec<HyperlinkLine>,
         expanded: Vec<HyperlinkLine>,
+        disclosure: Option<ActivityDisclosure>,
     },
 }
 
@@ -39,17 +46,28 @@ impl TranscriptContent {
         content
     }
 
-    pub(crate) fn push_line(&mut self, line: HyperlinkLine) {
-        self.push_lines(vec![line]);
+    pub(crate) fn push_lines(&mut self, lines: Vec<HyperlinkLine>) {
+        self.push_source(Vec::new(), lines);
     }
 
-    pub(crate) fn push_lines(&mut self, lines: Vec<HyperlinkLine>) {
+    pub(crate) fn push_keyed_lines(&mut self, key: impl Into<String>, lines: Vec<HyperlinkLine>) {
+        let key = key.into();
+        self.push_source(
+            (!key.is_empty()).then_some(key).into_iter().collect(),
+            lines,
+        );
+    }
+
+    fn push_source(&mut self, keys: Vec<String>, lines: Vec<HyperlinkLine>) {
         if lines.is_empty() {
             return;
         }
         match self.blocks.last_mut() {
-            Some(TranscriptBlock::Source(current)) => current.extend(lines),
-            _ => self.blocks.push(TranscriptBlock::Source(lines)),
+            Some(TranscriptBlock::Source {
+                keys: current_keys,
+                lines: current,
+            }) if current_keys.is_empty() && keys.is_empty() => current.extend(lines),
+            _ => self.blocks.push(TranscriptBlock::Source { keys, lines }),
         }
     }
 
@@ -59,14 +77,25 @@ impl TranscriptContent {
         compact: Vec<HyperlinkLine>,
         expanded: Vec<HyperlinkLine>,
     ) {
+        self.push_activity_with_disclosure(ids, compact, expanded, None);
+    }
+
+    pub(crate) fn push_activity_with_disclosure(
+        &mut self,
+        ids: Vec<String>,
+        compact: Vec<HyperlinkLine>,
+        expanded: Vec<HyperlinkLine>,
+        disclosure: Option<ActivityDisclosure>,
+    ) {
         if ids.is_empty() || compact == expanded {
-            self.push_lines(expanded);
+            self.push_source(ids, expanded);
             return;
         }
         self.blocks.push(TranscriptBlock::Activity {
             ids,
             compact,
             expanded,
+            disclosure: disclosure.or(Some(ActivityDisclosure::Generic)),
         });
     }
 }
@@ -75,6 +104,7 @@ impl TranscriptContent {
 pub(crate) struct MaterializedTranscript {
     pub(crate) lines: Vec<HyperlinkLine>,
     pub(crate) excluded_lines: HashSet<usize>,
+    pub(crate) anchor_ranges: Vec<TranscriptAnchorRange>,
     controls: Vec<MaterializedControl>,
 }
 
@@ -103,23 +133,50 @@ pub(crate) struct TranscriptDisclosure {
 }
 
 impl TranscriptDisclosure {
+    #[allow(
+        dead_code,
+        reason = "Shortcut-free helper keeps existing TestBackend fixtures concise."
+    )]
     pub(crate) fn materialize(
         &self,
         content: &TranscriptContent,
         locale: Locale,
         width: u16,
     ) -> MaterializedTranscript {
+        self.materialize_with_shortcut(content, locale, width, None)
+    }
+
+    pub(crate) fn materialize_with_shortcut(
+        &self,
+        content: &TranscriptContent,
+        locale: Locale,
+        width: u16,
+        shortcut: Option<&str>,
+    ) -> MaterializedTranscript {
         let mut lines = Vec::new();
         let mut excluded_lines = HashSet::new();
+        let mut anchor_ranges = Vec::new();
         let mut controls = Vec::new();
         for block in &content.blocks {
             match block {
-                TranscriptBlock::Source(source) => lines.extend(source.iter().cloned()),
+                TranscriptBlock::Source {
+                    keys,
+                    lines: source,
+                } => {
+                    let start = lines.len();
+                    lines.extend(source.iter().cloned());
+                    if !keys.is_empty() {
+                        anchor_ranges
+                            .push(TranscriptAnchorRange::new(keys.clone(), start..lines.len()));
+                    }
+                }
                 TranscriptBlock::Activity {
                     ids,
                     compact,
                     expanded,
+                    disclosure,
                 } => {
+                    let start = lines.len();
                     let is_expanded = self.is_expanded(ids);
                     lines.extend(if is_expanded { expanded } else { compact }.iter().cloned());
                     let focused = self
@@ -128,9 +185,28 @@ impl TranscriptDisclosure {
                         .is_some_and(|focused| shares_identity(focused, ids));
                     let indent = usize::from(width / 4).min(4);
                     let label = if is_expanded {
-                        locale.transcript_show_less()
+                        locale.transcript_show_less().to_string()
                     } else {
-                        locale.transcript_show_details()
+                        match disclosure.unwrap_or(ActivityDisclosure::Generic) {
+                            ActivityDisclosure::Generic => {
+                                locale.transcript_show_details().to_string()
+                            }
+                            ActivityDisclosure::OutputLines(count) => {
+                                let base = locale.transcript_output_lines(count, None);
+                                let with_shortcut = shortcut
+                                    .filter(|shortcut| !shortcut.is_empty())
+                                    .map(|shortcut| {
+                                        locale.transcript_output_lines(count, Some(shortcut))
+                                    });
+                                with_shortcut
+                                    .filter(|label| {
+                                        let indent = usize::from(width / 4).min(4);
+                                        Line::from(format!("{}{label}", " ".repeat(indent))).width()
+                                            <= usize::from(width)
+                                    })
+                                    .unwrap_or(base)
+                            }
+                        }
                     };
                     let style = if focused {
                         accent_style().add_modifier(Modifier::BOLD)
@@ -150,12 +226,14 @@ impl TranscriptDisclosure {
                         line: control_line,
                         columns: u16::try_from(indent).unwrap_or(u16::MAX).min(end)..end,
                     });
+                    anchor_ranges.push(TranscriptAnchorRange::new(ids.clone(), start..lines.len()));
                 }
             }
         }
         MaterializedTranscript {
             lines,
             excluded_lines,
+            anchor_ranges,
             controls,
         }
     }
@@ -451,5 +529,58 @@ mod tests {
             .lines
             .iter()
             .any(|line| line.line.to_string().contains("− Show less")));
+    }
+
+    #[test]
+    fn output_line_disclosure_uses_localized_count_and_optional_shortcut() {
+        let mut content = TranscriptContent::default();
+        content.push_activity_with_disclosure(
+            vec!["entry:command-1".to_string()],
+            vec![HyperlinkLine::from("$ cargo test")],
+            vec![
+                HyperlinkLine::from("$ cargo test"),
+                HyperlinkLine::from("  output"),
+            ],
+            Some(ActivityDisclosure::OutputLines(1)),
+        );
+
+        for (locale, expected) in [
+            (Locale::ZhCn, "+ 1 行"),
+            (Locale::ZhTw, "+ 1 行"),
+            (Locale::EnUs, "+ 1 line"),
+            (Locale::JaJp, "+ 1 行"),
+            (Locale::KoKr, "+ 1줄"),
+        ] {
+            let rendered = TranscriptDisclosure::default().materialize_with_shortcut(
+                &content,
+                locale,
+                80,
+                Some("Ctrl+T"),
+            );
+            let control = rendered
+                .lines
+                .last()
+                .expect("disclosure control")
+                .line
+                .to_string();
+            assert!(control.contains(expected), "{locale:?}: {control}");
+            assert!(control.contains("Ctrl+T"), "{locale:?}: {control}");
+        }
+
+        let narrow = TranscriptDisclosure::default().materialize_with_shortcut(
+            &content,
+            Locale::EnUs,
+            16,
+            Some("Ctrl+T"),
+        );
+        let control = narrow
+            .lines
+            .last()
+            .expect("disclosure control")
+            .line
+            .to_string();
+        assert!(control.contains("+ 1 line"));
+        assert!(!control.contains("Ctrl+T"));
+        assert!(narrow.excluded_lines.contains(&1));
     }
 }

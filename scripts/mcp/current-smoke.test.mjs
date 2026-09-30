@@ -47,6 +47,7 @@ describe("mcp current smoke guard", () => {
     expect(content).toContain("APP_SERVER_HANDLE_JSON_LINES_COMMAND");
     expect(content).toContain('"app_server_handle_json_lines"');
     expect(content).toContain('"mcpServer/oauth/login"');
+    expect(content).toContain('"mcpServer/oauth/logout"');
     expect(content).toContain('"mcpServer/tool/call"');
     expect(content).toContain('"mcpServer/resource/read"');
     expect(content).toContain('"resources/templates/list"');
@@ -77,6 +78,7 @@ describe("mcp current smoke guard", () => {
     expect(content).toContain("summary.oauthFixture");
     expect(oauthFixture).toContain("startMcpOAuthFixtureProvider");
     expect(oauthFixture).toContain('"mcpServer/oauth/login"');
+    expect(oauthFixture).toContain('"mcpServer/oauth/logout"');
     expect(oauthFixture).toContain('"open_external_url"');
     expect(oauthFixture).toContain('"mcpServerStatus/list"');
     expect(oauthFixture).toContain('transport: "streamable_http"');

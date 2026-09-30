@@ -22,12 +22,11 @@ impl App {
                 self.handle_server_request_event(app_server_client, *request)
                     .await;
             }
-            AppServerEvent::Disconnected { message } => {
+            AppServerEvent::Disconnected { .. } => {
                 self.bottom_pane.clear();
                 self.model_picker = None;
                 self.dismiss_pager_overlay();
-                self.projection
-                    .set_status(format!("reconnecting: {message}"));
+                self.projection.set_status("reconnecting");
             }
         }
     }
@@ -37,6 +36,15 @@ impl App {
         app_server_client: &AppServerSession,
         notification: ServerNotification,
     ) {
+        let notification = match notification {
+            ServerNotification::McpServerOauthLoginCompleted(completion) => {
+                let Some(completion) = self.accept_mcp_login_completion(completion) else {
+                    return;
+                };
+                ServerNotification::McpServerOauthLoginCompleted(completion)
+            }
+            notification => notification,
+        };
         let queue_changed = matches!(
             &notification,
             ServerNotification::ThreadQueueChanged(params)

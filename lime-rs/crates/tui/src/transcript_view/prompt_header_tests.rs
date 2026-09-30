@@ -51,12 +51,12 @@ fn header_tracks_the_nearest_visible_prompt_without_entering_source_lines() {
     assert!(source.candidate(&lines, area, 0).is_none());
     assert_eq!(
         source.candidate(&lines, area, 1).unwrap().line.to_string(),
-        "first question"
+        "› first question"
     );
     assert!(source.candidate(&lines, area, 2).is_none());
     assert_eq!(
         source.candidate(&lines, area, 3).unwrap().line.to_string(),
-        "second question"
+        "› second question"
     );
     assert!(source
         .candidate(&lines, Rect::new(0, 0, 15, 5), 3)
@@ -90,7 +90,7 @@ fn header_sanitizes_bounds_and_truncates_prompt_by_display_width() {
     assert!(!rendered.contains('\r'));
     assert!(!rendered.contains('\n'));
     assert!(!rendered.contains("TAIL"));
-    assert!(rendered.starts_with("界 café next"), "{rendered}");
+    assert!(rendered.starts_with("› 界 café next"), "{rendered}");
     assert!(rendered.ends_with('…'), "{rendered}");
 }
 
@@ -130,7 +130,7 @@ fn attachment_only_prompt_uses_fallback_and_control_only_prompt_is_skipped() {
             .unwrap()
             .line
             .to_string(),
-        "[attachments]"
+        "› [attachments]"
     );
 }
 

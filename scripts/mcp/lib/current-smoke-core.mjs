@@ -41,6 +41,7 @@ export const FIXTURE_METHODS = [
 export const OAUTH_FIXTURE_METHODS = [
   "mcpServer/create",
   "mcpServer/oauth/login",
+  "mcpServer/oauth/logout",
   "mcpServerStatus/list",
   "mcpServer/delete",
 ];

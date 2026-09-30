@@ -1,42 +1,44 @@
-## Lime v1.146.0
+## Lime v1.147.0
 
 Simplified Chinese release notes are the primary version.
 
 ### New Features
 
-- Added main-transcript Find search, a sticky prompt header, dual reading modes, follow control, and unseen-activity feedback to the TUI.
-- Added mouse and keyboard transcript selection, continuous edge scrolling, link opening, clipboard feedback, and a shared copy experience across the main view and pager.
-- Completed raw scrollback, compact reasoning/activity presentation, paginated history loading, and cross-page view-state preservation.
-- Added a runtime keymap owner that keeps default shortcut semantics consistent across the transcript, pager, composer, and footer.
+- The TUI task center now supports project/status grouping, status filters, search, pagination, task creation, renaming, and switching.
+- Added dynamic shortcut help and selection tabs, with consistent hints across the task center, transcript, pager, and composer.
+- Added a borderless model picker with current-model indicators, page navigation, and narrow-terminal wrapping.
+- Unified search matching and selected-row scrolling across file, Skill, and command popups, with Unicode highlighting and long-path presentation.
+- Approval panels offer full details through Ctrl-A, preserve actionable choices in narrow terminals, and return to the pending approval when details are closed.
+- MCP OAuth login notifications can identify the thread and login attempt. Added App Server-backed `lime mcp logout` with idempotent per-server credential removal.
+- Expanded CLI sandbox, approval, and permission argument inheritance, plus local Plugin marketplace discovery and available-plugin listing.
 
 ### Fixes
 
-- Fixed narrow-terminal geometry and selection boundaries for CJK, emoji, long URLs, Markdown links, ANSI/OSC 8 hyperlinks, and diffs.
-- Fixed stale history cursors, retry surfaces, older-page insertion, completion separators, sticky-header anchoring, and main-view scroll restoration.
-- Fixed state leaks across streaming terminal states, reasoning activity, MCP/approval/user-input flows, composer mouse editing, and terminal restoration.
-- Fixed narrow-screen overflow in TUI footers, pickers, overlays, textareas, resume transcripts, and user-input prompts.
+- Fixed reading-position, selection, and state restoration across history pagination, terminal reflow, and thread switching.
+- Fixed multiline Markdown quote paste, paste bursts, composer layout, and narrow-terminal status rendering.
+- Fixed buffered characters reappearing in the draft after a command popup consumes Enter, while preserving newlines and tabs inside pasted text.
+- Prevented late clipboard results from updating a new draft or an old session, and clarified availability rules for remote terminals and X11 PRIMARY.
+- Removed token injection from npm Trusted Publishing while retaining the existing OIDC and provenance publishing contract.
 
 ### Improvements and Refactoring
 
-- Split TUI interaction, transcript view, history-cell, pager, keymap, selection, footer, and activity presentation into Codex-shaped current owners while preserving the App Server JSON-RPC and canonical Thread/Turn/Item projection chain.
-- Consolidated transcript search, copy, selection, reading position, raw/rich mode, and follow control as session-local presentation state without a second history store or runtime.
-- Clarified the Desktop versus CLI/TUI product boundary, platform payloads, installation, and shared App Server chain in the CLI/TUI documentation.
+- Moved clipboard reads and writes to session-level background workers with timeouts, cancellation, and late-result handling to keep slow desktop clipboard services from blocking terminal input.
+- Consolidated borderless session headers, `/status`, footers, task rows, and activity summaries while retaining canonical state and complete raw values.
+- Split task-center, status-formatting, clipboard, selection-style, and transcript-reading bookmark modules while preserving the single App Server chain.
 
 ### Testing and Quality
 
-- Expanded TUI library and all-targets regression coverage to `1052/1052`, with integration `18/18` and manager regression `1/1`.
-- Passed TUI `--all-targets --no-deps` Clippy `-D warnings`, workspace fmt, locked Cargo metadata, structure/snapshot/Gate guards `22/22`, script governance, and `git diff --check`.
-- Real TUI Gate B covers complete, approval, user-input, interrupt, failure, queue-edit, agents-overview, F3 Find, focus palette, resize/reflow, reconnect, and terminal restoration.
-- Retained real App Server JSON-RPC, RuntimeCore, PTY, alternate-screen, canonical read-model, and terminal-visible evidence; changes that did not touch Electron/App Server protocol do not claim GUI Gate B.
+- Expanded regression coverage for MCP OAuth protocol/schema/client contracts, CLI permissions and plugins, TUI interactions, and clipboard behavior.
+- Updated real CLI/TUI stdio/PTY Gate B fixtures, MCP fixtures, structure inventory, and npm OIDC publishing guards.
 
 ### Documentation
 
-- Synchronized the Chinese and English README documentation for Desktop and CLI/TUI entry points, installation, and platform support.
-- Updated the TUI/CLI Codex-alignment execution plan and structure inventory records.
+- Updated CLI permissions, plugin management, TUI keymap configuration, operations guidance, and App Server command contracts.
+- Updated the TUI/CLI Codex-alignment execution plan and structure records.
 
 ### Other
 
-- Kept the App Server configuration contract as the single source of truth for TUI keymap settings; no TUI-private config file, environment-variable configuration surface, or compat dual track was added.
-- CLI cross-platform artifacts continue to build and publish through the existing GitHub Actions release chain.
+- Desktop and CLI/TUI continue to share App Server JSON-RPC, RuntimeCore, and Thread/Turn/Item persistence without a parallel runtime or history store.
+- Local validation results are recorded in the release execution plan; GitHub Actions validates platform artifacts, signing, notarization, and npm distribution.
 
-**Full changes**: `v1.145.0` -> `v1.146.0`
+**Full changes**: `v1.146.0` -> `v1.147.0`

@@ -62,6 +62,16 @@ struct ListPluginsArgs {
     source: Option<String>,
     #[arg(long = "marketplace-path", value_name = "PATH")]
     marketplace_paths: Vec<String>,
+    /// Include available (not installed) plugins in the catalog output.
+    ///
+    /// The current App Server catalog already returns installed and available
+    /// entries together. Keeping this explicit matches the Codex CLI surface
+    /// without inventing a second catalog or a client-side cache.
+    #[arg(long, requires = "json")]
+    available: bool,
+    /// Discover a repo-local marketplace under each working directory.
+    #[arg(long = "plugin-cwd", value_name = "DIR")]
+    plugin_cwds: Vec<PathBuf>,
     #[arg(long)]
     json: bool,
     #[command(flatten)]
@@ -171,17 +181,25 @@ async fn run_plugin_add(args: AddPluginArgs) -> Result<String> {
 }
 
 async fn run_plugin_list(args: ListPluginsArgs) -> Result<String> {
+    let marketplace_paths = marketplace_paths_for_cwds(args.marketplace_paths, &args.plugin_cwds);
     let response = request(
         &args.connection,
         METHOD_PLUGIN_LIST,
         PluginCatalogListParams {
             query: args.query,
             source: args.source,
-            marketplace_paths: args.marketplace_paths,
+            marketplace_paths,
         },
     )
     .await?;
-    let response: PluginCatalogListResponse = serde_json::from_value(response)?;
+    let mut response: PluginCatalogListResponse = serde_json::from_value(response)?;
+    // Codex keeps the human table useful for discovery, while JSON defaults to
+    // installed entries and requires --available for install candidates. The
+    // App Server remains the catalog authority; this is only a presentation
+    // filter at the CLI boundary.
+    if args.json && !args.available {
+        response.plugins.retain(|plugin| plugin.installed);
+    }
     if args.json {
         return Ok(serde_json::to_string_pretty(&response)?);
     }
@@ -271,10 +289,24 @@ fn render_plugin_table(response: PluginCatalogListResponse) -> String {
     if response.plugins.is_empty() {
         return "No plugins found.".to_string();
     }
-    let name_width = response
+    let rows = response
         .plugins
+        .into_iter()
+        .map(|plugin| {
+            let plugin_id = format!("{}@{}", plugin.id, plugin.marketplace_id);
+            let status = if plugin.installed && plugin.enabled {
+                "installed, enabled"
+            } else if plugin.installed {
+                "installed, disabled"
+            } else {
+                "not installed"
+            };
+            (plugin_id, status, plugin.version, plugin.source_uri)
+        })
+        .collect::<Vec<_>>();
+    let name_width = rows
         .iter()
-        .map(|plugin| plugin.name.len())
+        .map(|(plugin_id, _, _, _)| plugin_id.len())
         .chain(["PLUGIN".len()])
         .max()
         .unwrap_or_default();
@@ -283,20 +315,32 @@ fn render_plugin_table(response: PluginCatalogListResponse) -> String {
         "{:<name_width$}  {:<status_width$}  VERSION  SOURCE",
         "PLUGIN", "STATUS"
     )];
-    lines.extend(response.plugins.into_iter().map(|plugin| {
-        let status = if plugin.installed && plugin.enabled {
-            "installed, enabled"
-        } else if plugin.installed {
-            "installed, disabled"
-        } else {
-            "not installed"
-        };
-        format!(
-            "{:<name_width$}  {:<status_width$}  {:<7}  {}",
-            plugin.name, status, plugin.version, plugin.source_uri
-        )
-    }));
+    lines.extend(
+        rows.into_iter()
+            .map(|(plugin_id, status, version, source_uri)| {
+                format!(
+                    "{:<name_width$}  {:<status_width$}  {:<7}  {}",
+                    plugin_id, status, version, source_uri
+                )
+            }),
+    );
     lines.join("\n")
+}
+
+fn marketplace_paths_for_cwds(
+    marketplace_paths: Vec<String>,
+    plugin_cwds: &[PathBuf],
+) -> Vec<String> {
+    let mut paths = marketplace_paths;
+    for cwd in plugin_cwds {
+        let path = cwd.join(".agents/plugins/marketplace.json");
+        if path.is_file() {
+            paths.push(path.to_string_lossy().into_owned());
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
 }
 
 #[cfg(test)]
@@ -316,13 +360,6 @@ mod tests {
     }
 
     #[test]
-    fn plugin_list_available_is_not_an_unbacked_flag() {
-        let error = crate::MultitoolCli::try_parse_from(["lime", "plugin", "list", "--available"])
-            .expect_err("available needs a distinct App Server contract");
-        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
-    }
-
-    #[test]
     fn plugin_search_uses_a_distinct_marketplace_cwd_flag() {
         let cli = crate::MultitoolCli::try_parse_from([
             "lime",
@@ -333,6 +370,28 @@ mod tests {
             "/tmp/workspace",
         ])
         .expect("parse plugin search");
+        assert!(matches!(cli.subcommand, Some(crate::Subcommand::Plugin(_))));
+    }
+
+    #[test]
+    fn plugin_list_available_requires_json_and_accepts_repo_cwd() {
+        let error = crate::MultitoolCli::try_parse_from(["lime", "plugin", "list", "--available"])
+            .expect_err("available output must be JSON");
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+
+        let cli = crate::MultitoolCli::try_parse_from([
+            "lime",
+            "plugin",
+            "list",
+            "--available",
+            "--json",
+            "--plugin-cwd",
+            "/tmp/workspace",
+        ])
+        .expect("parse plugin list catalog options");
         assert!(matches!(cli.subcommand, Some(crate::Subcommand::Plugin(_))));
     }
 }

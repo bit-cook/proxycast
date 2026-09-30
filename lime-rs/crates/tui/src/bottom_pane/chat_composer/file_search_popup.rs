@@ -1,13 +1,15 @@
+use super::super::picker_rows::render_rows_single_line;
+use super::super::scroll_state::ScrollState;
+use super::super::selection_row_layout::{SelectionRow, MAX_POPUP_ROWS};
+use crate::fuzzy_match::fuzzy_match;
+use crate::line_truncation::{line_width, truncate_line_with_ellipsis_if_overflow};
 use crate::locale::Locale;
+use crate::text_formatting::center_truncate_path;
 use app_server_protocol::protocol::v2::FuzzyFileSearchResult;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Clear, Paragraph};
+use ratatui::text::Line;
 use ratatui::Frame;
-
-const MAX_ROWS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FileSearchPopupAction {
@@ -20,8 +22,9 @@ pub(crate) enum FileSearchPopupAction {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct FileSearchPopup {
     query: String,
+    display_query: String,
     matches: Vec<FuzzyFileSearchResult>,
-    selected: usize,
+    state: ScrollState,
     waiting: bool,
 }
 
@@ -39,7 +42,6 @@ impl FileSearchPopup {
         if self.query != query {
             self.query = query;
             // Keep the previous rows visible until the replacement query resolves.
-            self.selected = self.selected.min(self.matches.len().saturating_sub(1));
             self.waiting = true;
         }
     }
@@ -47,8 +49,9 @@ impl FileSearchPopup {
     /// Show the idle state for a bare `@` token without starting a filesystem search.
     pub(crate) fn set_empty_prompt(&mut self) {
         self.query.clear();
+        self.display_query.clear();
         self.matches.clear();
-        self.selected = 0;
+        self.state.reset();
         self.waiting = false;
     }
 
@@ -60,14 +63,16 @@ impl FileSearchPopup {
         if self.query != query {
             return;
         }
-        self.matches = matches.into_iter().take(MAX_ROWS).collect();
-        self.selected = self.selected.min(self.matches.len().saturating_sub(1));
+        self.display_query = query.to_string();
+        self.matches = matches.into_iter().take(MAX_POPUP_ROWS).collect();
+        self.state.clamp_selection(self.matches.len());
         self.waiting = false;
     }
 
     pub(crate) fn selected_path(&self) -> Option<&str> {
-        self.matches
-            .get(self.selected)
+        self.state
+            .selected_idx
+            .and_then(|index| self.matches.get(index))
             .map(|item| item.path.as_str())
     }
 
@@ -82,20 +87,13 @@ impl FileSearchPopup {
             KeyCode::Up | KeyCode::Char('p')
                 if key.code == KeyCode::Up || key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                if !self.matches.is_empty() {
-                    self.selected = self
-                        .selected
-                        .checked_sub(1)
-                        .unwrap_or(self.matches.len() - 1);
-                }
+                self.state.move_up_wrap(self.matches.len());
                 FileSearchPopupAction::Consumed
             }
             KeyCode::Down | KeyCode::Char('n')
                 if key.code == KeyCode::Down || key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                if !self.matches.is_empty() {
-                    self.selected = (self.selected + 1) % self.matches.len();
-                }
+                self.state.move_down_wrap(self.matches.len());
                 FileSearchPopupAction::Consumed
             }
             KeyCode::Esc => FileSearchPopupAction::Cancel,
@@ -111,47 +109,71 @@ impl FileSearchPopup {
         if composer_area.y == 0 || composer_area.width == 0 {
             return;
         }
-        let rows = self.matches.len().clamp(1, MAX_ROWS);
-        let height = u16::try_from(rows).unwrap_or(u16::MAX).min(composer_area.y);
+        let height = u16::try_from(self.matches.len().clamp(1, MAX_POPUP_ROWS))
+            .unwrap_or(u16::MAX)
+            .saturating_add(2)
+            .min(composer_area.y);
         let area = Rect::new(
             composer_area.x,
             composer_area.y.saturating_sub(height),
             composer_area.width,
             height,
         );
-        let lines = if self.matches.is_empty() {
-            let message = if self.waiting {
-                format!("  {}", locale.file_search_loading())
-            } else {
-                format!("  {}", locale.file_search_no_matches())
-            };
-            vec![Line::styled(
-                message,
-                Style::default().add_modifier(Modifier::DIM),
-            )]
-        } else {
-            self.matches
-                .iter()
-                .enumerate()
-                .map(|(index, item)| {
-                    let selected = index == self.selected;
-                    let style = if selected {
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD)
+        let rows = self
+            .matches
+            .iter()
+            .enumerate()
+            .map(|(index, item)| {
+                let path = display_path(&item.path, area.width.saturating_sub(2));
+                let indices = if path == item.path {
+                    item.indices
+                        .as_ref()
+                        .map(|indices| indices.iter().map(|index| *index as usize).collect())
+                } else {
+                    fuzzy_match(&path, &self.display_query).map(|(indices, _)| indices)
+                };
+                let mut row = SelectionRow::new(
+                    path,
+                    None,
+                    vec![if Some(index) == self.state.selected_idx {
+                        "› "
                     } else {
-                        Style::default()
-                    };
-                    Line::from(vec![
-                        Span::styled(if selected { "› " } else { "  " }, style),
-                        Span::styled(item.path.clone(), style),
-                    ])
-                })
-                .collect()
+                        "  "
+                    }
+                    .into()],
+                );
+                row.match_indices = indices;
+                row
+            })
+            .collect::<Vec<_>>();
+        let empty = if self.waiting {
+            locale.file_search_loading()
+        } else {
+            locale.file_search_no_matches()
         };
-        frame.render_widget(Clear, area);
-        frame.render_widget(Paragraph::new(lines), area);
+        render_rows_single_line(frame, area, &rows, &self.state, &format!("  {empty}"));
     }
+}
+
+fn display_path(path: &str, width: u16) -> String {
+    let width = usize::from(width.max(1));
+    if line_width(&Line::from(path)) <= width {
+        return path.to_string();
+    }
+    let split = path.rfind(['/', '\\']);
+    let filename = split.map_or(path, |index| &path[index + 1..]);
+    let filename_width = line_width(&Line::from(filename));
+    if filename_width + 2 <= width {
+        let parent_width = width.saturating_sub(filename_width + 1);
+        let index = split.unwrap_or(0);
+        let separator = path.get(index..index + 1).unwrap_or("");
+        let parent = truncate_line_with_ellipsis_if_overflow(
+            Line::from(path[..index].to_string()),
+            parent_width,
+        );
+        return format!("{parent}{separator}{filename}");
+    }
+    center_truncate_path(filename, width)
 }
 
 #[cfg(test)]
@@ -235,6 +257,122 @@ mod tests {
             assert!(text
                 .iter()
                 .all(|line| line.chars().count() <= width as usize));
+        }
+    }
+
+    #[test]
+    fn long_paths_retain_distinguishing_filenames_and_original_insert_identity() {
+        for parent in [
+            "src/shared/long_directory_name",
+            "長いディレクトリ名/e\u{301}tudes",
+            "src\\very_long_directory",
+        ] {
+            let paths = [
+                format!("{parent}/parser_alpha.rs"),
+                format!("{parent}/parser_beta.rs"),
+            ];
+            let mut popup = FileSearchPopup::new("parser");
+            popup.set_matches(
+                "parser",
+                paths
+                    .iter()
+                    .map(|path| {
+                        let mut item = result(path);
+                        item.indices = fuzzy_match(path, "parser")
+                            .map(|(indices, _)| indices.into_iter().map(|i| i as u32).collect());
+                        item
+                    })
+                    .collect(),
+            );
+            for path in &paths {
+                for width in [28, 40, 80] {
+                    let mut terminal = Terminal::new(TestBackend::new(width, 8)).unwrap();
+                    terminal
+                        .draw(|frame| popup.render(frame, Rect::new(0, 6, width, 2), Locale::EnUs))
+                        .unwrap();
+                    let buffer = terminal.backend().buffer();
+                    let text = (0..8)
+                        .map(|y| {
+                            (0..width)
+                                .map(|x| buffer[(x, y)].symbol())
+                                .collect::<String>()
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    assert!(
+                        text.contains("parser_alpha.rs") && text.contains("parser_beta.rs"),
+                        "{width}: {text}"
+                    );
+                    assert_eq!(popup.selected_path(), Some(path.as_str()));
+                    let unselected_y = if popup.state.selected_idx == Some(0) {
+                        4
+                    } else {
+                        3
+                    };
+                    let parser_x = (0..width - 6)
+                        .find(|x| {
+                            (*x..*x + 6)
+                                .map(|col| buffer[(col, unselected_y)].symbol())
+                                .eq(["p", "a", "r", "s", "e", "r"])
+                        })
+                        .expect("visible unselected filename");
+                    assert!(buffer[(parser_x, unselected_y)]
+                        .modifier
+                        .contains(ratatui::style::Modifier::BOLD));
+                }
+                popup.handle_event(&Event::Key(KeyEvent::new(
+                    KeyCode::Down,
+                    KeyModifiers::NONE,
+                )));
+            }
+        }
+    }
+
+    #[test]
+    fn displayed_query_keeps_previous_highlights_until_latest_results_arrive() {
+        let mut popup = FileSearchPopup::new("parser");
+        popup.set_matches("parser", vec![result("long_directory/parser.rs")]);
+        popup.set_query("other");
+        popup.set_matches("parser", vec![result("stale.rs")]);
+        assert_eq!(popup.display_query, "parser");
+        assert_eq!(popup.query(), "other");
+        assert_eq!(popup.selected_path(), Some("long_directory/parser.rs"));
+        popup.set_matches("other", vec![result("other.rs")]);
+        assert_eq!(popup.display_query, "other");
+        popup.set_empty_prompt();
+        assert_eq!(popup.display_query, "");
+        assert_eq!(popup.state, ScrollState::default());
+    }
+
+    #[test]
+    fn clipped_file_list_keeps_selected_item_visible_and_bounds_unicode_paths() {
+        let mut popup = FileSearchPopup::new("file");
+        popup.set_matches(
+            "file",
+            (0..10)
+                .map(|i| result(&format!("長い目录/👩‍💻/file_{i:02}.rs")))
+                .collect(),
+        );
+        assert_eq!(popup.matches.len(), MAX_POPUP_ROWS);
+        popup.handle_event(&Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)));
+        let mut terminal = Terminal::new(TestBackend::new(28, 3)).unwrap();
+        terminal
+            .draw(|frame| popup.render(frame, Rect::new(0, 2, 28, 1), Locale::EnUs))
+            .unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains("file_07.rs"), "{text}");
+        for width in 1..40 {
+            let display = display_path("長い目录/👩‍💻/e\u{301}xtremely_long_file_name.rs", width);
+            assert!(
+                crate::width::display_width(&display) <= usize::from(width),
+                "{width}: {display}"
+            );
         }
     }
 }

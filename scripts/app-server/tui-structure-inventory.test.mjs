@@ -13,6 +13,18 @@ const inventory = JSON.parse(
 );
 
 describe("Codex TUI structure inventory", () => {
+  it("prevents retired footer state and oversized view aggregation from returning", () => {
+    const source = (file) => readFileSync(path.resolve(process.cwd(), "lime-rs/crates/tui/src", file), "utf8");
+    expect(source("bottom_pane/footer.rs")).not.toContain("draft_ready_hint");
+    expect(source("bottom_pane/chat_composer/footer_state.rs")).not.toContain("FooterFlash");
+    expect(source("locale.rs")).not.toContain("draft_ready_hint");
+    expect(source("view.rs")).toContain("mod tests;");
+    expect(source("view.rs").split("\n").length).toBeLessThan(800);
+    expect(source("keymap.rs")).toContain("mod hints;");
+    expect(source("keymap.rs").split("\n").length).toBeLessThan(800);
+    expect(source("model_picker.rs")).not.toContain("centered_popup");
+    expect(source("model_picker/render.rs")).not.toContain("Borders");
+  });
   it("records both TUI source trees", () => {
     expect(inventory.schemaVersion).toBe(1);
     expect(inventory.trees["codex-rs/tui/src"].fileCount).toBeGreaterThan(0);
@@ -58,6 +70,8 @@ describe("Codex TUI structure inventory", () => {
       "bottom_pane/chat_composer.rs",
       "bottom_pane/chat_composer/attachment_state.rs",
       "bottom_pane/chat_composer/draft_state.rs",
+      "bottom_pane/chat_composer/layout.rs",
+      "bottom_pane/chat_composer/paste_input.rs",
       "bottom_pane/chat_composer/history_search.rs",
       "bottom_pane/chat_composer/mouse.rs",
       "bottom_pane/chat_composer/reconnect.rs",
@@ -65,12 +79,22 @@ describe("Codex TUI structure inventory", () => {
       "bottom_pane/chat_composer/vim_history.rs",
       "bottom_pane/chat_composer/vim_history_tests.rs",
       "bottom_pane/approval_overlay.rs",
+      "bottom_pane/paste_burst.rs",
       "bottom_pane/request_user_input/mod.rs",
       "bottom_pane/request_user_input/render.rs",
       "clipboard_copy.rs",
       "clipboard_paste.rs",
       "command_popup.rs",
+      "keymap.rs",
+      "keymap/hints.rs",
+      "keymap/tests.rs",
+      "local_settings.rs",
+      "status/mod.rs",
+      "status/format.rs",
       "model_catalog.rs",
+      "model_picker/render.rs",
+      "model_picker/render_tests.rs",
+      "locale/pickers.rs",
       "collaboration_modes.rs",
       "app/app_server_events.rs",
       "app/app_server_requests.rs",
@@ -89,6 +113,25 @@ describe("Codex TUI structure inventory", () => {
       "app/history_pagination.rs",
       "app/history_ui.rs",
       "app/transcript_export.rs",
+      "app/agent_center/mod.rs",
+      "app/agent_center/input.rs",
+      "app/agent_center/navigation.rs",
+      "app/agent_center/render.rs",
+      "app/agent_center/rows.rs",
+      "app/agent_center/hints.rs",
+      "app/agent_center_tests.rs",
+      "app/agents_overview_grouping.rs",
+      "bottom_pane/selection_tabs.rs",
+      "bottom_pane/shortcut_overlay.rs",
+      "bottom_pane/shortcut_overlay_tests.rs",
+      "bottom_pane/chat_composer/footer_state_tests.rs",
+      "locale/shortcuts.rs",
+      "shortcut_help.rs",
+      "view/tests.rs",
+      "view/tests/navigation.rs",
+      "view/tests/composer.rs",
+      "view/tests/presentation.rs",
+      "view/tests/interaction.rs",
       "app_server_session/history.rs",
       "app_server_session/history_tests.rs",
       "pending_input_preview.rs",
@@ -142,6 +185,8 @@ describe("Codex TUI structure inventory", () => {
       "thread_transcript.rs",
       "transcript_reflow.rs",
       "transcript_view.rs",
+      "transcript_view/bookmark.rs",
+      "transcript_view/bookmark_tests.rs",
       "transcript_view/disclosure.rs",
       "transcript_view/input.rs",
       "transcript_view/input_tests.rs",
@@ -220,6 +265,14 @@ describe("Codex TUI structure inventory", () => {
       "selection_option_row_with_dim",
       "TranscriptReflowState",
       "TranscriptWidthChange",
+      "TranscriptAnchorRange",
+      "TranscriptBookmark",
+      "TranscriptFrame",
+      "ComposerLayout",
+      "PasteBurst",
+      "CharDecision",
+      "FlushResult",
+      "handle_paste_burst_flush",
       "TranscriptSelection",
       "TranscriptSelectionAction",
       "SessionTranscriptState",
@@ -283,6 +336,14 @@ describe("Codex TUI structure inventory", () => {
       "effective_stdout_color_level",
       "StreamingCodeHighlighter",
       "Renderable",
+      "CenterLayout",
+      "CenterRow",
+      "AgentsOverviewGrouping",
+      "render_center_rows",
+      "center_rows",
+      "page_selection",
+      "render_filled_tab_bar",
+      "group_lines",
       "RenderableItem",
       "ColumnRenderable",
       "FlexRenderable",
@@ -550,7 +611,9 @@ describe("Codex TUI structure inventory", () => {
     expect(app).not.toContain("fn handle_tui_event");
     expect(interaction).toContain("fn handle_tui_event");
     expect(inputFlow).toContain("fn handle_key_event");
-    expect(runtime).toContain("app.handle_tui_event(event, connected)");
+    expect(runtime).toContain(
+      "app.handle_tui_event_runtime(event, connected)",
+    );
     expect(runtime).not.toContain("handle_terminal_event");
     expect(runtime).not.toContain("handle_disconnected_event");
   });

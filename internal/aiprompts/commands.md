@@ -54,9 +54,34 @@ transport foundation，不会启用默认远端 App Server，也不替代 App Se
 
 CLI surface 使用 Codex 风格命名：`lime`（无子命令）和 `lime tui` 进入 TUI，`lime resume [thread-id]` 通过 `thread/resume` 恢复 canonical 历史；省略 id 时先用 `thread/list` 打开 TUI session picker，再复用同一 resume 流程。`lime exec` 执行一次非交互回合；`lime execpolicy check --rules <path> <command...>` 由 CLI 的 `ExecpolicyCommand` / `ExecPolicyCheckCommand` 读取 prefix-rule 文件并输出 Codex 形状的 `matchedRules` 与最严格 `decision`，不参与实际执行和权限 lowering；`lime mcp list` 和 `lime skills list` 分别读取 current MCP/Skill catalog。TUI 的 `/model` 使用 `model/list` 可见 catalog，选择后统一写入 `thread/settings/update`；模型目录的 authority 仍在 App Server。这些入口都复用 `app-server-client` session owner，不得引入旧的 TUI 命名或平行历史/runtime 后端。TUI 连接断开时只允许 bounded reconnect + 原 Thread `thread/resume`，保留 composer draft，清理失效审批请求；重连失败必须显式退出。旧 `task`、`media`、单数 `skill` 与旧 `doctor` 命令已判定为 `dead / deleted / forbidden-to-restore`；媒体和诊断能力必须由 App Server current owner 承接，不得回填 CLI 直连入口。视频生成的 Agent surface 只允许使用 current typed `video_generate` 工具，经 `tool-runtime` gateway 委托 App Server `mediaTaskArtifact/video/create`；旧 `lime_create_video_generation_task` 不提供 alias 或 compat。
 
+CLI/TUI/`exec`/`resume` 共用 Codex 形状的权限输入：`--sandbox {read-only|workspace-write|danger-full-access}`、`--ask-for-approval {on-request|never}`、`--approve-for-me`（隐藏 alias `--not-so-yolo`）和 `--dangerously-bypass-approvals-and-sandbox`（alias `--yolo`）。这些参数只 lowering 到已有 `thread/settings/update` 的 `approvalPolicy`、`approvalsReviewer` 和 `sandboxPolicy`；`--approve-for-me` 固定为 `on-request` + `auto_review` + `workspace-write`，危险绕过固定为 `never` + `danger-full-access`。root 级参数继承到 `tui`、`exec` 和 `resume`，子命令显式权限组覆盖 root；显式 sandbox 与 `--permissions` profile、approve-for-me 与其它权限组互斥，冲突在连接 App Server 前 fail closed。
+
+Plugin CLI 只消费本地 Plugin v3 current catalog：`plugin/list`、`plugin/read`、`plugin/search`、
+`plugin/install`、`plugin/uninstall`、`plugin/installed` 和 `plugin/enabled/set`。`plugin list --plugin-cwd
+<DIR>` 将指定目录下的 `.agents/plugins/marketplace.json` 作为显式 discovery root；`--available` 必须
+和 `--json` 同用；JSON 默认只投影已安装条目，带 `--available` 才显示 catalog 返回的可安装条目，避免把可安装条目误当成已安装状态。当前本地 catalog 没有远程 marketplace cache 或
+force-refetch 语义，Codex 的远程 marketplace/账号管理与 `marketplace add/remove/upgrade` 继续
+保持 `product-scope-excluded / forbidden-to-restore`，不得由 CLI 直接读写配置或凭证。
+
 `@limecloud/lime` 的 npm 根包只暴露 `bin/lime.js`。它按当前 host 解析 optional platform package，启动 `vendor/<target-triple>/bin/lime[.exe]`，继承 stdio，转发 `SIGINT`/`SIGTERM`/`SIGHUP` 并镜像原生进程的退出码或 signal。平台载荷必须把 `lime`、`app-server`、`code-mode-host`、Windows sandbox helpers 和动态运行库放在同一 `bin` 目录，使 Rust CLI 的 sibling lookup 继续命中唯一 App Server 产品链。禁止恢复 npm `postinstall` 网络下载、生产 `LIME_CLI_BINARY_PATH`、源码 target 搜索或 `cargo run` fallback；开发 staging 仅允许从根包本地 `vendor` 读取与平台包相同的目录合同。
 
 CLI/TUI 可使用 Codex 形状的 `--remote <URL>` 连接 WebSocket App Server；Bearer token 只从 `--remote-auth-token-env <ENV_VAR>` 指定的环境变量读取。未提供 remote endpoint、环境变量缺失或 token 为空时，连接在 initialize 前失败；token 不写入配置 Debug 或 URL，remote URL 中的 userinfo/fragment 也会被拒绝；不安全的公网 `ws://` token 连接由 `app-server-client` fail closed。
+
+TUI 偏好只允许位于同一 Lime 用户配置的 `tui.right_click_paste` 与 `tui.keymap`，由启动期
+`config/read -> LocalSettings -> RuntimeKeymap` 解析为进程内不可变 snapshot；主 TUI 与独立 resume
+picker 都必须在进入 alternate screen 前完成读取。当前真实 consumer 只包括
+`tui.right_click_paste=auto|on|off`（右键 CLIPBOARD；中键 PRIMARY 仍要求本地 X11）以及
+`global.open_agents|open_transcript|find_transcript`、pager 的
+`scroll_up|scroll_down|page_up|page_down|half_page_up|half_page_down|jump_top|jump_bottom|close|close_transcript|find`
+以及 `agents.resume|search|new_task|rename|stop|toggle_grouping`。每个 action 接受单个按键字符串、
+有序 alternatives 数组、最多两段且以空格分隔的 chord，或空数组显式 unbind。未知
+context/action、非法键名、超过两段的 chord、同 context 冲突、single/chord prefix 冲突和会截获普通
+文本的 printable chord prefix 均 fail closed。dispatch 与 footer hint 必须消费同一 snapshot；不得为
+composer/editor/Vim 等尚未接线的 context 提前暴露配置，也不得新增 TUI 私有配置文件或环境变量配置面。
+
+Agent Center 默认任务键位为 Codex current 的 `o/f/n/r/x/g`（resume/search/new/rename/stop/group），
+旧 Ctrl 组合不保留隐式兼容；`Ctrl+F/Ctrl+B` 归 list paging，metadata editing 不执行 printable
+task shortcuts。用户显式配置覆盖默认值；标签页/帮助不宣传已被 task binding 占用的入口。
 
 ## Codex 能力边界
 

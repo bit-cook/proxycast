@@ -2,7 +2,147 @@ use std::io::Cursor;
 use std::path::PathBuf;
 
 use image::{DynamicImage, ImageFormat, RgbaImage};
+use lime_core::config::RightClickPaste;
 use tempfile::{Builder, NamedTempFile};
+
+pub(crate) mod worker;
+
+/// Clipboard surface selected by a mouse gesture in the composer.
+///
+/// `Primary` is intentionally Linux/X11-only.  Other terminal transports fail closed rather
+/// than silently reading a different clipboard than the one the user selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClipboardTextSource {
+    Clipboard,
+    Primary,
+}
+
+/// Whether a mouse paste source can be read in the current terminal session.
+pub(crate) fn mouse_paste_source_allowed(source: ClipboardTextSource) -> bool {
+    match source {
+        ClipboardTextSource::Clipboard => !crate::clipboard_copy::is_ssh_session(),
+        ClipboardTextSource::Primary => {
+            #[cfg(target_os = "linux")]
+            {
+                std::env::var_os("DISPLAY").is_some()
+                    && std::env::var_os("WAYLAND_DISPLAY").is_none()
+                    && !crate::clipboard_copy::is_ssh_session()
+                    && !crate::clipboard_copy::is_tmux_session()
+                    && !crate::clipboard_copy::is_wsl_session()
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                false
+            }
+        }
+    }
+}
+
+/// Apply Codex's right-click paste policy and terminal safety guards.
+pub(crate) fn right_click_paste_allowed(
+    mode: RightClickPaste,
+    source: ClipboardTextSource,
+) -> bool {
+    if crate::clipboard_copy::is_ssh_session()
+        || detect_vscode_terminal() == VscodeDetection::VsCode
+    {
+        return false;
+    }
+    match source {
+        ClipboardTextSource::Primary => mouse_paste_source_allowed(source),
+        ClipboardTextSource::Clipboard => {
+            if cfg!(target_os = "android") {
+                return false;
+            }
+            match mode {
+                RightClickPaste::Off => false,
+                RightClickPaste::On => true,
+                RightClickPaste::Auto => {
+                    cfg!(any(target_os = "windows", target_os = "linux"))
+                        && !(crate::clipboard_copy::is_wsl_session()
+                            && detect_vscode_terminal() == VscodeDetection::Unknown)
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VscodeDetection {
+    VsCode,
+    Other,
+    Unknown,
+}
+
+fn detect_vscode_terminal() -> VscodeDetection {
+    if std::env::var_os("TERM_PROGRAM")
+        .is_some_and(|value| value.to_string_lossy().eq_ignore_ascii_case("vscode"))
+        || std::env::var_os("VSCODE_PID").is_some()
+        || std::env::var_os("VSCODE_INJECTION").is_some()
+    {
+        return VscodeDetection::VsCode;
+    }
+    if std::env::var_os("TERM_PROGRAM").is_some() {
+        VscodeDetection::Other
+    } else {
+        VscodeDetection::Unknown
+    }
+}
+
+/// Read text for a mouse paste action.
+///
+/// The TUI invokes this function only from the session clipboard worker. Keeping the native
+/// operation behind one owner means a slow platform clipboard cannot block the terminal event
+/// loop, and the worker can discard results that arrive after its deadline.
+pub(crate) fn read_clipboard_text(source: ClipboardTextSource) -> Result<String, String> {
+    if !mouse_paste_source_allowed(source) {
+        return Err(match source {
+            ClipboardTextSource::Clipboard => "clipboard text is unavailable over SSH".to_string(),
+            ClipboardTextSource::Primary => {
+                "X11 primary selection is unavailable in this terminal".to_string()
+            }
+        });
+    }
+
+    match source {
+        ClipboardTextSource::Clipboard => {
+            #[cfg(not(target_os = "android"))]
+            {
+                let mut clipboard = arboard::Clipboard::new()
+                    .map_err(|error| format!("clipboard unavailable: {error}"))?;
+                clipboard
+                    .get_text()
+                    .map_err(|error| format!("clipboard text unavailable: {error}"))
+            }
+            #[cfg(target_os = "android")]
+            {
+                Err("clipboard text paste is unsupported on Android".to_string())
+            }
+        }
+        ClipboardTextSource::Primary => {
+            #[cfg(target_os = "linux")]
+            {
+                use arboard::GetExtLinux;
+                let mut clipboard = arboard::Clipboard::new()
+                    .map_err(|error| format!("clipboard unavailable: {error}"))?;
+                clipboard
+                    .get()
+                    .clipboard(arboard::LinuxClipboardKind::Primary)
+                    .text()
+                    .map_err(|error| format!("X11 primary selection unavailable: {error}"))
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                Err("X11 primary selection is unavailable on this platform".to_string())
+            }
+        }
+    }
+}
+
+/// Keep mouse clipboard text on the same insertion path as bracketed paste.
+pub(crate) fn normalize_clipboard_text(text: String) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PasteImageError {
@@ -229,6 +369,20 @@ mod tests {
             Some(String::from("alpha beta gamma"))
         );
         assert_eq!(normalize_pasted_search_query(" \n\t "), None);
+    }
+
+    #[test]
+    fn clipboard_text_normalizes_terminal_newlines() {
+        assert_eq!(
+            normalize_clipboard_text("alpha\r\nbeta\rgamma".to_string()),
+            "alpha\nbeta\ngamma"
+        );
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn primary_mouse_paste_is_fail_closed_off_linux() {
+        assert!(!mouse_paste_source_allowed(ClipboardTextSource::Primary));
     }
 
     #[cfg(target_os = "linux")]

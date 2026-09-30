@@ -19,6 +19,14 @@ const terminalFixtureSource = readFileSync(
   path.resolve(process.cwd(), "scripts/app-server/terminal-gate-fixture.mjs"),
   "utf8",
 );
+const suggestionTestSource = readFileSync(
+  path.resolve(process.cwd(), "lime-rs/crates/tui/src/runtime_pty_tests/suggestions.rs"),
+  "utf8",
+);
+const approvalTestSource = readFileSync(
+  path.resolve(process.cwd(), "lime-rs/crates/tui/src/runtime_pty_tests/approval.rs"),
+  "utf8",
+);
 const focusTestSource = readFileSync(
   path.resolve(process.cwd(), "lime-rs/crates/tui/tests/suite/focus_palette.rs"),
   "utf8",
@@ -33,6 +41,22 @@ const reconnectTestSource = readFileSync(
 );
 
 describe("TUI Gate B", () => {
+  it("views approval details without resolving the protected request", () => {
+    expect(ptyTestSource).toContain("approval::exercise_read_only_details");
+    expect(approvalTestSource).toContain('"open approval details with Ctrl-A"');
+    expect(approvalTestSource).toContain('"close details without deciding approval"');
+    expect(approvalTestSource).toContain('"closing approval details must not resolve the canonical request"');
+  });
+  it("drives catalog-backed suggestions through real keyboard completion", () => {
+    expect(gateSource).toContain('"parser_alpha.rs", "parser_beta.rs"');
+    expect(gateSource).toContain('".agents", "skills", name');
+    expect(ptyTestSource).toContain("suggestions::exercise_suggestion_menus");
+    expect(suggestionTestSource).toContain('"original untruncated file path inserted"');
+    expect(suggestionTestSource).toContain('"› gate-skill-09"');
+    expect(suggestionTestSource).toContain('"canonical skill token inserted and popup closed"');
+    expect(suggestionTestSource).toContain('"suggestion navigation/completion must not start a canonical turn"');
+    expect(suggestionTestSource).not.toContain("thread::sleep");
+  });
   it("drives the real TUI through a portable PTY and current App Server", () => {
     expect(gateSource).toContain('LIME_TEST_TUI_GATE_B: "1"');
     expect(gateSource).toContain("buildTerminalGateBinaries");
@@ -80,6 +104,10 @@ describe("TUI Gate B", () => {
     );
     expect(reconnectTestSource).toContain('OsString::from("--remote")');
     expect(reconnectTestSource).toContain("thread/resume");
+    expect(reconnectTestSource).toContain('"config/read"');
+    expect(reconnectTestSource).toContain(
+      "TUI settings must be read exactly once into the startup snapshot",
+    );
     expect(reconnectTestSource).toContain("fresh-notification-after-reconnect");
     expect(reconnectTestSource).toContain("preserved-draft!");
     expect(reconnectTestSource).toContain('b"\\x1b[?1049l"');
@@ -88,9 +116,17 @@ describe("TUI Gate B", () => {
     expect(ptyTestSource).toContain('output.contains("\\u{1b}[?1049l")');
     expect(ptyTestSource).toContain("EDITOR_JOB_CONTROL_OK");
     expect(ptyTestSource).toContain("configure_external_editor");
+    expect(ptyTestSource).toContain('"open shortcut overlay"');
+    expect(ptyTestSource).toContain('"Keyboard shortcuts"');
+    expect(ptyTestSource).toContain('"? / esc close"');
+    expect(ptyTestSource).toContain('"close shortcut overlay without interrupt"');
+    expect(ptyTestSource).toContain('"close active help without cancelling turn"');
+    expect(ptyTestSource).toContain('"closing shortcut help must not interrupt canonical turn"');
+    expect(ptyTestSource).toContain('"Select model"');
+    expect(ptyTestSource).toContain('"cancel model picker without changing settings"');
     expect(ptyTestSource).not.toContain('write_all(b"\\x1b[1;1R")');
     expect(ptyTestSource).toContain("writer.write_all(&[20])");
-    expect(ptyTestSource).toContain('"Ctrl+T·Esc·Q close"');
+    expect(ptyTestSource).toContain('"ctrl+t·esc·q close"');
     expect(ptyTestSource).toContain(
       '"drag main transcript selection with SGR mouse input"',
     );
@@ -105,10 +141,16 @@ describe("TUI Gate B", () => {
       '"compact transcript sticky prompt header was not visible"',
     );
     expect(gateSource).toContain('"sticky-prompt=ok"');
-    expect(ptyTestSource).toContain('write_all(b"\\x1bOR")');
-    expect(ptyTestSource).toContain('"open main transcript Find with F3"');
+    expect(gateSource).toContain('"      find_transcript: ctrl-x f"');
+    expect(ptyTestSource).toContain('write_all(b"\\x18")');
     expect(ptyTestSource).toContain(
-      '"compact transcript F3 Find and match highlight were not visible"',
+      '"start configured main transcript Find chord with Ctrl-X"',
+    );
+    expect(ptyTestSource).toContain(
+      '"complete configured main transcript Find chord"',
+    );
+    expect(ptyTestSource).toContain(
+      '"configured compact transcript Find chord and match highlight were not visible"',
     );
     expect(gateSource).toContain('"main-find=ok"');
     expect(ptyTestSource).toContain(
@@ -163,15 +205,17 @@ describe("TUI Gate B", () => {
     expect(ptyTestSource).toContain('"esc to interrupt"');
     expect(ptyTestSource).toContain('write_all(b"\\x1b[1;3A")');
     expect(ptyTestSource).toContain('"editing queued"');
-    expect(ptyTestSource).toContain('write_all(b"/agents\\r")');
-    expect(ptyTestSource).toContain("writer.write_all(&[14])");
-    expect(ptyTestSource).toContain("writer.write_all(&[18])");
-    expect(ptyTestSource).toContain("writer.write_all(&[24])");
+    expect(ptyTestSource).toContain('write_typed_text(&mut writer, b"/agents\\r")');
+    expect(ptyTestSource).toContain('write_all(b"n")');
+    expect(ptyTestSource).toContain('write_all(b"r")');
+    expect(ptyTestSource).toContain('write_all(b"x")');
+    expect(ptyTestSource).toContain('write_all(b"\\t\\t")');
+    expect(ptyTestSource).toContain('"Rename ›"');
+    expect(ptyTestSource).toContain('"Search ›"');
     expect(ptyTestSource).toContain('"Agent command center"');
     expect(ptyTestSource).toContain("vt100::Parser::new(24, 100, 0)");
     expect(ptyTestSource).toContain('"background task started"');
-    expect(ptyTestSource).toContain('"1 working"');
-    expect(ptyTestSource).toContain('"Rename:"');
+    expect(ptyTestSource).toContain('"Working 1"');
     expect(ptyTestSource).toContain('"Gate B background"');
     expect(ptyTestSource).toContain('"AGENTS_OVERVIEW_READY"');
     expect(gateSource).toContain('event?.type === "queue.added"');

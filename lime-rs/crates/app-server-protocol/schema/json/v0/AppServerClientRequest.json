@@ -2927,6 +2927,25 @@
           "$ref": "#/$defs/RequestId"
         },
         "method": {
+          "const": "mcpServer/oauth/logout",
+          "type": "string"
+        },
+        "params": {
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "method"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
           "const": "mcpServer/start",
           "type": "string"
         },

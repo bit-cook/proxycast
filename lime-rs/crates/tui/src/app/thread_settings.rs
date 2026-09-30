@@ -65,7 +65,10 @@ impl App {
     ) {
         self.set_model_catalog(models);
         let models = self.model_catalog.try_list_models().unwrap_or_default();
-        self.model_picker = Some(ModelPicker::new(models));
+        self.model_picker = Some(
+            ModelPicker::new(models)
+                .with_current(self.model.as_deref(), self.model_provider.as_deref()),
+        );
     }
 
     pub(crate) fn set_collaboration_modes(

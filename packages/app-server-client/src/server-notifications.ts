@@ -519,10 +519,11 @@ export function mcpServerOauthLoginCompletedServerNotification(
   }
   const params = record(message.params);
   if (
-    !hasOnlyKeys(params, ["error", "name", "success", "threadId"]) ||
+    !hasOnlyKeys(params, ["error", "loginId", "name", "success", "threadId"]) ||
     !hasString(params, "name") ||
     typeof params?.success !== "boolean" ||
     !hasRequiredNullableString(params, "threadId") ||
+    !hasOptionalNullableStringValue(params, "loginId") ||
     !hasOptionalString(params, "error")
   ) {
     return undefined;

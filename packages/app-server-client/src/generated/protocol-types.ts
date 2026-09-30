@@ -185,6 +185,7 @@ export const METHOD_MCP_SERVER_EVENT_STREAM_STOP =
 export const METHOD_MCP_SERVER_IMPORT_FROM_APP = "mcpServer/importFromApp";
 export const METHOD_MCP_SERVER_LIST = "mcpServer/list";
 export const METHOD_MCP_SERVER_OAUTH_LOGIN = "mcpServer/oauth/login";
+export const METHOD_MCP_SERVER_OAUTH_LOGOUT = "mcpServer/oauth/logout";
 export const METHOD_MCP_SERVER_OAUTH_LOGIN_COMPLETED =
   "mcpServer/oauthLogin/completed";
 export const METHOD_MCP_SERVER_RESOURCE_READ = "mcpServer/resource/read";
@@ -1037,6 +1038,10 @@ export const GENERATED_APP_SERVER_METHODS = [
   {
     kind: "request",
     method: "mcpServer/oauth/login",
+  },
+  {
+    kind: "request",
+    method: "mcpServer/oauth/logout",
   },
   {
     kind: "notification",
@@ -2112,6 +2117,10 @@ export const GENERATED_APP_SERVER_REQUEST_SERIALIZATION_SCOPES = [
   },
   {
     method: "mcpServer/oauth/login",
+    scope: "mcpOauth",
+  },
+  {
+    method: "mcpServer/oauth/logout",
     scope: "mcpOauth",
   },
   {
@@ -3504,6 +3513,11 @@ export type AppServerClientRequest =
     }
   | {
       id: number | string;
+      method: "mcpServer/oauth/logout";
+      params?: unknown;
+    }
+  | {
+      id: number | string;
       method: "mcpServer/start";
       params?: unknown;
     }
@@ -3937,6 +3951,7 @@ export type AppServerRequestMethod =
   | "mcpServer/importFromApp"
   | "mcpServer/list"
   | "mcpServer/oauth/login"
+  | "mcpServer/oauth/logout"
   | "mcpServer/start"
   | "mcpServer/stop"
   | "mcpServer/syncAllToLive"
@@ -6669,6 +6684,7 @@ export interface McpServerListResponse {
 
 export interface McpServerOauthLoginCompletedNotification {
   error?: null | string;
+  loginId?: null | string;
   name: string;
   success: boolean;
   threadId: null | string;
@@ -6677,12 +6693,22 @@ export interface McpServerOauthLoginCompletedNotification {
 export interface McpServerOauthLoginParams {
   name: string;
   scopes?: string[] | null;
+  threadId?: null | string;
   timeoutSecs?: number | null;
 }
 
 export interface McpServerOauthLoginResponse {
   authorizationUrl: string;
+  loginId?: null | string;
   state: string;
+}
+
+export interface McpServerOauthLogoutParams {
+  name: string;
+}
+
+export interface McpServerOauthLogoutResponse {
+  removed: boolean;
 }
 
 export type McpServerResourceContent =

@@ -2103,6 +2103,7 @@ export type McpServerImportFromAppResponse = {
 
 export type McpServerOauthLoginParams = {
   name: string;
+  threadId?: string | null;
   scopes?: string[];
   timeoutSecs?: number;
 };
@@ -2110,6 +2111,15 @@ export type McpServerOauthLoginParams = {
 export type McpServerOauthLoginResponse = {
   authorizationUrl: string;
   state: string;
+  loginId?: string | null;
+};
+
+export type McpServerOauthLogoutParams = {
+  name: string;
+};
+
+export type McpServerOauthLogoutResponse = {
+  removed: boolean;
 };
 
 export type McpServerStartParams = {

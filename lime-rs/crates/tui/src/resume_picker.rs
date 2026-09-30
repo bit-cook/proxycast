@@ -18,9 +18,9 @@ use tokio::sync::mpsc;
 
 use crate::app::history_ui::render_transcript_entry_lines_wrapped;
 use crate::clipboard_paste::normalize_pasted_search_query;
+use crate::keymap::TranscriptKeymap;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::locale::Locale;
-use crate::keymap::TranscriptKeymap;
 use crate::pager_overlay::{PagerAction, PagerOverlay};
 #[cfg(test)]
 use crate::projection::EntryKind;
@@ -149,6 +149,7 @@ async fn load_thread_page_with_handle(
     request_handle: RequestHandle,
     status: SessionStatus,
     filter_cwd: Option<&std::path::Path>,
+    model_provider: Option<&str>,
     query: &str,
     sort_key: ThreadSortKey,
     cursor: Option<String>,
@@ -163,6 +164,7 @@ async fn load_thread_page_with_handle(
                 limit: Some(MAX_THREADS),
                 sort_key: Some(sort_key),
                 sort_direction: Some(SortDirection::Desc),
+                model_providers: model_provider.map(|provider| vec![provider.to_string()]),
                 archived: Some(status == SessionStatus::Archived),
                 cwd: filter_cwd
                     .map(|cwd| ThreadListCwdFilter::One(cwd.to_string_lossy().into_owned())),
@@ -312,6 +314,7 @@ pub(crate) struct PickerState {
     loading: bool,
     pub(crate) load_token: usize,
     transcript_keymap: TranscriptKeymap,
+    model_provider: Option<String>,
 }
 
 impl PickerState {
@@ -344,7 +347,18 @@ impl PickerState {
             loading: false,
             load_token: 0,
             transcript_keymap: TranscriptKeymap::default(),
+            model_provider: None,
         }
+    }
+
+    /// Restrict history only for an explicit CLI/provider choice.
+    ///
+    /// When this is `None`, the App Server remains the provider-default owner and the picker
+    /// intentionally sends no provider filter, matching Codex's server-default behavior.
+    pub(crate) fn set_model_provider_filter(&mut self, provider: Option<String>) {
+        self.model_provider = provider
+            .map(|provider| provider.trim().to_string())
+            .filter(|provider| !provider.is_empty());
     }
 
     pub(crate) fn set_transcript_keymap(&mut self, keymap: TranscriptKeymap) {
@@ -806,12 +820,14 @@ pub(crate) fn spawn_thread_load(
         .flatten();
     let query = picker.query.clone();
     let sort_key = picker.sort_key;
+    let model_provider = picker.model_provider.clone();
     let sender = sender.clone();
     tokio::spawn(async move {
         let result = load_thread_page_with_handle(
             request_handle,
             status,
             cwd.as_deref(),
+            model_provider.as_deref(),
             &query,
             sort_key,
             cursor,
@@ -927,6 +943,7 @@ async fn run_session_picker_with_action(
         Some(options.cwd.clone()),
         false,
     );
+    picker.set_model_provider_filter(options.model_provider.clone());
     picker.set_transcript_keymap(local_settings.keymap.transcript().clone());
     spawn_thread_load(request_handle.clone(), &load_tx, &mut picker);
     let locale = Locale::resolve(options.locale.as_deref());
@@ -940,6 +957,7 @@ async fn run_session_picker_with_action(
     let mut input = terminal.event_stream();
     let frame_requester = terminal.frame_requester();
     let mut _clipboard_lease = None;
+    let mut pending_copy: Option<(u64, bool, usize)> = None;
     let selected = loop {
         if let Some(thread_id) = picker.selected_thread_id().map(ToOwned::to_owned) {
             spawn_preview_load(request_handle.clone(), &load_tx, &mut picker, thread_id);
@@ -992,6 +1010,26 @@ async fn run_session_picker_with_action(
                     TuiEvent::FocusGained => Event::FocusGained,
                     TuiEvent::FocusLost => Event::FocusLost,
                     TuiEvent::Draw => {
+                        if let Some((id, result)) = terminal.clipboard_copy.poll() {
+                            if pending_copy.as_ref().is_some_and(|pending| pending.0 == id) {
+                                let (_, follow, characters) = pending_copy
+                                    .take()
+                                    .expect("pending picker copy exists after completion");
+                                let result = result
+                                    .clipboard
+                                    .map(|outcome| outcome.store(&mut _clipboard_lease));
+                                if let Some(pager) = picker.transcript_pager.as_mut() {
+                                    pager.overlay.apply_transcript_copy_result(
+                                        follow,
+                                        characters,
+                                        &result,
+                                    );
+                                }
+                                if let Err(error) = result {
+                                    tracing::warn!(%error, "failed to copy transcript selection");
+                                }
+                            }
+                        }
                         if picker.tick_transcript_selection()
                             || picker.transcript_search_needs_frame()
                         {
@@ -1007,7 +1045,12 @@ async fn run_session_picker_with_action(
                 };
                 if let Some(pager) = picker.transcript_pager.as_mut() {
                     match pager.overlay.handle_event(&event) {
-                        PagerAction::Close => picker.transcript_pager = None,
+                        PagerAction::Close => {
+                            // The worker still drains a late native response, but the closed
+                            // pager must not let that response paint a future overlay.
+                            pending_copy = None;
+                            picker.transcript_pager = None;
+                        }
                         PagerAction::Consumed | PagerAction::LoadOlderHistory => {}
                         PagerAction::ScheduleFrame => frame_requester
                             .schedule_frame_in(crate::tui::TARGET_FRAME_INTERVAL),
@@ -1015,15 +1058,29 @@ async fn run_session_picker_with_action(
                             .schedule_frame_in(crate::tui::TARGET_FRAME_INTERVAL),
                         PagerAction::CopyTranscriptSelection { text, follow } => {
                             let characters = text.chars().count();
-                            let result = crate::clipboard_copy::copy_to_clipboard(&text)
-                                .map(|outcome| outcome.store(&mut _clipboard_lease));
-                            pager.overlay.apply_transcript_copy_result(
-                                follow,
-                                characters,
-                                &result,
-                            );
-                            if let Err(error) = result {
-                                tracing::warn!(%error, "failed to copy transcript selection");
+                            match terminal
+                                .clipboard_copy
+                                .request_copy(text, frame_requester.clone())
+                            {
+                                Ok(Some(id)) => {
+                                    pending_copy = Some((id, follow, characters));
+                                }
+                                Ok(None) => {
+                                    let result = Err("copy already in progress".to_string());
+                                    pager.overlay.apply_transcript_copy_result(
+                                        follow,
+                                        characters,
+                                        &result,
+                                    );
+                                }
+                                Err(error) => {
+                                    let result = Err(error);
+                                    pager.overlay.apply_transcript_copy_result(
+                                        follow,
+                                        characters,
+                                        &result,
+                                    );
+                                }
                             }
                         }
                         PagerAction::OpenLink(destination) => {
@@ -1662,6 +1719,23 @@ mod tests {
             ))),
             PickerAction::Select
         );
+    }
+
+    #[test]
+    fn picker_provider_filter_is_explicit_and_fail_closed_for_blank_values() {
+        let mut picker = PickerState::new(
+            Vec::new(),
+            SessionPickerAction::Resume,
+            SessionStatus::Active,
+            None,
+            true,
+        );
+        picker.set_model_provider_filter(Some(" managed-provider ".to_string()));
+        assert_eq!(picker.model_provider.as_deref(), Some("managed-provider"));
+        picker.set_model_provider_filter(Some("   ".to_string()));
+        assert_eq!(picker.model_provider, None);
+        picker.set_model_provider_filter(None);
+        assert_eq!(picker.model_provider, None);
     }
 
     #[test]

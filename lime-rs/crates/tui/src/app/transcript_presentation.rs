@@ -5,21 +5,33 @@
 //! moving presentation state into the canonical Thread/Turn/Item projection.
 
 use super::App;
-use crate::locale::Locale;
 use crate::keymap::TranscriptKeymap;
+use crate::locale::Locale;
 use crate::pager_overlay::PagerOverlay;
+use crate::transcript_view::TranscriptBookmark;
+
+#[derive(Debug)]
+struct RetainedTranscript {
+    pager: PagerOverlay,
+    bookmark: TranscriptBookmark,
+}
 
 #[derive(Debug, Default)]
 pub(super) struct TranscriptPresentation {
-    detailed: Option<PagerOverlay>,
+    detailed: Option<RetainedTranscript>,
 }
 
 impl TranscriptPresentation {
     fn open(&mut self, locale: Locale, keymap: TranscriptKeymap) -> PagerOverlay {
-        self.detailed
-            .take()
-            .unwrap_or_else(|| PagerOverlay::transcript(locale))
-            .with_keymap(keymap)
+        let mut pager = match self.detailed.take() {
+            Some(retained) => {
+                retained.pager.restore_bookmark(retained.bookmark);
+                retained.pager
+            }
+            None => PagerOverlay::transcript(locale),
+        };
+        pager = pager.with_keymap(keymap);
+        pager
     }
 
     fn retain(&mut self, mut pager: PagerOverlay) {
@@ -27,7 +39,8 @@ impl TranscriptPresentation {
             return;
         }
         pager.suspend_transcript_interaction();
-        self.detailed = Some(pager);
+        let bookmark = pager.bookmark();
+        self.detailed = Some(RetainedTranscript { pager, bookmark });
     }
 
     fn clear(&mut self) {
@@ -56,6 +69,7 @@ impl App {
     }
 
     pub(super) fn dismiss_pager_overlay(&mut self) {
+        self.primary_clipboard_lease = None;
         let Some(pager) = self.pager_overlay.take() else {
             return;
         };
@@ -70,6 +84,7 @@ impl App {
         {
             self.pager_overlay = None;
         }
+        self.primary_clipboard_lease = None;
         self.transcript_presentation.clear();
     }
 }

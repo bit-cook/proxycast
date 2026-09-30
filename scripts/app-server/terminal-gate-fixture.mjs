@@ -241,6 +241,7 @@ appendFileSync(
     turnId: input.request.turn?.turnId ?? null,
     requestId: input.request.requestId ?? null,
     decision: input.request.decision ?? null,
+    runtimeOptions: input.request.runtimeOptions ?? null,
     scenario: ${JSON.stringify(scenario)},
     eventTypes: events.map((event) => event.type),
   }) + "\\n",

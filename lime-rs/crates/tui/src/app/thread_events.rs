@@ -83,6 +83,8 @@ impl ThreadEventStore {
         self.buffer.retain(|event| {
             matches!(event, ThreadBufferedEvent::Request(request)
                     if self.pending_interactive_replay.should_replay_snapshot_request(request))
+                || matches!(event, ThreadBufferedEvent::Notification(notification)
+                    if matches!(notification.as_ref(), ServerNotification::McpServerOauthLoginCompleted(_)))
         });
         self.buffered_agent_message_delta_bytes = 0;
     }
@@ -212,6 +214,11 @@ impl App {
                     .push_notification_ref(&notification);
             }
             return;
+        }
+        if let ServerNotification::McpServerOauthLoginCompleted(params) = &notification {
+            if !self.show_mcp_login_completion(params) {
+                return;
+            }
         }
         let previous_turn_id = self.projection.active_turn_id().map(str::to_owned);
         self.projection.apply(notification);

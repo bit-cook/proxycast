@@ -319,6 +319,19 @@ async fn start_login_completes_against_local_oauth_provider_and_persists_token()
         serde_json::to_value(&token_response).expect("token response should serialize");
     assert_eq!(token_response_json["access_token"], "access-token");
     assert_eq!(token_response_json["refresh_token"], "refresh-token");
+
+    assert!(registry
+        .logout("remote-docs", &config)
+        .await
+        .expect("logout should clear credentials"));
+    assert!(!store
+        .has_credentials()
+        .await
+        .expect("credential store should be empty after logout"));
+    assert!(!registry
+        .logout("remote-docs", &config)
+        .await
+        .expect("repeated logout should be idempotent"));
 }
 
 #[tokio::test]

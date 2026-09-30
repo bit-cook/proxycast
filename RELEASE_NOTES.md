@@ -1,40 +1,42 @@
-## Lime v1.146.0
+## Lime v1.147.0
 
 ### 新功能
 
-- TUI 新增主 transcript 的 Find 搜索、sticky prompt header、双阅读模式、跟随控制和未读活动提示。
-- 支持 transcript 的鼠标/键盘选择、连续边缘滚动、链接打开、剪贴板反馈，以及主视图和 pager 的统一复制体验。
-- 补齐 transcript raw scrollback、reasoning/activity compact presentation、分页历史加载和跨页视图状态保持。
-- 新增运行时 keymap owner，统一主 transcript、pager、composer 和 footer 的默认快捷键语义。
+- TUI 任务中心支持按项目或状态分组、状态筛选、搜索、分页加载，以及任务创建、重命名和切换。
+- 新增动态快捷键帮助与选择页签，统一任务中心、transcript、pager 和输入区的快捷键提示。
+- 模型选择器采用无边框布局，支持当前模型标记、翻页导航和窄屏换行。
+- 文件、Skill 和命令弹窗统一搜索匹配与选中项滚动，补齐 Unicode 高亮和长路径展示。
+- 审批面板支持通过 Ctrl-A 查看完整详情，在窄窗口保留可操作选项，关闭详情页后继续原审批。
+- MCP OAuth 登录支持 thread/login 关联通知；新增通过 App Server 执行的 `lime mcp logout`，按服务清理凭据并保持幂等。
+- CLI 补齐 sandbox、approval 和权限参数继承，并支持发现本地 Plugin marketplace 与查看可用插件。
 
 ### 修复
 
-- 修复窄终端下 CJK、emoji、长 URL、Markdown 链接、ANSI/OSC 8 hyperlink 和 diff 换行的几何与选择边界。
-- 修复历史分页 stale cursor、失败重试、older-page 插入、完成分隔线、sticky header 锚定和主视图滚动位置恢复。
-- 修复 streaming 终态、reasoning activity、MCP/approval/request_user_input、composer 鼠标编辑和终端恢复路径中的状态泄漏。
-- 修复 TUI footer、picker、overlay、textarea、resume transcript 和请求用户输入在窄屏下的布局溢出。
+- 修复历史分页、终端重排与 thread 切换时的阅读位置、选择和状态恢复。
+- 修复多行 Markdown 引用粘贴、粘贴突发、输入区布局和窄屏状态页的显示边界。
+- 修复命令弹窗提前消费 Enter 导致缓冲字符残留草稿的问题，同时保留粘贴中的换行和 Tab。
+- 修复剪贴板迟到结果写入新草稿或旧会话的问题，明确远程终端与 X11 PRIMARY 的可用条件。
+- 移除 npm Trusted Publishing 流水线中的 token 注入，使用现有 OIDC 与 provenance 发布合同。
 
 ### 优化与重构
 
-- 按 Codex current owner 拆分 TUI 的 interaction、transcript view、history cell、pager、keymap、selection、footer 和 activity presentation，继续复用 App Server JSON-RPC 与 canonical Thread/Turn/Item projection。
-- 将 transcript 搜索、复制、选择、阅读位置、raw/rich 模式和 follow control 收敛为 session-local presentation 状态，不引入第二套 history store 或 runtime。
-- CLI/TUI 文档明确 Desktop 与 CLI/TUI 的产品边界、平台包内容、安装方式和共享 App Server 主链。
+- 将剪贴板读写迁入会话级后台 worker，增加超时、取消和迟到结果处理，减少桌面剪贴板服务阻塞终端输入的风险。
+- 收敛无边框会话标题、`/status`、footer、任务行和活动摘要的展示，保留 canonical 状态与完整原始值。
+- 拆分任务中心、状态格式化、剪贴板、选择样式和 transcript 阅读书签模块，继续复用唯一 App Server 主链。
 
 ### 测试与质量
 
-- TUI library 定向与 all-targets 回归扩展至 `1052/1052`，integration `18/18`，manager regression `1/1`。
-- 通过 TUI `--all-targets --no-deps` Clippy `-D warnings`、workspace fmt、locked Cargo metadata、结构/snapshot/Gate 守卫 `22/22`、脚本治理和 `git diff --check`。
-- 真实 TUI Gate B 覆盖 complete、approval、user-input、interrupt、failure、queue-edit、agents-overview、F3 Find、focus palette、resize/reflow、reconnect 和 terminal restore。
-- 保留 App Server JSON-RPC、RuntimeCore、PTY、alternate screen、canonical read model 与终端可见状态的真实证据；未触及 Electron/App Server protocol 的部分不宣称 GUI Gate B。
+- 扩展 MCP OAuth protocol/schema/client、CLI 权限与插件、TUI 交互和剪贴板的回归覆盖。
+- 同步 CLI/TUI 真实 stdio/PTY Gate B、MCP fixture、结构 inventory 与 npm OIDC 发布守卫。
 
 ### 文档
 
-- 同步中英文 README 的 Desktop 与 CLI/TUI 入口、安装和平台说明。
-- 更新 TUI/CLI Codex 对齐执行计划与结构 inventory 记录。
+- 更新 CLI 权限、插件管理、TUI keymap 配置、操作说明和 App Server 命令合同。
+- 更新 TUI/CLI Codex 对齐执行计划与结构记录。
 
 ### 其他
 
-- App Server 配置合同继续承载 TUI keymap 的单一事实源；未新增 TUI 私有配置文件、环境变量配置面或 compat 双轨。
-- CLI 跨平台产物继续由现有 GitHub Actions 发布链构建和分发。
+- Desktop 与 CLI/TUI 继续共享 App Server JSON-RPC、RuntimeCore 和 Thread/Turn/Item 持久化；未新增平行 runtime 或历史存储。
+- 本机验证结果记录在发布执行计划；平台产物、签名、公证与 npm 分发由 GitHub Actions 验证。
 
-**完整变更**: `v1.145.0` -> `v1.146.0`
+**完整变更**: `v1.146.0` -> `v1.147.0`

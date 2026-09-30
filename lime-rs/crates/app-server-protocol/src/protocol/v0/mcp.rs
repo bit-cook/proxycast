@@ -72,6 +72,8 @@ pub struct McpServerStopParams {
 pub struct McpServerOauthLoginParams {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scopes: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_secs: Option<u64>,
@@ -82,6 +84,20 @@ pub struct McpServerOauthLoginParams {
 pub struct McpServerOauthLoginResponse {
     pub authorization_url: String,
     pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerOauthLogoutParams {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerOauthLogoutResponse {
+    pub removed: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

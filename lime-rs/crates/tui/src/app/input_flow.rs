@@ -10,6 +10,13 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 impl App {
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) -> AppAction {
+        if key_event.kind == KeyEventKind::Press
+            && key_event.code == KeyCode::Esc
+            && key_event.modifiers.is_empty()
+            && self.composer.dismiss_shortcut_overlay()
+        {
+            return AppAction::None;
+        }
         if self.resume_picker.is_none()
             && self.agents_overview.is_none()
             && key_event.kind == KeyEventKind::Press
@@ -137,11 +144,15 @@ impl App {
                 {
                     return AppAction::None;
                 }
-                let action = self.composer.handle_key_event(key_event);
+                let action = self
+                    .composer
+                    .handle_key_event_at(key_event, std::time::Instant::now());
                 self.map_composer_action(action)
             }
             _ => {
-                let action = self.composer.handle_key_event(key_event);
+                let action = self
+                    .composer
+                    .handle_key_event_at(key_event, std::time::Instant::now());
                 self.map_composer_action(action)
             }
         }

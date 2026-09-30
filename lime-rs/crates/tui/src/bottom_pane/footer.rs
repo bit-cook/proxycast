@@ -1,7 +1,7 @@
 //! Footer rendering owned by the bottom-pane interaction surface.
 //!
-//! The footer consumes canonical composer and projection state supplied by the app. It does not
-//! own session state or infer runtime status, keeping the same boundary as Codex's footer owner.
+//! Canonical composer and projection state are lowered once into pure presentation props.
+//! Instructional hints yield to passive agent context while idle, but never to protocol ids.
 
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
@@ -10,52 +10,50 @@ use ratatui::Frame;
 
 use crate::app::App;
 use crate::line_truncation::{line_width, truncate_line_with_ellipsis_if_overflow};
+use crate::locale::Locale;
 use crate::style::{accent_style, footer_hint_label_style};
 use crate::width::usable_content_width_u16;
 
 const FOOTER_INDENT_COLS: u16 = 1;
-const FOOTER_CONTEXT_GAP_COLS: u16 = 1;
 
 pub(crate) fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     if app.bottom_pane.is_active() {
-        let hints = app
+        if let Some(hints) = app
             .bottom_pane
-            .footer_hint_lines(app.locale, usize::from(area.width.saturating_sub(1)));
-        if let Some(hints) = hints {
+            .footer_hint_lines(app.locale, usize::from(area.width.saturating_sub(1)))
+        {
             let width =
                 usable_content_width_u16(area.width, FOOTER_INDENT_COLS).unwrap_or_default();
             let lines = hints
                 .into_iter()
                 .take(usize::from(area.height))
                 .map(|hint| {
-                    let line =
-                        Line::from(Span::styled(format!(" {hint}"), footer_hint_label_style()));
-                    truncate_line_with_ellipsis_if_overflow(line, width)
+                    truncate_line_with_ellipsis_if_overflow(
+                        Line::from(Span::styled(format!(" {hint}"), footer_hint_label_style())),
+                        width,
+                    )
                 })
                 .collect::<Vec<_>>();
-            // The interaction footer can grow from one row to several between frames. Clear the
-            // full allocation so a former input border cannot remain beneath wide glyph cells.
             frame.render_widget(Clear, area);
             frame.render_widget(Paragraph::new(lines), area);
             return;
         }
     }
-    let vim_indicator = app.composer.vim_mode_indicator_span();
-    if let Some(line) = app.composer.footer_flash() {
-        let mut spans = line.spans.clone();
-        append_vim_indicator(&mut spans, vim_indicator.clone());
-        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    if app.composer.shortcut_overlay_visible() {
+        super::shortcut_overlay::render_close_hint(frame, area, app);
         return;
     }
+    let vim_indicator = app.composer.vim_mode_indicator_span();
     if let Some(query) = app.composer.history_search_query() {
-        let width = usable_content_width_u16(area.width, 1).unwrap_or_default();
-        let mut spans = vec![Span::styled(
-            format!(" {}{}", app.locale.history_search_label(), query),
-            footer_hint_label_style(),
-        )];
-        append_vim_indicator(&mut spans, vim_indicator.clone());
-        let line = truncate_line_with_ellipsis_if_overflow(Line::from(spans), width);
-        frame.render_widget(Paragraph::new(line), area);
+        render_line(
+            frame,
+            area,
+            Line::from(Span::styled(
+                format!("{}{}", app.locale.history_search_label(), query),
+                footer_hint_label_style(),
+            )),
+            vim_indicator,
+        );
         if let Some((x, y)) = app
             .composer
             .history_search_cursor_position(area, app.locale.history_search_label())
@@ -69,242 +67,195 @@ pub(crate) fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
             crate::vim_search::SearchDirection::Forward => "/",
             crate::vim_search::SearchDirection::Backward => "?",
         };
-        let width = usable_content_width_u16(area.width, 1).unwrap_or_default();
-        let mut spans = vec![Span::styled(format!(" {prefix}{query}"), accent_style())];
-        append_vim_indicator(&mut spans, vim_indicator.clone());
-        let line = truncate_line_with_ellipsis_if_overflow(Line::from(spans), width);
-        frame.render_widget(Paragraph::new(line), area);
-        return;
-    }
-    if app.composer.footer_has_draft() {
-        let active_turn = app.projection.active_turn_id().is_some();
-        let hint_kind = if active_turn {
-            SummaryHintKind::QueueMessage
-        } else {
-            SummaryHintKind::DraftReady
-        };
-        let default_text = if active_turn {
-            app.locale.queue_message_hint()
-        } else {
-            app.locale.draft_ready_hint()
-        };
-        render_summary_footer(
+        render_line(
             frame,
             area,
-            hint_kind,
-            default_text,
-            active_agent_context(app),
+            Line::from(Span::styled(format!("{prefix}{query}"), accent_style())),
             vim_indicator,
-            app.locale.queue_short_hint(),
         );
         return;
     }
-    // Keep an actionable footer visible while idle. Codex reserves this row for the shortcut
-    // entry point instead of leaving a blank line; an active turn still gets its canonical id.
-    let active = app
-        .projection
-        .active_turn_id()
-        .map(|turn| format!(" {} {}", app.locale.turn_label(), turn))
-        .unwrap_or_else(|| format!(" {}", app.locale.shortcuts_hint()));
-    render_summary_footer(
+    let props = FooterProps {
+        locale: app.locale,
+        has_draft: app.composer.footer_has_draft() || app.composer.has_pending_images(),
+        is_task_running: app.projection.active_turn_id().is_some(),
+        plan_mode: should_show_plan_mode_hint(app),
+        active_agent_label: app
+            .agent_navigation
+            .active_agent_label(app.thread_id.as_deref(), app.primary_thread_id.as_deref()),
+        agents_hint: super::shortcut_overlay::agents_hint(app),
+        shortcuts_available: super::shortcut_overlay::toggle_available(app),
+    };
+    render_line(
         frame,
         area,
-        SummaryHintKind::None,
-        &active,
-        active_agent_context(app),
+        single_line_footer_layout(&props, area.width),
         vim_indicator,
-        app.locale.queue_short_hint(),
     );
 }
 
-fn active_agent_context(app: &App) -> Option<Line<'static>> {
-    app.agent_navigation
-        .active_agent_label(app.thread_id.as_deref(), app.primary_thread_id.as_deref())
-        .map(|label| Line::from(Span::styled(label, footer_hint_label_style())))
-}
-
-fn render_summary_footer(
+fn render_line(
     frame: &mut Frame<'_>,
     area: Rect,
-    hint_kind: SummaryHintKind,
-    default_text: &str,
-    context: Option<Line<'static>>,
+    mut line: Line<'static>,
     vim_indicator: Option<Span<'static>>,
-    queue_short_text: &str,
 ) {
-    let mut default_spans = vec![Span::styled(
-        format!(" {default_text}"),
-        footer_hint_label_style(),
-    )];
-    append_vim_indicator(&mut default_spans, vim_indicator.clone());
-    let default_line = Line::from(default_spans);
-
-    let queue_short_line = (hint_kind == SummaryHintKind::QueueMessage).then(|| {
-        let mut spans = vec![Span::styled(
-            format!(" {queue_short_text}"),
-            footer_hint_label_style(),
-        )];
-        append_vim_indicator(&mut spans, vim_indicator);
-        Line::from(spans)
-    });
-    let context_width = context.as_ref().map(line_width).unwrap_or(0) as u16;
-    let (summary, show_context) = single_line_footer_layout(
-        area,
-        hint_kind,
-        default_line.clone(),
-        queue_short_line,
-        context_width,
-    );
-
-    let left = match summary {
-        SummaryLeft::Default => default_line,
-        SummaryLeft::Custom(line) => line,
-        SummaryLeft::None => Line::from(Vec::<Span<'static>>::new()),
-    };
+    if let Some(indicator) = vim_indicator {
+        if line_width(&line) > 0 {
+            line.push_span("  ");
+        }
+        line.push_span(indicator);
+    }
+    line.spans
+        .insert(0, Span::raw(" ".repeat(usize::from(FOOTER_INDENT_COLS))));
     let width = usable_content_width_u16(area.width, FOOTER_INDENT_COLS).unwrap_or_default();
     frame.render_widget(
-        Paragraph::new(truncate_line_with_ellipsis_if_overflow(left, width)),
+        Paragraph::new(truncate_line_with_ellipsis_if_overflow(line, width)),
         area,
     );
-    if show_context {
-        if let Some(context) = context {
-            render_context_right(area, frame.buffer_mut(), &context);
+}
+
+struct FooterProps {
+    locale: Locale,
+    has_draft: bool,
+    is_task_running: bool,
+    plan_mode: bool,
+    active_agent_label: Option<String>,
+    agents_hint: Option<String>,
+    shortcuts_available: bool,
+}
+
+/// Follow Codex's actionable collapse order without inventing unavailable usage/status facts.
+fn single_line_footer_layout(props: &FooterProps, width: u16) -> Line<'static> {
+    let available = usize::from(width.saturating_sub(FOOTER_INDENT_COLS));
+    let fits = |line: &Line<'_>| line_width(line) <= available;
+    let queue = props.has_draft && props.is_task_running;
+    if !queue {
+        if let Some(label) = &props.active_agent_label {
+            let mut line = Line::from(Span::styled(label.clone(), footer_hint_label_style()));
+            if !props.has_draft {
+                if let Some(key) = &props.agents_hint {
+                    line.push_span(Span::styled(
+                        format!(" · {}", props.locale.agents_key_hint(key)),
+                        footer_hint_label_style(),
+                    ));
+                }
+            }
+            return line;
         }
     }
-}
-
-fn append_vim_indicator(spans: &mut Vec<Span<'static>>, indicator: Option<Span<'static>>) {
-    if let Some(indicator) = indicator {
-        spans.push(Span::raw("  "));
-        spans.push(indicator);
+    let hint = if queue {
+        props.locale.queue_message_hint().to_string()
+    } else if !props.has_draft {
+        match (&props.agents_hint, props.shortcuts_available) {
+            (Some(key), true) => format!(
+                "{} · {}",
+                props.locale.agents_key_hint(key),
+                props.locale.shortcuts_hint()
+            ),
+            (Some(key), false) => props.locale.agents_key_hint(key),
+            (None, true) => props.locale.shortcuts_hint().to_string(),
+            (None, false) => String::new(),
+        }
+    } else {
+        String::new()
+    };
+    let full = summary_line(
+        &hint,
+        props.plan_mode.then(|| {
+            if props.is_task_running {
+                props.locale.plan_mode_label()
+            } else {
+                props.locale.plan_mode_cycle_hint()
+            }
+        }),
+    );
+    if fits(&full) {
+        return full;
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SummaryHintKind {
-    None,
-    DraftReady,
-    QueueMessage,
-}
-
-#[derive(Debug)]
-pub(crate) enum SummaryLeft {
-    Default,
-    Custom(Line<'static>),
-    None,
-}
-
-/// Choose the most useful single-line footer variant for the available width.
-///
-/// Queue hints are deliberately kept ahead of ambient context: when the full queue hint cannot
-/// share a row with the agent label, the context is hidden first and the hint is shortened last.
-pub(crate) fn single_line_footer_layout(
-    area: Rect,
-    hint_kind: SummaryHintKind,
-    default_line: Line<'static>,
-    queue_short_line: Option<Line<'static>>,
-    context_width: u16,
-) -> (SummaryLeft, bool) {
-    let default_width = line_width(&default_line) as u16;
-    if default_width > 0 && can_show_left_with_context(area, default_width, context_width) {
-        return (SummaryLeft::Default, true);
-    }
-
-    if hint_kind == SummaryHintKind::QueueMessage {
-        if let Some(short) = queue_short_line.as_ref() {
-            let short_width = line_width(short) as u16;
-            if short_width > 0 && can_show_left_with_context(area, short_width, context_width) {
-                return (SummaryLeft::Custom(short.clone()), true);
+    if queue {
+        let short = summary_line(
+            props.locale.queue_short_hint(),
+            props.plan_mode.then(|| props.locale.plan_mode_label()),
+        );
+        if fits(&short) {
+            return short;
+        }
+    } else if props.plan_mode {
+        // Prefer mode cycling over the shortcuts entry; only then reduce to the mode label.
+        for text in [
+            props.locale.plan_mode_cycle_hint(),
+            props.locale.plan_mode_label(),
+        ] {
+            let line = summary_line("", Some(text));
+            if fits(&line) {
+                return line;
             }
         }
-        // Queueing is actionable, so hide passive context before shortening or dropping it.
-        if default_width > 0 && left_fits(area, default_width) {
-            return (SummaryLeft::Default, false);
-        }
-        if let Some(short) = queue_short_line {
-            if left_fits(area, line_width(&short) as u16) {
-                return (SummaryLeft::Custom(short), false);
+    } else if !props.has_draft {
+        if let Some(key) = &props.agents_hint {
+            let compact = summary_line(&props.locale.agents_key_hint(key), None);
+            if fits(&compact) {
+                return compact;
             }
         }
-    } else if default_width > 0 && left_fits(area, default_width) {
-        return (SummaryLeft::Default, false);
     }
-
-    // If no left content fits, retain a right context only when it can be rendered on its own.
-    (
-        SummaryLeft::None,
-        context_width > 0 && right_aligned_x(area, context_width).is_some(),
-    )
-}
-
-fn left_fits(area: Rect, left_width: u16) -> bool {
-    left_width <= area.width.saturating_sub(FOOTER_INDENT_COLS)
-}
-
-fn right_aligned_x(area: Rect, content_width: u16) -> Option<u16> {
-    if area.is_empty() || content_width == 0 {
-        return None;
-    }
-    let max_width = area.width.saturating_sub(FOOTER_INDENT_COLS);
-    if max_width == 0 || content_width > max_width {
-        return None;
-    }
-    Some(
-        area.x
-            .saturating_add(area.width)
-            .saturating_sub(content_width)
-            .saturating_sub(FOOTER_INDENT_COLS),
-    )
-}
-
-pub(crate) fn can_show_left_with_context(area: Rect, left_width: u16, context_width: u16) -> bool {
-    let available = area.width.saturating_sub(FOOTER_INDENT_COLS);
-    if context_width > available {
-        return false;
-    }
-    let Some(context_x) = right_aligned_x(area, context_width) else {
-        return true;
-    };
-    if left_width == 0 {
-        return true;
-    }
-    let left_extent = area
-        .x
-        .saturating_add(FOOTER_INDENT_COLS)
-        .saturating_add(left_width)
-        .saturating_add(FOOTER_CONTEXT_GAP_COLS);
-    left_extent <= context_x
-}
-
-pub(crate) fn render_context_right(
-    area: Rect,
-    buf: &mut ratatui::buffer::Buffer,
-    line: &Line<'static>,
-) {
-    let Some(mut x) = right_aligned_x(area, line_width(line) as u16) else {
-        return;
-    };
-    let y = area.y + area.height.saturating_sub(1);
-    let max_x = area.x.saturating_add(area.width);
-    for span in &line.spans {
-        if x >= max_x {
-            break;
+    if props.plan_mode {
+        let mode = summary_line("", Some(props.locale.plan_mode_label()));
+        if fits(&mode) {
+            return mode;
         }
-        let span_width = crate::width::display_width(span.content.as_ref()) as u16;
-        if span_width == 0 {
-            continue;
-        }
-        let draw_width = span_width.min(max_x.saturating_sub(x));
-        buf.set_span(x, y, span, draw_width);
-        x = x.saturating_add(span_width);
     }
+    Line::default()
+}
+
+fn summary_line(hint: &str, mode: Option<&'static str>) -> Line<'static> {
+    let mut line = Line::default();
+    if !hint.is_empty() {
+        line.push_span(Span::styled(hint.to_string(), footer_hint_label_style()));
+    }
+    if let Some(mode) = mode {
+        if !hint.is_empty() {
+            line.push_span(Span::styled(" · ", footer_hint_label_style()));
+        }
+        // Match Codex's mode emphasis rather than treating Plan as passive right-side context.
+        let (label, suffix) = mode
+            .split_once(" (")
+            .or_else(|| mode.split_once('（'))
+            .unwrap_or((mode, ""));
+        line.push_span(Span::styled(
+            label.to_string(),
+            ratatui::style::Style::default().magenta(),
+        ));
+        if !suffix.is_empty() {
+            let suffix = &mode[label.len()..];
+            line.push_span(Span::styled(suffix.to_string(), footer_hint_label_style()));
+        }
+    }
+    line
+}
+
+fn should_show_plan_mode_hint(app: &App) -> bool {
+    matches!(
+        app.collaboration_mode.as_ref().map(|mode| mode.mode),
+        Some(agent_protocol::ModeKind::Plan)
+    ) && app.bottom_pane.current().is_none()
+        && app.model_picker.is_none()
+        && app.agent_picker.is_none()
+        && app.agents_overview.is_none()
+        && app.resume_picker.is_none()
+        && app.export_picker.is_none()
+        && app.pager_overlay.is_none()
+        && !app.composer.history_search_active()
+        && !app.composer.vim_search_active()
+        && !app.composer.command_popup_active()
+        && !app.composer.file_search_popup_active()
+        && !app.composer.skill_popup_active()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        line_width, render_footer, single_line_footer_layout, SummaryHintKind, SummaryLeft,
-    };
+    use super::render_footer;
     use crate::app::App;
     use crate::locale::Locale;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -327,11 +278,11 @@ mod tests {
     }
 
     #[test]
-    fn renders_composer_draft_state() {
+    fn idle_draft_suppresses_instructional_footer() {
         let mut app = App::default();
         app.composer.insert("draft");
 
-        assert!(rendered_text(&app).contains("draft ready"));
+        assert!(rendered_text(&app).trim().is_empty());
     }
 
     #[test]
@@ -370,23 +321,22 @@ mod tests {
     }
 
     #[test]
-    fn idle_footer_drops_ambient_agent_context_as_one_unit_when_it_cannot_fit() {
+    fn passive_agent_label_replaces_shortcuts_in_empty_and_idle_draft_modes() {
         let mut app = App::default();
         app.set_thread_id("main".to_string());
         app.agent_navigation.upsert(
             "agent-1",
-            Some("Robie".to_string()),
-            Some("explorer".to_string()),
+            Some("Robie".into()),
+            Some("explorer".into()),
             false,
         );
         app.set_thread_id("agent-1".to_string());
-
-        let text = rendered_text_at_width(&app, 20);
-        assert!(text.contains("? for shortcuts"), "{text}");
-        assert!(
-            !text.contains("Robie") && !text.contains("explorer"),
-            "agent context must be hidden as one unit: {text}"
-        );
+        for draft in ["", "draft"] {
+            app.composer.replace(draft.to_string());
+            let text = rendered_text_at_width(&app, 40);
+            assert!(text.contains("Robie [explorer]"), "{text}");
+            assert!(!text.contains("? for shortcuts"), "{text}");
+        }
     }
 
     #[test]
@@ -410,40 +360,25 @@ mod tests {
 
     #[test]
     fn queue_hint_shortens_before_it_disappears() {
-        let default = ratatui::text::Line::from(" Tab to queue message");
-        let short = ratatui::text::Line::from(" Tab to queue");
-        let (left, show_context) = single_line_footer_layout(
-            ratatui::layout::Rect::new(0, 0, 14, 1),
-            SummaryHintKind::QueueMessage,
-            default,
-            Some(short),
-            14,
-        );
-        assert!(!show_context);
-        match left {
-            SummaryLeft::Custom(line) => assert_eq!(line_width(&line), 13),
-            other => panic!("expected shortened queue hint, got {other:?}"),
-        }
+        let mut app = App::default();
+        app.start_turn("internal-turn-id".into());
+        app.composer.insert("draft");
+        let short = rendered_text_at_width(&app, 14);
+        assert!(short.contains("Tab to queue"), "{short}");
+        assert!(rendered_text_at_width(&app, 5).trim().is_empty());
     }
 
     #[test]
-    fn cjk_and_emoji_context_widths_do_not_overlap_left_hint() {
-        let left = ratatui::text::Line::from(" Tab to queue");
-        let context = ratatui::text::Line::from("界🙂");
-        let (summary, show_context) = single_line_footer_layout(
-            ratatui::layout::Rect::new(0, 0, 20, 1),
-            SummaryHintKind::QueueMessage,
-            left.clone(),
-            None,
-            line_width(&context) as u16,
-        );
-        assert!(matches!(summary, SummaryLeft::Default));
-        assert!(show_context);
-        assert!(line_width(&left) + line_width(&context) + 3 <= 20);
+    fn running_empty_composer_shows_shortcuts_not_protocol_identity() {
+        let mut app = App::default();
+        app.start_turn("internal-turn-id".into());
+        let text = rendered_text(&app);
+        assert!(text.contains("? for shortcuts"), "{text}");
+        assert!(!text.contains("internal-turn-id"), "{text}");
     }
 
     #[test]
-    fn queue_and_draft_footer_hints_cover_all_product_locales() {
+    fn queue_hint_is_localized_and_attachments_count_as_draft() {
         for locale in [
             Locale::ZhCn,
             Locale::ZhTw,
@@ -451,9 +386,21 @@ mod tests {
             Locale::JaJp,
             Locale::KoKr,
         ] {
-            assert!(!locale.queue_message_hint().is_empty());
-            assert!(!locale.queue_short_hint().is_empty());
-            assert!(!locale.draft_ready_hint().is_empty());
+            let mut app = App::default();
+            app.set_locale(locale);
+            app.start_turn("internal-turn-id".into());
+            app.composer
+                .attach_image(std::path::PathBuf::from("/tmp/image.png"));
+            let text = rendered_text_at_width(&app, 100);
+            let compact = |text: &str| {
+                text.chars()
+                    .filter(|c| !c.is_whitespace())
+                    .collect::<String>()
+            };
+            assert!(
+                compact(&text).contains(&compact(locale.queue_message_hint())),
+                "{text}"
+            );
         }
     }
 
@@ -490,6 +437,64 @@ mod tests {
 
         let text = rendered_text(&app);
         assert!(text.contains("Robie [explorer]"), "{text}");
+    }
+
+    #[test]
+    fn plan_mode_footer_explains_shift_tab_when_idle_and_fits() {
+        let mut app = App::default();
+        app.collaboration_mode = Some(agent_protocol::CollaborationMode {
+            mode: agent_protocol::ModeKind::Plan,
+            settings: agent_protocol::CollaborationModeSettings {
+                model: "fixture-model".to_string(),
+                reasoning_effort: Some("high".to_string()),
+                developer_instructions: None,
+            },
+        });
+
+        let wide = rendered_text_at_width(&app, 100);
+        assert!(wide.contains("Plan mode (shift+tab to cycle)"), "{wide}");
+
+        let narrow = rendered_text_at_width(&app, 44);
+        assert!(
+            narrow.contains("Plan mode (shift+tab to cycle)"),
+            "{narrow}"
+        );
+        assert!(!narrow.contains("? for shortcuts"), "{narrow}");
+        let tiny = rendered_text_at_width(&app, 16);
+        assert!(tiny.contains("Plan mode"), "{tiny}");
+        assert!(!tiny.contains("shift+tab"), "{tiny}");
+
+        app.start_turn("turn-1".to_string());
+        let running = rendered_text_at_width(&app, 100);
+        assert!(running.contains("Plan mode"), "{running}");
+        assert!(!running.contains("shift+tab"), "{running}");
+        app.composer.insert("draft");
+        let queue = rendered_text_at_width(&app, 100);
+        assert!(
+            queue.contains("Tab to queue message · Plan mode"),
+            "{queue}"
+        );
+        let short = rendered_text_at_width(&app, 26);
+        assert!(short.contains("Tab to queue · Plan mode"), "{short}");
+        assert!(rendered_text_at_width(&app, 16).contains("Plan mode"));
+    }
+
+    #[test]
+    fn plan_mode_footer_hides_hint_while_composer_popup_is_active() {
+        let mut app = App::default();
+        app.collaboration_mode = Some(agent_protocol::CollaborationMode {
+            mode: agent_protocol::ModeKind::Plan,
+            settings: agent_protocol::CollaborationModeSettings {
+                model: "fixture-model".to_string(),
+                reasoning_effort: None,
+                developer_instructions: None,
+            },
+        });
+        app.composer.insert("/model");
+        app.composer.sync_command_popup();
+
+        let text = rendered_text_at_width(&app, 100);
+        assert!(!text.contains("Plan mode"), "{text}");
     }
 
     #[test]

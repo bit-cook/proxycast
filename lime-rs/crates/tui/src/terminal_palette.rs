@@ -75,6 +75,17 @@ pub(crate) fn best_color_for_level(target: (u8, u8, u8), level: StdoutColorLevel
     best_color_for_color_level(target, level)
 }
 
+/// Resolve only known RGB and fixed xterm colors; user-defined ANSI colors stay unknown.
+pub(crate) fn color_rgb(color: Color) -> Option<(u8, u8, u8)> {
+    match color {
+        Color::Rgb(r, g, b) => Some((r, g, b)),
+        Color::Indexed(index) if index >= 16 => {
+            xterm_fixed_colors().find_map(|(candidate, rgb)| (candidate == index).then_some(rgb))
+        }
+        _ => None,
+    }
+}
+
 #[allow(dead_code)]
 fn best_color_for_color_level(target: (u8, u8, u8), level: StdoutColorLevel) -> Color {
     match level {

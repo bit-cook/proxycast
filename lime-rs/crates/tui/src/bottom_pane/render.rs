@@ -1,24 +1,23 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 use std::time::Instant;
 
-use super::approval_overlay::ApprovalRequest;
 use super::mcp_server_elicitation;
 use super::request_user_input::render as request_user_input_render;
-use super::selection_row_layout::{visible_item_window, MAX_POPUP_ROWS};
 use super::{BottomPane, PendingInteraction};
 use crate::locale::Locale;
-use crate::style::{accent_style, attention_style, muted_style};
-use crate::wrapping::{word_wrap_line, RtOptions};
+use crate::style::attention_style;
 
 pub(crate) fn desired_height_with_locale_for_width(
     pane: &BottomPane,
     locale: Locale,
     width: u16,
 ) -> u16 {
+    if matches!(pane.current(), Some(PendingInteraction::Approval(_))) {
+        return super::approval_render::desired_height(pane, locale, width);
+    }
     // The interaction surface only has top/bottom borders, so its text width is the full
     // terminal width. Measuring with a narrower width would under-allocate the pane and clip
     // wrapped CJK/emoji content on narrow terminals.
@@ -37,6 +36,10 @@ pub(crate) fn render_with_locale(
     pane: &BottomPane,
     locale: Locale,
 ) {
+    if matches!(pane.current(), Some(PendingInteraction::Approval(_))) {
+        super::approval_render::render(frame, area, pane, locale);
+        return;
+    }
     let block = Block::default()
         .borders(Borders::TOP | Borders::BOTTOM)
         .border_style(attention_style());
@@ -67,93 +70,13 @@ fn lines_with_locale(
     now: Instant,
 ) -> Vec<Line<'static>> {
     let mut lines = match pane.current() {
-        Some(PendingInteraction::Approval(approval)) => {
-            let (kind, details) = match &approval.request {
-                ApprovalRequest::Exec { params, .. } => (
-                    "command",
-                    vec![
-                        params.command.clone().unwrap_or_default(),
-                        params.cwd.clone().unwrap_or_default(),
-                        params.reason.clone().unwrap_or_default(),
-                    ],
-                ),
-                ApprovalRequest::ApplyPatch { params, .. } => (
-                    "file",
-                    vec![
-                        params.grant_root.clone().unwrap_or_default(),
-                        params.reason.clone().unwrap_or_default(),
-                    ],
-                ),
-                ApprovalRequest::Permissions { params, .. } => (
-                    "permissions",
-                    vec![
-                        params.cwd.clone(),
-                        params.reason.clone().unwrap_or_default(),
-                        serde_json::to_string(&params.permissions).unwrap_or_default(),
-                    ],
-                ),
-            };
-            let mut lines = vec![Line::styled(
-                locale.approval_title(kind),
-                Style::default().add_modifier(Modifier::BOLD),
-            )];
-            lines.extend(
-                details
-                    .into_iter()
-                    .filter(|detail| !detail.is_empty())
-                    .map(|detail| Line::styled(detail, muted_style())),
-            );
-            let labels = approval.option_labels();
-            let (start, end) = visible_item_window(approval.selected, labels.len(), MAX_POPUP_ROWS);
-            lines.extend(
-                labels
-                    .into_iter()
-                    .enumerate()
-                    .skip(start)
-                    .take(end.saturating_sub(start))
-                    .map(|(index, label)| {
-                        option_line(
-                            index == approval.selected,
-                            format!("{}. {}", index + 1, locale.approval_option(&label)),
-                        )
-                    }),
-            );
-            if width == usize::MAX {
-                lines
-            } else {
-                lines
-                    .into_iter()
-                    .flat_map(|line| {
-                        word_wrap_line(&line, RtOptions::new(width.max(1)))
-                            .into_iter()
-                            .map(|wrapped| {
-                                let style = wrapped.style;
-                                Line::from(
-                                    wrapped
-                                        .spans
-                                        .into_iter()
-                                        .map(|span| {
-                                            ratatui::text::Span::styled(
-                                                span.content.into_owned(),
-                                                span.style,
-                                            )
-                                        })
-                                        .collect::<Vec<_>>(),
-                                )
-                                .style(style)
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .collect()
-            }
-        }
         Some(PendingInteraction::UserInput(request)) => {
             request_user_input_render::lines_with_locale_with_width_at(request, locale, width, now)
         }
         Some(PendingInteraction::McpElicitation(request)) => {
             mcp_server_elicitation::lines_with_locale_with_width(request, locale, width)
         }
-        None => Vec::new(),
+        Some(PendingInteraction::Approval(_)) | None => Vec::new(),
     };
     if let Some(title) = pane.action_required_title(locale) {
         lines.insert(0, Line::styled(title, crate::style::attention_style()));
@@ -161,19 +84,10 @@ fn lines_with_locale(
     lines
 }
 
-fn option_line(selected: bool, label: String) -> Line<'static> {
-    let prefix = if selected { "› " } else { "  " };
-    let style = if selected {
-        accent_style()
-    } else {
-        Style::default()
-    };
-    Line::styled(format!("{prefix}{label}"), style)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bottom_pane::selection_row_layout::MAX_POPUP_ROWS;
     use app_server_protocol::protocol::v2::{
         ServerRequest, ToolRequestUserInputOption, ToolRequestUserInputParams,
         ToolRequestUserInputQuestion,

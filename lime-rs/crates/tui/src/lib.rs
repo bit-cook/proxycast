@@ -13,6 +13,7 @@ mod entry;
 #[allow(dead_code, unused_imports)]
 mod exec_cell;
 mod external_editor;
+mod fuzzy_match;
 #[allow(dead_code, unused_imports)]
 mod highlight;
 #[allow(dead_code, unused_imports)]
@@ -22,9 +23,9 @@ mod history_filter;
 mod insert_history;
 mod key_hint;
 mod keymap;
-mod local_settings;
 mod line_truncation;
 mod live_wrap;
+mod local_settings;
 mod locale;
 mod markdown;
 mod markdown_render;
@@ -44,7 +45,9 @@ mod selection_list;
 mod session_resume;
 mod settings;
 mod slash_command;
+mod status;
 // Kept as a compatibility delegate while callers converge on the widget owner.
+mod shortcut_help;
 #[allow(dead_code)]
 mod status_indicator;
 mod status_indicator_widget;

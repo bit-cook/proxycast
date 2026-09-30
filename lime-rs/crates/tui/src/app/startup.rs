@@ -5,7 +5,7 @@
 
 use super::startup_prompts;
 use super::App;
-use crate::app_server_session::AppServerSession;
+use crate::app_server_session::{AppServerSession, ThreadSettingsPatch};
 use crate::resume_picker::SessionSelection;
 use crate::runtime::TuiOptions;
 use anyhow::Result;
@@ -17,6 +17,9 @@ pub(crate) struct StartupSessionState {
     pub(crate) model_provider: Option<String>,
     pub(crate) effort: Option<String>,
     pub(crate) permissions: Option<String>,
+    pub(crate) approval_policy: Option<String>,
+    pub(crate) approvals_reviewer: Option<String>,
+    pub(crate) sandbox_policy: Option<String>,
 }
 
 /// Project a server-backed skills response into the composer and startup warning state.
@@ -130,11 +133,18 @@ pub(crate) async fn initialize_session(
     let collaboration_modes = session.list_collaboration_modes().await.unwrap_or_default();
     app.set_collaboration_modes(collaboration_modes);
     session
-        .update_settings(
-            model.clone(),
-            model_provider.clone(),
-            effort.clone(),
-            permissions.clone(),
+        .update_settings_with_policy(
+            ThreadSettingsPatch::new(
+                model.clone(),
+                model_provider.clone(),
+                effort.clone(),
+                permissions.clone(),
+            )
+            .with_policy(
+                options.approval_policy.clone(),
+                options.approvals_reviewer.clone(),
+                options.sandbox_policy.clone(),
+            ),
         )
         .await?;
     app.set_settings(
@@ -158,6 +168,9 @@ pub(crate) async fn initialize_session(
         model_provider,
         effort,
         permissions,
+        approval_policy: options.approval_policy.clone(),
+        approvals_reviewer: options.approvals_reviewer.clone(),
+        sandbox_policy: options.sandbox_policy.clone(),
     })
 }
 

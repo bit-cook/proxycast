@@ -339,6 +339,14 @@ export async function runMcpOAuthFixtureSmoke({
       "fixture OAuth token endpoint was not reached",
     );
 
+    const logout = await invokeAppServerMethod(
+      options,
+      "mcpServer/oauth/logout",
+      { name: serverName },
+      entries,
+    );
+    assert(logout?.removed === true, "mcpServer/oauth/logout did not remove credentials");
+
     return {
       serverId,
       serverName,
@@ -348,6 +356,7 @@ export async function runMcpOAuthFixtureSmoke({
       registrationRequestCount: provider.state.registrationRequests.length,
       tokenRequestCount: provider.state.tokenRequests.length,
       authStatus: authorized.authStatus,
+      logoutRemoved: logout.removed,
     };
   } finally {
     await deleteFixtureServer({

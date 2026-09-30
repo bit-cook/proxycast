@@ -2,7 +2,7 @@
 
 use super::App;
 use crate::app_server_session::AppServerSession;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use app_server_protocol::protocol::v2::{
     ServerNotification, SortDirection, ThreadListParams, ThreadSortKey, ThreadStatus,
 };
@@ -76,7 +76,7 @@ impl App {
         }
         if let Some(thread_id) = thread_id {
             overview.refresh_thread_ids.insert(thread_id.to_string());
-            if overview.refreshing {
+            if overview.refreshing || overview.loading_more {
                 let pending = overview
                     .refresh_notifications
                     .entry(thread_id.to_string())
@@ -128,44 +128,37 @@ impl App {
         overview
             .refresh_thread_ids
             .extend(overview.threads.iter().map(|thread| thread.id.clone()));
-        if overview.refreshing {
+        if overview.refreshing || overview.loading_more {
             overview.refresh_pending = true;
             return Ok(());
         }
         let generation = overview.begin_refresh();
+        overview.sync_view_state();
         let result = async {
-            let mut cursor = None;
-            let mut seen = std::collections::HashSet::new();
-            let mut threads = Vec::new();
-            for _ in 0..16 {
-                let page = app_server
-                    .thread_list(ThreadListParams {
-                        cursor,
-                        limit: Some(100),
-                        sort_key: Some(ThreadSortKey::RecencyAt),
-                        sort_direction: Some(SortDirection::Desc),
-                        archived: Some(false),
-                        ..ThreadListParams::default()
-                    })
-                    .await
-                    .context("failed to refresh agents overview threads")?;
-                threads.extend(page.data);
-                let Some(next_cursor) = page.next_cursor else {
-                    break;
-                };
-                if !seen.insert(next_cursor.clone()) {
-                    bail!("agents overview thread list repeated cursor {next_cursor}");
-                }
-                cursor = Some(next_cursor);
-            }
-            Ok::<_, anyhow::Error>(threads)
+            let page = app_server
+                .thread_list(ThreadListParams {
+                    cursor: None,
+                    limit: Some(100),
+                    sort_key: Some(ThreadSortKey::RecencyAt),
+                    sort_direction: Some(SortDirection::Desc),
+                    archived: Some(false),
+                    ..ThreadListParams::default()
+                })
+                .await
+                .context("failed to refresh agents overview threads")?;
+            Ok::<_, anyhow::Error>((page.data, page.next_cursor))
         }
         .await;
         match result {
-            Ok(threads) => {
+            Ok((threads, next_cursor)) => {
                 let primary = self.primary_thread_id.clone();
                 if let Some(overview) = self.agents_overview.as_mut() {
-                    overview.apply_refresh(generation, threads, primary.as_deref());
+                    overview.apply_refresh_page(
+                        generation,
+                        threads,
+                        next_cursor,
+                        primary.as_deref(),
+                    );
                 }
                 let buffered = self
                     .agents_overview
@@ -195,9 +188,92 @@ impl App {
                 if let Some(overview) = self.agents_overview.as_mut() {
                     overview.refreshing = false;
                     overview.request_id = None;
+                    overview.sync_view_state();
                 }
                 self.projection
                     .set_status(format!("agents overview unavailable: {error}"));
+                Err(error)
+            }
+        }
+    }
+
+    pub(crate) async fn load_more_agents_overview_threads(
+        &mut self,
+        app_server: &AppServerSession,
+    ) -> Result<()> {
+        let Some(overview) = self.agents_overview.as_mut() else {
+            return Ok(());
+        };
+        let Some(cursor) = overview.begin_load_more() else {
+            return Ok(());
+        };
+        let result = app_server
+            .thread_list(ThreadListParams {
+                cursor: Some(cursor.clone()),
+                limit: Some(100),
+                sort_key: Some(ThreadSortKey::RecencyAt),
+                sort_direction: Some(SortDirection::Desc),
+                archived: Some(false),
+                ..ThreadListParams::default()
+            })
+            .await
+            .context("failed to load more agents overview threads");
+        match result {
+            Ok(page) => {
+                let repeated_cursor = self.agents_overview.as_ref().is_some_and(|overview| {
+                    overview.next_cursor_is_repeated(page.next_cursor.as_deref())
+                });
+                if repeated_cursor {
+                    let error =
+                        anyhow::anyhow!("agents overview thread list repeated cursor {cursor}");
+                    if let Some(overview) = self.agents_overview.as_mut() {
+                        overview.fail_load_more();
+                    }
+                    self.projection
+                        .set_status(format!("agents overview unavailable: {error}"));
+                    return Err(error);
+                }
+                let primary = self.primary_thread_id.clone();
+                if let Some(overview) = self.agents_overview.as_mut() {
+                    overview.apply_load_more(page.data, page.next_cursor, primary.as_deref());
+                }
+                let buffered = self
+                    .agents_overview
+                    .as_mut()
+                    .map(|overview| {
+                        overview
+                            .refresh_notifications
+                            .drain()
+                            .flat_map(|(_, notifications)| notifications)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                for notification in buffered {
+                    self.track_agents_overview_notification(&notification);
+                }
+                let refresh_pending = self
+                    .agents_overview
+                    .as_mut()
+                    .is_some_and(|overview| overview.take_refresh_pending());
+                self.projection.set_status("agents overview loaded more");
+                if refresh_pending {
+                    Box::pin(self.refresh_agents_overview_threads(app_server)).await?;
+                }
+                Ok(())
+            }
+            Err(error) => {
+                if let Some(overview) = self.agents_overview.as_mut() {
+                    overview.fail_load_more();
+                }
+                let refresh_pending = self
+                    .agents_overview
+                    .as_mut()
+                    .is_some_and(|overview| overview.take_refresh_pending());
+                self.projection
+                    .set_status(format!("agents overview unavailable: {error}"));
+                if refresh_pending {
+                    Box::pin(self.refresh_agents_overview_threads(app_server)).await?;
+                }
                 Err(error)
             }
         }

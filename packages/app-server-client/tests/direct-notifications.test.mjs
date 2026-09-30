@@ -243,6 +243,7 @@ test("recognizes strict mcpServer/oauthLogin/completed notifications", () => {
     params: {
       name: "remote-docs",
       threadId: null,
+      loginId: "login-1",
       success: true,
     },
   };
@@ -251,6 +252,7 @@ test("recognizes strict mcpServer/oauthLogin/completed notifications", () => {
     params: {
       name: "remote-docs",
       threadId: "thread-1",
+      loginId: null,
       success: false,
       error: "scope rejected",
     },
@@ -278,6 +280,15 @@ test("recognizes strict mcpServer/oauthLogin/completed notifications", () => {
     {
       method: "mcpServer/oauthLogin/completed",
       params: { name: "remote-docs", threadId: 7, success: true },
+    },
+    {
+      method: "mcpServer/oauthLogin/completed",
+      params: {
+        name: "remote-docs",
+        threadId: null,
+        loginId: 7,
+        success: true,
+      },
     },
     {
       method: "mcpServer/oauthLogin/completed",

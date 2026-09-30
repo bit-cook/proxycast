@@ -2,6 +2,7 @@ use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::buffer::Buffer;
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Widget;
 
@@ -72,6 +73,37 @@ fn cross_line_selection_keeps_only_canonical_hard_newlines() {
     select(&owner, (0, 0), (5, 2));
 
     assert_eq!(owner.selected_text().as_deref(), Some("alpha beta\ngamma"));
+}
+
+#[test]
+fn quoted_selection_omits_rendered_markers_but_preserves_literal_markers_and_mixed_content() {
+    let quoted = |text: &str| {
+        HyperlinkLine::new(Line::from(Span::styled(
+            text.to_string(),
+            Style::default().fg(Color::Green),
+        )))
+    };
+
+    let owner = TranscriptSelection::default();
+    let lines = vec![
+        quoted("> quoted text"),
+        quoted("> > nested"),
+        line("> literal"),
+    ];
+    owner.update_layout(Rect::new(0, 0, 40, 4), 0, &lines);
+
+    select(&owner, (0, 0), (10, 1));
+    assert_eq!(
+        owner.selected_text().as_deref(),
+        Some("quoted text\nnested")
+    );
+
+    owner.clear();
+    select(&owner, (0, 0), (9, 2));
+    assert_eq!(
+        owner.selected_text().as_deref(),
+        Some("> quoted text\n> > nested\n> literal")
+    );
 }
 
 #[test]

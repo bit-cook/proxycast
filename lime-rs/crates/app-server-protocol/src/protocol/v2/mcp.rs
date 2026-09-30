@@ -277,6 +277,8 @@ pub struct McpServerOauthLoginCompletedNotification {
     pub name: String,
     #[schemars(schema_with = "super::serde_helpers::nullable_string_schema")]
     pub thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_id: Option<String>,
     pub success: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -549,6 +551,7 @@ mod tests {
         let success = McpServerOauthLoginCompletedNotification {
             name: "remote-docs".to_string(),
             thread_id: None,
+            login_id: None,
             success: true,
             error: None,
         };

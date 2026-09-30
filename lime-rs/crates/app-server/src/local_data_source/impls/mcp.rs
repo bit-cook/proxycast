@@ -1,5 +1,7 @@
 use super::super::*;
 use app_server_protocol::McpServerOauthLoginParams;
+use app_server_protocol::McpServerOauthLogoutParams;
+use app_server_protocol::McpServerOauthLogoutResponse;
 use async_trait::async_trait;
 
 #[async_trait]
@@ -80,6 +82,13 @@ impl McpAppDataSource for LocalAppDataSource {
         params: McpServerOauthLoginParams,
     ) -> Result<lime_mcp::McpOAuthLoginHandle, RuntimeCoreError> {
         mcp::login_mcp_server_oauth(&self.db, &self.mcp_manager, params).await
+    }
+
+    async fn logout_mcp_server_oauth(
+        &self,
+        params: McpServerOauthLogoutParams,
+    ) -> Result<McpServerOauthLogoutResponse, RuntimeCoreError> {
+        mcp::logout_mcp_server_oauth(&self.db, &self.mcp_manager, params).await
     }
 
     async fn list_mcp_tools(&self) -> Result<McpToolListResponse, RuntimeCoreError> {

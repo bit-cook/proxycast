@@ -8,6 +8,11 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
+#[path = "runtime_pty_tests/approval.rs"]
+mod approval;
+#[path = "runtime_pty_tests/suggestions.rs"]
+mod suggestions;
+
 #[test]
 fn real_pty_restores_terminal_after_visible_turn_completion() {
     if std::env::var_os("LIME_TEST_TUI_GATE_B").is_none() {
@@ -147,10 +152,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         Duration::from_secs(10),
     );
     if scenario == "agents-overview" {
-        writer
-            .write_all(b"/agents\r")
-            .expect("open agents overview");
-        writer.flush().expect("flush agents overview command");
+        write_typed_text(&mut writer, b"/agents\r");
         wait_for_marker(
             &output_rx,
             &mut output,
@@ -158,17 +160,15 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             Duration::from_secs(10),
         );
 
-        writer.write_all(&[14]).expect("start new task with Ctrl-N");
-        writer.flush().expect("flush Ctrl-N");
+        writer.write_all(b"n").expect("start new task with n");
+        writer.flush().expect("flush n");
         wait_for_marker(
             &output_rx,
             &mut output,
-            "New task:",
+            "New task ›",
             Duration::from_secs(10),
         );
-        writer
-            .write_all(prompt.as_bytes())
-            .expect("write overview task prompt");
+        write_typed_text(&mut writer, prompt.as_bytes());
         writer.write_all(b"\r").expect("submit overview task");
         writer.flush().expect("flush overview task");
         wait_for_ledger_kind_and_scenario(
@@ -186,23 +186,19 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         wait_for_screen_marker(
             &output_rx,
             &mut output,
-            "1 working",
+            "Working 1",
             Duration::from_secs(10),
         );
         agents_overview_screen = Some(terminal_screen_text(&output));
 
-        writer
-            .write_all(b"\x1b[B")
-            .expect("select background thread");
-        writer.write_all(&[18]).expect("rename with Ctrl-R");
+        writer.write_all(b"\t\t").expect("filter working tasks");
+        writer.write_all(b"r").expect("rename with r");
         writer.flush().expect("flush overview rename shortcut");
-        wait_for_screen_marker(&output_rx, &mut output, "Rename:", Duration::from_secs(10));
+        wait_for_screen_marker(&output_rx, &mut output, "Rename ›", Duration::from_secs(10));
         writer
             .write_all(&[127; 32])
             .expect("clear existing task name");
-        writer
-            .write_all(b"Gate B background")
-            .expect("write background task name");
+        write_typed_text(&mut writer, b"Gate B background");
         writer
             .write_all(b"\r")
             .expect("submit background task name");
@@ -216,7 +212,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         agents_overview_renamed_screen = Some(terminal_screen_text(&output));
 
         let stop_output_at = output.len();
-        writer.write_all(&[24]).expect("stop with Ctrl-X");
+        writer.write_all(b"x").expect("stop with x");
         writer.flush().expect("flush overview stop shortcut");
         wait_for_ledger_kind_and_scenario(
             &ledger_path,
@@ -232,7 +228,15 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             Duration::from_secs(10),
         );
 
-        writer.write_all(b"\r").expect("resume background thread");
+        writer
+            .write_all(b"\x1b[Z\x1b[Zf")
+            .expect("return to all tasks and search");
+        writer.flush().expect("flush overview search shortcut");
+        wait_for_screen_marker(&output_rx, &mut output, "Search ›", Duration::from_secs(10));
+        write_typed_text(&mut writer, b"Gate B background");
+        writer
+            .write_all(b"\r")
+            .expect("resume searched background thread");
         writer.flush().expect("flush background thread resume");
         wait_for_screen_marker(
             &output_rx,
@@ -250,8 +254,59 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         writer.write_all(&[4]).expect("exit TUI");
         writer.flush().expect("flush TUI exit");
     } else if scenario == "complete" {
-        writer.write_all(b"/status\r").expect("open status pager");
-        writer.flush().expect("flush status command");
+        writer.write_all(b"?").expect("open shortcut overlay");
+        writer.flush().expect("flush shortcut overlay toggle");
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "Keyboard shortcuts",
+            Duration::from_secs(10),
+        );
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "? / esc close",
+            Duration::from_secs(10),
+        );
+        assert!(terminal_screen_text(&output).contains("Ask Lime to do anything"));
+        writer
+            .write_all(b"\x1b")
+            .expect("close shortcut overlay without interrupt");
+        writer.flush().expect("flush shortcut overlay close");
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "? for shortcuts",
+            Duration::from_secs(10),
+        );
+        assert!(!terminal_screen_text(&output).contains("Keyboard shortcuts"));
+        write_typed_text(&mut writer, b"/model\r");
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "Select model",
+            Duration::from_secs(10),
+        );
+        write_typed_text(&mut writer, b"definitely-not-in-catalog");
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "No matching models",
+            Duration::from_secs(10),
+        );
+        writer
+            .write_all(b"\x1b")
+            .expect("cancel model picker without changing settings");
+        writer.flush().expect("flush model picker cancel");
+        wait_for_screen_marker(
+            &output_rx,
+            &mut output,
+            "Ask Lime to do anything",
+            Duration::from_secs(10),
+        );
+        assert!(!terminal_screen_text(&output).contains("Select model"));
+        suggestions::exercise_suggestion_menus(&mut writer, &output_rx, &mut output, &ledger_path);
+        write_typed_text(&mut writer, b"/status\r");
         wait_for_marker(&output_rx, &mut output, "/ STATUS", Duration::from_secs(10));
         let return_to_composer_at = output.len();
         writer.write_all(b"q").expect("close status pager");
@@ -263,9 +318,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             "Ask Lime to do anything",
             Duration::from_secs(10),
         );
-        writer
-            .write_all(b"before external edit")
-            .expect("write draft");
+        write_typed_text(&mut writer, b"before external edit");
         writer.write_all(&[7]).expect("open external editor");
         writer.flush().expect("flush editor shortcut");
         wait_for_marker(
@@ -340,8 +393,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             .write_all(mouse_up.as_bytes())
             .expect("release composer SGR mouse input");
         writer.flush().expect("flush composer mouse release");
-        writer.write_all(b"X").expect("insert at mouse cursor");
-        writer.flush().expect("flush composer mouse edit");
+        write_typed_text(&mut writer, b"X");
         let mouse_edited_prompt = format!("{}X{}", &prompt[..insertion], &prompt[insertion..]);
         wait_for_screen_marker(
             &output_rx,
@@ -355,7 +407,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         writer.flush().expect("flush restored composer prompt");
         wait_for_screen_marker(&output_rx, &mut output, &prompt, Duration::from_secs(10));
     } else {
-        writer.write_all(prompt.as_bytes()).expect("write prompt");
+        write_typed_text(&mut writer, prompt.as_bytes());
     }
     if scenario != "agents-overview" {
         writer.write_all(b"\r").expect("submit prompt");
@@ -381,6 +433,12 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         };
         wait_for_marker(&output_rx, &mut output, marker, Duration::from_secs(10));
         if scenario == "approval" {
+            approval::exercise_read_only_details(
+                &mut writer,
+                &output_rx,
+                &mut output,
+                &ledger_path,
+            );
             writer.write_all(b"y").expect("approve command");
             writer.flush().expect("flush approval");
             wait_for_marker(
@@ -484,14 +542,16 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
                 Duration::from_secs(10),
             );
             writer
-                .write_all(b"\x1bOR")
-                .expect("open main transcript Find with F3");
-            writer.flush().expect("flush main transcript Find open");
-            wait_for_screen_marker(&output_rx, &mut output, "Find: ", Duration::from_secs(10));
+                .write_all(b"\x18")
+                .expect("start configured main transcript Find chord with Ctrl-X");
             writer
-                .write_all(completed_text.as_bytes())
-                .expect("write main transcript Find query");
-            writer.flush().expect("flush main transcript Find query");
+                .write_all(b"f")
+                .expect("complete configured main transcript Find chord");
+            writer
+                .flush()
+                .expect("flush configured main transcript Find chord");
+            wait_for_screen_marker(&output_rx, &mut output, "Find: ", Duration::from_secs(10));
+            write_typed_text(&mut writer, completed_text.as_bytes());
             wait_for_screen_marker(
                 &output_rx,
                 &mut output,
@@ -577,7 +637,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
                 &output_rx,
                 &mut output,
                 transcript_at,
-                "Ctrl+T·Esc·Q close",
+                "ctrl+t·esc·q close",
                 Duration::from_secs(10),
             );
             wait_for_screen_marker(
@@ -744,7 +804,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
                 &output_rx,
                 &mut output,
                 reopened_at,
-                "Ctrl+T·Esc·Q close",
+                "ctrl+t·esc·q close",
                 Duration::from_secs(10),
             );
             wait_for_screen_marker(
@@ -760,10 +820,49 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             writer.flush().expect("flush reopened transcript close");
         }
         if scenario == "queue-edit" {
-            let queued_at = output.len();
             writer
-                .write_all(queue_prompt.as_bytes())
-                .expect("write queued follow-up");
+                .write_all(b"?")
+                .expect("open shortcut overlay during active turn");
+            writer
+                .flush()
+                .expect("flush active shortcut overlay toggle");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "Keyboard shortcuts",
+                Duration::from_secs(10),
+            );
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "Queue message",
+                Duration::from_secs(10),
+            );
+            writer
+                .write_all(b"\x1b")
+                .expect("close active help without cancelling turn");
+            writer.flush().expect("flush active help close");
+            wait_for_screen_marker(
+                &output_rx,
+                &mut output,
+                "? for shortcuts",
+                Duration::from_secs(10),
+            );
+            assert!(!terminal_screen_text(&output).contains("Keyboard shortcuts"));
+            let cancelled = std::fs::read_to_string(&ledger_path)
+                .expect("read current runtime ledger")
+                .lines()
+                .map(|line| {
+                    serde_json::from_str::<serde_json::Value>(line)
+                        .expect("structured runtime ledger")
+                })
+                .any(|entry| entry["kind"] == "turnCancel" && entry["scenario"] == scenario);
+            assert!(
+                !cancelled,
+                "closing shortcut help must not interrupt canonical turn"
+            );
+            let queued_at = output.len();
+            write_typed_text(&mut writer, queue_prompt.as_bytes());
             writer.write_all(b"\t").expect("queue follow-up with Tab");
             writer.flush().expect("flush queued follow-up");
             wait_for_marker_after(
@@ -956,7 +1055,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
             );
         }
         assert!(
-            visible_terminal_text(&output).contains("Ctrl+T·Esc·Q close"),
+            visible_terminal_text(&output).contains("ctrl+t·esc·q close"),
             "transcript overlay was not visible"
         );
         assert!(
@@ -969,7 +1068,7 @@ fn real_pty_restores_terminal_after_visible_turn_completion() {
         );
         assert!(
             main_transcript_find_visible,
-            "compact transcript F3 Find and match highlight were not visible"
+            "configured compact transcript Find chord and match highlight were not visible"
         );
         assert!(
             transcript_mouse_selection_visible,
@@ -1063,6 +1162,16 @@ fn wait_for_marker(
     }
 }
 
+fn write_typed_text(writer: &mut impl Write, text: &[u8]) {
+    for byte in text {
+        writer
+            .write_all(std::slice::from_ref(byte))
+            .expect("write typed text");
+        writer.flush().expect("flush typed text");
+        thread::sleep(Duration::from_millis(12));
+    }
+}
+
 fn wait_for_any_marker(
     output_rx: &mpsc::Receiver<Vec<u8>>,
     output: &mut String,
@@ -1123,6 +1232,30 @@ fn wait_for_screen_marker(
         }
         let chunk = output_rx.recv_timeout(remaining).unwrap_or_else(|_| {
             panic!("PTY closed before screen marker {marker:?}; output: {output}")
+        });
+        output.push_str(&String::from_utf8_lossy(&chunk));
+    }
+}
+
+fn wait_for_screen(
+    output_rx: &mpsc::Receiver<Vec<u8>>,
+    output: &mut String,
+    scenario: &str,
+    predicate: impl Fn(&str) -> bool,
+) -> String {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let screen = terminal_screen_text(output);
+        if predicate(&screen) {
+            return screen;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        assert!(
+            !remaining.is_zero(),
+            "timed out: {scenario}; screen: {screen}"
+        );
+        let chunk = output_rx.recv_timeout(remaining).unwrap_or_else(|error| {
+            panic!("PTY unavailable: {scenario}; {error}; screen: {screen}")
         });
         output.push_str(&String::from_utf8_lossy(&chunk));
     }

@@ -7341,6 +7341,25 @@
               "$ref": "#/$defs/RequestId"
             },
             "method": {
+              "const": "mcpServer/oauth/logout",
+              "type": "string"
+            },
+            "params": {
+              "default": null
+            }
+          },
+          "required": [
+            "id",
+            "method"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestId"
+            },
+            "method": {
               "const": "mcpServer/start",
               "type": "string"
             },
@@ -8789,6 +8808,7 @@
         "mcpServer/importFromApp",
         "mcpServer/list",
         "mcpServer/oauth/login",
+        "mcpServer/oauth/logout",
         "mcpServer/start",
         "mcpServer/stop",
         "mcpServer/syncAllToLive",
@@ -35465,6 +35485,12 @@
             "string"
           ]
         },
+        "loginId": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
         "name": {
           "type": "string"
         },
@@ -35501,6 +35527,12 @@
             "null"
           ]
         },
+        "threadId": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
         "timeoutSecs": {
           "format": "uint64",
           "minimum": 0,
@@ -35522,6 +35554,12 @@
         "authorizationUrl": {
           "type": "string"
         },
+        "loginId": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
         "state": {
           "type": "string"
         }
@@ -35531,6 +35569,32 @@
         "state"
       ],
       "title": "McpServerOauthLoginResponse",
+      "type": "object"
+    },
+    "McpServerOauthLogoutParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "McpServerOauthLogoutParams",
+      "type": "object"
+    },
+    "McpServerOauthLogoutResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "removed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "removed"
+      ],
+      "title": "McpServerOauthLogoutResponse",
       "type": "object"
     },
     "McpServerResourceContent": {
@@ -60127,6 +60191,12 @@
           "additionalProperties": false,
           "properties": {
             "error": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "loginId": {
               "type": [
                 "null",
                 "string"
@@ -124104,6 +124174,7 @@
               "mcpServer/importFromApp",
               "mcpServer/list",
               "mcpServer/oauth/login",
+              "mcpServer/oauth/logout",
               "mcpServer/resource/read",
               "mcpServer/start",
               "mcpServer/stop",
