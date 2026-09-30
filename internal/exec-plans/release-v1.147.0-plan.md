@@ -1,6 +1,6 @@
 # Lime v1.147.0 发布执行计划
 
-状态：全部候选已获递交授权，本机门禁通过，执行发布提交与远端流水线
+状态：183 文件发布提交和 main/tag 推送完成；远端打包与分发进行中
 日期：2026-09-30
 目标：将全部当前未提交/未跟踪候选发布为 `v1.147.0`，完成 commit、tag、main/tag 推送与远端 Actions/Release/npm 复核。
 
@@ -39,8 +39,10 @@
 - [x] 最终完整 TUI PTY Gate B：thread `01a0f2df-7413-7be1-9157-fcb9b2aa8e7d`、turn `turn_5f90cbe039074ccc862a38d09dee5f9a`；complete/approval/user-input/interrupt/failure/queue-edit/agents-overview、focus-palette/resize-reflow/reconnect 和 terminal restore 通过。
 - [x] workspace fmt 与 `git diff --check`；新增 PTY suggestions 文件格式已修复。
 - [x] git 写操作和全部候选递交授权。
-- [ ] `Release v1.147.0` commit、`v1.147.0` tag、main/tag 推送及远端引用复核。
-- [ ] GitHub Actions、Release 资产、npm registry 复核。
+- [x] `Release v1.147.0` commit `1cbc94e5f7f00b58f0580fafab1b202fdf4e9d0c`，183 文件；轻量 tag `v1.147.0` 与 main 已分别推送，远端两引用一致；提交 hook `182` 通过、`0` 失败。
+- [x] Release run `36735313925` 已启动，GitHub draft 已创建，三个 Electron 平台构建中；Docs run `36735269856` 成功。
+- [ ] GitHub Release 公开资产、updater 和 npm registry 最终复核。
+- [ ] Quality run `36735269701`：Frontend Full 在批次 `56/119` 因既有 fixture 未登记失败，Rust/GUI/Windows job 尚在运行，不能声明全量 CI 通过。
 
 ## 修复与限制
 
@@ -49,6 +51,12 @@
 真实 PTY 发现 `/status` 最后一个字符仍留在 paste-burst 缓冲中，弹窗提前消费 Enter 后该字符重新写回草稿。本轮在 popup 路由前同步 due input，并让活跃 paste 内的 Enter/Tab 保持草稿文本；补 owner 回归且真实 complete 通过。审批详情 PTY 原先只等待页面间共用提示，修为同时观察审批选项恢复及详情标题消失，不增加固定等待或跳过断言。
 
 Rust 构建使用仓库 rusty-v8 artifact resolver 的已校验缓存，未修改系统环境变量或依赖。App Server 保留既有两处 dead-code warning；本轮不宣称全量 lint/Vitest/Cargo/Clippy 矩阵通过。跨平台 Forge、Windows 真机、签名/公证与 npm 分发由 GitHub runner 验证。
+
+## 发布后的定向修复
+
+远端 Frontend Full 的唯一已知失败为 `scripts/app-server/tui-history-pagination-fixture.mjs` 未登记在 ExternalBackend 测试夹具允许清单。该 fixture、测试与 support 在 `v1.146.0..v1.147.0` diff 为空，是既有守卫漏登记。检查确认 fixture 使用隔离临时 app data、受控 backend 和真实 CLI/App Server，不属于生产默认入口。
+
+本轮补 `src/lib/governance/appServerRuntimeBoundary.testSupport.ts` 的精确允许路径，保留全目录扫描与生产 Runtime 默认断言；失败守卫定向 `2/2` 和 `npm run typecheck` 通过。作为 main 的独立测试修复提交，保持发布 tag 原提交，不宣称旧 tag 的 Quality run 已通过。推送后并发会话开始的下一项 request-user-input 改造属于发布后工作，保留其工作树，不覆盖、不并入本次标签。
 
 ## 架构与分类
 

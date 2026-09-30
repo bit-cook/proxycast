@@ -197,6 +197,7 @@ export const ALLOWED_EXTERNAL_BACKEND_LAUNCH_FILES = new Set([
   "scripts/agent-runtime/tool-execution-smoke.test.mjs",
   "scripts/app-server/external-backend-smoke.mjs",
   "scripts/app-server/packaged-external-backend-failure-smoke.mjs",
+  "scripts/app-server/tui-history-pagination-fixture.mjs",
   "scripts/check-app-server-client-contract.mjs",
   "scripts/check-command-contracts.mjs",
   "scripts/electron/codex-import-click-through-fixture-smoke.mjs",
